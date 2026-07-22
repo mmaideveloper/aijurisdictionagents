@@ -33,4 +33,32 @@ Each case is stored as a ZIP under `cases/` and registered in `index.json`. The 
 .\conda\python.exe -m pytest tests\test_models_testing_fixtures.py
 ```
 
-Future model runners should use `index.json` as the stable entry point and treat each ZIP as immutable fixture input.
+The runner in `aijurisdictionagents.golden_cases` supports both the native export from issue #471
+(`manifest.json`, `messages.jsonl`, `ai-model-audit.json`, documents and warnings) and the older
+scenario-01 seed format. New fixtures must use the native format.
+
+Future model runners should use `index.json` as the stable entry point and treat each reviewed ZIP
+as immutable fixture input. Compare normalized text and configured assertions, never PDF bytes.
+
+## Scenario 01: private-loan payment confirmation
+
+The tracked `issue-513-loan-confirmation` ZIP is a synthetic legacy seed. It is useful for offline
+runner tests, but it is not yet evidence of a full production replay. Replace it with a native export
+created through JurisDigta using the process below before marking scenario 01 legally approved:
+
+1. Create a dedicated automation account and a new case in JurisDigta.
+2. Use invented names, addresses, identifiers, dates and amounts. Do not adapt a customer case.
+3. Ask for a receipt/payment confirmation for a private loan and answer follow-up questions with the
+   same stable synthetic facts.
+4. A human reviewer verifies the document type, parties, amount, handover/payment date, signatures,
+   repayment wording, legal citations and the AI/human-review disclosure.
+5. Export the case using the paid case-export endpoint/UI and verify that the ZIP contains the native
+   export manifest, transcript, model audit, warnings and generated PDF. Confirm
+   `manifest.json.models_used` and `ai-model-audit.json.entries` identify the actual provider, model,
+   route type and status used for the case. Do not enter these values manually.
+6. Store the reviewed ZIP under `cases/`, update its SHA-256 and rules in `index.json`, and set
+   `fixture_status` to `native_reviewed`.
+
+The export contains personal-looking synthetic data and model audit metadata, so retain only the
+minimum fixture, never credentials or payment details. Failed/live outputs belong under ignored
+`runs/model-validation/` and should be deleted according to the test-data retention policy.
