@@ -72,6 +72,8 @@ export type AuthSignInResult = "signed_in" | "otp_required" | "invalid_credentia
 
 export type SignInResult = AuthSignInResult | { status: "mfa_required"; challenge: MfaChallenge };
 
+export type MfaVerificationResult = "verified" | "invalid_code" | "expired_challenge";
+
 export interface AuthState {
   isAuthenticated: boolean;
   user: AuthUser | null;
@@ -86,7 +88,7 @@ export interface AuthContextValue extends AuthState {
   sendEmailChangeCode: (email: string) => Promise<void>;
   completeEmailChange: (email: string, verificationCode: string) => Promise<AuthUser>;
   sendMfaEmailCode: (mfaToken: string) => Promise<void>;
-  verifyMfa: (mfaToken: string, method: string, verificationCode: string) => Promise<boolean>;
+  verifyMfa: (mfaToken: string, method: string, verificationCode: string) => Promise<MfaVerificationResult>;
   refreshUser: (userId: string) => Promise<AuthUser>;
   signOut: () => void;
 }
@@ -445,8 +447,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         device_id: getOrCreateDeviceId()
       })
     });
-    if (response.status === 400 || response.status === 401) {
-      return false;
+    if (response.status === 400) {
+      const detail = await parseAuthError(response);
+      return detail.toLowerCase().includes("expired mfa challenge") ? "expired_challenge" : "invalid_code";
+    }
+    if (response.status === 401) {
+      return "invalid_code";
     }
     if (!response.ok) {
       throw new Error(await parseAuthError(response));
@@ -454,7 +460,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const user = apiProfileToAuthUser((await response.json()) as ApiUserProfile, getOrCreateDeviceId());
     writeStoredUser(user);
     setState({ isAuthenticated: true, user, isAuthLoading: false });
-    return true;
+    return "verified";
   }, []);
 
   const updateProfile = React.useCallback(
