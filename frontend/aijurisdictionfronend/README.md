@@ -41,6 +41,14 @@ The suite starts Vite locally and uses mocked JurisDigta API responses. Deployme
 The issue #530 test writes locale screenshots to
 `runs/e2e/issue-530-assistant-branding-{sk,en,de}.png` using synthetic account and API data.
 
+Issue #565 is covered by `e2e/active-case-export.spec.ts`. The test verifies that only the
+active My Cases card displays the same accessible export icon button used by My Profile in its bottom-right corner, that the
+button uses the existing authenticated case-export endpoint, and that the action follows the
+active case when selection changes. It writes a synthetic-data screenshot to
+`runs/e2e/issue-565-active-case-export-button.png`.
+
+![Issue #565 active case Export button E2E result](docs/issue-565-active-case-export-button.png)
+
 ### Slovak
 
 ![Issue #530 Slovak assistant branding E2E result](docs/issue-530-assistant-branding-sk.png)

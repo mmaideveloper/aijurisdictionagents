@@ -2055,6 +2055,26 @@
   font: inherit;
 }
 
+.case-item-container {
+  position: relative;
+}
+
+.case-item-container:has(.case-item.active) .case-item {
+  padding-bottom: 2.75rem;
+}
+
+.case-export-button {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  z-index: 1;
+}
+
+.case-export-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .case-item.active {
   background: rgba(31, 27, 22, 0.04);
   border-color: rgba(31, 27, 22, 0.08);
