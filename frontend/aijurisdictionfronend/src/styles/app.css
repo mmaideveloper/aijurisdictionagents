@@ -2948,9 +2948,16 @@ textarea {
 
 .profile-case-item {
   margin: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+}
+
+.card ul li.profile-case-item::before,
+.card ul li.profile-document-item::before {
+  content: none;
 }
 
 .profile-case-button {
@@ -2977,6 +2984,19 @@ textarea {
   white-space: nowrap;
 }
 
+.profile-case-button.is-expanded {
+  align-items: flex-start;
+}
+
+.profile-case-button.is-expanded span,
+.profile-document-button.is-expanded strong,
+.profile-document-button.is-expanded small {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .profile-case-button small {
   color: var(--ink-muted);
   flex: 0 0 auto;
@@ -2996,6 +3016,30 @@ textarea {
   border-radius: 10px;
 }
 
+.profile-text-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  flex: 0 0 auto;
+  font: inherit;
+  font-weight: 700;
+  min-width: 1.5rem;
+  padding: 0.3rem 0.15rem;
+}
+
+.profile-text-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.profile-text-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .profile-document-list {
   list-style: none;
   margin: 0;
@@ -3005,9 +3049,9 @@ textarea {
 }
 
 .profile-document-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
   align-items: flex-start;
   border: 1px solid var(--border);
   background: var(--surface-muted);
@@ -3028,6 +3072,7 @@ textarea {
   gap: 0.2rem;
   text-align: left;
   cursor: pointer;
+  width: 100%;
 }
 
 .profile-document-button:hover strong {
