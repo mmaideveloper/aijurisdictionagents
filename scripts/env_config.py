@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Profile-aware environment audit/bootstrap/merge; output is always value-redacted."""
+"""Profile-aware environment audit, sync, and allowlisted non-secret inspection."""
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import re
 import stat
 import sys
 import tempfile
+from typing import cast
 
 UNKNOWN = "unknown-variable"
 ACTIVE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
@@ -26,6 +28,12 @@ UNSAFE = (
     ">",
     "$(",
     "instrumentationkey=",
+)
+SENSITIVE_KEY_RE = re.compile(
+    r"(?i)(password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|connection[_-]?string|email|username)"
+)
+SENSITIVE_VALUE_RE = re.compile(
+    r"(?i)(password\s*=|passwd\s*=|secret\s*=|token\s*=|api[_-]?key\s*=|authorization\s*:|://[^/\s:@]+:[^/\s@]+@)"
 )
 
 
@@ -78,6 +86,42 @@ def profiles(path: Path) -> dict[str, dict[str, set[str]]]:
 
     for name in definitions:
         resolve(name)
+    return result
+
+
+def inspectable_non_secret_keys(path: Path) -> set[str]:
+    definitions = json.loads(path.read_text(encoding="utf-8"))
+    keys = set(definitions.get("inspectable_non_secret", []))
+    sensitive = sorted(key for key in keys if SENSITIVE_KEY_RE.search(key))
+    if sensitive:
+        raise ValueError(f"Inspectable allowlist contains sensitive key names: {', '.join(sensitive)}")
+    return keys
+
+
+def inspect_non_secret_values(
+    env_path: Path,
+    *,
+    allowed_keys: set[str],
+    requested_keys: set[str] | None = None,
+) -> dict[str, str]:
+    requested = set(allowed_keys if requested_keys is None else requested_keys)
+    denied = sorted(requested - allowed_keys)
+    if denied:
+        raise ValueError(f"Keys are not approved for non-secret inspection: {', '.join(denied)}")
+    sensitive = sorted(key for key in requested if SENSITIVE_KEY_RE.search(key))
+    if sensitive:
+        raise ValueError(f"Sensitive key names cannot be inspected: {', '.join(sensitive)}")
+    values, duplicates, malformed = parse(env_path)
+    if duplicates or malformed:
+        raise ValueError("Environment file must pass duplicate and syntax checks before inspection")
+    result: dict[str, str] = {}
+    for key in sorted(requested):
+        value = values.get(key)
+        if value is None:
+            continue
+        if SENSITIVE_VALUE_RE.search(value):
+            raise ValueError(f"Value for {key} resembles sensitive configuration and was not displayed")
+        result[key] = value
     return result
 
 
@@ -183,7 +227,7 @@ def merge(env_path: Path, source_path: Path) -> dict[str, list[str]]:
     return {"added": added, "updated": sorted(updated)}
 
 
-def names(label: str, values: list[object]) -> str:
+def names(label: str, values: Sequence[object]) -> str:
     return f"{label}: {', '.join(map(str, values)) if values else 'none'}"
 
 
@@ -200,6 +244,8 @@ def main() -> int:
     commands.add_parser("bootstrap")
     combine = commands.add_parser("merge")
     combine.add_argument("--source", type=Path, required=True)
+    inspect = commands.add_parser("inspect")
+    inspect.add_argument("--key", action="append", dest="keys")
     args = parser.parse_args()
     selected = profiles(args.profiles)
     if args.profile not in selected:
@@ -207,22 +253,44 @@ def main() -> int:
         return 2
     if args.command == "bootstrap":
         selected_keys = selected[args.profile]["required"] | selected[args.profile]["optional"]
-        result = bootstrap(args.env_file, args.example, selected_keys)
-        print(names("Added keys", result["added"]))
-        print(names("Repaired keys", result["repaired"]))
+        bootstrap_result = bootstrap(args.env_file, args.example, selected_keys)
+        print(names("Added keys", bootstrap_result["added"]))
+        print(names("Repaired keys", bootstrap_result["repaired"]))
         print("Values are redacted.")
         return 0
     if args.command == "merge":
-        result = merge(args.env_file, args.source)
-        print(names("Added keys", result["added"]))
-        print(names("Updated keys", result["updated"]))
+        merge_result = merge(args.env_file, args.source)
+        print(names("Added keys", merge_result["added"]))
+        print(names("Updated keys", merge_result["updated"]))
         print("Values are redacted.")
         return 0
-    result = audit(args.env_file, args.example, selected[args.profile])
+    if args.command == "inspect":
+        profile_keys = selected[args.profile]["required"] | selected[args.profile]["optional"]
+        allowed = inspectable_non_secret_keys(args.profiles) & profile_keys
+        requested = set(args.keys) if args.keys else None
+        try:
+            inspected = inspect_non_secret_values(
+                args.env_file,
+                allowed_keys=allowed,
+                requested_keys=requested,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        for key, value in inspected.items():
+            print(f"{key}={value}")
+        missing = sorted((allowed if requested is None else requested) - inspected.keys())
+        print(names("Unavailable approved keys", missing))
+        print("Only explicitly allowlisted non-secret values are displayed.")
+        return 0
+    audit_result = audit(args.env_file, args.example, selected[args.profile])
     if args.json:
-        print(json.dumps(result, indent=2))
+        print(json.dumps(audit_result, indent=2))
     else:
-        print(f"Profile {args.profile}: {'READY' if result['profile_ready'] else 'BLOCKED'}")
+        print(
+            f"Profile {args.profile}: "
+            f"{'READY' if audit_result['profile_ready'] else 'BLOCKED'}"
+        )
         for label, key in (
             ("Missing", "missing_required"),
             ("Unresolved", "unresolved_required"),
@@ -230,12 +298,17 @@ def main() -> int:
             ("Duplicates", "duplicate_keys"),
             ("Extra", "extra_keys"),
         ):
-            print(names(label, result[key]))
-        for alternatives in result["missing_one_of"]:
+            print(names(label, cast(Sequence[object], audit_result[key])))
+        for alternatives in cast(list[list[str]], audit_result["missing_one_of"]):
             print(names("One of required", alternatives))
-        print(names("Malformed lines", result["malformed_line_numbers"]))
+        print(
+            names(
+                "Malformed lines",
+                cast(Sequence[object], audit_result["malformed_line_numbers"]),
+            )
+        )
         print("Values are redacted.")
-    return 1 if args.strict and not result["profile_ready"] else 0
+    return 1 if args.strict and not audit_result["profile_ready"] else 0
 
 
 if __name__ == "__main__":

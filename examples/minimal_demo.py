@@ -8,7 +8,8 @@ from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 
 print(
     "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
-    "only key names/statuses are reported and secret values remain redacted."
+    "audit/pull report only key names/statuses; scripts/env_config.py inspect may display only "
+    "explicitly allowlisted non-secret values, while secret values remain redacted."
 )
 print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "

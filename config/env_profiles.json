@@ -1,4 +1,12 @@
 {
+  "inspectable_non_secret": [
+    "DB_LOCAL",
+    "DB_OPTION",
+    "STORAGE_OPTION",
+    "STORE_LOCAL",
+    "SYSTEM_EMBEDDING_MODEL",
+    "SYSTEM_EMBEDDING_MODEL_OPTION"
+  ],
   "profiles": {
     "local-core": {"required": ["DB_OPTION", "DB_LOCAL", "STORAGE_OPTION", "STORE_LOCAL"], "optional": ["LLM_PROVIDER", "SYSTEM_STATUS_FILE"]},
     "codex-agent": {"extends": ["local-core"], "required": ["SYSTEM_EMBEDDING_MODEL_OPTION", "SYSTEM_EMBEDDING_MODEL"], "optional": ["AI_MODEL_CREDENTIAL_ENCRYPTION_KEY"]},

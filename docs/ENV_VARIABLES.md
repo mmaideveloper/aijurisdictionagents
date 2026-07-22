@@ -36,10 +36,29 @@ runtime fallback remains `0` when the variable is absent or invalid.
 .\scripts\sync_env_profile.ps1 -Mode Audit -Profile azure-dev -EnvFilePath .env.dev -Strict
 ```
 
-Output contains key names and states only. `Pull` uses pinned SSH host
+Audit, bootstrap, merge, and pull output contains key names and states only. `Pull` uses pinned SSH host
 verification, downloads to a temporary protected location, merges atomically,
 validates, restores the previous local file on failure, and removes temporary
 files. There is no developer push mode.
+
+After the profile is ready, approved non-secret values may be inspected with:
+
+```powershell
+.\conda\python.exe scripts\env_config.py --profile codex-agent inspect
+.\conda\python.exe scripts\env_config.py --profile codex-agent inspect --key DB_OPTION
+```
+
+The command displays only keys explicitly listed in `config/env_profiles.json`
+under `inspectable_non_secret` and belonging to the selected profile. Requests
+for other keys fail closed. Secret-like key names and values are rejected even
+if they are accidentally added to the allowlist. Direct `.env` reads remain
+prohibited for Codex.
+
+Run the synthetic focused example without reading a real profile:
+
+```powershell
+.\conda\python.exe examples\env_profile_inspection_minimal_demo.py
+```
 
 ## USB layout
 

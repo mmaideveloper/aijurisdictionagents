@@ -12,6 +12,19 @@ Run the mandatory redacted implementation gate with:
 .\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent
 ```
 
+After the gate reports `READY`, inspect only explicitly allowlisted non-secret
+configuration when troubleshooting requires concrete values:
+
+```powershell
+.\conda\python.exe scripts\env_config.py --profile codex-agent inspect `
+  --key DB_OPTION `
+  --key SYSTEM_EMBEDDING_MODEL
+```
+
+Never read `.env` directly. The inspection command denies non-allowlisted and
+secret-like keys and suppresses values that resemble credentials or connection
+strings.
+
 If the trusted server is temporarily unavailable, audit the last verified local
 copy without retrieving secrets:
 
