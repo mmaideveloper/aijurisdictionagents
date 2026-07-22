@@ -2055,6 +2055,47 @@
   font: inherit;
 }
 
+.case-item-container {
+  position: relative;
+}
+
+.case-item-container:has(.case-item.active) .case-item {
+  padding-bottom: 2.75rem;
+}
+
+.case-export-button {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.8rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.case-export-button:hover {
+  background: color-mix(in srgb, var(--accent) 8%, #fff);
+}
+
+.case-export-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.case-export-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .case-item.active {
   background: rgba(31, 27, 22, 0.04);
   border-color: rgba(31, 27, 22, 0.08);
