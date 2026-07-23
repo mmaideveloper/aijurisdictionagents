@@ -1,0 +1,25 @@
+{
+  "name": "jurisdigta",
+  "version": "0.1.0",
+  "description": "Privacy-safe Jurisdigta incident reporting and architecture decision workflows.",
+  "author": {
+    "name": "JurisDigta"
+  },
+  "homepage": "https://jurisdigta.eu",
+  "repository": "https://github.com/mmaideveloper/aijurisdictionagents",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Jurisdigta",
+    "shortDescription": "Report incidents and manage architecture decisions.",
+    "longDescription": "Investigate Jurisdigta incidents using privacy-minimized server evidence and repository context, or create and review source-backed architecture decisions with GDPR, EU AI Act, and human-oversight safeguards.",
+    "developerName": "JurisDigta",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://jurisdigta.eu",
+    "privacyPolicyURL": "https://jurisdigta.eu/privacy",
+    "defaultPrompt": [
+      "Report a Jurisdigta bug from symptoms and logs.",
+      "Draft a Jurisdigta architecture decision."
+    ]
+  }
+}
