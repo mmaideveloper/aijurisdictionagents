@@ -1,0 +1,35 @@
+flowchart LR
+    title["C4 System Context — Jurisdigta<br/><small>Current state · Repository-observed architecture · 2026-07-22</small>"]
+
+    citizen["Citizen / customer<br/><small>Requests legal guidance and manages cases</small>"]
+    lawyer["Lawyer / human reviewer<br/><small>Reviews legally consequential outputs</small>"]
+    operator["Jurisdigta operator<br/><small>Operates and monitors the service</small>"]
+
+    subgraph trust["Jurisdigta trust boundary"]
+        system["Jurisdigta legal-assistance system<br/><small>AI-assisted legal conversations, document workflows, validation, and case management</small>"]
+    end
+
+    foundry["Azure OpenAI / Foundry<br/><small>Language-model and optional embedding inference</small>"]
+    slovlex["Slov-Lex and public legal sources<br/><small>Slovak legislation source data</small>"]
+    registries["External verification sources<br/><small>Company, property, address, vehicle, and web checks</small>"]
+    mail["Email provider<br/><small>Delivers queued notifications and documents</small>"]
+    azuremon["Azure Monitor / Application Insights<br/><small>Operational telemetry and diagnostics</small>"]
+
+    citizen -->|"Uses web/mobile clients; submits prompts and documents [Personal/legal data]"| system
+    system -->|"Returns AI-assisted guidance and generated documents [Personal/legal data]"| citizen
+    lawyer -->|"Performs human review for consequential legal use [Process documented; gate to formalize]"| system
+    operator -->|"Administers and monitors [Internal]"| system
+    system -->|"Sends prompts; receives generations [Personal/legal data; minimize]"| foundry
+    slovlex -->|"Provides legislation exports and updates [Public]"| system
+    system -->|"Runs consent-gated or task-specific verification queries [Personal data / To classify]"| registries
+    system -->|"Queues outbound messages [Personal data]"| mail
+    system -->|"Exports logs, traces, and metrics [Internal; minimize]"| azuremon
+
+    classDef title fill:#FFFFFF,color:#111827,stroke:#FFFFFF
+    classDef focal fill:#123B6D,color:#FFFFFF,stroke:#0B2748,stroke-width:2px
+    classDef person fill:#DBEAFE,color:#111827,stroke:#2F6FAB
+    classDef external fill:#E5E7EB,color:#111827,stroke:#6B7280
+    class title title
+    class system focal
+    class citizen,lawyer,operator person
+    class foundry,slovlex,registries,mail,azuremon external

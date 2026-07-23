@@ -1,0 +1,57 @@
+flowchart LR
+    title["C4 Container View — Jurisdigta<br/><small>Current Azure-oriented state · Repository-observed architecture · 2026-07-22</small>"]
+
+    user["Citizen / customer"]
+    reviewer["Lawyer / operator"]
+
+    subgraph clients["Client boundary"]
+        web["Web application<br/><small>React + Vite<br/>Browser legal workspace and administration</small>"]
+        mobile["Mobile application<br/><small>Flutter<br/>Mobile legal and voice experience</small>"]
+    end
+
+    subgraph azure["Jurisdigta Azure runtime boundary"]
+        api["Legal-assistance API<br/><small>FastAPI · Azure Container App<br/>Auth, chat/SSE, cases, documents, tools, and orchestration</small>"]
+        docjob["Document processor<br/><small>Python · Azure Container Apps Job<br/>Extracts, chunks, and embeds uploaded case documents</small>"]
+        lawsjob["Laws collector<br/><small>Python · Azure Container Apps Job<br/>Imports and enriches Slovak legislation</small>"]
+        emailjob["Email scheduler<br/><small>Python · Azure Container Apps Job<br/>Delivers queued email</small>"]
+        db[("Operational and legal-data stores<br/><small>Azure Database for PostgreSQL + pgvector<br/>Users, sessions, cases, messages, jobs, law metadata, and vectors</small>")]
+        blobs[("Document and import artifact store<br/><small>Azure Blob Storage · private container</small>")]
+        telemetry["Operational telemetry<br/><small>Application Insights + Log Analytics</small>"]
+    end
+
+    foundry["Azure OpenAI / Foundry<br/><small>LLM and optional embeddings</small>"]
+    slovlex["Slov-Lex / public legal sources"]
+    checks["External verification and web sources"]
+    smtp["SMTP email provider"]
+
+    user -->|"Uses HTTPS UI [Personal/legal data]"| web
+    user -->|"Uses HTTPS app [Personal/legal data]"| mobile
+    reviewer -->|"Reviews/administers via HTTPS [Internal]"| web
+    web -->|"Calls REST API and receives SSE streams over HTTPS [Personal/legal data]"| api
+    mobile -->|"Calls REST API over HTTPS [Personal/legal data]"| api
+    api -->|"Reads/writes application state and enqueues jobs [Personal/legal data]"| db
+    api -->|"Stores/retrieves uploaded and generated documents over HTTPS [Personal/legal data]"| blobs
+    api -->|"Invokes language-model inference over HTTPS [Personal/legal data; minimize]"| foundry
+    api -->|"Runs consent-gated/task-specific checks over HTTPS [Personal data / To classify]"| checks
+    docjob -->|"Claims document jobs; writes extracted text and vectors [Personal/legal data]"| db
+    docjob -->|"Reads uploaded documents; writes processing artifacts [Personal/legal data]"| blobs
+    docjob -->|"Optionally requests cloud embeddings over HTTPS [Personal/legal data; minimize]"| foundry
+    lawsjob -->|"Downloads legislation and updates [Public]"| slovlex
+    lawsjob -->|"Writes law metadata, text, and vectors [Public]"| db
+    lawsjob -->|"Persists source archives and processing artifacts [Public]"| blobs
+    emailjob -->|"Claims/updates queued email [Personal data]"| db
+    emailjob -->|"Sends email using TLS [Personal data]"| smtp
+    api -->|"Exports operational telemetry [Internal; minimize]"| telemetry
+    docjob -->|"Exports worker telemetry [Internal; minimize]"| telemetry
+    lawsjob -->|"Exports worker telemetry [Internal]"| telemetry
+
+    classDef title fill:#FFFFFF,color:#111827,stroke:#FFFFFF
+    classDef focal fill:#123B6D,color:#FFFFFF,stroke:#0B2748,stroke-width:2px
+    classDef owned fill:#2F6FAB,color:#FFFFFF,stroke:#123B6D
+    classDef external fill:#E5E7EB,color:#111827,stroke:#6B7280
+    classDef person fill:#DBEAFE,color:#111827,stroke:#2F6FAB
+    class title title
+    class api focal
+    class web,mobile,docjob,lawsjob,emailjob,db,blobs,telemetry owned
+    class foundry,slovlex,checks,smtp external
+    class user,reviewer person
