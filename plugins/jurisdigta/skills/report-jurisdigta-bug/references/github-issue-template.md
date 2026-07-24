@@ -28,6 +28,8 @@
 
 ## Evidence
 
+- Diagnostic environment: Local / `jurisdigta-server`
+- Log source inspected:
 - Reported time and timezone:
 - Sanitized request/correlation ID:
 - Relevant screenshot(s), confirmed redacted:

@@ -58,6 +58,17 @@ python scripts/sync_codex_skills.py --force
 
 For details, see `docs/PROJECT_SKILLS.md`.
 
+## Shared Jurisdigta Codex Plugin
+
+The team plugin is versioned under `plugins/jurisdigta/` and published through the repository marketplace:
+
+```bash
+codex plugin marketplace add mmaideveloper/aijurisdictionagents --ref main
+codex plugin add jurisdigta@jurisdigta
+```
+
+See [the plugin guide](docs/JURISDIGTA_PLUGIN.md) for update commands and versioned GitHub prerelease downloads.
+
 ## Portable Codex Automations
 
 Repo-owned Codex automation templates are versioned under `.codex/automations/`.

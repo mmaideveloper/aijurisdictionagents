@@ -1,5 +1,23 @@
 import { expect, test } from "@playwright/test";
 
+test("authentication card stays centered and constrained on wide screens", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/auth", { waitUntil: "domcontentloaded" });
+
+  const authPage = page.locator(".auth-page");
+  const authCard = page.locator(".auth-card");
+  await expect(authCard).toBeVisible();
+
+  const [pageBox, cardBox] = await Promise.all([authPage.boundingBox(), authCard.boundingBox()]);
+  expect(pageBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.width).toBeLessThanOrEqual(480);
+
+  const pageCenter = pageBox!.x + pageBox!.width / 2;
+  const cardCenter = cardBox!.x + cardBox!.width / 2;
+  expect(Math.abs(pageCenter - cardCenter)).toBeLessThanOrEqual(1);
+});
+
 test("registration starts hidden and completes after email OTP verification", async ({ page }) => {
   let sendCodePayload: unknown;
   let completePayload: unknown;

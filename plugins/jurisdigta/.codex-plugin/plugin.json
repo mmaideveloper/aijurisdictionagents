@@ -1,7 +1,7 @@
 {
   "name": "jurisdigta",
-  "version": "0.1.0",
-  "description": "Privacy-safe Jurisdigta incident reporting and architecture decision workflows.",
+  "version": "0.1.4",
+  "description": "Jurisdigta task preparation, implementation, incident reporting, and architecture decision workflows.",
   "author": {
     "name": "JurisDigta"
   },
@@ -10,8 +10,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Jurisdigta",
-    "shortDescription": "Report incidents and manage architecture decisions.",
-    "longDescription": "Investigate Jurisdigta incidents using privacy-minimized server evidence and repository context, or create and review source-backed architecture decisions with GDPR, EU AI Act, and human-oversight safeguards.",
+    "shortDescription": "Prepare, implement, investigate, and govern work.",
+    "longDescription": "Prepare Ready tasks, implement them in isolated worktrees with test evidence, investigate incidents using privacy-minimized environment-specific logs, and manage source-backed architecture decisions with GDPR, EU AI Act, and human-oversight safeguards.",
     "developerName": "JurisDigta",
     "category": "Developer Tools",
     "capabilities": ["Interactive", "Read", "Write"],
@@ -19,7 +19,8 @@
     "privacyPolicyURL": "https://jurisdigta.eu/privacy",
     "defaultPrompt": [
       "Report a Jurisdigta bug from symptoms and logs.",
-      "Draft a Jurisdigta architecture decision."
+      "Review an idea and create a Ready GitHub task.",
+      "Implement a ready task with tests and evidence."
     ]
   }
 }

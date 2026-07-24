@@ -14,7 +14,7 @@ Document consequential architecture choices in `docs/adr/` with traceable eviden
 - **Review:** assess evidence, alternatives, compliance, risks, and implementation readiness without changing status unless requested.
 - **Accept or reject:** require explicit confirmation from the named human decision owner.
 - **Supersede:** create a new ADR, mark the old ADR `Superseded by ADR-NNNN`, and link both records.
-- **Create an architecture task:** draft a GitHub issue from the ADR or proposal and require confirmation before creating it.
+- **Create an architecture task:** hand the accepted ADR or scoped architecture investigation to `prepare-jurisdigta-task`; do not own generic task intake in this skill.
 
 ## Workflow
 
@@ -30,7 +30,7 @@ Document consequential architecture choices in `docs/adr/` with traceable eviden
 7. Ask up to three focused questions when evidence, decision ownership, compliance, or acceptance criteria remain unclear.
 8. Present the proposed decision, strongest rejected alternative, irreversible consequences, compliance controls, and open risks for human review.
 9. Write or update the ADR only within the requested scope. Do not implement the architecture change unless separately authorized.
-10. For a GitHub architecture task, draft the complete issue, show it to the user, and require explicit confirmation before creating it in `mmaideveloper/aijurisdictionagents`.
+10. For a GitHub architecture task, invoke or hand off to `prepare-jurisdigta-task`. Require it to review requirements, resolve questions, apply its Ready gate, create the confirmed issue, set Ready status, and add `Reviewed by Codex`.
 
 ## Evidence rules
 
