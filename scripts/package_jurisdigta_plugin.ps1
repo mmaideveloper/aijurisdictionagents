@@ -47,9 +47,12 @@ foreach ($SkillFile in $SkillFiles) {
     }
 }
 
-$ResolvedOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath(
-    (Join-Path $RepoRoot $OutputDirectory)
-)
+$OutputPath = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory
+} else {
+    Join-Path $RepoRoot $OutputDirectory
+}
+$ResolvedOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 if (-not (Test-Path -LiteralPath $ResolvedOutput)) {
     New-Item -ItemType Directory -Path $ResolvedOutput -Force | Out-Null
 }
