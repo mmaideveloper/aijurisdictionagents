@@ -27,12 +27,12 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "acceptance",
+      name: "chromium",
       use: { ...devices["Desktop Chrome"] }
     },
     {
-      name: "reproduction",
-      use: { ...devices["Desktop Chrome"] }
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 5"] }
     }
   ]
 });

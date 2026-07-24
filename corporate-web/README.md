@@ -34,17 +34,6 @@ The test checks the footer lockup's localized accessible title in Slovak,
 German, and English. It also writes a focused footer screenshot for each
 language under `test-results/`.
 
-Until GitHub issue #580 is fixed, reproduce the known title mismatch without
-failing the command:
-
-```bash
-npm run test:e2e:repro
-```
-
-The reproduction project expects the current mismatch. Once the footer asset
-and localized alternative text use `JurisDigtaAgents`, remove the known-failure
-handling from `e2e/footer-title.spec.ts`.
-
 ## Language switch
 
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
@@ -78,15 +67,18 @@ availability before the backend endpoint is actually shipped.
 
 ## Branding assets
 
-The site now uses `assets/branding.png` as the source sheet for:
+The site uses `assets/branding.png` as the source sheet for:
 
-- `assets/brand-lockup.png` (logo + wordmark)
 - `assets/brand-banner.png` (hero/visual banner)
 - `assets/icon-ai.png`
 - `assets/icon-scale.png`
 - `assets/icon-doc.png`
 - `assets/icon-court.png`
-- `assets/login-shield.png` (transparent login/header icon)
+- `assets/login-shield.png` (transparent header/footer icon)
+
+The footer lockup combines `assets/login-shield.png` with live
+`JurisDigtaAgents` text so the visible title remains accessible, responsive,
+and directly covered by the E2E test.
 
 ## Legal links
 
