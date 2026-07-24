@@ -437,6 +437,28 @@ def test_regular_user_selected_model_override_fails_closed(
         raise AssertionError("Regular user override must fail closed")
 
 
+def test_allowlisted_email_selected_model_override_succeeds_without_user_id(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "selector-email@example.com")
+    store = _store(tmp_path)
+    store.create_user(email="selector-email@example.com", password="secret", full_name="Selector Email")
+
+    routed = get_routed_llm_client(
+        store=store,
+        user_id="",
+        user_email="selector-email@example.com",
+        task_type="chat_reply",
+        selected_model_profile_id="local_ollama_default",
+    )
+
+    assert routed.route_type == "user_selected_local"
+    assert routed.route.model_profile is not None
+    assert routed.route.model_profile.model_profile_id == "local_ollama_default"
+
+
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(
     monkeypatch: Any,
     tmp_path: Path,

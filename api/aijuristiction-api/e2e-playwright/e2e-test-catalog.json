@@ -129,6 +129,16 @@
     "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
   },
   {
+    "id": "frontend-admin-local-model-selection",
+    "file": "tests/frontend-admin-local-model-selection.spec.ts",
+    "title": "admin can select Local Ollama qwen3:4b for assistant document drafting",
+    "name": "Frontend admin local-model selection",
+    "description": "Covers browser-side model usage and selection: admin can choose Local Ollama qwen3:4b for drafting, regular users stay on the default local route without a selector, and the admin selector exposes the expected local model options before sending a prompt.",
+    "area": "Frontend model selection",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
     "id": "frontend-case-chat-layout-1638",
     "file": "tests/frontend-case-chat-layout.spec.ts",
     "title": "new case opens non-overlapping assistant workspace at 1638x942",

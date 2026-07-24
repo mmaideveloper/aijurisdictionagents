@@ -76,12 +76,16 @@ export type CreateChatSessionInput = {
 export type ReplyToSessionInput = {
   sessionId: string;
   content: string;
+  userId?: string;
+  userEmail?: string;
   modelProfileId?: string;
 };
 
 export type StreamSessionInput = {
   sessionId: string;
   instruction: string;
+  userId?: string;
+  userEmail?: string;
   modelProfileId?: string;
   signal?: AbortSignal;
 };
@@ -302,6 +306,8 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
     },
     body: JSON.stringify({
       content: input.content,
+      user_id: input.userId?.trim() || null,
+      user_email: input.userEmail?.trim() || null,
       model_profile_id: input.modelProfileId?.trim() || null
     })
   });
@@ -390,6 +396,8 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       body: JSON.stringify({
         instruction: input.instruction,
         user_simulation_mode: "ReadUser",
+        user_id: input.userId?.trim() || null,
+        user_email: input.userEmail?.trim() || null,
         model_profile_id: input.modelProfileId?.trim() || null
       }),
       signal: input.signal
