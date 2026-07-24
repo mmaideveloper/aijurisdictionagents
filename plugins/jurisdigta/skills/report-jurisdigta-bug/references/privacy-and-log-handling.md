@@ -2,7 +2,8 @@
 
 ## Collection contract
 
-- Obtain permission for production-log access.
+- Ask whether the error happened locally or on `jurisdigta-server` before log collection.
+- For local errors, stay within local logs. For server errors, obtain permission for remote log access.
 - Query the smallest useful time range, starting with 15 minutes around the reported event.
 - Select only relevant services and cap output, normally at 200 lines.
 - Prefer request/correlation IDs and aggregate operational events over free-text searches for user data.
