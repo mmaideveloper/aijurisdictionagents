@@ -935,6 +935,7 @@ Current E2E specs:
 - `tests/chat-simulator.spec.ts`
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - `tests/payment-process.spec.ts` (simulates synthetic user checkout, sandbox payment confirmation, and payment guard rails)
+- `tests/frontend-admin-local-model-selection.spec.ts` (browser suite: admin selects `Local Ollama - qwen3:4b`, regular users stay on the default local route without a selector, and the assistant workspace sends the selected model profile with signed-in user context)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Scheduled E2E status:
