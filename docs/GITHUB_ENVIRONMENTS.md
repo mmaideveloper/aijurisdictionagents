@@ -391,6 +391,22 @@ Paste those values without extra whitespace. The mobile workflow trims accidenta
 line breaks, validates the keystore and alias with `keytool`, and warns early if
 the selected GitHub Environment contains stale or mismatched signing secrets.
 
+### Plugin release workflow
+
+`.github/workflows/plugin_release.yml` packages `plugins/jurisdigta/` and the
+repository marketplace into a versioned ZIP, creates a SHA-256 checksum, and
+publishes both files as a GitHub prerelease.
+
+- Dispatch the workflow manually from `main`.
+- The version and immutable tag come from
+  `plugins/jurisdigta/.codex-plugin/plugin.json`.
+- The workflow uses repository `GITHUB_TOKEN` with scoped `contents: write`
+  permission.
+- It does not use the `test` or `prod` GitHub Environments.
+- No variables or secrets must be added to either Environment.
+- Plugin releases use `make_latest: false`, preserving the stable mobile APK
+  release returned by GitHub's latest-release API.
+
 ## 11. Configure Self-Managed Production Server Variables
 
 These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.

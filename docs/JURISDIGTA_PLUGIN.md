@@ -13,6 +13,57 @@ The incident workflow never reads secret files or database/user content, keeps r
 
 The architecture workflow makes GDPR and EU AI Act impacts explicit and does not mark a decision Accepted without approval from the human decision owner.
 
+## Install from the shared repository marketplace
+
+Add the Git marketplace and install the plugin:
+
+```powershell
+codex plugin marketplace add mmaideveloper/aijurisdictionagents --ref main
+codex plugin add jurisdigta@jurisdigta
+```
+
+After a plugin update:
+
+```powershell
+codex plugin marketplace upgrade jurisdigta
+codex plugin add jurisdigta@jurisdigta
+```
+
+Start a new Codex task after installation or update so the new skills are loaded.
+
+## Download a versioned release
+
+- [All Jurisdigta releases](https://github.com/mmaideveloper/aijurisdictionagents/releases)
+- [Jurisdigta plugin 0.1.4 ZIP](https://github.com/mmaideveloper/aijurisdictionagents/releases/download/jurisdigta-plugin-v0.1.4/jurisdigta-plugin-0.1.4.zip)
+- [Jurisdigta plugin 0.1.4 SHA-256](https://github.com/mmaideveloper/aijurisdictionagents/releases/download/jurisdigta-plugin-v0.1.4/jurisdigta-plugin-0.1.4.zip.sha256)
+
+The versioned links become available after this change is merged and the `plugin_release` workflow is manually dispatched from `main`.
+
+The release ZIP contains a self-contained marketplace root:
+
+```text
+jurisdigta-plugin-0.1.4/
+├── .agents/plugins/marketplace.json
+└── plugins/jurisdigta/
+```
+
+After checking the SHA-256 value, extract the ZIP and install from the extracted root:
+
+```powershell
+codex plugin marketplace add C:\path\to\jurisdigta-plugin-0.1.4
+codex plugin add jurisdigta@jurisdigta
+```
+
+Plugin releases use tags such as `jurisdigta-plugin-v0.1.4` and are published as GitHub prereleases. They intentionally use `make_latest: false`, so the mobile app continues to discover the latest stable release containing an APK.
+
+Maintainers publish a new immutable plugin version by:
+
+1. Bumping `plugins/jurisdigta/.codex-plugin/plugin.json`.
+2. Merging the validated change to `main`.
+3. Running the `plugin_release` workflow from `main`.
+
+The workflow refuses to overwrite an existing tag and attaches both the ZIP and checksum.
+
 ## Minimal examples
 
 Invoke the bug workflow:
@@ -43,4 +94,4 @@ These examples are runnable as prompts after installing the repository-local plu
 
 ## Validation
 
-Validate the plugin manifest and all skills with the Codex plugin and skill validators before publishing or installing the plugin.
+Validate the plugin manifest and all skills with the Codex plugin and skill validators before publishing or installing the plugin. The release workflow also runs `scripts/package_jurisdigta_plugin.ps1`, which validates release metadata, skill frontmatter, placeholders, and the shared marketplace before packaging.
