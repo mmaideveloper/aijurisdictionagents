@@ -24,7 +24,7 @@ Open `http://localhost:5173`.
 
 Run the frontend with the setup commands above, sign in, and open
 `http://localhost:5173/app/assistant`. The sidebar/header brand and browser-tab title both read
-`Jurisdigta AI právnik` (SK), `Jurisdigta AI lawyer` (EN), or `Jurisdigta AI Anwalt` (DE), according
+`JurisDigta AI právnik` (SK), `JurisDigta AI lawyer` (EN), or `JurisDigta AI Anwalt` (DE), according
 to the selected language. Change languages and navigate away and back to `/app/assistant` to verify
 that both titles update immediately and retain the persisted language.
 
@@ -36,22 +36,30 @@ Run the browser regression suite with:
 npm run test:e2e
 ```
 
-The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issue #530 is covered by `e2e/assistant-branding.spec.ts`, which verifies the localized SK/EN/DE sidebar brand and browser title after persisted direct loads, live language changes, and client-side navigation.
+The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issues #530 and #574 are covered by `e2e/assistant-branding.spec.ts`, which verifies the localized SK/EN/DE navbar, sidebar brand, and browser title after persisted direct loads, live language changes, and client-side navigation.
 
-The issue #530 test writes locale screenshots to
-`runs/e2e/issue-530-assistant-branding-{sk,en,de}.png` using synthetic account and API data.
+The issue #574 test writes locale screenshots to
+`runs/e2e/issue-574-assistant-branding-{sk,en,de}.png` using synthetic account and API data.
+
+Issue #565 is covered by `e2e/active-case-export.spec.ts`. The test verifies that only the
+active My Cases card displays the same accessible export icon button used by My Profile in its bottom-right corner, that the
+button uses the existing authenticated case-export endpoint, and that the action follows the
+active case when selection changes. It writes a synthetic-data screenshot to
+`runs/e2e/issue-565-active-case-export-button.png`.
+
+![Issue #565 active case Export button E2E result](docs/issue-565-active-case-export-button.png)
 
 ### Slovak
 
-![Issue #530 Slovak assistant branding E2E result](docs/issue-530-assistant-branding-sk.png)
+![Issue #574 Slovak assistant branding E2E result](docs/issue-574-assistant-branding-sk.png)
 
 ### English
 
-![Issue #530 English assistant branding E2E result](docs/issue-530-assistant-branding-en.png)
+![Issue #574 English assistant branding E2E result](docs/issue-574-assistant-branding-en.png)
 
 ### German
 
-![Issue #530 German assistant branding E2E result](docs/issue-530-assistant-branding-de.png)
+![Issue #574 German assistant branding E2E result](docs/issue-574-assistant-branding-de.png)
 
 ## API Chat Integration (Task #238)
 
@@ -162,7 +170,7 @@ question/upload/answer rendering path can be tested during frontend development.
 
 ## Navbar Branding
 
-The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + localized Jurisdigta AI name/tagline). The browser title uses the same localized product name on direct loads, language changes, and client-side navigation.
+The signed-out navigation includes the same app logo treatment used in the signed-in sidebar (`AJ` mark + localized JurisDigta AI name/tagline). The browser title uses the same localized product name on direct loads, language changes, and client-side navigation.
 
 - The logo is rendered on the left side of the navbar for signed-out views.
 - The logo is also rendered for signed-in views on non-home routes (for example `/app` and `/profile`).
@@ -181,6 +189,33 @@ In signed-in state, the profile icon opens a click-triggered dropdown menu in th
 - Keyboard navigation is supported with `ArrowUp`, `ArrowDown`, `Home`, and `End`
 - Mobile layout keeps the dropdown anchored under the trigger with viewport-safe width
 
+## Corporate Theme Visual Regression (Issue #576)
+
+Run the focused Playwright check from `frontend/aijurisdictionfronend`:
+
+```powershell
+npx playwright test e2e/corporate-theme-visual.spec.ts
+```
+
+Minimal runnable contract verification from the repository root:
+
+```powershell
+node examples/frontend_corporate_theme_issue_576_minimal_demo.mjs
+```
+
+The test uses only the local `/auth` route, selects English through browser storage, and does
+not submit credentials or personal data. It writes the visual artifact to:
+
+```text
+output/playwright/codex-576/01-auth-corporate-theme.png
+```
+
+The regression test verifies the corporate shield logo, navy, ink, primary button, body
+typography, and heading typography so the agent frontend cannot silently return to the
+legacy orange and beige theme. The shared shield asset is served from
+`public/login-shield.png`, copied from the corporate source at
+`corporate-web/assets/login-shield.png`.
+
 ## My Profile View
 
 The `/profile` page displays structured user information from the current API-authenticated web session.
@@ -192,6 +227,15 @@ The `/profile` page displays structured user information from the current API-au
 - Account Created Date (currently optional)
 - Includes subscription pricing controls (billing cadence + plan selector)
 - Includes an opened-cases panel with quick navigation back to active matters
+- Long case titles and document names stay inside the left panel. Text is truncated by default;
+  the adjacent ellipsis button expands wrapped text and collapses it again without hiding case
+  export or document metadata actions.
+
+Minimal runnable layout verification:
+
+```powershell
+python examples/frontend_profile_long_text_minimal_demo.py
+```
 
 ## Mock Case Creation Flow (Task #242)
 

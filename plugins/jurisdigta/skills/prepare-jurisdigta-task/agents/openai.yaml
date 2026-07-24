@@ -1,0 +1,12 @@
+interface:
+  display_name: "Prepare Jurisdigta Task"
+  short_description: "Review ideas and create Ready GitHub tasks"
+  default_prompt: "Use $prepare-jurisdigta-task to review my request and create a Ready GitHub task."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "github"
+      description: "Search existing work and create confirmed Ready tasks."
+      transport: "streamable_http"
+      url: "https://api.githubcopilot.com/mcp/"

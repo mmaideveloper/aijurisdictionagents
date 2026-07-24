@@ -47,7 +47,7 @@ jobs:
 
       - name: Lint
         working-directory: api/aijuristiction-api
-        run: ruff check app tests
+        run: ruff check --config pyproject.toml app tests
 
       - name: Type check
         working-directory: api/aijuristiction-api

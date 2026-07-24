@@ -647,6 +647,8 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
           for await (const streamEvent of streamSession({
             sessionId: session.sessionId,
             instruction: content,
+            userId,
+            userEmail: user?.email,
             modelProfileId: selectedModelProfileId,
             signal: options.abortSignal
           })) {

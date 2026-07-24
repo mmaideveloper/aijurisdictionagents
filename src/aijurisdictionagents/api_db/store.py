@@ -3745,11 +3745,13 @@ class ApiDatabaseStore:
         self,
         *,
         user_id: str,
+        user_email: str = "",
         plan_code: str,
         task_type: str,
         model_profile_id: str,
     ) -> AIModelRouteSelection:
         normalized_user_id = user_id.strip()
+        normalized_user_email = user_email.strip().lower()
         normalized_profile_id = model_profile_id.strip()
         normalized_task = _normalize_route_key(task_type, default="default")
         normalized_plan = _normalize_route_key(plan_code, default="free")
@@ -3764,9 +3766,12 @@ class ApiDatabaseStore:
                 requires_external_ack=False,
                 reason="Selected model profile id is required.",
             )
-        if not normalized_user_id or not self.can_select_assistant_model(
-            user_id=normalized_user_id
-        ):
+        can_select = False
+        if normalized_user_id:
+            can_select = self.can_select_assistant_model(user_id=normalized_user_id)
+        if not can_select and normalized_user_email:
+            can_select = self.can_select_assistant_model_by_email(email=normalized_user_email)
+        if not can_select:
             return AIModelRouteSelection(
                 policy=None,
                 provider=None,

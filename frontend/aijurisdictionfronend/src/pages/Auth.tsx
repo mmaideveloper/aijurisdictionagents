@@ -174,9 +174,14 @@ const Auth: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      const ok = await verifyMfa(mfaChallenge.mfaToken, mfaMethod, mfaCode.trim());
-      if (!ok) {
-        setError(t("authMfaInvalid"));
+      const result = await verifyMfa(mfaChallenge.mfaToken, mfaMethod, mfaCode.trim());
+      if (result !== "verified") {
+        // MFA challenges are deliberately single-use. Clear stale client state so
+        // the user can immediately start a fresh password sign-in without refresh.
+        setMfaChallenge(null);
+        setMfaCode("");
+        setError(result === "expired_challenge" ? t("authMfaExpired") : t("authMfaRestartRequired"));
+        setMessage(null);
         return;
       }
       setError(null);

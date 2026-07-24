@@ -33,6 +33,13 @@ This repository now includes deterministic end-to-end simulations for two docume
    - The Slovak vehicle-authorization direct-reply path handles the exact request before local model fallback so the assistant reply cannot be empty when the user already supplied the drafting facts.
    - Fails when the assistant conversation is unprofessional, repeats the same question, or exported PDFs contain assistant/system commentary instead of only legal-document content.
 
+6. `api/aijuristiction-api/e2e-playwright/tests/frontend-admin-local-model-selection.spec.ts`
+   - Seeds browser sessions for both admin and regular users.
+   - Verifies that admins see the assistant model selector with `Local Ollama - qwen3:1.7b` and `Local Ollama - qwen3:4b`.
+   - Selects `Local Ollama - qwen3:4b` in the assistant workspace and sends a document-drafting prompt.
+   - Verifies that regular users stay on the default `Local Ollama - qwen3:1.7b` route without a selector.
+   - Fails if the frontend does not forward `model_profile_id=local_ollama_qwen4b` together with the signed-in `user_id` and `user_email` to the chat session and stream requests.
+
 ## Files
 
 - Root mirror test: `root_contract_end_to_end_test.py`
@@ -58,6 +65,13 @@ Run the live free-plan Ollama document/PDF simulation:
 ```bash
 cd api/aijuristiction-api/e2e-playwright
 npm run test:free-plan-document
+```
+
+Run the frontend admin-selected local model scenario:
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+npm run test:frontend-admin-local-model
 ```
 
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.

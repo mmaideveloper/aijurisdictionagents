@@ -512,7 +512,7 @@ def test_local_auth_accepts_any_sign_in_code_when_enabled(monkeypatch, tmp_path:
 
 def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) -> None:
     _configure_db_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "24")
+    monkeypatch.setenv("MFA_REUSE_WINDOW_HOURS", "12")
 
     sign_up_response = client.post(
         "/v1/users/sign-up",
@@ -553,6 +553,7 @@ def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) ->
     first_challenge = first_login.json()
     assert first_challenge["mfa_required"] is True
     assert first_challenge["methods"] == ["email", "totp"]
+    assert first_challenge["reuse_window_hours"] == 12
 
     verify_response = client.post(
         "/v1/users/sign-in/mfa/verify",

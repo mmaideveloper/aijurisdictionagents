@@ -4,7 +4,9 @@ import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft, BsChevronDown, BsChevronRight } from "react-icons/bs";
+import { FaDownload } from "react-icons/fa";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
+import { fetchCaseExportBlob } from "../api/caseClient";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
 
@@ -18,6 +20,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [isSelectedCaseExpanded, setIsSelectedCaseExpanded] = React.useState(false);
+  const [exportingCaseId, setExportingCaseId] = React.useState<string | null>(null);
+  const [caseExportError, setCaseExportError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setIsSelectedCaseExpanded(false);
@@ -38,14 +42,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
+  const exportActiveCase = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!activeCase || !user?.userId) {
+      return;
+    }
+
+    setExportingCaseId(activeCase.id);
+    setCaseExportError(null);
+    try {
+      const exported = await fetchCaseExportBlob({
+        userId: user.userId,
+        caseId: activeCase.id
+      });
+      const objectUrl = URL.createObjectURL(exported.blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = exported.filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setCaseExportError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
+    } finally {
+      setExportingCaseId(null);
+    }
+  };
+
   return (
     <aside className="workspace-panel workspace-panel--left">
       <div className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-brand">
-            <div className="brand-mark" aria-hidden="true">
-              AJ
-            </div>
+            <img className="brand-mark" src="/login-shield.png" alt="" aria-hidden="true" />
             <div>
               <strong>{t("appName")}</strong>
               <span>{t("tagline")}</span>
@@ -84,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 {cases.map((caseItem) => {
                   const isActive = caseItem.id === activeCase?.id;
                   return (
-                    <li key={caseItem.id}>
+                    <li key={caseItem.id} className="case-item-container">
                       <button
                         type="button"
                         className={`case-item${isActive ? " active" : ""}`}
@@ -102,10 +133,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                         </div>
                         <span className="case-status-label">{t(caseStatusTranslationKeys[caseItem.status])}</span>
                       </button>
+                      {isActive ? (
+                        <button
+                          type="button"
+                          className="button ghost icon-button profile-case-export-button case-export-button"
+                          onClick={(event) => void exportActiveCase(event)}
+                          disabled={exportingCaseId === caseItem.id}
+                          aria-busy={exportingCaseId === caseItem.id}
+                          aria-label={t("profileCaseExport")}
+                          title={t("profileCaseExport")}
+                        >
+                          <FaDownload aria-hidden="true" />
+                        </button>
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
+              {caseExportError ? <p className="form-error" role="alert">{caseExportError}</p> : null}
             </div>
           </div>
 

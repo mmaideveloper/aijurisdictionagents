@@ -80,6 +80,7 @@ Required setup for chat model routing:
 - A paid subscription is considered active for routing only while `starts_at` has begun and `ends_at` is empty or in the future. Expired paid rows fall back to the Free/local Ollama route.
 - Subscription checkout creates a `pending` subscription only. The subscription becomes active only after `/v1/users/subscriptions/{subscription_id}/confirm-payment` confirms payment, which queues a payment-confirmed email with a generated invoice attached as both PDF and UBL XML.
 - The assistant UI should read `/v1/model-routing/effective` for the signed-in user before displaying model disclosure text. This endpoint returns only privacy-minimized route metadata, so Free users see the same local Ollama model that the backend will actually use.
+- Admin-selected chat or document-drafting requests may send `model_profile_id` together with the current `user_id` and, when needed for allowlist-based admin access on older sessions, `user_email`. Minimal request example: `POST /v1/chat/sessions/{session_id}/stream` with `{"instruction":"Priprav navrh dokumentu.","user_simulation_mode":"ReadUser","user_id":"<signed-in-user-id>","user_email":"admin@example.com","model_profile_id":"local_ollama_default"}`.
 - Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
 - Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
 - Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.
@@ -934,6 +935,7 @@ Current E2E specs:
 - `tests/chat-simulator.spec.ts`
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - `tests/payment-process.spec.ts` (simulates synthetic user checkout, sandbox payment confirmation, and payment guard rails)
+- `tests/frontend-admin-local-model-selection.spec.ts` (browser suite: admin selects `Local Ollama - qwen3:4b`, regular users stay on the default local route without a selector, and the assistant workspace sends the selected model profile with signed-in user context)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Scheduled E2E status:

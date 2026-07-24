@@ -1,5 +1,14 @@
 [
   {
+    "id": "golden-case-model-validation-offline",
+    "file": "../../../examples/model_validation_runner_demo.py",
+    "title": "scenario 01 golden case fixture loads and passes deterministic comparison",
+    "name": "Golden-case model validation offline smoke",
+    "description": "Loads the synthetic private-loan confirmation seed and validates normalized text assertions without model calls.",
+    "area": "Model validation",
+    "scheduled": false
+  },
+  {
     "id": "api-health",
     "file": "tests/health.spec.ts",
     "title": "health endpoint is healthy",
@@ -116,6 +125,16 @@
     "name": "Frontend registration to generated PDF preview",
     "description": "Exercises the browser flow for registration, login, case creation, assistant document generation, reopening the case, and previewing a generated potvrdenie PDF.",
     "area": "Frontend case workspace",
+    "scheduled": false,
+    "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
+  },
+  {
+    "id": "frontend-admin-local-model-selection",
+    "file": "tests/frontend-admin-local-model-selection.spec.ts",
+    "title": "admin can select Local Ollama qwen3:4b for assistant document drafting",
+    "name": "Frontend admin local-model selection",
+    "description": "Covers browser-side model usage and selection: admin can choose Local Ollama qwen3:4b for drafting, regular users stay on the default local route without a selector, and the admin selector exposes the expected local model options before sending a prompt.",
+    "area": "Frontend model selection",
     "scheduled": false,
     "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."
   },

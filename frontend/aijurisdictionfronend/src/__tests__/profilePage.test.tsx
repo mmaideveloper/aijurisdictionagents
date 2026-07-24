@@ -36,7 +36,9 @@ const authMocks = vi.hoisted(() => ({
 }));
 
 const caseMocks = vi.hoisted(() => ({
-  selectCase: vi.fn()
+  selectCase: vi.fn(),
+  longCaseTitle: "1. Confirmation of receipt and payment for a private personal loan",
+  longDocumentName: "confirmation_of_private_loan_payment_20260717.pdf"
 }));
 
 vi.mock("../auth/webAuth", () => ({
@@ -54,7 +56,7 @@ vi.mock("../state/CaseProvider", () => ({
     cases: [
       {
         id: "case-1",
-        title: "Keystone Holdings Intake",
+        title: caseMocks.longCaseTitle,
         status: "In progress"
       }
     ],
@@ -63,8 +65,8 @@ vi.mock("../state/CaseProvider", () => ({
         id: "doc-1",
         caseId: "case-1",
         kind: "generated_document",
-        originalFilename: "keystone-timeline.pdf",
-        caseTitle: "Keystone Holdings Intake",
+        originalFilename: caseMocks.longDocumentName,
+        caseTitle: caseMocks.longCaseTitle,
         sizeLabel: "178 KB"
       }
     ],
@@ -104,6 +106,8 @@ const labels: Record<string, string> = {
   profileOpenedCasesEmpty: "No opened cases yet.",
   profileCaseExport: "Export case",
   profileCaseExportFailed: "Could not export case.",
+  profileTextExpand: "Show full text",
+  profileTextCollapse: "Collapse text",
   profileDocumentsTitle: "My Documents",
   profileDocumentsSubtitle: "Uploaded documents from your case intake flow.",
   profileDocumentsEmpty: "No uploaded documents yet.",
@@ -216,11 +220,36 @@ describe("Profile page", () => {
     expect(screen.queryByRole("button", { name: "Monthly" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Yearly" })).toBeNull();
     expect(screen.getByText("Opened cases")).toBeDefined();
-    expect(screen.getByText("Keystone Holdings Intake")).toBeDefined();
+    expect(screen.getByText(caseMocks.longCaseTitle)).toBeDefined();
     expect(screen.getByText("My Documents")).toBeDefined();
-    expect(screen.getByText("keystone-timeline.pdf")).toBeDefined();
-    expect(screen.getByText("keystone-timeline.pdf").getAttribute("title")).toBe("keystone-timeline.pdf");
-    expect(screen.getByText("Case: Keystone Holdings Intake")).toBeDefined();
+    expect(screen.getByText(caseMocks.longDocumentName)).toBeDefined();
+    expect(screen.getByText(caseMocks.longDocumentName).getAttribute("title")).toBe(
+      caseMocks.longDocumentName
+    );
+    expect(screen.getByText(`Case: ${caseMocks.longCaseTitle}`)).toBeDefined();
+  });
+
+  it("expands and collapses long case and document text without triggering their actions", () => {
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    const expandButtons = screen.getAllByRole("button", { name: "Show full text" });
+    expect(expandButtons).toHaveLength(2);
+
+    fireEvent.click(expandButtons[0]!);
+    expect(screen.getByRole("button", { name: "Collapse text" }).getAttribute("aria-expanded")).toBe(
+      "true"
+    );
+    expect(caseMocks.selectCase).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse text" }));
+    expect(
+      screen.getAllByRole("button", { name: "Show full text" })[0]!.getAttribute("aria-expanded")
+    ).toBe("false");
+    expect(caseMocks.selectCase).not.toHaveBeenCalled();
   });
 
   it("opens a profile document from the document list", () => {
@@ -230,7 +259,9 @@ describe("Profile page", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /keystone-timeline\.pdf/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: new RegExp(caseMocks.longDocumentName, "i") })
+    );
 
     expect(caseMocks.selectCase).toHaveBeenCalledWith("case-1");
   });

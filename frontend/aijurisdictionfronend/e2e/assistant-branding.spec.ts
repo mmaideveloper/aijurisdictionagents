@@ -1,10 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 const productNames = {
-  sk: "Jurisdigta AI právnik",
-  en: "Jurisdigta AI lawyer",
-  de: "Jurisdigta AI Anwalt"
+  sk: "JurisDigta AI právnik",
+  en: "JurisDigta AI lawyer",
+  de: "JurisDigta AI Anwalt"
 } as const;
+
+test.use({ viewport: { width: 1440, height: 900 } });
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/v1/model-routing/effective?**", async (route) => {
@@ -32,9 +34,9 @@ test.beforeEach(async ({ page }) => {
     window.sessionStorage.setItem(
       "jurisdigta.web.auth.user.v1",
       JSON.stringify({
-        userId: "issue-530-e2e-user",
-        email: "issue-530@example.test",
-        name: "Issue 530 Reviewer"
+        userId: "issue-574-e2e-user",
+        email: "issue-574@example.test",
+        name: "Issue 574 Reviewer"
       })
     );
   });
@@ -49,9 +51,10 @@ for (const [language, productName] of Object.entries(productNames)) {
     await page.goto("/app/assistant", { waitUntil: "domcontentloaded" });
 
     await expect(page).toHaveTitle(productName);
+    await expect(page.locator(".nav-brand strong")).toHaveText(productName);
     await expect(page.locator(".sidebar-brand strong")).toHaveText(productName);
     await page.screenshot({
-      path: `../../runs/e2e/issue-530-assistant-branding-${language}.png`,
+      path: `../../runs/e2e/issue-574-assistant-branding-${language}.png`,
       animations: "disabled"
     });
   });
@@ -66,6 +69,7 @@ test("updates the assistant brand when language changes and after navigation", a
   for (const [language, productName] of Object.entries(productNames)) {
     await page.getByRole("button", { name: language.toUpperCase(), exact: true }).click();
     await expect(page).toHaveTitle(productName);
+    await expect(page.locator(".nav-brand strong")).toHaveText(productName);
     await expect(page.locator(".sidebar-brand strong")).toHaveText(productName);
   }
 
@@ -78,9 +82,10 @@ test("updates the assistant brand when language changes and after navigation", a
 
   await expect(page).toHaveURL(/\/app\/assistant$/);
   await expect(page).toHaveTitle(productNames.de);
+  await expect(page.locator(".nav-brand strong")).toHaveText(productNames.de);
   await expect(page.locator(".sidebar-brand strong")).toHaveText(productNames.de);
   await page.screenshot({
-    path: "../../runs/e2e/issue-530-assistant-branding.png",
+    path: "../../runs/e2e/issue-574-assistant-branding.png",
     fullPage: true
   });
 });

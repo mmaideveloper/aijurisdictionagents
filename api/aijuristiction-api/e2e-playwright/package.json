@@ -4,10 +4,12 @@
   "version": "0.1.1",
   "scripts": {
     "test": "playwright test",
+    "test:frontend-admin-local-model": "playwright test tests/frontend-admin-local-model-selection.spec.ts",
     "test:free-plan-api": "playwright test tests/free-plan-api-connectivity.spec.ts",
     "test:free-plan-document": "playwright test tests/free-plan-ollama-document-pdf.spec.ts",
     "test:outdated-rental": "playwright test tests/outdated-rental-agreement.spec.ts",
-    "test:payment": "playwright test tests/payment-process.spec.ts"
+    "test:payment": "playwright test tests/payment-process.spec.ts",
+    "test:model-validation:offline": "python ../../../examples/model_validation_runner_demo.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"

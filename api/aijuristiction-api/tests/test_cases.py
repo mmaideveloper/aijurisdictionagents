@@ -685,6 +685,15 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
         assert manifest["message_count"] == 2
         assert manifest["document_count"] == 2
         assert manifest["ai_model_audit_count"] == 1
+        assert manifest["models_used"] == [
+            {
+                "provider": "azurefoundry",
+                "model": "gpt-4.1",
+                "route_type": "external",
+                "status": "ok",
+                "usage_count": 1,
+            }
+        ]
         audit = json.loads(archive.read("ai-model-audit.json"))
         assert audit["entries"][0]["usage_id"] == usage_id
         assert audit["entries"][0]["provider"] == "azurefoundry"

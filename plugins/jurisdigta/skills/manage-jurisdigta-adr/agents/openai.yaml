@@ -1,0 +1,12 @@
+interface:
+  display_name: "Manage Jurisdigta ADR"
+  short_description: "Create and review architecture decisions"
+  default_prompt: "Use $manage-jurisdigta-adr to prepare a source-backed architecture decision."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "github"
+      description: "Read repository context and create confirmed architecture tasks."
+      transport: "streamable_http"
+      url: "https://api.githubcopilot.com/mcp/"

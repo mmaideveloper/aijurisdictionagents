@@ -44,9 +44,7 @@ class SelectableModelProfilesResponse(BaseModel):
 
 
 def get_store() -> ApiDatabaseStore:
-    store = ApiDatabaseStore.from_env()
-    store.initialize()
-    return store
+    return ApiDatabaseStore.from_env()
 
 
 @router.get("/effective", response_model=EffectiveModelRouteResponse)

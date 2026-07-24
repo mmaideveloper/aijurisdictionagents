@@ -1,0 +1,26 @@
+{
+  "name": "jurisdigta",
+  "version": "0.1.4",
+  "description": "Jurisdigta task preparation, implementation, incident reporting, and architecture decision workflows.",
+  "author": {
+    "name": "JurisDigta"
+  },
+  "homepage": "https://jurisdigta.eu",
+  "repository": "https://github.com/mmaideveloper/aijurisdictionagents",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Jurisdigta",
+    "shortDescription": "Prepare, implement, investigate, and govern work.",
+    "longDescription": "Prepare Ready tasks, implement them in isolated worktrees with test evidence, investigate incidents using privacy-minimized environment-specific logs, and manage source-backed architecture decisions with GDPR, EU AI Act, and human-oversight safeguards.",
+    "developerName": "JurisDigta",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://jurisdigta.eu",
+    "privacyPolicyURL": "https://jurisdigta.eu/privacy",
+    "defaultPrompt": [
+      "Report a Jurisdigta bug from symptoms and logs.",
+      "Review an idea and create a Ready GitHub task.",
+      "Implement a ready task with tests and evidence."
+    ]
+  }
+}

@@ -60,9 +60,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
       <nav className="nav">
         {showBrand ? (
           <Link className="brand nav-brand" to="/">
-            <div className="brand-mark" aria-hidden="true">
-              AJ
-            </div>
+            <img className="brand-mark" src="/login-shield.png" alt="" aria-hidden="true" />
             <div className="brand-copy">
               <strong>{t("appName")}</strong>
               <span>{t("tagline")}</span>
