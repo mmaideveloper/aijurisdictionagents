@@ -1887,6 +1887,115 @@ def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_
     assert "secret" not in audit_response.text.lower()
 
 
+def test_stream_selected_model_accepts_allowlisted_email_without_session_user_id(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+
+    class _FakeLocalLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "Admin selected local model answer from test."
+
+    class _NoopDocumentProcessor:
+        def __init__(self, store):
+            self.store = store
+
+        def process_documents(self, documents):
+            return None
+
+    observed: dict[str, str] = {}
+
+    def _routed_selected_client(
+        *,
+        store,
+        user_id,
+        user_email="",
+        task_type="default",
+        external_acknowledged=False,
+        selected_model_profile_id=None,
+    ):
+        observed["user_id"] = user_id
+        observed["user_email"] = user_email
+        observed["task_type"] = task_type
+        observed["selected_model_profile_id"] = selected_model_profile_id or ""
+        plan = (
+            store.get_effective_subscription_plan(user_id=user_id)
+            if user_id
+            else store.get_subscription_plan(plan_code="free")
+        )
+        route = store.resolve_selected_ai_model_route(
+            user_id=user_id,
+            user_email=user_email,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            model_profile_id=selected_model_profile_id or "",
+        )
+        return RoutedLLMClient(
+            client=_FakeLocalLLM(),
+            route=route,
+            plan=plan,
+            subscription=None,
+            provider=route.provider.provider_code if route.provider is not None else "local_ollama",
+            model=(
+                route.model_profile.deployment_name or route.model_profile.model_code
+                if route.model_profile is not None
+                else "local_ollama_default"
+            ),
+            route_type=route.route_type,
+            fallback_reason=route.reason,
+        )
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "admin-selected@example.com")
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "get_routed_llm_client", _routed_selected_client)
+    monkeypatch.setattr(chat_api, "DocumentProcessor", _NoopDocumentProcessor)
+
+    store = chat_api._get_store()
+    store.create_user(email="admin-selected@example.com", password="secret", full_name="Selector Email")
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        headers=AUTH_HEADERS,
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+        },
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Priprav navrh splnomocnenia.",
+            "user_simulation_mode": "ReadUser",
+            "user_email": "admin-selected@example.com",
+            "model_profile_id": "local_ollama_default",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "Admin selected local model answer from test." in events
+    assert observed == {
+        "user_id": "",
+        "user_email": "admin-selected@example.com",
+        "task_type": "chat_reply",
+        "selected_model_profile_id": "local_ollama_default",
+    }
+
+
 def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 

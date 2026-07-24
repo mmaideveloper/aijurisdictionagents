@@ -340,6 +340,8 @@ describe("AssistantWorkspace", () => {
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: "Pouzi vybrany model",
+      userId: "user-1",
+      userEmail: "admin@example.com",
       modelProfileId: "azure_foundry_gpt_4o_mini",
       signal: expect.any(AbortSignal)
     });
@@ -542,6 +544,8 @@ describe("AssistantWorkspace", () => {
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: prompt,
+      userId: "user-1",
+      userEmail: "admin@example.com",
       modelProfileId: undefined,
       signal: expect.any(AbortSignal)
     });

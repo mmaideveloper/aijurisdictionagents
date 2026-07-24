@@ -61,6 +61,7 @@ def get_routed_llm_client(
     *,
     store: ApiDatabaseStore,
     user_id: str,
+    user_email: str = "",
     task_type: str = "default",
     external_acknowledged: bool = False,
     selected_model_profile_id: str | None = None,
@@ -95,6 +96,7 @@ def get_routed_llm_client(
     if normalized_selected_profile_id:
         route = store.resolve_selected_ai_model_route(
             user_id=user_id,
+            user_email=user_email,
             plan_code=plan.plan_code,
             task_type=task_type,
             model_profile_id=normalized_selected_profile_id,

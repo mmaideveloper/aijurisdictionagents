@@ -161,6 +161,8 @@ class CreateMessageRequest(BaseModel):
 
 class ReplyRequest(BaseModel):
     content: str
+    user_id: UUID | None = None
+    user_email: str | None = None
     model_profile_id: str | None = None
 
 
@@ -306,15 +308,20 @@ def _resolve_session_llm_route(
     *,
     session: Session,
     task_type: str,
+    request_user_id: str | None = None,
+    request_user_email: str | None = None,
     selected_model_profile_id: str | None = None,
 ) -> RoutedLLMClient:
     store = _get_store()
-    user_id = str(session.user_id) if session.user_id else ""
+    user_id = (request_user_id or "").strip()
+    if not user_id:
+        user_id = str(session.user_id) if session.user_id else ""
     if not user_id and session.case_id:
         try:
             user_id = store.get_case(case_id=session.case_id).user_id
         except KeyError:
             user_id = ""
+    user_email = (request_user_email or "").strip().lower()
     try:
         normalized_selected_profile_id = (
             selected_model_profile_id or session.selected_model_profile_id or ""
@@ -323,6 +330,7 @@ def _resolve_session_llm_route(
             return get_routed_llm_client(
                 store=store,
                 user_id=user_id,
+                user_email=user_email,
                 task_type=task_type,
                 selected_model_profile_id=normalized_selected_profile_id,
             )
@@ -1410,6 +1418,8 @@ def _run_direct_lawyer_turn(
     session_id: UUID,
     session: Session,
     content: str,
+    request_user_id: str | None = None,
+    request_user_email: str | None = None,
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
@@ -1517,7 +1527,12 @@ def _run_direct_lawyer_turn(
 
     from aijurisdictionagents.agents import create_lawyer_agent
 
-    routed_llm = _resolve_session_llm_route(session=session, task_type="chat_reply")
+    routed_llm = _resolve_session_llm_route(
+        session=session,
+        task_type="chat_reply",
+        request_user_id=request_user_id,
+        request_user_email=request_user_email,
+    )
     lawyer = create_lawyer_agent(routed_llm.client, session.country)
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
@@ -1819,6 +1834,8 @@ class StartSessionStreamRequest(BaseModel):
     communication_minutes: float | None = None
     user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
     user_replies: List[str] = Field(default_factory=list)
+    user_id: UUID | None = None
+    user_email: str | None = None
     model_profile_id: str | None = None
 
 
@@ -1852,6 +1869,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    if session.user_id is None and payload.user_id is not None:
+        session.user_id = payload.user_id
     _ensure_case_write_access_for_session(session)
 
     content = payload.content.strip()
@@ -1865,6 +1884,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             session_id=session_id,
             session=session,
             content=content,
+            request_user_id=str(payload.user_id) if payload.user_id else None,
+            request_user_email=payload.user_email,
         )
     )
     _persist_session_history_document_if_needed(session=session, session_id=session_id)
@@ -1901,6 +1922,8 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    if session.user_id is None and payload.user_id is not None:
+        session.user_id = payload.user_id
     if payload.model_profile_id is not None:
         session.selected_model_profile_id = payload.model_profile_id.strip() or None
     _ensure_case_write_access_for_session(session)
@@ -2290,6 +2313,8 @@ def _stream_read_user_session(
                     session_id=session_id,
                     session=session,
                     content=payload.instruction,
+                    request_user_id=str(payload.user_id) if payload.user_id else None,
+                    request_user_email=payload.user_email,
                     supplemental_documents=inline_documents,
                     processing_event_callback=processing_event_callback,
                     user_message_callback=user_message_callback,
