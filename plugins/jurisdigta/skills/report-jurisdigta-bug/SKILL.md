@@ -1,6 +1,6 @@
 ---
 name: report-jurisdigta-bug
-description: Investigate a reported Jurisdigta defect using user-provided symptoms, optional screenshots, environment-routed local or jurisdigta-server logs, and the aijurisdictionagents repository, then ask focused follow-up questions and create a structured GitHub issue only after human confirmation. Use when a user says Jurisdigta is broken, reports unexpected behavior or an incident, asks to inspect local or server logs for a defect, or wants a bug filed in mmaideveloper/aijurisdictionagents.
+description: Investigate a reported Jurisdigta defect using user-provided symptoms, optional screenshots, environment-routed local or jurisdigta-server logs, and the aijurisdictionagents repository; create a structured GitHub issue after draft approval; then offer to start implementation only after separate explicit approval. Use when a user says Jurisdigta is broken, reports unexpected behavior or an incident, asks to inspect local or server logs for a defect, wants a bug filed in mmaideveloper/aijurisdictionagents, or wants an approved bug handed off for implementation.
 ---
 
 # Report a Jurisdigta Bug
@@ -31,6 +31,13 @@ Create a reproducible, evidence-based bug report without copying secrets, person
 12. Show the complete title and body to the user. Require explicit confirmation before creating the GitHub issue or uploading sanitized images/log excerpts, unless the user has already explicitly approved that exact draft.
 13. Create the issue through the connected GitHub tool when available, with `gh` as fallback. Apply existing repository bug labels when confidently known; do not invent labels.
 14. Return the issue link and summarize what evidence was included and deliberately excluded.
+15. Ask for a second, separate explicit approval to start implementation of the created issue. Creating the issue does not imply implementation approval, and draft approval does not satisfy this gate.
+16. If the user does not approve implementation, stop after reporting the issue link. Do not create a branch, worktree, commit, pull request, or project-status change.
+17. After explicit implementation approval:
+    - hand off the created issue to `$implement-jurisdigta-task`;
+    - treat the approval as authorization to begin the implementation workflow, not as permission to bypass its preconditions;
+    - ensure the issue is in the applicable Jurisdigta GitHub project with status `Ready` before implementation, performing normal issue/project setup covered by the approval when needed;
+    - follow the implementation skill's separate branch/worktree, `In progress`, compliance, tests, documentation, commit, pull request, issue-comment, and `In review` requirements.
 
 ## Safety and compliance gates
 
@@ -41,6 +48,7 @@ Create a reproducible, evidence-based bug report without copying secrets, person
 - Treat screenshots as potentially sensitive. Inspect them before upload and ask for a redacted replacement when sensitive data is visible.
 - Keep legal-risk conclusions subject to human review. The issue may describe software behavior but must not make legal determinations about an affected user.
 - Record the evidence source and collection time in the issue, but include only the smallest sanitized excerpt needed for reproduction and triage.
+- Preserve human oversight with two distinct confirmations: one for the exact sanitized GitHub issue draft and one, requested only after issue creation, for implementation.
 
 ## Image handling
 
@@ -55,3 +63,5 @@ When images are attached:
 ## GitHub write boundary
 
 Reading logs, code, and issues is diagnostic work. Creating or editing a GitHub issue is an external write. Never perform the write until the user has reviewed and confirmed the final sanitized draft.
+
+Starting implementation is a separate write boundary. Never infer implementation approval from approval of the issue draft, creation of the issue, a request to report a bug, or a general request to fix bugs. Ask after the issue exists and proceed only when the user explicitly approves implementation of that issue.
