@@ -31,6 +31,10 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+Passing desktop E2E output:
+
+![JurisDigtaAgents footer E2E result](images/corporate-web-footer-jurisdigtaagents-e2e.png)
+
 ## Language
 
 - Default language: Slovak (`sk`).
