@@ -1,7 +1,7 @@
 interface:
   display_name: "Report Jurisdigta Bug"
-  short_description: "Create evidence-based, privacy-safe bug reports"
-  default_prompt: "Use $report-jurisdigta-bug to route local or server logs and draft a Jurisdigta bug report."
+  short_description: "Report bugs, then offer approved implementation"
+  default_prompt: "Use $report-jurisdigta-bug to investigate a defect, create an approved GitHub issue, and ask separately before implementation."
 
 dependencies:
   tools:
