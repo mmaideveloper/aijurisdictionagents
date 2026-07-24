@@ -1,9 +1,10 @@
 # Jurisdigta Codex Plugin
 
-The repository-local plugin under `plugins/jurisdigta/` provides three guided workflows:
+The repository-local plugin under `plugins/jurisdigta/` provides four guided workflows:
 
 - `report-jurisdigta-bug` collects a description, asks whether the error happened locally or on `jurisdigta-server`, requests optional images, routes to only the matching local or server log source, reviews related code and issues, asks focused questions, and creates a sanitized GitHub bug only after confirmation.
-- `manage-jurisdigta-adr` creates, reviews, updates, and supersedes source-backed Architecture Decision Records and can prepare a related GitHub architecture task.
+- `manage-jurisdigta-adr` creates, reviews, updates, and supersedes source-backed Architecture Decision Records, then hands architecture-derived tasks to the task-preparation skill.
+- `prepare-jurisdigta-task` reviews a request and repository context, recommends improvements, asks questions until no blockers remain, creates the confirmed GitHub issue, sets it to Ready, and comments `Reviewed by Codex`.
 - `implement-jurisdigta-task` fetches the latest `origin/main`, creates an isolated task branch/worktree, implements one Ready task, requires unit tests, adds applicable Playwright E2E coverage and sanitized screenshots, then commits, opens a PR, updates the task, and moves it to In review.
 
 ## Privacy and human oversight
@@ -32,8 +33,14 @@ Invoke the implementation workflow:
 Use $implement-jurisdigta-task to implement issue 123 from the latest main branch with unit tests, applicable Playwright E2E coverage, and sanitized screenshot evidence in the task and PR.
 ```
 
+Invoke the task-preparation workflow:
+
+```text
+Use $prepare-jurisdigta-task to review this request, recommend improvements, ask questions until it is implementation-ready, then create it in GitHub with Ready status.
+```
+
 These examples are runnable as prompts after installing the repository-local plugin. The bug and architecture workflows stop before external writes until the user confirms the final issue or decision. The implementation workflow performs the task-authorized branch, test, PR, and task-status writes while preserving privacy review for screenshots.
 
 ## Validation
 
-Validate the plugin manifest and both skills with the Codex plugin and skill validators before publishing or installing the plugin.
+Validate the plugin manifest and all skills with the Codex plugin and skill validators before publishing or installing the plugin.

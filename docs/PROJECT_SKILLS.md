@@ -14,10 +14,11 @@ This repository vendors the Codex skills needed for local development so they ar
 
 ## Repository plugin
 
-`plugins/jurisdigta/` packages three Jurisdigta workflows:
+`plugins/jurisdigta/` packages four Jurisdigta workflows:
 
 - `report-jurisdigta-bug`: guided, privacy-safe incident investigation and confirmed GitHub bug creation
 - `manage-jurisdigta-adr`: source-backed Architecture Decision Record and architecture-task management
+- `prepare-jurisdigta-task`: requirements review, improvement recommendations, readiness interview, confirmed GitHub creation, Ready project status, and `Reviewed by Codex` comment
 - `implement-jurisdigta-task`: latest-main task implementation in an isolated worktree with unit tests, applicable Playwright E2E coverage, screenshots, PR creation, and task status updates
 
 See `docs/JURISDIGTA_PLUGIN.md` for usage, safeguards, and minimal prompt examples.
