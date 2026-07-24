@@ -40,6 +40,13 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Verifies that regular users stay on the default `Local Ollama - qwen3:1.7b` route without a selector.
    - Fails if the frontend does not forward `model_profile_id=local_ollama_qwen4b` together with the signed-in `user_id` and `user_email` to the chat session and stream requests.
 
+7. `frontend/aijurisdictionfronend/e2e/guest-document-share.spec.ts`
+   - Opens a generated-document viewer as a synthetic authenticated sender and requests a share for exactly one PDF.
+   - Captures the generated `/shared-documents/{opaque_token}` URL and opens it in a fresh browser context with no registered-user session.
+   - Requests and submits a synthetic six-digit email verification code, then verifies that the frontend loads the PDF with the short-lived bearer session.
+   - Confirms that the guest remains outside `/auth`, receives no case access, and still sees the qualified-human-review warning.
+   - Uses synthetic identities, tokens, and PDF bytes only; the test does not log real recipients, OTPs, legal content, or share secrets.
+
 ## Files
 
 - Root mirror test: `root_contract_end_to_end_test.py`
@@ -72,6 +79,13 @@ Run the frontend admin-selected local model scenario:
 ```bash
 cd api/aijuristiction-api/e2e-playwright
 npm run test:frontend-admin-local-model
+```
+
+Run the unregistered guest document-share frontend scenario:
+
+```bash
+cd frontend/aijurisdictionfronend
+npm run test:e2e:guest-document-share
 ```
 
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.
