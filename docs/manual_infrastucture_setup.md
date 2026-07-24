@@ -646,6 +646,16 @@ The self-managed production deployment script performs the Ollama install, priva
 - Remove Docker/GitHub CLI/nginx packages only if the server is being decommissioned.
 - Remove the deploy-only public key from `/home/jurisdigta-admin/.ssh/authorized_keys` and delete/rotate `JURISDIGTA_SSH_PRIVATE_KEY` if GitHub deployment access must be revoked.
 
+### Production Docker Image Retention
+
+- Required owner: the `jurisdigta-admin` deployment operator with Docker access.
+- Every successful `Deployment/server/deploy_jurisdigta_prod.sh` run keeps `:local` plus one `:previous` tag for API, web, document processor, document engine, and laws collector images.
+- Retention is finalized only after health validation. Older dangling images and unused build cache are then removed; Docker volumes and `/srv/jurisdigta/runs` are never cleanup targets.
+- Validate with `docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(aijuristiction-api|jurisdigta-(web|document-processor|document-engine|laws-collector)):(local|previous)$'` and `docker system df`.
+- Roll back by tagging the affected `:previous` image as `:local`, recreating that service with its normal production arguments, and validating its local health endpoint.
+- If cleanup itself causes an operational concern, omit `finalize_image_retention` in a controlled rollback deployment; do not replace it with global volume or runtime-storage deletion.
+- Keep `/srv/jurisdigta/secrets/jurisdigta.env` owned by `root:jurisdigta-admin` at mode `0640`; validate with `stat -c '%a %U %G %n' /srv/jurisdigta/secrets/jurisdigta.env`. This is distinct from encrypted USB profile files, which remain mode `0600`.
+
 ### Privacy And Compliance Notes
 
 - Treat server environment files, PostgreSQL data, document storage, logs, and backups as sensitive operational data.
