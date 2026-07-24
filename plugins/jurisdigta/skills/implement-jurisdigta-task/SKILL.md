@@ -10,16 +10,18 @@ Implement exactly one task from a clean, current `origin/main` baseline and leav
 ## Preconditions
 
 1. Identify the GitHub issue/task and confirm it is `Ready`.
-2. Read the full issue, comments, acceptance criteria, project fields, linked work, `AGENTS.md`, and relevant repository code and documentation.
+2. Read the full issue, comments, acceptance criteria, project fields, linked work, the complete live `AGENTS.md`, and relevant repository code and documentation.
 3. Ask focused questions before implementation when behavior, acceptance criteria, data handling, or risky assumptions are unclear.
 4. Run the GDPR and EU AI Act gate. Apply data minimization, consent where required, retention/deletion controls, transparency, traceable privacy-safe logging, and human oversight for legal-risk outputs. Stop and propose a compliant alternative for unresolved conflicts.
 5. Confirm the current checkout does not contain work for another task. Never mix tasks in one branch or worktree.
+6. Read and apply [repository-implementation-contract.md](references/repository-implementation-contract.md). Treat it as a current checklist, not a replacement for live repository instructions. When it differs from `AGENTS.md`, the live `AGENTS.md` in the task worktree wins.
 
 ## Create the implementation worktree
 
-1. From an existing clean repository checkout, run `git fetch origin main`.
-2. Confirm `origin/main` resolved successfully and record its commit SHA.
-3. Create a unique `codex/<task-id>-<slug>` branch and separate worktree from that exact `origin/main` using:
+1. From an existing clean repository checkout, run `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent` before the first project command. Inspect only redacted key status.
+2. Run `git fetch origin main`.
+3. Confirm `origin/main` resolved successfully and record its commit SHA.
+4. Create a unique `codex/<task-id>-<slug>` branch and separate worktree from that exact `origin/main` using:
 
    ```powershell
    .\scripts\new_task_worktree.ps1 `
@@ -27,16 +29,17 @@ Implement exactly one task from a clean, current `origin/main` baseline and leav
      -Base "origin/main"
    ```
 
-4. Do not use raw `git worktree add` when the helper is available.
-5. Enter the new worktree and verify the branch, base SHA, and clean `git status`.
-6. Run `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent` before the first project command or edit. Inspect only redacted key status.
-7. For Python work, use the worktree's `.\conda` environment. For frontend-only work, do not run conda commands.
-8. Move the GitHub task to `In progress` before editing.
+5. Do not use raw `git worktree add` when the helper is available.
+6. Enter the new worktree and verify the branch, base SHA, and clean `git status`.
+7. Read the new worktree's complete `AGENTS.md` again because the latest `origin/main` version is authoritative.
+8. Run `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent` in the task worktree before its first project command or edit. Inspect only redacted key status.
+9. For Python work, use the worktree's `.\conda` environment. For frontend-only work, do not run conda commands.
+10. Move the GitHub task to `In progress` before editing.
 
 ## Implement
 
 1. Make the smallest coherent change that satisfies the acceptance criteria.
-2. Follow repository typing, linting, error handling, versioning, database, environment-variable, infrastructure, and health-endpoint rules.
+2. Follow every applicable item in the live `AGENTS.md` and the repository implementation contract, including typing, linting, error handling, versioning, database layout, environment variables, provider defaults, infrastructure documentation, Azure authentication, and health monitoring.
 3. Keep secrets, private keys, `.env`, runtime databases, raw logs, user content, and test artifacts with personal data out of Git.
 4. Update affected documentation and add or update the minimal runnable example, defaulting to `python examples/minimal_demo.py`.
 5. If new requirements emerge as an independent change, stop and create a separate task, branch, and worktree.

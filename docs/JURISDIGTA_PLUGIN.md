@@ -5,7 +5,7 @@ The repository-local plugin under `plugins/jurisdigta/` provides four guided wor
 - `report-jurisdigta-bug` collects a description, asks whether the error happened locally or on `jurisdigta-server`, requests optional images, routes to only the matching local or server log source, reviews related code and issues, asks focused questions, and creates a sanitized GitHub bug only after confirmation.
 - `manage-jurisdigta-adr` creates, reviews, updates, and supersedes source-backed Architecture Decision Records, then hands architecture-derived tasks to the task-preparation skill.
 - `prepare-jurisdigta-task` reviews a request and repository context, recommends improvements, asks questions until no blockers remain, creates the confirmed GitHub issue, sets it to Ready, and comments `Reviewed by Codex`.
-- `implement-jurisdigta-task` fetches the latest `origin/main`, creates an isolated task branch/worktree, implements one Ready task, requires unit tests, adds applicable Playwright E2E coverage and sanitized screenshots, then commits, opens a PR, updates the task, and moves it to In review.
+- `implement-jurisdigta-task` reads the live repository `AGENTS.md`, applies its full implementation contract, fetches the latest `origin/main`, creates an isolated task branch/worktree, implements one Ready task, requires unit tests, adds applicable Playwright E2E coverage and sanitized screenshots, then commits, opens a PR, updates the task, and moves it to In review.
 
 ## Privacy and human oversight
 
