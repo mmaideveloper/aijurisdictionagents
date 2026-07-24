@@ -23,6 +23,7 @@ build/
 .env.*
 !.env.example
 node_modules/
+corporate-web/test-results/
 src/avatar-speech-demo/node_modules/
 src/avatar-speech-demo/dist/
 frontend/**/node_modules/

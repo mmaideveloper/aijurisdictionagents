@@ -1,0 +1,13 @@
+{
+  "name": "jurisdigta-corporate-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test --project=acceptance",
+    "test:e2e:repro": "playwright test --project=reproduction"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}
