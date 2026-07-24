@@ -76,9 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       <div className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-brand">
-            <div className="brand-mark" aria-hidden="true">
-              AJ
-            </div>
+            <img className="brand-mark" src="/login-shield.png" alt="" aria-hidden="true" />
             <div>
               <strong>{t("appName")}</strong>
               <span>{t("tagline")}</span>

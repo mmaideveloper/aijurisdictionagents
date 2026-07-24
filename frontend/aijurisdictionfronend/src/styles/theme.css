@@ -1,18 +1,24 @@
 ﻿:root {
   color-scheme: light;
-  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
-  --font-display: "Fraunces", "Times New Roman", serif;
-  --bg: #f5f0ea;
-  --bg-dark: #1f1b16;
+  font-family: "Source Serif 4", Georgia, serif;
+  --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --deep: #041634;
+  --navy: #06397a;
+  --teal: #1b74c9;
+  --mint: #7fd9ff;
+  --gold: #6f7c8f;
+  --sand: #edf3fb;
+  --bg: #dbeaff;
+  --bg-dark: var(--deep);
   --surface: #ffffff;
-  --surface-muted: #f0e9e2;
-  --surface-contrast: #251c13;
-  --accent: #d0632c;
-  --accent-soft: #f5c7a6;
-  --ink: #1f1b16;
-  --ink-muted: #5f564b;
-  --border: rgba(31, 27, 22, 0.12);
-  --shadow: 0 24px 60px rgba(31, 27, 22, 0.12);
+  --surface-muted: var(--sand);
+  --surface-contrast: var(--deep);
+  --accent: var(--navy);
+  --accent-soft: var(--mint);
+  --ink: #082046;
+  --ink-muted: #405979;
+  --border: rgba(6, 57, 122, 0.15);
+  --shadow: 0 22px 50px rgba(4, 22, 52, 0.2);
   --radius: 24px;
 }
 
@@ -23,7 +29,7 @@
 }
 
 body {
-  background: radial-gradient(circle at top, #fdf7f1 0%, var(--bg) 45%, #e8dfd4 100%);
+  background: radial-gradient(circle at top, #f3f9ff 0%, var(--bg) 45%, #c6daf8 100%);
   color: var(--ink);
   min-height: 100vh;
 }
@@ -51,6 +57,7 @@ h4 {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.02em;
+  color: var(--deep);
 }
 
 p {

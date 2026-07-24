@@ -189,6 +189,33 @@ In signed-in state, the profile icon opens a click-triggered dropdown menu in th
 - Keyboard navigation is supported with `ArrowUp`, `ArrowDown`, `Home`, and `End`
 - Mobile layout keeps the dropdown anchored under the trigger with viewport-safe width
 
+## Corporate Theme Visual Regression (Issue #576)
+
+Run the focused Playwright check from `frontend/aijurisdictionfronend`:
+
+```powershell
+npx playwright test e2e/corporate-theme-visual.spec.ts
+```
+
+Minimal runnable contract verification from the repository root:
+
+```powershell
+node examples/frontend_corporate_theme_issue_576_minimal_demo.mjs
+```
+
+The test uses only the local `/auth` route, selects English through browser storage, and does
+not submit credentials or personal data. It writes the visual artifact to:
+
+```text
+output/playwright/codex-576/01-auth-corporate-theme.png
+```
+
+The regression test verifies the corporate shield logo, navy, ink, primary button, body
+typography, and heading typography so the agent frontend cannot silently return to the
+legacy orange and beige theme. The shared shield asset is served from
+`public/login-shield.png`, copied from the corporate source at
+`corporate-web/assets/login-shield.png`.
+
 ## My Profile View
 
 The `/profile` page displays structured user information from the current API-authenticated web session.
