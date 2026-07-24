@@ -1,0 +1,12 @@
+interface:
+  display_name: "Report Jurisdigta Bug"
+  short_description: "Create evidence-based, privacy-safe bug reports"
+  default_prompt: "Use $report-jurisdigta-bug to route local or server logs and draft a Jurisdigta bug report."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "github"
+      description: "Read repository context and create confirmed GitHub issues."
+      transport: "streamable_http"
+      url: "https://api.githubcopilot.com/mcp/"
