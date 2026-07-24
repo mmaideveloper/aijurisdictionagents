@@ -1,0 +1,12 @@
+interface:
+  display_name: "Implement Jurisdigta Task"
+  short_description: "Implement tasks with isolated tests and evidence"
+  default_prompt: "Use $implement-jurisdigta-task to implement a ready Jurisdigta task in an isolated worktree."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "github"
+      description: "Read tasks and update issues and pull requests."
+      transport: "streamable_http"
+      url: "https://api.githubcopilot.com/mcp/"

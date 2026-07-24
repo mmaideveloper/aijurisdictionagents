@@ -1,9 +1,10 @@
 # Jurisdigta Codex Plugin
 
-The repository-local plugin under `plugins/jurisdigta/` provides two guided workflows:
+The repository-local plugin under `plugins/jurisdigta/` provides three guided workflows:
 
 - `report-jurisdigta-bug` collects a description, asks whether the error happened locally or on `jurisdigta-server`, requests optional images, routes to only the matching local or server log source, reviews related code and issues, asks focused questions, and creates a sanitized GitHub bug only after confirmation.
 - `manage-jurisdigta-adr` creates, reviews, updates, and supersedes source-backed Architecture Decision Records and can prepare a related GitHub architecture task.
+- `implement-jurisdigta-task` fetches the latest `origin/main`, creates an isolated task branch/worktree, implements one Ready task, requires unit tests, adds applicable Playwright E2E coverage and sanitized screenshots, then commits, opens a PR, updates the task, and moves it to In review.
 
 ## Privacy and human oversight
 
@@ -25,7 +26,13 @@ Invoke the architecture workflow:
 Use $manage-jurisdigta-adr to compare Loki and Azure Log Analytics for incident investigation and draft a Proposed ADR.
 ```
 
-Both examples are runnable as prompts after installing the repository-local plugin. They intentionally stop before external writes until the user confirms the final issue or decision.
+Invoke the implementation workflow:
+
+```text
+Use $implement-jurisdigta-task to implement issue 123 from the latest main branch with unit tests, applicable Playwright E2E coverage, and sanitized screenshot evidence in the task and PR.
+```
+
+These examples are runnable as prompts after installing the repository-local plugin. The bug and architecture workflows stop before external writes until the user confirms the final issue or decision. The implementation workflow performs the task-authorized branch, test, PR, and task-status writes while preserving privacy review for screenshots.
 
 ## Validation
 

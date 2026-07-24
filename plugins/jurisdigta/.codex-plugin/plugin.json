@@ -1,6 +1,6 @@
 {
   "name": "jurisdigta",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Privacy-safe Jurisdigta incident reporting and architecture decision workflows.",
   "author": {
     "name": "JurisDigta"
@@ -19,7 +19,8 @@
     "privacyPolicyURL": "https://jurisdigta.eu/privacy",
     "defaultPrompt": [
       "Report a Jurisdigta bug from symptoms and logs.",
-      "Draft a Jurisdigta architecture decision."
+      "Draft a Jurisdigta architecture decision.",
+      "Implement a ready task with tests and evidence."
     ]
   }
 }
