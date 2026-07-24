@@ -878,10 +878,29 @@ main {
 
 .footer-lockup {
   width: min(760px, 100%);
-  height: auto;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: clamp(0.8rem, 2vw, 1.4rem);
   margin-bottom: 0.6rem;
   background: transparent;
+}
+
+.footer-lockup-shield {
+  display: block;
+  width: clamp(88px, 12vw, 142px);
+  height: auto;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 10px 18px rgba(6, 57, 122, 0.24));
+}
+
+.footer-lockup-title {
+  color: #0b3f86;
+  font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: clamp(2rem, 5.2vw, 4.25rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .footer-brand p {
@@ -978,6 +997,17 @@ main {
 
   .footer-lockup {
     width: min(620px, 100%);
+    gap: 0.65rem;
+  }
+
+  .footer-lockup-shield {
+    width: clamp(64px, 18vw, 78px);
+  }
+
+  .footer-lockup-title {
+    font-size: clamp(1.3rem, 6.5vw, 1.9rem);
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
 }
 

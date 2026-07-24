@@ -16,6 +16,25 @@ python -m http.server 8000
 
 Then open `http://localhost:8000` in a browser.
 
+## End-to-end branding check
+
+The Playwright test in `corporate-web/e2e/footer-title.spec.ts` verifies that
+the footer lockup displays and identifies the brand as `JurisDigtaAgents` in
+Slovak, German, and English, and records focused footer screenshots in
+`corporate-web/test-results/`.
+
+From `corporate-web`:
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+Passing desktop E2E output:
+
+![JurisDigtaAgents footer E2E result](images/corporate-web-footer-jurisdigtaagents-e2e.png)
+
 ## Language
 
 - Default language: Slovak (`sk`).

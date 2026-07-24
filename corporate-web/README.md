@@ -19,6 +19,21 @@ If port 8000 is busy:
 python -m http.server 8001
 ```
 
+## End-to-end tests
+
+Install the corporate-web test dependency once, then run the footer branding
+acceptance test:
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:e2e
+```
+
+The test checks the footer lockup's localized accessible title in Slovak,
+German, and English. It also writes a focused footer screenshot for each
+language under `test-results/`.
+
 ## Language switch
 
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
@@ -52,15 +67,18 @@ availability before the backend endpoint is actually shipped.
 
 ## Branding assets
 
-The site now uses `assets/branding.png` as the source sheet for:
+The site uses `assets/branding.png` as the source sheet for:
 
-- `assets/brand-lockup.png` (logo + wordmark)
 - `assets/brand-banner.png` (hero/visual banner)
 - `assets/icon-ai.png`
 - `assets/icon-scale.png`
 - `assets/icon-doc.png`
 - `assets/icon-court.png`
-- `assets/login-shield.png` (transparent login/header icon)
+- `assets/login-shield.png` (transparent header/footer icon)
+
+The footer lockup combines `assets/login-shield.png` with live
+`JurisDigtaAgents` text so the visible title remains accessible, responsive,
+and directly covered by the E2E test.
 
 ## Legal links
 
