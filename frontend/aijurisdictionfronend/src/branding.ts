@@ -1,7 +1,7 @@
 export const PRODUCT_NAMES = {
-  sk: "Jurisdigta AI právnik",
-  en: "Jurisdigta AI lawyer",
-  de: "Jurisdigta AI Anwalt"
+  sk: "JurisDigta AI právnik",
+  en: "JurisDigta AI lawyer",
+  de: "JurisDigta AI Anwalt"
 } as const;
 
 export type BrandLanguage = keyof typeof PRODUCT_NAMES;
