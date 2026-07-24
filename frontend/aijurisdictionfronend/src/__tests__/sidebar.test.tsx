@@ -24,7 +24,7 @@ vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
     t: (key: string) =>
       ({
-        appName: "Jurisdigta AI právnik",
+        appName: "JurisDigta AI právnik",
         tagline: "Legal AI",
         sidebarCasesTitle: "Cases",
         sidebarNewCase: "+ New case",
