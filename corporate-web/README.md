@@ -21,8 +21,7 @@ python -m http.server 8001
 
 ## End-to-end tests
 
-Install the corporate-web test dependency once, then run the footer branding
-acceptance test:
+Install the corporate-web test dependency once, then run the acceptance tests:
 
 ```bash
 npm install
@@ -30,9 +29,11 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The test checks the footer lockup's localized accessible title in Slovak,
-German, and English. It also writes a focused footer screenshot for each
-language under `test-results/`.
+The suite checks the footer lockup's localized accessible title and the legal
+section in Slovak, German, and English. It verifies the legal headings and card
+layout and writes focused screenshots for each language under `test-results/`.
+A representative German desktop capture is kept at
+`docs/images/corporate-web/legal-section-de-e2e.png` for pull-request review.
 
 ## Language switch
 
