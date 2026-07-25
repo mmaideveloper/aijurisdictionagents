@@ -30,24 +30,36 @@ Styled templates currently cover:
 - generated case-document package delivery
 - legacy non-OTP outbox messages normalized by the email scheduler before delivery
 
-Generated case-document package emails include a single authenticated case deep
-link built from `JURISDIGTA_AGENT_BASE_URL` and `/case/{case_id}`. The default
-base URL is `https://agent.jurisdigta.eu`; set `JURISDIGTA_AGENT_BASE_URL` in
-local, test, or production runtime configuration when the assistant frontend is
-served from another host. Opening the link must still require JurisDigta login
-and only loads the case for an authorized user.
+Generated case-document emails contain one revocable guest link scoped to one
+rendered PDF. They do not attach legal-document bytes and do not grant case,
+chat, source-text, or other-document access. The recipient does not need an
+account: opening `/shared-documents/{opaque_token}` requests a six-digit code at
+the email address selected by the sender. The code expires after 10 minutes and
+the verified document session after 30 minutes of inactivity.
 
-When the selected case document is a generated legal document, the queue stores
-the same rendered PDF bytes as the document preview endpoint, with
-`application/pdf` metadata and a user-readable filename. Uploaded/source case
-documents keep their original attachment bytes and MIME type.
+The sender's active UI language is captured when sharing and controls the
+invitation, verification email, and guest viewer (EN/SK/DE; unsupported values
+explicitly fall back to EN). `JURISDIGTA_AGENT_BASE_URL` controls the link base.
+`DOCUMENT_SHARE_LIFETIME_DAYS` defaults to 7 and is bounded to 1-30 days.
+
+Share tokens, OTPs, and document sessions are stored only as hashes. Recipient
+email is encrypted at rest with the existing application credential-protection
+key chain. Responses use no-store/no-referrer/no-index protections. Audit events
+record only the share id, action, outcome, and timestamp—never email, token,
+OTP, case title, filename, document text, or PDF bytes. A case owner can revoke
+a share through `DELETE /v1/cases/{case_id}/documents/shares/{share_id}`.
+
+Rollback: disable the frontend share action or revert to the prior API version;
+existing shares can be revoked without deleting cases/documents. Purge expired
+or revoked operational share rows according to the case retention policy after
+retaining only the minimum required audit evidence.
 
 OTP and one-time-code emails remain plain text. This avoids placing verification codes in richer HTML previews or related image payloads and keeps code messages minimal.
 
 Privacy and compliance rules for templates:
 
 - Do not include SMTP secrets, API keys, raw legal document text, or unnecessary special-category personal data in templates.
-- Keep generated legal-document emails limited to package metadata, one authenticated case link, and attachments; the footer reminds recipients that AI-assisted legal documents require review before filing, signing, or reliance.
+- Keep generated legal-document emails generic and limited to one protected share link; do not include case/document metadata or attachments.
 - The log transport records recipient, subject, body length, HTML presence, and attachment count, not full HTML or OTP body content.
 
 ## Local scheduler

@@ -1986,6 +1986,45 @@
   padding: 0.7rem 0.8rem;
 }
 
+.shared-document-page {
+  min-height: 70vh;
+}
+
+.shared-document-shell {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 2rem auto;
+  padding: 1.5rem;
+  border: 1px solid #ddd4ca;
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.shared-document-verification {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  margin: 1.5rem 0;
+}
+
+.shared-document-verification label {
+  display: grid;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.shared-document-verification input {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.8rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.2em;
+}
+
+.shared-document-warning {
+  margin-top: 1rem;
+  color: #6b5a4d;
+  font-size: 0.9rem;
+}
+
 .document-viewer-frame {
   width: 100%;
   min-height: 1000px;

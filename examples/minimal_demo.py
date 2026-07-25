@@ -165,10 +165,7 @@ print(
     "model_testing_fixtures => tests/modelsTesting/index.json registers zipped golden case exports "
     "for model answer/document comparison, including legal-document structure and human-review checks."
 )
-print(
-    "unlimited_access_emails => "
-    f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
-)
+print(f"unlimited_access_emails => {sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}")
 print(
     "case_write_window_expired_error => "
     f"API 403 responses use code {CASE_WRITE_WINDOW_EXPIRED_CODE} with plan/day params "
@@ -318,10 +315,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         f"{selected_route.provider.provider_code}/{selected_route.model_profile.model_code}"
     )
     e2e_users = provision_e2e_test_users(store=demo_store, password="demo-e2e-password")
-    print(
-        "e2e_test_users => "
-        + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users)
-    )
+    print("e2e_test_users => " + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users))
     demo_store.upsert_ai_model_profile(
         model_profile_id="local_ollama_llama32",
         provider_id="local_ollama",
@@ -401,4 +395,8 @@ print(
     "loan_confirmation_regression => Slovak first-turn private loan confirmation "
     "requests route deterministically to CASE_UPDATE_JSON case.documents content "
     "and generated PDF export instead of local-model echo text."
+)
+print(
+    "document_guest_share => sender locale creates a link-only invitation; the recipient "
+    "uses a short-lived email code to open one revocable PDF without registration or case access."
 )

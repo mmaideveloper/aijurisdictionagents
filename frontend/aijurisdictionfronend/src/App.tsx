@@ -19,6 +19,7 @@ import Profile from "./pages/Profile";
 import AIModelAdmin from "./pages/AIModelAdmin";
 import AdminProviderCredentials from "./pages/AdminProviderCredentials";
 import DocumentViewer from "./pages/DocumentViewer";
+import SharedDocumentViewer from "./pages/SharedDocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
@@ -207,6 +208,7 @@ const App: React.FC = () => {
           path="/app/documents/view"
           element={<DocumentViewer />}
         />
+        <Route path="/shared-documents/:shareToken" element={<SharedDocumentViewer />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />
         <Route path="/terms" element={<TermsOfService />} />

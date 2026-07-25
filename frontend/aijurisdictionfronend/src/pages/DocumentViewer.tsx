@@ -5,7 +5,7 @@ import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
 const DocumentViewer: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user } = useAuth();
   const [params] = useSearchParams();
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
@@ -140,7 +140,8 @@ const DocumentViewer: React.FC = () => {
         caseId,
         docIds: [docId],
         recipient: recipient.trim(),
-        caseSubject: caseTitle || filename
+        caseSubject: caseTitle || filename,
+        locale: language
       });
       setError(null);
       setMessage(t("documentViewerEmailSent", { count: result.attachment_count }));
