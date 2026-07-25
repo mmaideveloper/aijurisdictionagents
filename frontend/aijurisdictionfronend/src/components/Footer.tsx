@@ -19,7 +19,7 @@ export const Footer: React.FC = () => {
         <Link to="/terms">{links.terms}</Link>
       </nav>
       <div className="footer-meta">
-        <span>(c) 2026 AIJurisdiction</span>
+        <span>© 2026 {t("appName")}</span>
         <span>info@jurisdigta.eu</span>
       </div>
     </footer>

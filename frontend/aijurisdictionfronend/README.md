@@ -298,7 +298,35 @@ Global footer links are available in all language modes (`en`, `sk`, `de`) and a
 - `/disclaimer`
 - `/terms`
 
-The disclaimer page includes AI disclosure, no-legal-advice notice, no attorney-client relationship, limitation of liability, no warranty, jurisdiction scope, user responsibility, external resources clause, right-to-modify clause, and a `Last Updated` timestamp.
+The disclaimer page includes corrected Slovak, English, and German copy using
+the canonical localized product titles from `src/branding.ts`. It covers AI
+disclosure, no-legal-advice notice, required human review, no attorney-client
+relationship, limitation of liability, no warranty, jurisdiction scope, user
+responsibility, external resources, privacy and data minimization, changes to
+the notice, and a `Last Updated` timestamp.
+
+The disclaimer supports GDPR and EU AI Act transparency, but it is not a
+standalone compliance claim. Operational controls such as lawful-basis records,
+retention and deletion enforcement, data-subject-right workflows, processor
+governance, security safeguards, traceable logging, and human oversight remain
+necessary.
+
+Run the localized browser regression test and capture all three full-page
+variants with:
+
+```powershell
+npm run test:e2e -- e2e/disclaimer-localization.spec.ts
+```
+
+The test writes sanitized screenshots to
+`runs/e2e/issue-583-disclaimer-{sk,en,de}.png`. Reviewed copies for pull request
+#584 are stored under `docs/screenshots/issue-583/`.
+
+The repository's default minimal runnable example remains:
+
+```powershell
+python examples/minimal_demo.py
+```
 
 The terms pages use language-specific product titles—`Jurisdigta AI právnik` in Slovak, `Jurisdigta AI Lawyer` in English, and `Jurisdigta AI Anwalt` in German. Each version links to the localized privacy page, asks users to minimize submitted personal data, and warns that AI-generated legal outputs require verification and appropriate human review. These terms do not replace the complete privacy notice and do not introduce unverified controller, processor, lawful-basis, transfer, or retention claims.
 

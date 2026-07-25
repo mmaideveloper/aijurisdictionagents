@@ -698,7 +698,7 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "The page you are looking for is not part of this design set.",
     notFoundAction: "Back to home",
-    footerCopy: "Design concept for AIJurisdiction."
+    footerCopy: `Design concept for ${PRODUCT_NAMES.en}.`
   },
   sk: {
     appName: PRODUCT_NAMES.sk,
@@ -1393,7 +1393,7 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "Stránka nie je súčasťou tohto dizajnu.",
     notFoundAction: "Späť na domov",
-    footerCopy: "Dizajnový koncept pre AIJurisdiction."
+    footerCopy: `Dizajnový koncept pre ${PRODUCT_NAMES.sk}.`
   },
   de: {
     appName: PRODUCT_NAMES.de,
@@ -2088,7 +2088,7 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "Diese Seite gehört nicht zu diesem Design-Set.",
     notFoundAction: "Zurück zur Startseite",
-    footerCopy: "Designkonzept für AIJurisdiction."
+    footerCopy: `Designkonzept für ${PRODUCT_NAMES.de}.`
   }
 } as const;
 
