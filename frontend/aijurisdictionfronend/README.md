@@ -311,6 +311,17 @@ retention and deletion enforcement, data-subject-right workflows, processor
 governance, security safeguards, traceable logging, and human oversight remain
 necessary.
 
+Run the localized browser regression test and capture all three full-page
+variants with:
+
+```powershell
+npm run test:e2e -- e2e/disclaimer-localization.spec.ts
+```
+
+The test writes sanitized screenshots to
+`runs/e2e/issue-583-disclaimer-{sk,en,de}.png`. Reviewed copies for pull request
+#584 are stored under `docs/screenshots/issue-583/`.
+
 The repository's default minimal runnable example remains:
 
 ```powershell
