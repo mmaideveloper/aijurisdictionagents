@@ -1,4 +1,5 @@
 import { Language } from "../data/translations";
+import { PRODUCT_NAMES } from "../branding";
 
 type LegalSection = {
   heading: string;
@@ -106,7 +107,7 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     disclaimer: {
       title: "Disclaimer",
       summary:
-        "AIJurisdiction provides AI-generated legal information for support purposes and not as a substitute for professional legal counsel.",
+        `${PRODUCT_NAMES.en} provides AI-generated legal information for support purposes only; it is not a substitute for professional legal advice.`,
       sections: [
         {
           heading: "AI-Generated Information",
@@ -119,14 +120,19 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
             "Content is informational only and does not constitute legal advice for any specific matter."
         },
         {
+          heading: "Human Review Required",
+          body:
+            "Have a qualified legal professional verify important outputs before you make a legal decision, meet a deadline, or submit a filing."
+        },
+        {
           heading: "No Attorney-Client Relationship",
           body:
-            "Using this platform does not create an attorney-client relationship between you and AIJurisdiction or its operators."
+            `Using this platform does not create an attorney-client relationship between you and ${PRODUCT_NAMES.en} or its operators.`
         },
         {
           heading: "Limitation of Liability",
           body:
-            "To the fullest extent permitted by law, AIJurisdiction is not liable for losses or damages arising from reliance on platform outputs."
+            `To the fullest extent permitted by law, the operators of ${PRODUCT_NAMES.en} are not liable for losses or damages arising from reliance on platform outputs. This notice does not exclude or limit liability that cannot lawfully be excluded or limited.`
         },
         {
           heading: "No Warranty",
@@ -141,7 +147,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "User Responsibility",
           body:
-            "You are solely responsible for decisions, filings, and actions taken based on or influenced by platform content."
+            "You remain responsible for decisions, filings, and actions taken based on or influenced by platform content."
+        },
+        {
+          heading: "Privacy and Data Minimization",
+          body:
+            "Do not submit personal data or special-category personal data unless it is necessary for your request. The Privacy Policy explains the purposes of processing, retention, and your rights, including access, correction, deletion, and restriction."
         },
         {
           heading: "External Resources",
@@ -151,11 +162,11 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "Right to Modify",
           body:
-            "We may update this disclaimer and platform behavior at any time. Continued use indicates acceptance of updates."
+            "We may update this disclaimer and platform functionality. We will communicate material changes when required by applicable law; the current version and its date are shown on this page."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 25, 2026"
     },
     terms: {
       title: "Terms of Service",
@@ -280,56 +291,66 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     disclaimer: {
       title: "Upozornenie",
       summary:
-        "AIJurisdiction poskytuje AI generovane pravne informacie len na podporne ucely, nie ako nahradu pravneho poradenstva.",
+        `${PRODUCT_NAMES.sk} poskytuje právne informácie generované umelou inteligenciou iba na podporné účely; nenahrádzajú odborné právne poradenstvo.`,
       sections: [
         {
-          heading: "AI generovane informacie",
+          heading: "Informácie generované umelou inteligenciou",
           body:
-            "Vystupy su generovane AI modelmi a mozu obsahovat nepresnosti, vynechania alebo zastarane pravne vyklady."
+            "Výstupy vytvárajú modely umelej inteligencie a môžu obsahovať nepresnosti, chýbajúce informácie alebo zastarané právne výklady."
         },
         {
-          heading: "Nejde o pravne poradenstvo",
+          heading: "Nejde o právne poradenstvo",
           body:
-            "Obsah je iba informativny a nepredstavuje pravne poradenstvo pre konkretnu situaciu."
+            "Obsah má iba informačný charakter a nepredstavuje právne poradenstvo pre konkrétnu situáciu."
         },
         {
-          heading: "Bez vztahu klient pravnik",
+          heading: "Vyžaduje sa ľudská kontrola",
           body:
-            "Pouzivanie platformy nevytvara vztah klient-pravnik medzi vami a AIJurisdiction alebo jeho prevadzkovatelmi."
+            "Pred prijatím právneho rozhodnutia, dodržaním lehoty alebo podaním dokumentu si nechajte dôležité výstupy overiť kvalifikovaným právnikom."
+        },
+        {
+          heading: "Nevzniká vzťah medzi klientom a právnikom",
+          body:
+            `Používaním platformy nevzniká vzťah medzi klientom a právnikom, a to ani medzi vami a prevádzkovateľmi služby ${PRODUCT_NAMES.sk}.`
         },
         {
           heading: "Obmedzenie zodpovednosti",
           body:
-            "V maximalnom rozsahu povolenom zakonmi AIJurisdiction nezodpoveda za skody vzniknute spoliehanim sa na vystupy platformy."
+            `V najširšom rozsahu povolenom právnymi predpismi prevádzkovatelia služby ${PRODUCT_NAMES.sk} nezodpovedajú za škody vzniknuté v dôsledku spoliehania sa na výstupy platformy. Toto upozornenie nevylučuje ani neobmedzuje zodpovednosť, ktorú podľa zákona nemožno vylúčiť alebo obmedziť.`
         },
         {
-          heading: "Bez zaruky",
+          heading: "Bez záruky",
           body:
-            "Sluzba aj generovany obsah su poskytovane v stave \"ako su\" a \"podla dostupnosti\" bez zaruk."
+            "Služba aj generovaný obsah sa poskytujú v stave „tak, ako sú“ a „podľa dostupnosti“, bez záruk."
         },
         {
-          heading: "Jurisdikcna platnost",
+          heading: "Územná pôsobnosť práva",
           body:
-            "Pravna relevantnost sa lisi podla krajiny a regionu. Pouzivatel musi platnost overit s kvalifikovanym pravnikom."
+            "Právna relevantnosť sa líši podľa krajiny a regiónu. Používateľ si musí uplatniteľnosť informácií overiť s kvalifikovaným právnikom."
         },
         {
-          heading: "Zodpovednost pouzivatela",
+          heading: "Zodpovednosť používateľa",
           body:
-            "Za rozhodnutia, podania a kroky vykonane na zaklade obsahu platformy nesiete plnu zodpovednost vy."
+            "Naďalej zodpovedáte za rozhodnutia, podania a kroky vykonané na základe obsahu platformy alebo pod jeho vplyvom."
         },
         {
-          heading: "Externe zdroje",
+          heading: "Ochrana súkromia a minimalizácia údajov",
           body:
-            "Odkazy na externe predpisy alebo zdroje su orientacne a mozu sa menit bez predchadzajuceho upozornenia."
+            "Nevkladajte osobné údaje ani osobitné kategórie osobných údajov, ak nie sú pre vašu požiadavku nevyhnutné. Účely spracúvania, dobu uchovávania a vaše práva vrátane prístupu, opravy, vymazania a obmedzenia spracúvania vysvetľujú Zásady ochrany súkromia."
         },
         {
-          heading: "Pravo na zmenu",
+          heading: "Externé zdroje",
           body:
-            "Toto upozornenie aj funkcionalitu platformy mozeme kedykolvek upravit. Dalsie pouzivanie znamena suhlas so zmenami."
+            "Odkazy na externé právne predpisy alebo zdroje sú orientačné a môžu sa zmeniť bez predchádzajúceho upozornenia."
+        },
+        {
+          heading: "Právo na zmenu",
+          body:
+            "Toto upozornenie aj funkcie platformy môžeme upraviť. O podstatných zmenách budeme informovať, ak to vyžadujú platné právne predpisy; aktuálne znenie a dátum sú uvedené na tejto stránke."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "25. júla 2026"
     },
     terms: {
       title: "Podmienky služby",
@@ -454,12 +475,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
     disclaimer: {
       title: "Haftungsausschluss",
       summary:
-        "AIJurisdiction stellt KI-generierte Rechtsinformationen zur Verfugung, jedoch keine individuelle Rechtsberatung.",
+        `${PRODUCT_NAMES.de} stellt KI-generierte Rechtsinformationen ausschließlich zur Unterstützung bereit; sie ersetzen keine professionelle Rechtsberatung.`,
       sections: [
         {
           heading: "KI-generierte Inhalte",
           body:
-            "Ausgaben werden durch KI-Modelle erzeugt und konnen unvollstandig, ungenau oder veraltet sein."
+            "Ausgaben werden von KI-Modellen erzeugt und können unvollständig, ungenau oder veraltet sein."
         },
         {
           heading: "Keine Rechtsberatung",
@@ -467,43 +488,53 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
             "Alle Inhalte dienen nur der Information und ersetzen keine professionelle Rechtsberatung."
         },
         {
-          heading: "Kein Mandatsverhaltnis",
+          heading: "Menschliche Prüfung erforderlich",
           body:
-            "Durch die Nutzung entsteht kein Mandats- oder Anwaltsverhaltnis mit AIJurisdiction oder den Betreibern."
+            "Lassen Sie wichtige Ausgaben von einer qualifizierten juristischen Fachkraft prüfen, bevor Sie rechtliche Entscheidungen treffen, Fristen einhalten oder Dokumente einreichen."
+        },
+        {
+          heading: "Kein Mandatsverhältnis",
+          body:
+            `Durch die Nutzung entsteht kein Mandats- oder Anwaltsverhältnis mit ${PRODUCT_NAMES.de} oder dessen Betreibern.`
         },
         {
           heading: "Haftungsbegrenzung",
           body:
-            "Soweit gesetzlich zulassig, haftet AIJurisdiction nicht fur Schaden durch Vertrauen auf Plattformausgaben."
+            `Soweit gesetzlich zulässig, haften die Betreiber von ${PRODUCT_NAMES.de} nicht für Schäden, die durch das Vertrauen auf Plattformausgaben entstehen. Dieser Hinweis schließt keine Haftung aus und beschränkt sie nicht, soweit dies gesetzlich unzulässig ist.`
         },
         {
-          heading: "Keine Gewahrleistung",
+          heading: "Keine Gewährleistung",
           body:
-            "Der Dienst und alle Inhalte werden ohne Gewahr auf \"as is\"- und \"as available\"-Basis bereitgestellt."
+            "Der Dienst und alle Inhalte werden ohne Gewähr in der jeweils verfügbaren Form bereitgestellt."
         },
         {
           heading: "Jurisdiktionsbezug",
           body:
-            "Die rechtliche Anwendbarkeit variiert je nach Land und Region und muss durch qualifizierte Juristen gepruft werden."
+            "Die rechtliche Anwendbarkeit variiert je nach Land und Region und muss durch eine qualifizierte juristische Fachkraft geprüft werden."
         },
         {
-          heading: "Verantwortung der Nutzer",
+          heading: "Verantwortung der Nutzenden",
           body:
-            "Sie tragen die alleinige Verantwortung fur Entscheidungen und Handlungen auf Basis der Plattforminhalte."
+            "Sie bleiben für Entscheidungen, Einreichungen und Handlungen verantwortlich, die auf Plattforminhalten beruhen oder von ihnen beeinflusst werden."
+        },
+        {
+          heading: "Datenschutz und Datenminimierung",
+          body:
+            "Übermitteln Sie keine personenbezogenen Daten oder besonderen Kategorien personenbezogener Daten, sofern sie für Ihre Anfrage nicht erforderlich sind. Die Datenschutzerklärung erläutert Verarbeitungszwecke, Speicherdauer und Ihre Rechte, einschließlich Auskunft, Berichtigung, Löschung und Einschränkung."
         },
         {
           heading: "Externe Quellen",
           body:
-            "Verweise auf externe Gesetze oder Links dienen nur der Orientierung und konnen sich ohne Mitteilung andern."
+            "Verweise auf externe Gesetze, Links oder Quellen dienen nur der Orientierung und können sich ohne vorherige Mitteilung ändern."
         },
         {
-          heading: "Recht auf Anderung",
+          heading: "Recht auf Änderung",
           body:
-            "Wir konnen diesen Haftungsausschluss und Plattformfunktionen jederzeit andern. Weitere Nutzung gilt als Zustimmung."
+            "Wir können diesen Haftungsausschluss und die Plattformfunktionen ändern. Über wesentliche Änderungen informieren wir, soweit dies nach geltendem Recht erforderlich ist; die aktuelle Fassung und ihr Datum werden auf dieser Seite angezeigt."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "25. Juli 2026"
     },
     terms: {
       title: "Nutzungsbedingungen",
