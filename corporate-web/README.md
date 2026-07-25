@@ -32,6 +32,8 @@ npm run test:e2e
 The suite checks the footer lockup's localized accessible title and the legal
 section in Slovak, German, and English. It verifies the legal headings and card
 layout and writes focused screenshots for each language under `test-results/`.
+A representative German desktop capture is kept at
+`docs/images/corporate-web/legal-section-de-e2e.png` for pull-request review.
 
 ## Language switch
 
