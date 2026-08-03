@@ -37,7 +37,17 @@ npm ci
 npm run test:case-rule
 ```
 
-The full browser test additionally requires an approved Slovak synthetic WAV fixture or controlled Azure Speech configuration. Do not substitute another language and claim it validates Slovak STT.
+Run the full controlled browser scenario with:
+
+```powershell
+cd mobile_app/e2e-playwright
+npm ci
+npm run test:audio
+```
+
+The command generates an approved synthetic WAV locally, passes it to Chromium as the fake microphone source, controls the browser Web Speech boundary, verifies that the reviewed transcript is the exact message submitted to the system, and downloads a valid PDF. The fixture may use a non-Slovak installed synthetic voice because speech recognition is controlled in this test; the manifest must record `sttBoundary: controlled-browser-web-speech` and the result must not be reported as a live Azure STT accuracy measurement.
+
+A separate provider integration test is required to claim live Slovak Azure STT accuracy. That test must use a working Cognitive Services subscription/resource, remain opt-in, and must not replace the deterministic browser E2E gate.
 
 ## Retention
 

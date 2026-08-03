@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="sk">
+  <head>
+    <meta charset="utf-8" />
+    <title>Potvrdenie o zaplatení</title>
+    <style>
+      @page { size: A4; margin: 20mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: #10233f; font: 16px/1.55 Arial, sans-serif; }
+      .page { min-height: 250mm; padding: 8mm 6mm; border-top: 7px solid #176b87; }
+      .brand { color: #176b87; font-size: 13px; font-weight: 700; letter-spacing: .12em; }
+      h1 { margin: 20px 0 28px; color: #0a2f6b; font-size: 30px; }
+      .lead { font-size: 18px; }
+      dl { display: grid; grid-template-columns: 150px 1fr; margin: 30px 0; }
+      dt, dd { margin: 0; padding: 11px 0; border-bottom: 1px solid #d8e2ec; }
+      dt { color: #52677f; font-weight: 700; }
+      dd { font-weight: 600; }
+      .amount { color: #0a2f6b; font-size: 23px; }
+      .review { margin-top: 42px; padding: 18px; border: 2px solid #d58b16; background: #fff8e8; }
+      .review strong { display: block; margin-bottom: 6px; color: #8a5100; }
+      .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 45px; margin-top: 70px; }
+      .signature { padding-top: 10px; border-top: 1px solid #52677f; color: #52677f; }
+      footer { margin-top: 50px; color: #6f7e90; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="brand">AIJURISDIGTA · TESTOVACÍ DOKUMENT</div>
+      <h1>Potvrdenie o zaplatení</h1>
+      <p class="lead">
+        Týmto sa potvrdzuje záväzok zaplatiť nižšie uvedenú sumu príjemcovi
+        podľa údajov zadaných v syntetickom E2E scenári.
+      </p>
+      <dl>
+        <dt>Suma</dt><dd class="amount">5 000 EUR</dd>
+        <dt>Príjemca</dt><dd>Janko Hraško</dd>
+        <dt>Adresa</dt><dd>Testovo 10</dd>
+        <dt>Splatnosť</dt><dd>do konca roka</dd>
+        <dt>Účel</dt><dd>Potvrdenie platobného záväzku</dd>
+      </dl>
+      <section class="review">
+        <strong>NÁVRH – VYŽADUJE ĽUDSKÚ KONTROLU</strong>
+        Tento automaticky vytvorený dokument nie je právnym poradenstvom.
+        Pred podpisom alebo spoliehaním sa na jeho obsah musí údaje a právne
+        účinky overiť oprávnená osoba.
+      </section>
+      <div class="signatures">
+        <div class="signature">Platiteľ · dátum a podpis</div>
+        <div class="signature">Príjemca · dátum a podpis</div>
+      </div>
+      <footer>
+        Vytvorené výhradne zo syntetických testovacích údajov. Dokument ani
+        zvuková nahrávka sa nesmú použiť ako dôkaz skutočnej transakcie.
+      </footer>
+    </main>
+  </body>
+</html>

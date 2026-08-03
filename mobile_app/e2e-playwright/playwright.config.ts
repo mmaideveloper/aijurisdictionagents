@@ -1,7 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
 
 const port = process.env.MOBILE_E2E_PORT?.trim() || "7361";
 const baseURL = `http://127.0.0.1:${port}`;
+const syntheticAudio = path.resolve(
+  "fixtures",
+  "sk-SK",
+  "payment-confirmation-request.wav"
+);
 
 export default defineConfig({
   testDir: "./tests",
@@ -23,13 +29,23 @@ export default defineConfig({
     ].join(" "),
     cwd: "..",
     url: baseURL,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.MOBILE_E2E_REUSE_SERVER === "1",
     timeout: 240_000
   },
   projects: [
     {
       name: "chromium-mobile",
-      use: { ...devices["Pixel 7"] }
+      use: {
+        ...devices["Pixel 7"],
+        permissions: ["microphone"],
+        launchOptions: {
+          args: [
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream",
+            `--use-file-for-fake-audio-capture=${syntheticAudio}`
+          ]
+        }
+      }
     }
   ]
 });
