@@ -123,7 +123,7 @@
     "file": "tests/frontend-auth-case-document.spec.ts",
     "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",
     "name": "Frontend registration to generated PDF preview",
-    "description": "Exercises the browser flow for registration, login, case creation, assistant document generation, reopening the case, and previewing a generated potvrdenie PDF.",
+    "description": "Exercises registration, login, case creation, assistant document generation, follow-up questions that must not regenerate the document, screenshot evidence, case reopening, and generated PDF preview.",
     "area": "Frontend case workspace",
     "scheduled": false,
     "prerequisite": "Requires FRONTEND_BASE_URL with a running frontend."

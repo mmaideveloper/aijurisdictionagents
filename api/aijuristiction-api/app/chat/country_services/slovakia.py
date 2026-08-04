@@ -512,27 +512,31 @@ def _looks_like_payment_confirmation_final_request(
     current_content: str,
     prior_messages: list[Message],
 ) -> bool:
-    user_context = " ".join(
-        message.content for message in prior_messages if message.role == MessageRole.USER
-    )
-    normalized = _canonicalize_slovak_text(f"{user_context} {current_content}")
+    # A previous document request is context, not authorization to create another
+    # artifact. Only the current user turn may activate this direct-generation
+    # shortcut. Otherwise every later question inherits words such as "priprav",
+    # "pozicka" and "potvrdenie" and silently regenerates the old document.
+    del prior_messages
+    normalized = _canonicalize_slovak_text(current_content)
     payment_tokens = ("zaplat", "uhrad", "platb", "splatk")
     loan_tokens = ("pozic", "pozick", "pozical", "pozicala", "pozicali", "dlh", "dlzn")
     if "potvrdenie" not in normalized or not any(token in normalized for token in payment_tokens + loan_tokens):
         return False
-    final_markers = (
-        "chcem",
-        "pdf",
-        "vygeneruj",
-        "generuj",
-        "finalny",
-        "finalne",
-        "konecnu",
-        "konecna",
-        "priprav",
-        "vytvor",
+
+    # Keep the request marker close to the requested document noun. This avoids
+    # mistaking a loan-agreement clause such as "zmluva ma obsahovat potvrdenie
+    # jej prijatia" for a request to create a separate payment confirmation.
+    explicit_confirmation_request = re.search(
+        r"(?:chcem|vytvor|priprav|vygeneruj|generuj)"
+        r"(?: [a-z0-9]+){0,8} potvrdenie(?: o| na| k| za| vo|$)",
+        normalized,
     )
-    return any(marker in normalized for marker in final_markers)
+    confirmation_first_request = re.search(
+        r"potvrdenie(?: o| na| k| za| vo|$)"
+        r"(?: [a-z0-9]+){0,8} (?:pdf|vytvor|priprav|vygeneruj|generuj)",
+        normalized,
+    )
+    return explicit_confirmation_request is not None or confirmation_first_request is not None
 
 
 def _append_payment_confirmation_validation_events(

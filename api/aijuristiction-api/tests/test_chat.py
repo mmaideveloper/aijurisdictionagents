@@ -4261,6 +4261,133 @@ def test_slovak_private_loan_confirmation_first_turn_generates_document() -> Non
     assert "CASE_UPDATE_JSON" not in drafts[0].body
 
 
+def test_slovak_loan_agreement_followups_do_not_regenerate_payment_confirmation() -> None:
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    initial_content = (
+        "Priprav mi navrh Zmluvy o pozicke medzi fyzickymi osobami. "
+        "Veritel: Jan Testovaci. Dlznik: Peter Vzorovy. Vyska pozicky: 8 000 EUR. "
+        "Peniaze budu odovzdane bankovym prevodom 15. 8. 2026 a vratene 15. 8. 2027. "
+        "Zmluva ma obsahovat potvrdenie jej prijatia."
+    )
+    initial_message = Message(session_id=session.id, role=MessageRole.USER, content=initial_content)
+
+    initial_preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=[initial_message],
+        current_content=initial_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+
+    assert initial_preparation.direct_reply is None
+
+    prior_messages = [
+        initial_message,
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie. "
+                "Ktory konkretny chybajuci udaj mam potvrdit ako prvy?"
+            ),
+        ),
+    ]
+    followups = (
+        "Ake su chybajuce udaje?",
+        "daj mi zoznam chybajucich udajov?",
+        "aky je nazov modelu ktory pouzivam?",
+        "pouzivas lokalny mcp?",
+    )
+
+    for followup in followups:
+        current_message = Message(session_id=session.id, role=MessageRole.USER, content=followup)
+        preparation = prepare_slovakia_direct_reply(
+            session=session,
+            messages=[*prior_messages, current_message],
+            current_content=followup,
+            prior_messages=prior_messages,
+            normalize_document_lines=lambda text: [text],
+            extract_document_facts=lambda lines: {},
+            current_turn_confirms_document_generation=lambda content, previous_messages: False,
+            build_share_transfer_lines=lambda facts: [],
+        )
+
+        assert preparation.direct_reply is None, followup
+        assert preparation.processing_events == []
+
+
+def test_direct_assistant_persistence_requires_current_turn_document_authorization(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, Session
+
+    session = Session(country="SK", language="sk-SK", case_id="case-591")
+    persisted_documents: list[str] = []
+
+    def fake_persist_generated_document(*, session: Session, content: str) -> list[str]:
+        persisted_documents.append(content)
+        return ["document-591"]
+
+    monkeypatch.setattr(chat_api, "_persist_generated_case_document_if_needed", fake_persist_generated_document)
+    monkeypatch.setattr(chat_api, "_persist_case_message_if_needed", lambda **kwargs: None)
+    monkeypatch.setattr(chat_api._repository, "add_message", lambda message: message)
+
+    reply = "Tu je historicky CASE_UPDATE_JSON s dokumentom, ale aktualny tah je otazka."
+    persisted = chat_api._persist_direct_assistant_message(
+        session_id=session.id,
+        session=session,
+        content=reply,
+        agent_name="Assistant",
+        allow_document_generation=False,
+    )
+
+    assert isinstance(persisted, Message)
+    assert persisted_documents == []
+    assert "Generated case document:" not in persisted.content
+
+
+def test_runtime_questions_receive_direct_answers_without_model_or_document_generation(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.chat import api as chat_api
+
+    route = SimpleNamespace(model="qwen3:1.7b", provider="local_ollama")
+    assert chat_api._runtime_question_reply(
+        content="Aky je nazov modelu ktory pouzivam?",
+        route=route,
+    ) == "V tomto chate používam model qwen3:1.7b cez poskytovateľa local_ollama."
+
+    monkeypatch.delenv("INTERNAL_MCP_BASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PUBLIC_BASE_URL", raising=False)
+    assert chat_api._runtime_question_reply(
+        content="Pouzivas lokalny MCP?",
+        route=route,
+    ) == "Áno. JurisDigta MCP je v tomto nasadení volané lokálne v procese API."
+
+    prior_message = chat_api.Message(
+        session_id=chat_api.Session().id,
+        role=chat_api.MessageRole.ASSISTANT,
+        content=(
+            "Platitel: Poskytovatel pozicky bude doplneny pred podpisom. "
+            "Prijemca: Prijemca bude doplneny pred podpisom. "
+            "V [mesto], dna [datum vystavenia]"
+        ),
+    )
+    missing_reply = chat_api._runtime_question_reply(
+        content="Ake su chybajuce udaje?",
+        route=route,
+        prior_messages=[prior_message],
+    )
+    assert missing_reply is not None
+    assert "poskytovateľ/platiteľ" in missing_reply
+    assert "miesto vystavenia" in missing_reply
+
+
 def test_document_export_uses_latest_legal_document_body_without_assistant_notes() -> None:
     from app.chat import api as chat_api
     from app.chat.country_services.slovakia import (

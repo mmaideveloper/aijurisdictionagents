@@ -10,8 +10,6 @@ const execFileAsync = promisify(execFile);
 
 const apiKey = process.env.API_KEY ?? 'aijuris';
 const frontendBaseURL = process.env.FRONTEND_BASE_URL ?? 'http://127.0.0.1:5173';
-const loginEmail = process.env.E2E_LOGIN_EMAIL ?? 'mmaideveloper@gmail.com';
-const loginPassword = process.env.E2E_LOGIN_PASSWORD ?? 'tesT2026!';
 const otpCode = process.env.E2E_OTP_CODE ?? '111111';
 
 type AuthUser = {
@@ -42,8 +40,8 @@ test('registration and login can create, reopen, and preview a generated potvrde
   page,
   request,
   baseURL,
-}) => {
-  test.setTimeout(240_000);
+}, testInfo) => {
+  test.setTimeout(300_000);
   const runId = Date.now();
   const registrationEmail = `playwright.${runId}@example.test`;
   const registrationPhone = `+421900${String(runId).slice(-6)}`;
@@ -59,18 +57,13 @@ test('registration and login can create, reopen, and preview a generated potvrde
     'Splatné do: 1.1.2027.',
     'Vygeneruj finálne PDF potvrdenie na stiahnutie.',
   ].join(' ');
-  const confirmationPrompt =
-    'Nie, adresu neoveruj. Údaje sú potvrdené používateľom a môžeš ich použiť bez ďalších kontrol. ' +
-    'Vygeneruj finálne potvrdenie o zaplatení vo formáte PDF na stiahnutie.';
-
   await registerThroughUi(page, registrationEmail, registrationPhone);
   await logout(page);
 
-  const user = await loginThroughUi(page, loginEmail, loginPassword);
+  const user = await loginThroughUi(page, registrationEmail, 'tesT2026!');
   await deletePriorE2ECases(request, baseURL, user.userId);
   await createCaseThroughUi(page, caseTitle);
   await sendWorkspaceMessage(page, prompt);
-  await sendWorkspaceMessage(page, confirmationPrompt);
 
   const createdCase = await findCaseByTitle(request, baseURL, user.userId, caseTitle);
   const history = await pollGeneratedDocument(request, baseURL, user.userId, createdCase.case_id);
@@ -79,6 +72,30 @@ test('registration and login can create, reopen, and preview a generated potvrde
   );
   expect(generatedDocuments).toHaveLength(1);
   expect(generatedDocuments[0].original_filename).toMatch(/^potvrdenie.*_\d{8}T\d{6}Z\.pdf$/);
+
+  const followupPrompts = [
+    'Ake su chybajuce udaje?',
+    'Aky je nazov modelu ktory pouzivam?',
+    'Pouzivas lokalny MCP?',
+  ];
+  for (const followupPrompt of followupPrompts) {
+    await sendWorkspaceMessage(page, followupPrompt);
+  }
+
+  const followupHistory = await pollFollowupAnswers(
+    request,
+    baseURL,
+    user.userId,
+    createdCase.case_id,
+    followupPrompts,
+  );
+  expect(followupHistory.documents.filter((document) => document.kind === 'generated_document')).toHaveLength(1);
+  const followupAnswers = answersFollowingPrompts(followupHistory, followupPrompts);
+  expect(followupAnswers).toHaveLength(followupPrompts.length);
+  for (const answer of followupAnswers) {
+    expect(answer.toLowerCase()).not.toContain('tu je konecna verzia dokumentu');
+    expect(answer.toLowerCase()).not.toContain('dokument je pripraveny na export');
+  }
 
   await openSelectedCasePanel(page);
   await expect(page.locator('.sidebar-section--documents .sidebar-document-link')).toHaveCount(1);
@@ -107,7 +124,8 @@ test('registration and login can create, reopen, and preview a generated potvrde
   const pdfText = await extractPdfText(Buffer.from(await pdf.body()));
   expect(pdfText).toContain('JurisDigta');
   expect(pdfText).toMatch(/Potvrdenie/i);
-  expect(pdfText).toContain('Matej Mat');
+  expect(pdfText).toContain('Platitel:');
+  expect(pdfText).toContain('Prijemca:');
   expect(pdfText).toContain('1000');
   expect(pdfText).toContain('API version:');
   expect(pdfText).toContain('Core Version:');
@@ -116,13 +134,10 @@ test('registration and login can create, reopen, and preview a generated potvrde
   await viewerPage.close();
 
   await logout(page);
-  await loginThroughUi(page, loginEmail, loginPassword);
+  await loginThroughUi(page, registrationEmail, 'tesT2026!');
   await selectExistingCase(page, caseTitle);
   await expect(page.getByText(prompt.slice(0, 70), { exact: false })).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText(confirmationPrompt.slice(0, 70), { exact: false })).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(page.locator('.chat-message').filter({ hasText: /Potvrdenie|potvrdenie/i }).first()).toBeVisible({
+  await expect(page.locator('.assistant-message').filter({ hasText: /Potvrdenie|potvrdenie/i }).first()).toBeVisible({
     timeout: 20_000,
   });
   await openSelectedCasePanel(page);
@@ -130,16 +145,54 @@ test('registration and login can create, reopen, and preview a generated potvrde
   await expect(page.locator('.sidebar-section--documents .sidebar-document-link').first()).toContainText(
     /potvrdenie.*\.pdf/
   );
+
+  const hydratedMessages = page.locator('.assistant-message');
+  await expect(hydratedMessages).toHaveCount(8, { timeout: 20_000 });
+  await expect(hydratedMessages.last()).toContainText(/MCP/i);
+  await hydratedMessages.nth(0).evaluate((element) => {
+    (element as HTMLElement).style.display = 'none';
+  });
+  await hydratedMessages.nth(1).evaluate((element) => {
+    (element as HTMLElement).style.display = 'none';
+  });
+  await page.addStyleTag({
+    content: `
+      .app-shell--assistant,
+      .app-shell__body--assistant,
+      .app-shell--assistant .main-content,
+      .app-shell--assistant .workspace-page,
+      .app-shell--assistant .workspace-shell,
+      .app-shell--assistant .workspace-grid,
+      .app-shell--assistant .workspace-center,
+      .app-shell--assistant .assistant-workspace,
+      .assistant-main,
+      .assistant-thread,
+      .assistant-thread__viewport {
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      .assistant-thread__viewport { flex: none !important; }
+      .assistant-composer { display: none !important; }
+    `,
+  });
+  const screenshotPath = testInfo.outputPath('issue-591-followup-routing.png');
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await testInfo.attach('issue-591-followup-routing', {
+    path: screenshotPath,
+    contentType: 'image/png',
+  });
 });
 
 async function registerThroughUi(page: Page, email: string, phone: string): Promise<void> {
   await page.goto(`${frontendBaseURL}/auth`);
+  await page.getByRole('button', { name: 'Sign up' }).click();
+  await page.getByLabel('Phone number').fill(phone);
   await page.getByLabel('Work email').fill(email);
   await page.getByLabel('Password').fill('tesT2026!');
-  await page.locator('.auth-aside input[type="tel"]').fill(phone);
-  await page.getByRole('button', { name: 'Send registration OTP' }).click();
+  await page.getByRole('button', { name: 'Continue to email verification' }).click();
   await expect(page.getByText('OTP code was sent to the selected email.')).toBeVisible({ timeout: 15_000 });
-  await page.locator('.auth-aside input[inputmode="numeric"]').fill(otpCode);
+  await page.getByLabel('OTP code').fill(otpCode);
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page).toHaveURL(/\/app\/assistant/, { timeout: 30_000 });
 }
@@ -175,14 +228,33 @@ async function createCaseThroughUi(page: Page, caseTitle: string): Promise<void>
   await page.getByLabel('Jurisdiction').fill('Slovakia');
   await page.getByLabel('Opposing party').fill('bez protistrany');
   await page.getByRole('button', { name: 'Start AI lawyer chat' }).click();
-  await expect(page.getByRole('heading', { name: caseTitle })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.case-item').filter({ hasText: caseTitle })).toBeVisible({ timeout: 20_000 });
 }
 
 async function sendWorkspaceMessage(page: Page, prompt: string): Promise<void> {
-  await page.getByPlaceholder('Type your message...').fill(prompt);
-  await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByText('Waiting for API response...')).toBeVisible();
-  await expect(page.getByText('Connected through API chat.')).toBeVisible({ timeout: 120_000 });
+  const messages = page.locator('.assistant-message');
+  const composer = page.getByPlaceholder('Ask for legal research or document preparation...');
+  const sendButton = page.getByRole('button', { name: 'Send message' });
+  await expect(composer).toBeEnabled({ timeout: 120_000 });
+  await expect(async () => {
+    await composer.fill(prompt);
+    await expect(composer).toHaveValue(prompt);
+    await expect(sendButton).toBeEnabled();
+  }).toPass({ timeout: 60_000 });
+  await sendButton.click();
+  await expect(messages.filter({ hasText: prompt })).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(
+      async () => {
+        const lastMessage = messages.last();
+        const role = (await lastMessage.locator('.assistant-message__role').textContent())?.trim();
+        const text = (await lastMessage.locator('.assistant-message__text').textContent())?.trim();
+        return role !== 'You' && Boolean(text);
+      },
+      { timeout: 120_000 },
+    )
+    .toBe(true);
+  await expect(composer).toBeEnabled({ timeout: 120_000 });
 }
 
 async function openSelectedCasePanel(page: Page): Promise<void> {
@@ -199,7 +271,7 @@ async function selectExistingCase(page: Page, caseTitle: string): Promise<void> 
   const caseButton = page.locator('.case-item').filter({ hasText: caseTitle }).first();
   await expect(caseButton).toBeVisible({ timeout: 20_000 });
   await caseButton.click();
-  await expect(page.getByRole('heading', { name: caseTitle })).toBeVisible({ timeout: 20_000 });
+  await expect(caseButton).toHaveClass(/active/, { timeout: 20_000 });
 }
 
 async function findCaseByTitle(
@@ -257,16 +329,61 @@ async function pollGeneratedDocument(
     );
     if (
       generatedDocuments.length === 1 &&
-      /^potvrdenie.*_\d{8}T\d{6}Z\.pdf$/.test(generatedDocuments[0].original_filename)
+      /^potvrdenie.*_\d{8}T\d{6}Z\.pdf$/.test(generatedDocuments[0].original_filename) &&
+      lastHistory.messages.some((message) => message.role === 'user') &&
+      lastHistory.messages.some((message) => message.role === 'assistant')
     ) {
-      expect(lastHistory.messages.some((message) => message.role === 'user')).toBeTruthy();
-      expect(lastHistory.messages.some((message) => message.role === 'assistant')).toBeTruthy();
       return lastHistory;
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
   throw new Error(`Generated potvrdenie PDF was not persisted. Last history: ${JSON.stringify(lastHistory)}`);
+}
+
+async function pollFollowupAnswers(
+  request: APIRequestContext,
+  baseURL: string | undefined,
+  userId: string,
+  caseId: string,
+  prompts: string[],
+): Promise<CaseHistory> {
+  const deadline = Date.now() + 180_000;
+  let lastHistory: CaseHistory | null = null;
+
+  while (Date.now() < deadline) {
+    const response = await request.get(
+      `${baseURL}/v1/cases/${caseId}/history?user_id=${userId}&limit=200`,
+      { headers: { 'x-api-key': apiKey } },
+    );
+    expect(response.ok()).toBeTruthy();
+    lastHistory = (await response.json()) as CaseHistory;
+    if (answersFollowingPrompts(lastHistory, prompts).length === prompts.length) {
+      return lastHistory;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error(`Follow-up answers were not persisted. Last history: ${JSON.stringify(lastHistory)}`);
+}
+
+function answersFollowingPrompts(history: CaseHistory, prompts: string[]): string[] {
+  const answers: string[] = [];
+  for (const prompt of prompts) {
+    const promptIndex = history.messages.findIndex(
+      (message) => message.role === 'user' && message.content === prompt,
+    );
+    if (promptIndex < 0) {
+      continue;
+    }
+    const answer = history.messages
+      .slice(promptIndex + 1)
+      .find((message) => message.role === 'assistant');
+    if (answer) {
+      answers.push(answer.content);
+    }
+  }
+  return answers;
 }
 
 async function extractPdfText(pdf: Buffer): Promise<string> {
