@@ -24,8 +24,13 @@ profile. Optional inactive keys should be absent or commented, not active with
 `MFA_REUSE_WINDOW_HOURS=12` keeps a successful web MFA verification valid for
 12 hours. Logging out still invalidates the active authenticated session, but a
 subsequent password sign-in during that window does not require another MFA
-code. Set `MFA_REUSE_WINDOW_HOURS=0` to require MFA on every sign-in. The API
-runtime fallback remains `0` when the variable is absent or invalid.
+code on an already verified browser. If a different browser requires device
+verification and the account has TOTP enabled, the API returns an MFA challenge
+offering both authenticator TOTP and email OTP. Completing either method verifies
+that browser for `MCP_OTP_REUSE_WINDOW_HOURS` and avoids an email-only prompt.
+Accounts without TOTP continue to use the email OTP device-verification flow.
+Set `MFA_REUSE_WINDOW_HOURS=0` to require MFA on every sign-in. The API runtime
+fallback remains `0` when the variable is absent or invalid.
 
 ## Commands
 

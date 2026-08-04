@@ -547,7 +547,11 @@ def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) ->
     first_login = client.post(
         "/v1/users/sign-in",
         headers=AUTH_HEADERS,
-        json={"email": "totp-web@example.com", "password": "secret-pass"},
+        json={
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+            "device_id": "totp-device-1",
+        },
     )
     assert first_login.status_code == 200
     first_challenge = first_login.json()
@@ -562,6 +566,7 @@ def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) ->
             "mfa_token": first_challenge["mfa_token"],
             "method": "totp",
             "verification_code": current_totp_code(secret=enrollment["manual_setup_key"]),
+            "device_id": "totp-device-1",
         },
     )
     assert verify_response.status_code == 200
@@ -570,11 +575,74 @@ def test_totp_enrollment_and_web_mfa_login_reuse(monkeypatch, tmp_path: Path) ->
     reused_login = client.post(
         "/v1/users/sign-in",
         headers=AUTH_HEADERS,
-        json={"email": "totp-web@example.com", "password": "secret-pass"},
+        json={
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+            "device_id": "totp-device-1",
+        },
     )
     assert reused_login.status_code == 200
     assert reused_login.json()["user_id"] == user_id
     assert "mfa_token" not in reused_login.json()
+
+    new_device_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+            "device_id": "totp-device-2",
+        },
+    )
+    assert new_device_login.status_code == 200
+    new_device_challenge = new_device_login.json()
+    assert new_device_challenge["mfa_required"] is True
+    assert new_device_challenge["methods"] == ["email", "totp"]
+
+    send_email_response = client.post(
+        "/v1/users/sign-in/mfa/send-email-code",
+        headers=AUTH_HEADERS,
+        json={"mfa_token": new_device_challenge["mfa_token"]},
+    )
+    assert send_email_response.status_code == 202
+
+    with sqlite3.connect(tmp_path / "api.sqlite3") as conn:
+        code_hash = conn.execute(
+            "SELECT code_hash FROM registration_codes WHERE email = ?",
+            (f"mfa-login:{user_id}",),
+        ).fetchone()[0]
+    valid_email_code = None
+    for candidate in range(0, 1_000_000):
+        code = f"{candidate:06d}"
+        if hashlib.sha256(code.encode("utf-8")).hexdigest() == code_hash:
+            valid_email_code = code
+            break
+    assert valid_email_code is not None
+
+    verify_email_response = client.post(
+        "/v1/users/sign-in/mfa/verify",
+        headers=AUTH_HEADERS,
+        json={
+            "mfa_token": new_device_challenge["mfa_token"],
+            "method": "email",
+            "verification_code": valid_email_code,
+            "device_id": "totp-device-2",
+        },
+    )
+    assert verify_email_response.status_code == 200
+
+    reused_new_device_login = client.post(
+        "/v1/users/sign-in",
+        headers=AUTH_HEADERS,
+        json={
+            "email": "totp-web@example.com",
+            "password": "secret-pass",
+            "device_id": "totp-device-2",
+        },
+    )
+    assert reused_new_device_login.status_code == 200
+    assert reused_new_device_login.json()["user_id"] == user_id
+    assert "mfa_token" not in reused_new_device_login.json()
 
 
 def test_sign_up_rejects_duplicate_phone_and_email(monkeypatch, tmp_path: Path) -> None:
