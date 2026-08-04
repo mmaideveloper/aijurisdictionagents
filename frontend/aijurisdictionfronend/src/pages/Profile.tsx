@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaDownload } from "react-icons/fa";
 import { fetchCaseExportBlob } from "../api/caseClient";
@@ -40,6 +40,9 @@ const Profile: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [exportingCaseId, setExportingCaseId] = useState<string | null>(null);
+  const exportInFlightCaseId = useRef<string | null>(null);
+  const [caseExportMessage, setCaseExportMessage] = useState<string | null>(null);
+  const [caseExportError, setCaseExportError] = useState<string | null>(null);
   const [expandedCaseIds, setExpandedCaseIds] = useState<Set<string>>(() => new Set());
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -140,12 +143,13 @@ const Profile: React.FC = () => {
     caseItem: (typeof cases)[number]
   ) => {
     event.stopPropagation();
-    if (!user?.userId) {
+    if (!user?.userId || exportInFlightCaseId.current !== null) {
       return;
     }
+    exportInFlightCaseId.current = caseItem.id;
     setExportingCaseId(caseItem.id);
-    setProfileError(null);
-    setProfileMessage(null);
+    setCaseExportError(null);
+    setCaseExportMessage(null);
     try {
       const exported = await fetchCaseExportBlob({
         userId: user.userId,
@@ -158,11 +162,15 @@ const Profile: React.FC = () => {
       anchor.rel = "noopener";
       document.body.appendChild(anchor);
       anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => {
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      }, 1_000);
+      setCaseExportMessage(t("profileCaseExportStarted"));
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
+      setCaseExportError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
     } finally {
+      exportInFlightCaseId.current = null;
       setExportingCaseId(null);
     }
   };
@@ -405,6 +413,16 @@ const Profile: React.FC = () => {
             ) : (
               <p className="hint">{t("profileOpenedCasesEmpty")}</p>
             )}
+            {caseExportError ? (
+              <p className="form-error" role="alert">
+                {caseExportError}
+              </p>
+            ) : null}
+            {caseExportMessage ? (
+              <p className="hint" role="status">
+                {caseExportMessage}
+              </p>
+            ) : null}
           </article>
           <article className="card">
             <h2>{t("profileDocumentsTitle")}</h2>

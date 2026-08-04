@@ -660,12 +660,13 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
 
     response = client.get(
         f"/v1/cases/{case_id}/export?user_id={user_id}",
-        headers=_headers(),
+        headers={**_headers(), "x-correlation-id": "case-export-correlation-590"},
     )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/zip")
     assert response.headers["x-case-export-schema"] == "jurisdigta.case-export.v1"
+    assert response.headers["x-correlation-id"] == "case-export-correlation-590"
     with ZipFile(BytesIO(response.content)) as archive:
         names = set(archive.namelist())
         assert {
@@ -682,6 +683,7 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
         assert any(name.startswith("documents/generated/rendered-pdf/") for name in names)
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["case_id"] == case_id
+        assert manifest["correlation_id"] == "case-export-correlation-590"
         assert manifest["message_count"] == 2
         assert manifest["document_count"] == 2
         assert manifest["ai_model_audit_count"] == 1
