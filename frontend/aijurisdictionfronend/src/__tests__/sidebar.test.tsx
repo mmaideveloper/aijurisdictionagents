@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Sidebar } from "../components/Sidebar";
 
@@ -40,6 +40,9 @@ vi.mock("../components/LanguageProvider", () => ({
         sidebarComingSoon: "Soon",
         sidebarPlaceholder: "Shortcuts",
         sidebarFooter: "Workspace controls",
+        profileCaseExport: "Export case",
+        profileCaseExportFailed: "Could not export case.",
+        profileCaseExportStarted: "Case export download started.",
         workspaceStatusInProgress: "In progress"
       })[key] ?? key
   })
@@ -101,11 +104,44 @@ vi.mock("../state/CaseProvider", () => ({
 }));
 
 describe("Sidebar", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    URL.createObjectURL = vi.fn(() => "blob:active-case-export");
+    URL.revokeObjectURL = vi.fn();
+  });
+
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
     navigate.mockReset();
     selectCase.mockReset();
     setCaseCommunicationMode.mockReset();
+  });
+
+  it("downloads the active case export and reports that the download started", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response("zip", {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": 'attachment; filename="active-case-export.zip"'
+        }
+      })
+    );
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const user = userEvent.setup();
+
+    render(<Sidebar />);
+    await user.click(screen.getByRole("button", { name: "Export case" }));
+
+    await waitFor(() => expect(clickSpy).toHaveBeenCalledOnce());
+    expect(screen.getByRole("status").textContent).toBe("Case export download started.");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/cases/case-1/export?user_id=user-1"),
+      expect.objectContaining({ method: "GET" })
+    );
+
+    clickSpy.mockRestore();
   });
 
   it("keeps selected case details collapsed by default while documents remain visible", async () => {

@@ -165,6 +165,11 @@ print(
     "model_testing_fixtures => tests/modelsTesting/index.json registers zipped golden case exports "
     "for model answer/document comparison, including legal-document structure and human-review checks."
 )
+print(
+    "active_case_export => My Cases and My Profile download the authorized case ZIP, keep the Blob URL "
+    "alive until the browser starts the download, and expose the request correlation_id in manifest.json "
+    "for case-scoped support tracing without embedding raw logs."
+)
 print(f"unlimited_access_emails => {sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}")
 print(
     "case_write_window_expired_error => "

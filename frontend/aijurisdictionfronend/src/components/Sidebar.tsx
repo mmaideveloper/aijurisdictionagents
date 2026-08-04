@@ -21,6 +21,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { t } = useLanguage();
   const [isSelectedCaseExpanded, setIsSelectedCaseExpanded] = React.useState(false);
   const [exportingCaseId, setExportingCaseId] = React.useState<string | null>(null);
+  const exportInFlightCaseId = React.useRef<string | null>(null);
+  const [caseExportMessage, setCaseExportMessage] = React.useState<string | null>(null);
   const [caseExportError, setCaseExportError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -44,12 +46,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
 
   const exportActiveCase = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
-    if (!activeCase || !user?.userId) {
+    if (!activeCase || !user?.userId || exportInFlightCaseId.current !== null) {
       return;
     }
 
+    exportInFlightCaseId.current = activeCase.id;
     setExportingCaseId(activeCase.id);
     setCaseExportError(null);
+    setCaseExportMessage(null);
     try {
       const exported = await fetchCaseExportBlob({
         userId: user.userId,
@@ -62,11 +66,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       anchor.rel = "noopener";
       document.body.appendChild(anchor);
       anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => {
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      }, 1_000);
+      setCaseExportMessage(t("profileCaseExportStarted"));
     } catch (error) {
       setCaseExportError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
     } finally {
+      exportInFlightCaseId.current = null;
       setExportingCaseId(null);
     }
   };
@@ -151,6 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 })}
               </ul>
               {caseExportError ? <p className="form-error" role="alert">{caseExportError}</p> : null}
+              {caseExportMessage ? <p className="hint" role="status">{caseExportMessage}</p> : null}
             </div>
           </div>
 

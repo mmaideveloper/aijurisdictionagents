@@ -18,7 +18,7 @@ import secrets
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -390,6 +390,7 @@ def get_case_ai_model_audit(
 def export_case(
     case_id: str,
     user_id: str,
+    request: Request,
     store: ApiDatabaseStore = Depends(get_store),
 ) -> Response:
     case = _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
@@ -399,6 +400,7 @@ def export_case(
         user_id=user_id,
         store=store,
         exported_by="case-owner",
+        correlation_id=str(request.state.correlation_id),
     )
 
 
@@ -700,8 +702,15 @@ def build_case_export_response(
     user_id: str,
     store: ApiDatabaseStore,
     exported_by: str,
+    correlation_id: str,
 ) -> Response:
-    export = _build_case_export_zip(case=case, user_id=user_id, store=store, exported_by=exported_by)
+    export = _build_case_export_zip(
+        case=case,
+        user_id=user_id,
+        store=store,
+        exported_by=exported_by,
+        correlation_id=correlation_id,
+    )
     filename = f"{_safe_filename(case.title or case.case_id)}_{case.case_id}_case_export.zip"
     return Response(
         content=export,
@@ -719,6 +728,7 @@ def _build_case_export_zip(
     user_id: str,
     store: ApiDatabaseStore,
     exported_by: str,
+    correlation_id: str,
 ) -> bytes:
     warnings: list[CaseExportWarning] = []
     checksums: dict[str, str] = {}
@@ -833,6 +843,7 @@ def _build_case_export_zip(
         "schema": "jurisdigta.case-export.v1",
         "generated_at": generated_at,
         "exported_by": exported_by,
+        "correlation_id": correlation_id,
         "case_id": case.case_id,
         "user_id": user_id,
         "case_title": case.title,

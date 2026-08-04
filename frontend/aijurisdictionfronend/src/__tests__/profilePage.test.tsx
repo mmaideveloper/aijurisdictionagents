@@ -106,6 +106,7 @@ const labels: Record<string, string> = {
   profileOpenedCasesEmpty: "No opened cases yet.",
   profileCaseExport: "Export case",
   profileCaseExportFailed: "Could not export case.",
+  profileCaseExportStarted: "Case export download started.",
   profileTextExpand: "Show full text",
   profileTextCollapse: "Collapse text",
   profileDocumentsTitle: "My Documents",
@@ -294,9 +295,31 @@ describe("Profile page", () => {
       );
     });
     expect(clickSpy).toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toBe("Case export download started.");
     expect(caseMocks.selectCase).not.toHaveBeenCalled();
 
     clickSpy.mockRestore();
+  });
+
+  it("shows case export errors beside the opened case list", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Case export is available only for active paid subscriptions." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+
+    render(
+      <MemoryRouter>
+        <Profile />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Export case" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Case export is available only for active paid subscriptions."
+    );
   });
 
   it("saves editable profile fields", async () => {

@@ -41,7 +41,10 @@ test.beforeEach(async ({ page }) => {
     route.fulfill({
       status: 200,
       contentType: "application/zip",
-      headers: { "Content-Disposition": 'attachment; filename="active-case-export.zip"' },
+      headers: {
+        "Access-Control-Expose-Headers": "Content-Disposition",
+        "Content-Disposition": 'attachment; filename="active-case-export.zip"'
+      },
       body: "synthetic export"
     })
   );
@@ -71,8 +74,11 @@ test("shows and downloads export only from the active case card", async ({ page 
   const exportResponse = page.waitForResponse((response) =>
     response.url().includes("/v1/cases/case-active-export/export?user_id=user-active-export-e2e")
   );
+  const exportDownload = page.waitForEvent("download");
   await exportButton.click();
   await exportResponse;
+  expect((await exportDownload).suggestedFilename()).toBe("active-case-export.zip");
+  await expect(page.getByRole("status")).toHaveText("Sťahovanie exportu prípadu sa začalo.");
 
   await secondCase.locator(".case-item").click();
   await expect(secondCase.locator(".case-item")).toHaveClass(/active/);

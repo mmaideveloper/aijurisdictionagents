@@ -44,7 +44,10 @@ The issue #574 test writes locale screenshots to
 Issue #565 is covered by `e2e/active-case-export.spec.ts`. The test verifies that only the
 active My Cases card displays the same accessible export icon button used by My Profile in its bottom-right corner, that the
 button uses the existing authenticated case-export endpoint, and that the action follows the
-active case when selection changes. It writes a synthetic-data screenshot to
+active case when selection changes. Issue #590 extends this regression to require an actual
+browser download and visible success feedback; Blob URLs are retained briefly after the click
+so the browser can consume the ZIP before cleanup. API errors remain visible beside the case list.
+It writes a synthetic-data screenshot to
 `runs/e2e/issue-565-active-case-export-button.png`.
 
 ![Issue #565 active case Export button E2E result](docs/issue-565-active-case-export-button.png)
