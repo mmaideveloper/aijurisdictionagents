@@ -16,7 +16,8 @@ print(
 )
 print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
-    "verification while logout still ends the session; set 0 to require MFA on every sign-in."
+    "verification on a verified browser; a new browser for a TOTP-enabled account offers both "
+    "authenticator and email verification, while logout still ends the active session."
 )
 
 agent = AIAudioToolRecognizerAgent()

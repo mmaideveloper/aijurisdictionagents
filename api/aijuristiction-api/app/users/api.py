@@ -444,7 +444,15 @@ def sign_in(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    if _requires_mfa(store=store, user=user):
+    device_id = (payload.device_id or "").strip()
+    device_verification_required = _requires_web_device_verification(
+        store=store,
+        user=user,
+        device_id=device_id,
+    )
+    if _requires_mfa(store=store, user=user) or (
+        device_verification_required and _user_has_totp_enabled(store=store, user=user)
+    ):
         mfa_token = secrets.token_urlsafe(32)
         store.create_mfa_login_challenge(user_id=user.user_id, token=mfa_token)
         return MfaRequiredResponse(
@@ -454,27 +462,25 @@ def sign_in(
             methods=_available_mfa_methods(store=store, user=user),
             reuse_window_hours=_mfa_reuse_window_hours(),
         )
-    device_id = (payload.device_id or "").strip()
-    if device_id:
+    if device_verification_required:
         otp_purpose = _web_sign_in_otp_purpose(device_id=device_id)
-        if not store.has_valid_mcp_otp_verification(user_id=user.user_id, purpose=otp_purpose):
-            verification_code = (payload.verification_code or "").strip()
-            if not verification_code:
-                _send_web_sign_in_code(store=store, scheduler=scheduler, user=user, device_id=device_id)
-                raise HTTPException(
-                    status_code=status.HTTP_428_PRECONDITION_REQUIRED,
-                    detail="OTP code required",
-                )
-            if not _accepts_any_local_auth_code() and not store.verify_registration_code(
-                email=_web_sign_in_code_key(user_id=user.user_id, device_id=device_id),
-                code=verification_code,
-            ):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
-            store.save_mcp_otp_verification(
-                user_id=user.user_id,
-                purpose=otp_purpose,
-                expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
+        verification_code = (payload.verification_code or "").strip()
+        if not verification_code:
+            _send_web_sign_in_code(store=store, scheduler=scheduler, user=user, device_id=device_id)
+            raise HTTPException(
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail="OTP code required",
             )
+        if not _accepts_any_local_auth_code() and not store.verify_registration_code(
+            email=_web_sign_in_code_key(user_id=user.user_id, device_id=device_id),
+            code=verification_code,
+        ):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
+        store.save_mcp_otp_verification(
+            user_id=user.user_id,
+            purpose=otp_purpose,
+            expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
+        )
     token: str | None = None
     if device_id:
         token = store.issue_device_auth_token(user_id=user.user_id, device_id=device_id)
@@ -532,9 +538,16 @@ def verify_mfa(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported MFA method")
     _save_mfa_verification(store=store, user=user)
+    device_id = (payload.device_id or "").strip()
+    if device_id:
+        store.save_mcp_otp_verification(
+            user_id=user.user_id,
+            purpose=_web_sign_in_otp_purpose(device_id=device_id),
+            expires_in_hours=_web_sign_in_otp_reuse_window_hours(),
+        )
     token: str | None = None
-    if payload.device_id:
-        token = store.issue_device_auth_token(user_id=user.user_id, device_id=payload.device_id)
+    if device_id:
+        token = store.issue_device_auth_token(user_id=user.user_id, device_id=device_id)
     return _to_device_auth_user_profile_response(user=user, token=token, store=store)
 
 
@@ -962,6 +975,15 @@ def _web_sign_in_otp_purpose(*, device_id: str) -> str:
     return f"web-login:{device_id.strip().lower()}"
 
 
+def _requires_web_device_verification(*, store: ApiDatabaseStore, user: User, device_id: str) -> bool:
+    if not device_id:
+        return False
+    return not store.has_valid_mcp_otp_verification(
+        user_id=user.user_id,
+        purpose=_web_sign_in_otp_purpose(device_id=device_id),
+    )
+
+
 def _web_sign_in_otp_reuse_window_hours() -> int:
     raw_value = os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24").strip()
     try:
@@ -1008,12 +1030,15 @@ def _mfa_reuse_window_hours() -> int:
 
 
 def _requires_mfa(*, store: ApiDatabaseStore, user: User) -> bool:
-    settings = store.get_user_mfa_settings(user_id=user.user_id)
-    if not settings.totp_enabled:
+    if not _user_has_totp_enabled(store=store, user=user):
         return False
     if _mfa_reuse_window_hours() < 1:
         return True
     return not store.has_valid_mfa_verification(user_id=user.user_id, purpose=_GLOBAL_MFA_PURPOSE)
+
+
+def _user_has_totp_enabled(*, store: ApiDatabaseStore, user: User) -> bool:
+    return bool(store.get_user_mfa_settings(user_id=user.user_id).totp_enabled)
 
 
 def _save_mfa_verification(*, store: ApiDatabaseStore, user: User) -> None:
