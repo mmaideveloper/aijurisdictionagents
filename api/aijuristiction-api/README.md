@@ -1081,3 +1081,10 @@ Cross-session memory formatting demo:
 ```bash
 python examples/conversation_memory_minimal_demo.py
 ```
+
+### Follow-up routing after document generation
+
+Document-generation intent is evaluated from the current user turn. Prior requests remain available as factual
+context, but they do not authorize another PDF. Questions such as `Aké sú chýbajúce údaje?`, model-selection
+questions, and MCP capability questions continue through the normal answer route unless the current message
+explicitly requests a new or updated document.
