@@ -9,6 +9,8 @@ import { Sidebar } from "../components/Sidebar";
 const navigate = vi.fn();
 const selectCase = vi.fn();
 const setCaseCommunicationMode = vi.fn();
+const deleteCase = vi.fn();
+const deleteDocument = vi.fn();
 
 vi.mock("react-router-dom", () => ({
   useNavigate: () => navigate
@@ -22,7 +24,7 @@ vi.mock("../auth/webAuth", () => ({
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
-    t: (key: string) =>
+    t: (key: string, values?: Record<string, string>) =>
       ({
         appName: "JurisDigta AI právnik",
         tagline: "Legal AI",
@@ -43,6 +45,14 @@ vi.mock("../components/LanguageProvider", () => ({
         profileCaseExport: "Export case",
         profileCaseExportFailed: "Could not export case.",
         profileCaseExportStarted: "Case export download started.",
+        sidebarDeleteDocument: `Delete document ${values?.filename ?? ""}`,
+        sidebarDeleteDocumentConfirm: `Permanently delete ${values?.filename ?? ""}?`,
+        sidebarDeleteDocumentSuccess: "Document deleted and recorded in the case history.",
+        sidebarDeleteDocumentFailed: "Could not delete the document.",
+        sidebarDeleteCase: "Delete case",
+        sidebarDeleteCaseConfirm: `Soft-delete case ${values?.title ?? ""}?`,
+        sidebarDeleteCaseSuccess: "Case deleted.",
+        sidebarDeleteCaseFailed: "Could not delete the case.",
         workspaceStatusInProgress: "In progress"
       })[key] ?? key
   })
@@ -97,6 +107,8 @@ vi.mock("../state/CaseProvider", () => ({
       ]
     },
     selectCase,
+    deleteCase,
+    deleteDocument,
     setCaseCommunicationMode,
     isLoadingCases: false,
     caseLoadError: null
@@ -116,6 +128,8 @@ describe("Sidebar", () => {
     navigate.mockReset();
     selectCase.mockReset();
     setCaseCommunicationMode.mockReset();
+    deleteCase.mockReset();
+    deleteDocument.mockReset();
   });
 
   it("downloads the active case export and reports that the download started", async () => {
@@ -168,5 +182,41 @@ describe("Sidebar", () => {
     expect(selectCase).not.toHaveBeenCalled();
     expect(setCaseCommunicationMode).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalledWith("/app/chat");
+  });
+
+  it("confirms and deletes a document without opening it", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    deleteDocument.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+
+    render(<Sidebar />);
+    await user.click(
+      screen.getByRole("button", {
+        name: "Delete document potvrdenie_o_zaplateni_20260622T120000Z.pdf"
+      })
+    );
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Permanently delete potvrdenie_o_zaplateni_20260622T120000Z.pdf?"
+    );
+    await waitFor(() => expect(deleteDocument).toHaveBeenCalledWith("case-1", "doc-1"));
+    expect(screen.getByRole("status").textContent).toBe(
+      "Document deleted and recorded in the case history."
+    );
+  });
+
+  it("confirms and soft-deletes the active case", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    deleteCase.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+
+    render(<Sidebar />);
+    await user.click(screen.getByRole("button", { name: "Delete case" }));
+
+    expect(confirm).toHaveBeenCalledWith("Soft-delete case Stored case?");
+    await waitFor(() => expect(deleteCase).toHaveBeenCalledWith("case-1"));
+    expect(screen.getByRole("status").textContent).toBe("Case deleted.");
   });
 });

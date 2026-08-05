@@ -72,6 +72,17 @@ export type UploadApiCaseDocumentsInput = {
   files: File[];
 };
 
+export type DeleteApiCaseDocumentResult = {
+  event_id: string;
+  case_id: string;
+  doc_id: string;
+  document_kind: string;
+  outcome: "deleted";
+  deleted_at: string;
+  communication_id: string;
+  correlation_id: string;
+};
+
 export type SendCaseDocumentEmailInput = {
   userId: string;
   caseId: string;
@@ -166,6 +177,50 @@ export const createApiCase = async (input: CreateApiCaseInput): Promise<ApiCase>
       title: input.title
     })
   });
+};
+
+export const deleteApiCase = async (userId: string, caseId: string): Promise<void> => {
+  const config = chatApiRuntimeConfig();
+  const path = `/v1/cases/${encodeURIComponent(caseId)}?user_id=${encodeURIComponent(userId)}`;
+  let response: Response;
+  try {
+    response = await fetch(`${config.baseUrl}${path}`, {
+      method: "DELETE",
+      headers: {
+        "x-api-key": config.apiKey
+      }
+    });
+  } catch {
+    throw new ApiRequestError(
+      "network",
+      "Network request failed. Check API availability, CORS, and URL/protocol."
+    );
+  }
+  if (!response.ok) {
+    const detail = await parseApiErrorResponse(response);
+    throw new ApiRequestError("http", detail.message, response.status, {
+      code: detail.code,
+      params: detail.params
+    });
+  }
+};
+
+export const deleteApiCaseDocument = async (
+  userId: string,
+  caseId: string,
+  docId: string
+): Promise<DeleteApiCaseDocumentResult> => {
+  const config = chatApiRuntimeConfig();
+  const params = new URLSearchParams({ user_id: userId });
+  return requestJson<DeleteApiCaseDocumentResult>(
+    `/v1/cases/${encodeURIComponent(caseId)}/documents/${encodeURIComponent(docId)}?${params.toString()}`,
+    {
+      method: "DELETE",
+      headers: {
+        "x-api-key": config.apiKey
+      }
+    }
+  );
 };
 
 export const getCaseHistory = async (

@@ -1845,6 +1845,33 @@
   text-align: left;
 }
 
+.sidebar-document-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-document-delete-button,
+.case-delete-button {
+  color: #9f2d2d;
+  width: 2.35rem !important;
+  height: 2.35rem !important;
+  border-radius: 10px;
+}
+
+.sidebar-document-delete-button:hover,
+.case-delete-button:hover {
+  background: rgba(159, 45, 45, 0.08);
+  border-color: rgba(159, 45, 45, 0.32);
+}
+
+.sidebar-document-delete-button:disabled,
+.case-delete-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .sidebar-chat-link {
   appearance: none;
   border: 0;
@@ -2098,11 +2125,13 @@
   padding-bottom: 2.75rem;
 }
 
-.case-export-button {
+.case-item-actions {
   position: absolute;
   right: 0.55rem;
   bottom: 0.55rem;
   z-index: 1;
+  display: flex;
+  gap: 0.45rem;
 }
 
 .case-export-button:disabled {

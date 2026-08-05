@@ -3,16 +3,22 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import json
+from pathlib import Path
 import sqlite3
 import time
 from types import SimpleNamespace
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from app.main import app
-from aijurisdictionagents.api_db import AIModelUsageAuditEntry, ApiDatabaseStore
+from aijurisdictionagents.api_db import (
+    AIModelUsageAuditEntry,
+    ApiDatabaseStore,
+    CaseDocumentChunk,
+)
 
 
 def _headers() -> dict[str, str]:
@@ -75,6 +81,183 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     listing = client.get(f"/v1/cases?user_id={user_id}", headers=_headers())
     assert listing.status_code == 200
     assert listing.json() == []
+
+
+def test_document_delete_erases_payload_derived_data_and_shares_with_audit(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    db_path = tmp_path / "api.sqlite3"
+    storage_root = tmp_path / "storage"
+    monkeypatch.setenv("DB_LOCAL", str(db_path))
+    monkeypatch.setenv("STORE_LOCAL", str(storage_root))
+
+    client = TestClient(app)
+    owner_id = _create_user(client, idx=71)
+    other_user_id = _create_user(client, idx=72)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": owner_id, "title": "Deletion case"},
+    )
+    assert created.status_code == 201
+    case_id = created.json()["case_id"]
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="generated_document",
+        version=1,
+        original_filename="sensitive-client-document.pdf",
+        payload=b"sensitive legal document payload",
+        uploaded_by_user_id=owner_id,
+    )
+    document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+    stored_path = store._resolve_storage_path(document.storage_uri)
+    assert stored_path.exists()
+    store.upsert_document_content(
+        doc_id=doc_id,
+        case_id=case_id,
+        extracted_text="sensitive extracted text",
+        embedding_vector="[0.1, 0.2]",
+        embedding_model="test-embedding",
+        embedding_dimensions=2,
+    )
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    store.replace_document_chunks(
+        doc_id=doc_id,
+        case_id=case_id,
+        chunks=[
+            CaseDocumentChunk(
+                chunk_id="chunk-delete-test",
+                doc_id=doc_id,
+                case_id=case_id,
+                chunk_index=0,
+                chunk_text="sensitive chunk",
+                embedding_vector="[0.1, 0.2]",
+                embedding_model="test-embedding",
+                embedding_dimensions=2,
+                start_offset=0,
+                end_offset=15,
+                created_at=now,
+                updated_at=now,
+            )
+        ],
+    )
+    share = store.create_document_share(
+        share_id="share-delete-test",
+        token_hash="token-delete-test",
+        case_id=case_id,
+        doc_id=doc_id,
+        sender_user_id=owner_id,
+        recipient_email="recipient@example.test",
+        locale="en",
+        expires_at=(datetime.now(timezone.utc) + timedelta(hours=1))
+        .isoformat()
+        .replace("+00:00", "Z"),
+    )
+    store.record_document_share_audit(share_id=share.share_id, action="created")
+
+    forbidden = client.delete(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={other_user_id}",
+        headers=_headers(),
+    )
+    assert forbidden.status_code == 404
+    assert stored_path.exists()
+
+    deleted = client.delete(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={owner_id}",
+        headers=_headers(),
+    )
+    assert deleted.status_code == 200
+    payload = deleted.json()
+    assert payload["case_id"] == case_id
+    assert payload["doc_id"] == doc_id
+    assert payload["document_kind"] == "generated_document"
+    assert payload["outcome"] == "deleted"
+    assert payload["correlation_id"]
+    assert "filename" not in payload
+
+    assert not stored_path.exists()
+    assert not list(stored_path.parent.glob(f"{stored_path.name}.deleting-*"))
+    with pytest.raises(KeyError):
+        store.get_case_document(case_id=case_id, doc_id=doc_id)
+    assert store.list_case_document_contents(case_id=case_id) == []
+    assert store.list_case_document_chunks(case_id=case_id) == []
+    with pytest.raises(KeyError):
+        store.get_document_share_by_id(share_id=share.share_id)
+
+    events = store.list_case_document_deletion_events(case_id=case_id)
+    assert len(events) == 1
+    assert events[0].doc_id == doc_id
+    assert events[0].actor_user_id == owner_id
+    assert events[0].correlation_id == payload["correlation_id"]
+    assert not hasattr(events[0], "original_filename")
+
+    history = client.get(
+        f"/v1/cases/{case_id}/history?user_id={owner_id}&limit=20",
+        headers=_headers(),
+    )
+    assert history.status_code == 200
+    assert history.json()["documents"] == []
+    assert history.json()["messages"][-1]["role"] == "system"
+    assert history.json()["messages"][-1]["content"].startswith("Document deleted at ")
+
+    repeated = client.delete(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={owner_id}",
+        headers=_headers(),
+    )
+    assert repeated.status_code == 404
+
+
+def test_document_delete_restores_payload_when_storage_removal_fails(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+
+    client = TestClient(app)
+    owner_id = _create_user(client, idx=73)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": owner_id, "title": "Deletion rollback case"},
+    )
+    case_id = created.json()["case_id"]
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    doc_id = store.add_case_document(
+        case_id=case_id,
+        kind="uploaded",
+        version=1,
+        original_filename="rollback.txt",
+        payload=b"restore me",
+        uploaded_by_user_id=owner_id,
+    )
+    document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+    stored_path = store._resolve_storage_path(document.storage_uri)
+    original_unlink = Path.unlink
+
+    def fail_staged_unlink(path: Path, *args, **kwargs) -> None:
+        if ".deleting-" in path.name:
+            raise OSError("synthetic storage removal failure")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_unlink)
+    response = client.delete(
+        f"/v1/cases/{case_id}/documents/{doc_id}?user_id={owner_id}",
+        headers=_headers(),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "document_deletion_failed"
+    assert stored_path.read_bytes() == b"restore me"
+    assert store.get_case_document(case_id=case_id, doc_id=doc_id).doc_id == doc_id
+    assert store.list_case_document_deletion_events(case_id=case_id) == []
 
 
 def test_unlimited_access_email_bypasses_case_limit(monkeypatch, tmp_path) -> None:
