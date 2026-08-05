@@ -29,6 +29,19 @@ This repository now includes deterministic end-to-end simulations for two docume
 5. `api/aijuristiction-api/e2e-playwright/tests/free-plan-ollama-document-pdf.spec.ts`
    - Creates a synthetic free-plan user and case.
    - Verifies the effective route is `free_local` through `local_ollama` with `qwen3:1.7b`.
+
+The laptop-to-production local-routing smoke uses the existing connectivity spec with a synthetic
+arithmetic question and a timeout longer than the configured 600-second local-model deadline:
+
+```powershell
+$env:API_BASE_URL = "https://api.jurisdigta.eu"
+$env:EXPECTED_LOCAL_MODEL = "qwen3:4b"
+$env:FREE_PLAN_API_E2E_TIMEOUT_MS = "660000"
+npm --prefix api/aijuristiction-api/e2e-playwright run test:prod-local-routing
+```
+
+The test verifies the effective provider is `local_ollama`, optionally checks the exact configured
+model, sends no customer/case data, and rejects network/internal-error text in the assistant reply.
    - Runs a Slovak request for `Splnomocnenie` for operation of a company vehicle for `ESolutions SK s.r.o.` and asks for Slovak and English generated PDFs.
    - The Slovak vehicle-authorization direct-reply path handles the exact request before local model fallback so the assistant reply cannot be empty when the user already supplied the drafting facts.
    - Fails when the assistant conversation is unprofessional, repeats the same question, or exported PDFs contain assistant/system commentary instead of only legal-document content.

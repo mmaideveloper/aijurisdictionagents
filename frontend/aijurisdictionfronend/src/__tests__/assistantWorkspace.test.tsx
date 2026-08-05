@@ -44,6 +44,8 @@ const labels: Record<string, string> = {
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
   assistantApiErrorResponse: "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+  assistantLocalModelTimeout: "Časový limit lokálneho modelu vypršal.",
+  assistantExternalModelTimeout: "Časový limit externého modelu vypršal.",
   assistantCaseWriteWindowExpiredDetail:
     "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia.",
   assistantAuthLoadingResponse: "I am checking your account before starting the legal assistant. Please try again in a moment.",
@@ -681,6 +683,56 @@ describe("AssistantWorkspace", () => {
 
     expect(lastResult?.content?.[0]?.text).toContain("Tento prípad je iba na čítanie");
     expect(lastResult?.content?.[0]?.text).not.toContain("Case is read-only");
+  });
+
+  it("replaces repeated progress and renders a local timeout without a network error", async () => {
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-08-05T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "processing",
+        data: { stage: "still_working", message: "Stále pracujem na odpovedi." }
+      };
+      yield {
+        event: "processing",
+        data: { stage: "still_working", message: "Stále pracujem na odpovedi." }
+      };
+      yield {
+        event: "error",
+        data: {
+          code: "local_model_timeout",
+          message: "Timeout on local model.",
+          params: { provider_class: "local", timeout_seconds: 600 }
+        }
+      };
+    });
+
+    render(<AssistantWorkspace />);
+    const result = capturedAdapter?.run({
+      messages: [{ role: "user", content: [{ type: "text", text: "Jednoduchá testovacia otázka" }] }],
+      abortSignal: new AbortController().signal
+    });
+
+    const streamedTexts: string[] = [];
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        const text = update.content?.[0]?.text;
+        if (text) streamedTexts.push(text);
+      }
+    }
+
+    expect(streamedTexts[0]).toBe("Stále pracujem na odpovedi.");
+    expect(streamedTexts[1]).toBe("Stále pracujem na odpovedi.");
+    expect(streamedTexts.at(-1)).toBe("Časový limit lokálneho modelu vypršal.");
+    expect(streamedTexts.at(-1)).not.toContain("network");
   });
 
   it("adds generated document links to the completed assistant response", async () => {

@@ -613,6 +613,69 @@
         }
       ],
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "jurisdigta-loki"
+      },
+      "description": "Privacy-safe processing timeout counts over the selected dashboard time range. Drill down in Loki using the ai_model_processing_timeout event.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(count_over_time({stack=\"jurisdigta\", container=\"jurisdigta-api\"} |= \"ai_model_processing_timeout\" |= \"provider_class=local\" [$__range]))",
+          "legendFormat": "Local model processing timeouts",
+          "queryType": "instant",
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum(count_over_time({stack=\"jurisdigta\", container=\"jurisdigta-api\"} |= \"ai_model_processing_timeout\" |= \"provider_class=external\" [$__range]))",
+          "legendFormat": "External model processing timeouts",
+          "queryType": "instant",
+          "refId": "B"
+        }
+      ],
+      "title": "AI Model Processing Timeouts",
+      "type": "bargauge"
     }
   ],
   "preload": false,

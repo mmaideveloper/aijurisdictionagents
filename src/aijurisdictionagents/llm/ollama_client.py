@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import socket
+import time
 from typing import Any, Iterable, Sequence, cast
 from urllib import error, request
 
-from .base import log_llm_request, log_llm_response
+from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
 from ..schemas import Document, Message
 
 import logging
@@ -21,7 +23,7 @@ class OllamaConfig:
     model: str
     temperature: float = 0.2
     max_tokens: int = 256
-    timeout_seconds: float = 120.0
+    timeout_seconds: float = 600.0
     think: bool = False
     provider_label: str = "local_ollama"
 
@@ -92,11 +94,28 @@ class OllamaClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+        started_at = time.monotonic()
         try:
             with request.urlopen(req, timeout=self._config.timeout_seconds) as response:  # noqa: S310
                 loaded = json.loads(response.read().decode("utf-8"))
                 return cast(dict[str, Any], loaded)
+        except (TimeoutError, socket.timeout) as exc:
+            raise ModelProcessingTimeout(
+                provider_class="local",
+                provider=self._config.provider_label,
+                model=self._config.model,
+                timeout_seconds=self._config.timeout_seconds,
+                elapsed_seconds=elapsed_seconds(started_at),
+            ) from exc
         except error.URLError as exc:
+            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                raise ModelProcessingTimeout(
+                    provider_class="local",
+                    provider=self._config.provider_label,
+                    model=self._config.model,
+                    timeout_seconds=self._config.timeout_seconds,
+                    elapsed_seconds=elapsed_seconds(started_at),
+                ) from exc
             raise RuntimeError(f"Ollama request failed: {exc}") from exc
 
 

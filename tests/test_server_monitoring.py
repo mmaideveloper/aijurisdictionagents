@@ -7,6 +7,7 @@ from pathlib import Path
 from scripts.server.export_ollama_metrics import _render_ollama_metrics
 from scripts.server.export_system_status_metrics import _merge_local_runtime, _render_metrics
 from scripts.server.write_system_status import (
+    _ai_model_timeout_metrics,
     _court_decision_log_status,
     _http_log_metrics,
     _latest_document_processor_run_summary,
@@ -93,6 +94,51 @@ def test_monitoring_dashboards_include_ai_model_token_usage_dashboard() -> None:
         "sum by (provider, model, window_minutes) (jurisdigta_ai_model_total_tokens_window)"
         in target_queries
     )
+
+
+def test_errors_dashboard_counts_local_and_external_model_timeouts() -> None:
+    dashboard_path = MONITORING_DIR / "grafana" / "dashboards" / "jurisdigta-errors.json"
+    dashboard = json.loads(dashboard_path.read_text(encoding="utf-8"))
+    timeout_panel = next(
+        panel for panel in dashboard["panels"] if panel.get("title") == "AI Model Processing Timeouts"
+    )
+    queries = [target["expr"] for target in timeout_panel["targets"]]
+
+    assert timeout_panel["datasource"]["uid"] == "jurisdigta-loki"
+    assert any("provider_class=local" in query for query in queries)
+    assert any("provider_class=external" in query for query in queries)
+    assert all("$__range" in query for query in queries)
+
+
+def test_ai_model_timeout_metrics_are_privacy_safe_and_split_by_provider_class() -> None:
+    log_text = "\n".join(
+        [
+            "ai_model_processing_timeout provider_class=local provider=local_ollama model=qwen3:4b task_type=chat_reply timeout_seconds=600 elapsed_seconds=600 error_code=local_model_timeout",
+            "ai_model_processing_timeout provider_class=external provider=azure_foundry model=gpt-5-mini task_type=chat_reply timeout_seconds=600 elapsed_seconds=600 error_code=external_model_timeout",
+            "ordinary API log line",
+        ]
+    )
+
+    assert _ai_model_timeout_metrics(log_text) == {
+        "window_seconds": 3600,
+        "local": 1,
+        "external": 1,
+        "total": 2,
+    }
+
+    rendered = _render_metrics(
+        {
+            "status": "ok",
+            "window_minutes": 60,
+            "system": {
+                "status": "ok",
+                "apps": {"api": {"ai_model_timeouts": _ai_model_timeout_metrics(log_text)}},
+            },
+        }
+    )
+    assert 'provider_class="local",window_seconds="3600"} 1.0' in rendered
+    assert 'provider_class="external",window_seconds="3600"} 1.0' in rendered
+    assert "prompt" not in rendered
 
 
 def test_monitoring_dashboards_include_court_decision_service_dashboard() -> None:

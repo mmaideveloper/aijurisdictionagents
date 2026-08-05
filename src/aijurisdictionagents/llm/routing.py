@@ -13,7 +13,7 @@ from aijurisdictionagents.api_db import (
 )
 
 from .azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
-from .base import LLMClient
+from .base import LLMClient, read_positive_finite_env_seconds
 from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
 
@@ -258,7 +258,7 @@ def _temperature() -> float:
 
 
 def _local_timeout_seconds() -> float:
-    return float(os.getenv("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", "120"))
+    return read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", 600.0)
 
 
 def _fallback_reason(route: AIModelRouteSelection) -> str:

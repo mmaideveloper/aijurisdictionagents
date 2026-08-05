@@ -5,6 +5,14 @@ from datetime import datetime, timedelta, timezone
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
+from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
+
+print(
+    "local_model_timeout => "
+    f"deadline={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_TIMEOUT_SECONDS', 600)}s, "
+    f"visible_progress={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_VISIBLE_PROGRESS', 15)}s; "
+    "typed local/external timeout errors remain privacy-safe and never silently change providers."
+)
 
 print(
     "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "

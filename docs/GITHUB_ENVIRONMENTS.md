@@ -453,6 +453,11 @@ Optional `prod` GitHub Environment variables:
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
 | `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
 
+The production runtime secret file referenced by `JURISDIGTA_ENV_FILE` must also contain
+`LOCAL_LLM_REQUEST_TIMEOUT_SECONDS=600` and `LOCAL_LLM_REQUEST_VISIBLE_PROGRESS=15`.
+The deploy script passes both values explicitly into the API and MCP containers. They are
+runtime settings, not GitHub Environment variables or secrets.
+
 Required `prod` GitHub Environment secret:
 
 | Secret | Purpose |

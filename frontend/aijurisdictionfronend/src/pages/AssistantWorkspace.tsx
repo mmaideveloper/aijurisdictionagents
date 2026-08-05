@@ -242,6 +242,12 @@ const localizeApiErrorDetail = (
       days: String(error.params?.days ?? "1")
     });
   }
+  if (error instanceof ApiRequestError && error.code === "local_model_timeout") {
+    return t("assistantLocalModelTimeout");
+  }
+  if (error instanceof ApiRequestError && error.code === "external_model_timeout") {
+    return t("assistantExternalModelTimeout");
+  }
 
   return error instanceof Error ? error.message : "Unknown error";
 };
@@ -638,6 +644,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
           let latestAssistantText = "";
           const processingMessages: string[] = [];
           const userVisibleProcessingMessages: string[] = [];
+          let activeProgressMessage = "";
           const visibleDocumentIdsBeforeRun = new Set(
             (activeCase?.documents ?? [])
               .filter(isUserVisibleGeneratedDocument)
@@ -655,12 +662,19 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             if (streamEvent.event === "processing" || streamEvent.event === "waiting_for_reply") {
               const message = typeof streamEvent.data.message === "string" ? streamEvent.data.message.trim() : "";
               if (message) {
-                processingMessages.push(message);
-                if (isUserVisibleProcessingEvent(streamEvent.data)) {
+                const isStillWorking =
+                  "stage" in streamEvent.data && streamEvent.data.stage === "still_working";
+                if (isStillWorking) {
+                  activeProgressMessage = message;
+                } else if (processingMessages.at(-1) !== message) {
+                  processingMessages.push(message);
+                }
+                if (!isStillWorking && isUserVisibleProcessingEvent(streamEvent.data)) {
                   userVisibleProcessingMessages.push(message);
                 }
+                const visibleMessages = [...processingMessages, activeProgressMessage].filter(Boolean);
                 yield {
-                  content: [{ type: "text", text: processingMessages.join("\n\n") }]
+                  content: [{ type: "text", text: visibleMessages.join("\n\n") }]
                 };
               }
               continue;
@@ -668,6 +682,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
 
             if (streamEvent.event === "message") {
               if (streamEvent.data.role === "assistant") {
+                activeProgressMessage = "";
                 latestAssistantText = streamEvent.data.content;
                 yield {
                   content: [{ type: "text", text: latestAssistantText }]
@@ -679,7 +694,12 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             if (streamEvent.event === "error") {
               const detail =
                 typeof streamEvent.data.message === "string" ? streamEvent.data.message : "Unknown stream error";
-              throw new ApiRequestError("http", detail);
+              const code = typeof streamEvent.data.code === "string" ? streamEvent.data.code : undefined;
+              const params =
+                typeof streamEvent.data.params === "object" && streamEvent.data.params !== null
+                  ? (streamEvent.data.params as Record<string, string | number | boolean | null | undefined>)
+                  : undefined;
+              throw new ApiRequestError("http", detail, undefined, { code, params });
             }
           }
 
@@ -708,16 +728,40 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             status: { type: "complete", reason: "stop" }
           };
         } catch (error) {
-          const status = error instanceof ApiRequestError && error.status ? String(error.status) : "network";
           const detail = localizeApiErrorDetail(error, t);
+          const isModelTimeout =
+            error instanceof ApiRequestError &&
+            (error.code === "local_model_timeout" || error.code === "external_model_timeout");
+          const status =
+            error instanceof ApiRequestError && error.kind === "network"
+              ? "network"
+              : error instanceof ApiRequestError && error.status
+                ? String(error.status)
+                : "stream";
           yield {
-            content: [{ type: "text", text: t("assistantApiErrorResponse", { status, detail }) }],
+            content: [
+              {
+                type: "text",
+                text: isModelTimeout ? detail : t("assistantApiErrorResponse", { status, detail })
+              }
+            ],
             status: { type: "complete", reason: "stop" }
           };
         }
       }
     }),
-    [activeCaseId, isAuthenticated, isAuthLoading, language, loadCaseData, selectedModelProfileId, t, user?.userId]
+    [
+      activeCase?.documents,
+      activeCaseId,
+      isAuthenticated,
+      isAuthLoading,
+      language,
+      loadCaseData,
+      selectedModelProfileId,
+      t,
+      user?.email,
+      user?.userId
+    ]
   );
 
   const runtime = useLocalRuntime(assistantAdapter, {

@@ -57,6 +57,7 @@ from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
 from aijurisdictionagents.llm import get_embedding_client
+from aijurisdictionagents.llm.base import ModelProcessingTimeout, read_positive_finite_env_seconds
 from aijurisdictionagents.llm.routing import (
     ModelRouteUnavailable,
     RoutedLLMClient,
@@ -79,7 +80,7 @@ _CORE_VERSION = get_core_version()
 _LOGGER = logging.getLogger(__name__)
 _LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
 _STREAM_KEEPALIVE_SECONDS = 15.0
-_STREAM_STATUS_SECONDS = 60.0
+_STREAM_STATUS_SECONDS = 15.0
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -2284,12 +2285,18 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             event_queue.put(("done", {"session_id": str(session_id)}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
-            _LOGGER.exception(
-                "Discussion stream worker failed | session_id=%s error_type=%s",
-                session_id,
-                type(exc).__name__,
+            timeout_payload = _model_timeout_error_payload(
+                exc,
+                session=session,
+                task_type="discussion_stream",
             )
-            event_queue.put(("error", {"message": str(exc)}))
+            if timeout_payload is None:
+                _LOGGER.exception(
+                    "Discussion stream worker failed | session_id=%s error_type=%s",
+                    session_id,
+                    type(exc).__name__,
+                )
+            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
         finally:
             event_queue.put(None)
 
@@ -2475,12 +2482,18 @@ def _stream_read_user_session(
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
-            _LOGGER.exception(
-                "ReadUser stream worker failed | session_id=%s error_type=%s",
-                session_id,
-                type(exc).__name__,
+            timeout_payload = _model_timeout_error_payload(
+                exc,
+                session=session,
+                task_type="chat_reply",
             )
-            event_queue.put(("error", {"message": str(exc)}))
+            if timeout_payload is None:
+                _LOGGER.exception(
+                    "ReadUser stream worker failed | session_id=%s error_type=%s",
+                    session_id,
+                    type(exc).__name__,
+                )
+            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
         finally:
             event_queue.put(None)
 
@@ -4637,18 +4650,76 @@ def _stream_still_working_message(*, country: str, language: str | None) -> str:
     return "Still working on the answer. Verification or document preparation is taking longer; I will send the result as soon as it is ready."
 
 
+def _model_timeout_message(*, provider_class: str, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    local_model = provider_class == "local"
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Časový limit lokálneho modelu vypršal." if local_model else "Časový limit externého modelu vypršal."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Časový limit lokálního modelu vypršel." if local_model else "Časový limit externího modelu vypršel."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Zeitüberschreitung beim lokalen Modell." if local_model else "Zeitüberschreitung beim externen Modell."
+    return "Timeout on local model." if local_model else "Timeout on external model."
+
+
+def _model_timeout_error_payload(
+    exc: Exception,
+    *,
+    session: Session,
+    task_type: str,
+) -> dict[str, object] | None:
+    if not isinstance(exc, ModelProcessingTimeout):
+        return None
+    timeout_seconds = exc.timeout_seconds or 0.0
+    _LOGGER.warning(
+        "ai_model_processing_timeout provider_class=%s provider=%s model=%s "
+        "task_type=%s timeout_seconds=%.3f elapsed_seconds=%.3f error_code=%s",
+        exc.provider_class,
+        exc.provider,
+        exc.model,
+        task_type,
+        timeout_seconds,
+        exc.elapsed_seconds,
+        exc.code,
+    )
+    return {
+        "code": exc.code,
+        "message": _model_timeout_message(
+            provider_class=exc.provider_class,
+            country=session.country,
+            language=session.language,
+        ),
+        "params": {
+            "provider_class": exc.provider_class,
+            "timeout_seconds": timeout_seconds,
+        },
+    }
+
+
+def _stream_visible_progress_seconds() -> float:
+    return float(
+        read_positive_finite_env_seconds(
+            "LOCAL_LLM_REQUEST_VISIBLE_PROGRESS",
+            _STREAM_STATUS_SECONDS,
+        )
+    )
+
+
 def _stream_event_queue(
     *,
     event_queue: Queue[tuple[str, dict[str, object]] | None],
     session: Session,
 ) -> Generator[str, None, None]:
     last_visible_status_at = time.monotonic()
+    visible_progress_seconds = _stream_visible_progress_seconds()
+    poll_seconds = min(_STREAM_KEEPALIVE_SECONDS, visible_progress_seconds)
     while True:
         try:
-            item = event_queue.get(timeout=_STREAM_KEEPALIVE_SECONDS)
+            item = event_queue.get(timeout=poll_seconds)
         except Empty:
             now = time.monotonic()
-            if now - last_visible_status_at >= _STREAM_STATUS_SECONDS:
+            if now - last_visible_status_at >= visible_progress_seconds:
                 last_visible_status_at = now
                 status_body: dict[str, object] = {
                     "stage": "still_working",
