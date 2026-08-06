@@ -5606,6 +5606,45 @@ def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeyp
     assert events.index('"stage": "still_working"') < events.index('"role": "assistant"')
 
 
+def test_stream_read_user_returns_typed_local_model_timeout(monkeypatch, caplog) -> None:
+    from app.chat import api as chat_api
+    from aijurisdictionagents.llm.base import ModelProcessingTimeout
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    def timed_out_direct_turn(**kwargs):
+        raise ModelProcessingTimeout(
+            provider_class="local",
+            provider="local_ollama",
+            model="qwen3:4b",
+            timeout_seconds=600,
+            elapsed_seconds=600.1,
+        )
+
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", timed_out_direct_turn)
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={"instruction": "synteticka testovacia otazka", "user_simulation_mode": "ReadUser"},
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert '"code": "local_model_timeout"' in events
+    assert r"\u010casov\u00fd limit lok\u00e1lneho modelu vypr\u0161al." in events
+    assert events.count("event: error") == 1
+    assert caplog.text.count("ai_model_processing_timeout provider_class=local") == 1
+    assert "synteticka testovacia otazka" not in caplog.text
+
+
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     from app.chat.models import MessageRole

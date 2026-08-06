@@ -269,6 +269,8 @@ Useful Grafana panels:
 - `jurisdigta_ai_model_requests_window`
 - `jurisdigta_ai_model_input_tokens_window`
 - `jurisdigta_ai_model_cached_input_tokens_window`
+- `jurisdigta_ai_model_processing_timeouts_window{provider_class="local"}`
+- `jurisdigta_ai_model_processing_timeouts_window{provider_class="external"}`
 - `jurisdigta_ai_model_output_tokens_window`
 - `jurisdigta_ai_model_total_tokens_window`
 - `jurisdigta_ai_model_estimated_cost_eur_window`

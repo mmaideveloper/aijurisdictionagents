@@ -4,13 +4,14 @@ import os
 from dataclasses import dataclass
 import logging
 import ssl
+import time
 from typing import Iterable, Sequence
 
 import httpx
-from openai import AzureOpenAI
+from openai import APITimeoutError, AzureOpenAI
 import truststore
 
-from .base import log_llm_request, log_llm_response
+from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -70,11 +71,21 @@ class AzureFoundryClient:
             agent_name=agent_name,
             request_payload=messages,
         )
-        response = self._client.chat.completions.create(
-            model=self._config.deployment,
-            temperature=self._config.temperature,
-            messages=messages,
-        )
+        started_at = time.monotonic()
+        try:
+            response = self._client.chat.completions.create(
+                model=self._config.deployment,
+                temperature=self._config.temperature,
+                messages=messages,
+            )
+        except APITimeoutError as exc:
+            raise ModelProcessingTimeout(
+                provider_class="external",
+                provider="azurefoundry",
+                model=self._config.deployment,
+                timeout_seconds=_client_timeout_seconds(self._client),
+                elapsed_seconds=elapsed_seconds(started_at),
+            ) from exc
         content = response.choices[0].message.content if response.choices else ""
         normalized = (content or "").strip()
         log_llm_response(
@@ -161,6 +172,12 @@ def _build_azure_client_kwargs(config: AzureFoundryConfig) -> dict[str, str]:
 def _build_system_trust_http_client() -> httpx.Client:
     context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     return httpx.Client(verify=context)
+
+
+def _client_timeout_seconds(client: AzureOpenAI) -> float | None:
+    timeout = getattr(client, "timeout", None)
+    read_timeout = getattr(timeout, "read", None)
+    return float(read_timeout) if isinstance(read_timeout, (int, float)) else None
 
 
 def _render_documents(documents: Iterable[Document], max_chars: int = 4000) -> str:

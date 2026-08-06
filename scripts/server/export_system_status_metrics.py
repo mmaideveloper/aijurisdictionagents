@@ -187,6 +187,7 @@ def _render_metrics(payload: dict[str, Any]) -> str:
     if isinstance(system, dict):
         _append_resource_metrics(lines, system)
         _append_http_metrics(lines, system)
+        _append_ai_model_timeout_metrics(lines, system)
         _append_email_metrics(lines, system)
         _append_document_processor_metrics(lines, system)
         _append_court_decision_collector_metrics(lines, system)
@@ -224,6 +225,25 @@ def _render_metrics(payload: dict[str, Any]) -> str:
 
     lines.append("")
     return "\n".join(lines)
+
+
+def _append_ai_model_timeout_metrics(lines: list[str], system: dict[str, Any]) -> None:
+    timeout_metrics = _nested(system, "apps", "api", "ai_model_timeouts")
+    if not isinstance(timeout_metrics, dict):
+        return
+    window_seconds = int(_number(timeout_metrics.get("window_seconds"), 3600))
+    _append_help(
+        lines,
+        "jurisdigta_ai_model_processing_timeouts_window",
+        "AI model processing timeout count from privacy-safe API logs in the local monitoring window.",
+        "gauge",
+    )
+    for provider_class in ("local", "external"):
+        lines.append(
+            "jurisdigta_ai_model_processing_timeouts_window"
+            f'{{provider_class="{provider_class}",window_seconds="{window_seconds}"}} '
+            f"{_number(timeout_metrics.get(provider_class), 0)}"
+        )
 
 
 def _append_laws_metrics(lines: list[str], laws: dict[str, Any]) -> None:

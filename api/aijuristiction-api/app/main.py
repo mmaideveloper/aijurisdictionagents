@@ -48,10 +48,15 @@ from app.voice_intent_api import router as voice_intent_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
+from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ENV_PATH = _REPO_ROOT / ".env"
 dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
+
+# Fail at API configuration load instead of waiting for the first slow model request.
+read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", 600.0)
+read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_VISIBLE_PROGRESS", 15.0)
 
 API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "model_routing"

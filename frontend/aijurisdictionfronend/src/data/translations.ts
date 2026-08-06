@@ -228,6 +228,8 @@ export const translations = {
       "I am checking your account before starting the legal assistant. Please try again in a moment.",
     assistantApiErrorResponse:
       "The assistant could not complete the JurisDigta API request. Status: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Timeout on local model.",
+    assistantExternalModelTimeout: "Timeout on external model.",
     assistantCaseWriteWindowExpiredDetail:
       "This case is read-only because the {plan} plan allows edits for {days} day(s) after creation. You can still read the case history, or create a new case to continue editing.",
     caseTitle: "Create a case",
@@ -924,6 +926,8 @@ export const translations = {
       "Overujem vaše konto pred spustením právneho asistenta. Skúste to, prosím, o chvíľu znova.",
     assistantApiErrorResponse:
       "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Časový limit lokálneho modelu vypršal.",
+    assistantExternalModelTimeout: "Časový limit externého modelu vypršal.",
     assistantCaseWriteWindowExpiredDetail:
       "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia. Históriu prípadu si stále môžete čítať alebo vytvoriť nový prípad a pokračovať v úpravách.",
     caseTitle: "Vytvoriť prípad",
@@ -1620,6 +1624,8 @@ export const translations = {
       "Ich pruefe Ihr Konto, bevor der Rechtsassistent startet. Bitte versuchen Sie es gleich erneut.",
     assistantApiErrorResponse:
       "Der Assistent konnte die JurisDigta-API-Anfrage nicht abschließen. Status: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Zeitüberschreitung beim lokalen Modell.",
+    assistantExternalModelTimeout: "Zeitüberschreitung beim externen Modell.",
     assistantCaseWriteWindowExpiredDetail:
       "Dieser Fall ist schreibgeschützt, weil der Tarif {plan} Änderungen nur {days} Tag(e) nach der Erstellung erlaubt. Sie können den Fallverlauf weiter lesen oder einen neuen Fall erstellen, um weiterzuarbeiten.",
     caseTitle: "Fall erstellen",
