@@ -22,7 +22,8 @@ param(
     [string]$CronExpression = "*/5 * * * *",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
-    [switch]$SkipEnvFile
+    [switch]$SkipEnvFile,
+    [switch]$BuildOnly
 )
 
 Set-StrictMode -Version Latest
@@ -192,6 +193,30 @@ function Write-WorkflowSummary {
         Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 
+function Publish-EmailSchedulerImage {
+    param(
+        [Parameter(Mandatory = $true)][string]$RegistryName,
+        [Parameter(Mandatory = $true)][string]$Tag
+    )
+
+    $repository = "aijuristiction-api"
+    $imageReference = "$RegistryName.azurecr.io/$repository`:$Tag"
+    Write-Host "Building email scheduler image in ACR: $imageReference"
+    az acr build `
+      --registry $RegistryName `
+      --image "$repository`:$Tag" `
+      --file "api/aijuristiction-api/Dockerfile" `
+      . `
+      --no-logs `
+      --only-show-errors `
+      --output none | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) {
+        throw "ACR build failed for email scheduler image '$imageReference'."
+    }
+
+    return $imageReference
+}
+
 Assert-ToolInstalled -ToolName "az"
 Assert-ToolInstalled -ToolName "python"
 
@@ -246,24 +271,41 @@ if ([string]::IsNullOrWhiteSpace($EmailSmtpHost)) { $EmailSmtpHost = "mail.webho
 if ([string]::IsNullOrWhiteSpace($EmailSmtpPort)) { $EmailSmtpPort = "587" }
 if ([string]::IsNullOrWhiteSpace($EmailSmtpUseTls)) { $EmailSmtpUseTls = "true" }
 if ([string]::IsNullOrWhiteSpace($EmailSmtpUsername)) { $EmailSmtpUsername = "no-reply@jurisdigta.eu" }
-$JobName = Resolve-AcaJobName -Name "JobName" -Value $JobName -DefaultValue "email-scheduler"
-$CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/5 * * * *"
+if (-not $BuildOnly) {
+    $JobName = Resolve-AcaJobName -Name "JobName" -Value $JobName -DefaultValue "email-scheduler"
+    $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "*/5 * * * *"
+}
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
-Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
-Require-Value -Name "Location" -Value $Location
-Require-Value -Name "ContainerAppEnvironmentName" -Value $ContainerAppEnvironmentName
 Require-Value -Name "AcrName" -Value $AcrName
-Require-Value -Name "ManagedIdentityName" -Value $ManagedIdentityName
-Require-Value -Name "PostgresServerName" -Value $PostgresServerName
-Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
-Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
-Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
-if ($EmailTransport.Trim().ToLowerInvariant() -eq "smtp") {
-    Require-Value -Name "EmailSmtpPassword" -Value $EmailSmtpPassword
+if (-not $BuildOnly) {
+    Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
+    Require-Value -Name "Location" -Value $Location
+    Require-Value -Name "ContainerAppEnvironmentName" -Value $ContainerAppEnvironmentName
+    Require-Value -Name "ManagedIdentityName" -Value $ManagedIdentityName
+    Require-Value -Name "PostgresServerName" -Value $PostgresServerName
+    Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
+    Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
+    Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
+    if ($EmailTransport.Trim().ToLowerInvariant() -eq "smtp") {
+        Require-Value -Name "EmailSmtpPassword" -Value $EmailSmtpPassword
+    }
 }
 
 az account set --subscription $SubscriptionId | Out-Null
+$image = Publish-EmailSchedulerImage -RegistryName $AcrName -Tag $ImageTag
+
+if ($BuildOnly) {
+    Write-Host "Email scheduler image build complete. Deployment was not requested."
+    Write-WorkflowSummary -Lines @(
+        "## ACR image build summary",
+        "| Image | Result | Deployment |",
+        "| --- | --- | --- |",
+        "| $image | uploaded | skipped |"
+    )
+    return
+}
+
 $resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
 if ($resourceGroupExists -eq "true") {
     Write-Host "Resource group '$ResourceGroupName' already exists. Skipping creation."
@@ -278,8 +320,6 @@ $jobExistedBeforeDeployment = Test-ResourceExistsInGroup `
     -ResourceName $JobName `
     -ResourceType "Microsoft.App/jobs"
 
-$imageRepository = "aijuristiction-api"
-$image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 $dbCloud = Convert-ToPostgresConnectionString `
     -HostName $PostgresServerName `
     -DatabaseName $PostgresDatabaseName `
@@ -312,19 +352,6 @@ try {
 finally {
     Restore-EnvVar -Name "DB_OPTION" -PreviousValue $previousDbOption
     Restore-EnvVar -Name "DB_CLOUD" -PreviousValue $previousDbCloud
-}
-
-Write-Host "Building email scheduler image in ACR: $image"
-az acr build `
-  --registry $AcrName `
-  --image "$imageRepository`:$ImageTag" `
-  --file "api/aijuristiction-api/Dockerfile" `
-  . `
-  --no-logs `
-  --only-show-errors `
-  --output none
-if ($LASTEXITCODE -ne 0) {
-    throw "ACR build failed for email scheduler image '$image'."
 }
 
 Write-Host "Deploying email scheduler ACA job: $JobName"

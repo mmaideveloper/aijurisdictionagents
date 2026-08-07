@@ -305,9 +305,11 @@ az ad app federated-credential create --id $ClientId --parameters $tempFile
 5. Run the workflow:
 
 - Workflow: `API Build and Deploy`
-- Push to `main`: automatically deploys to the `dev` GitHub Environment after tests/build pass
-- Inputs: `deploy=true`, `github_environment=<environment>`
-  - Manual `workflow_dispatch` is still the path for non-`dev` environments such as `test` and `prod`
+- Push to `main`: runs validation and a local Docker build, without uploading to ACR or deploying
+- Inputs: `create_image=true|false`, `deploy=true|false`, `github_environment=<environment>`
+  - Both booleans default to `false`; `create_image=true` publishes without deploying
+  - `deploy=true` always forces creation and upload of the image that is deployed
+  - Manual `workflow_dispatch` is required for `dev`, `test`, and `prod` ACR publication/deployment
 - After the image deploy step, the workflow now waits for the Container App provisioning state to return to `Succeeded` before applying secrets and environment variables.
 - If Azure still reports `ContainerAppOperationInProgress`, the workflow retries the secret/env update commands automatically instead of failing on the first race.
 

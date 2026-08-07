@@ -23,7 +23,8 @@ param(
     [string]$LawsCollectorMaxRunningTime = "",
     [string]$ImageTag = "latest",
     [string]$EnvFilePath = ".env",
-    [switch]$SkipEnvFile
+    [switch]$SkipEnvFile,
+    [switch]$BuildOnly
 )
 
 Set-StrictMode -Version Latest
@@ -199,6 +200,60 @@ function Write-WorkflowSummary {
         Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 }
 
+function Publish-LawsCollectorImage {
+    param(
+        [Parameter(Mandatory = $true)][string]$RegistryName,
+        [Parameter(Mandatory = $true)][string]$Tag,
+        [Parameter(Mandatory = $true)][string]$EmbeddingModelOption,
+        [Parameter(Mandatory = $true)][string]$EmbeddingModel
+    )
+
+    $repository = "laws-collector"
+    $imageReference = "$RegistryName.azurecr.io/$repository`:$Tag"
+
+    if ($EmbeddingModelOption -eq "local") {
+        Write-Host "Prefetching local embedding model into build context: $EmbeddingModel"
+        $previousEmbeddingModelOption = $env:SYSTEM_EMBEDDING_MODEL_OPTION
+        $previousEmbeddingModel = $env:SYSTEM_EMBEDDING_MODEL
+        $previousPythonPath = $env:PYTHONPATH
+        try {
+            $env:SYSTEM_EMBEDDING_MODEL_OPTION = "local"
+            $env:SYSTEM_EMBEDDING_MODEL = $EmbeddingModel
+            $repoSrcPath = (Resolve-Path "src").Path
+            $env:PYTHONPATH = if ([string]::IsNullOrWhiteSpace($previousPythonPath)) {
+                $repoSrcPath
+            }
+            else {
+                "$repoSrcPath$([IO.Path]::PathSeparator)$previousPythonPath"
+            }
+            python "scripts/models/prefetch_local_embedding_model.py" | ForEach-Object { Write-Host $_ }
+            if ($LASTEXITCODE -ne 0) {
+                throw "Local embedding model prefetch failed for '$EmbeddingModel'."
+            }
+        }
+        finally {
+            Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL_OPTION" -PreviousValue $previousEmbeddingModelOption
+            Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL" -PreviousValue $previousEmbeddingModel
+            Restore-EnvVar -Name "PYTHONPATH" -PreviousValue $previousPythonPath
+        }
+    }
+
+    Write-Host "Building laws collector image in ACR: $imageReference"
+    az acr build `
+      --registry $RegistryName `
+      --image "$repository`:$Tag" `
+      --file "src/services/laws_collector/Dockerfile" `
+      . `
+      --no-logs `
+      --only-show-errors `
+      --output none | ForEach-Object { Write-Host $_ }
+    if ($LASTEXITCODE -ne 0) {
+        throw "ACR build failed for laws collector image '$imageReference'."
+    }
+
+    return $imageReference
+}
+
 Assert-ToolInstalled -ToolName "az"
 Assert-ToolInstalled -ToolName "python"
 
@@ -243,27 +298,48 @@ $WorkerMaxProbes = Resolve-InputValue -ExplicitValue $WorkerMaxProbes -EnvFileVa
 $LawsCollectorMaxRunningTime = Resolve-InputValue -ExplicitValue $LawsCollectorMaxRunningTime -EnvFileValue $envLawsCollectorMaxRunningTime -EnvironmentValue $env:LAWS_COLLECTOR_MAX_RUNNING_TIME
 
 Require-Value -Name "SubscriptionId" -Value $SubscriptionId
-Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
-Require-Value -Name "Location" -Value $Location
-Require-Value -Name "ContainerAppEnvironmentName" -Value $ContainerAppEnvironmentName
 Require-Value -Name "AcrName" -Value $AcrName
-Require-Value -Name "ManagedIdentityName" -Value $ManagedIdentityName
-Require-Value -Name "PostgresServerName" -Value $PostgresServerName
-Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
-Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
-Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
-if ([string]::IsNullOrWhiteSpace($LawsCollectorImport)) { $LawsCollectorImport = "zip" }
-if ($LawsCollectorImport -notin @("one_law_url", "zip")) {
-    throw "LawsCollectorImport must be one of: one_law_url, zip."
+if (-not $BuildOnly) {
+    Require-Value -Name "ResourceGroupName" -Value $ResourceGroupName
+    Require-Value -Name "Location" -Value $Location
+    Require-Value -Name "ContainerAppEnvironmentName" -Value $ContainerAppEnvironmentName
+    Require-Value -Name "ManagedIdentityName" -Value $ManagedIdentityName
+    Require-Value -Name "PostgresServerName" -Value $PostgresServerName
+    Require-Value -Name "PostgresDatabaseName" -Value $PostgresDatabaseName
+    Require-Value -Name "PostgresAdminUsername" -Value $PostgresAdminUsername
+    Require-Value -Name "PostgresAdminPassword" -Value $PostgresAdminPassword
 }
-if ([string]::IsNullOrWhiteSpace($StorageContainerName)) { $StorageContainerName = "laws-collection-sk" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModelOption)) { $SystemEmbeddingModelOption = "local" }
 if ([string]::IsNullOrWhiteSpace($SystemEmbeddingModel)) { $SystemEmbeddingModel = "all-MiniLM-L6-v2" }
-$CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
-$WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
-$LawsCollectorMaxRunningTime = Resolve-NonNegativeInteger -Name "LawsCollectorMaxRunningTime" -Value $LawsCollectorMaxRunningTime -DefaultValue 60
+if (-not $BuildOnly) {
+    if ([string]::IsNullOrWhiteSpace($LawsCollectorImport)) { $LawsCollectorImport = "zip" }
+    if ($LawsCollectorImport -notin @("one_law_url", "zip")) {
+        throw "LawsCollectorImport must be one of: one_law_url, zip."
+    }
+    if ([string]::IsNullOrWhiteSpace($StorageContainerName)) { $StorageContainerName = "laws-collection-sk" }
+    $CronExpression = Resolve-AcaCronExpression -Name "CronExpression" -Value $CronExpression -DefaultValue "0 0 * * *"
+    $WorkerMaxProbes = Resolve-PositiveInteger -Name "WorkerMaxProbes" -Value $WorkerMaxProbes -DefaultValue 1
+    $LawsCollectorMaxRunningTime = Resolve-NonNegativeInteger -Name "LawsCollectorMaxRunningTime" -Value $LawsCollectorMaxRunningTime -DefaultValue 60
+}
 
 az account set --subscription $SubscriptionId | Out-Null
+$image = Publish-LawsCollectorImage `
+    -RegistryName $AcrName `
+    -Tag $ImageTag `
+    -EmbeddingModelOption $SystemEmbeddingModelOption `
+    -EmbeddingModel $SystemEmbeddingModel
+
+if ($BuildOnly) {
+    Write-Host "Laws collector image build complete. Deployment was not requested."
+    Write-WorkflowSummary -Lines @(
+        "## ACR image build summary",
+        "| Image | Result | Deployment |",
+        "| --- | --- | --- |",
+        "| $image | uploaded | skipped |"
+    )
+    return
+}
+
 $resourceGroupExists = az group exists --name $ResourceGroupName --output tsv
 if ($resourceGroupExists -eq "true") {
     Write-Host "Resource group '$ResourceGroupName' already exists. Skipping creation."
@@ -278,8 +354,6 @@ $containerAppExistedBeforeDeployment = Test-ResourceExistsInGroup `
     -ResourceName $ContainerAppName `
     -ResourceType "Microsoft.App/jobs"
 
-$imageRepository = "laws-collector"
-$image = "$AcrName.azurecr.io/$imageRepository`:$ImageTag"
 $dbCloud = Convert-ToPostgresConnectionString `
     -HostName $PostgresServerName `
     -DatabaseName $PostgresDatabaseName `
@@ -297,33 +371,6 @@ if (-not [string]::IsNullOrWhiteSpace($ApplicationInsightsName)) {
     }
 }
 
-if ($SystemEmbeddingModelOption -eq "local") {
-    Write-Host "Prefetching local embedding model into build context: $SystemEmbeddingModel"
-    $previousEmbeddingModelOption = $env:SYSTEM_EMBEDDING_MODEL_OPTION
-    $previousEmbeddingModel = $env:SYSTEM_EMBEDDING_MODEL
-    $previousPythonPath = $env:PYTHONPATH
-    try {
-        $env:SYSTEM_EMBEDDING_MODEL_OPTION = "local"
-        $env:SYSTEM_EMBEDDING_MODEL = $SystemEmbeddingModel
-        $repoSrcPath = (Resolve-Path "src").Path
-        if ([string]::IsNullOrWhiteSpace($previousPythonPath)) {
-            $env:PYTHONPATH = $repoSrcPath
-        }
-        else {
-            $env:PYTHONPATH = "$repoSrcPath$([IO.Path]::PathSeparator)$previousPythonPath"
-        }
-        python "scripts/models/prefetch_local_embedding_model.py"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Local embedding model prefetch failed for '$SystemEmbeddingModel'."
-        }
-    }
-    finally {
-        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL_OPTION" -PreviousValue $previousEmbeddingModelOption
-        Restore-EnvVar -Name "SYSTEM_EMBEDDING_MODEL" -PreviousValue $previousEmbeddingModel
-        Restore-EnvVar -Name "PYTHONPATH" -PreviousValue $previousPythonPath
-    }
-}
-
 Write-Host "Applying laws schema migrations to Azure PostgreSQL..."
 $previousLawsDbBackend = $env:LAWS_DB_BACKEND
 $previousLawsDbCloud = $env:LAWS_DB_CLOUD
@@ -338,19 +385,6 @@ try {
 finally {
     Restore-EnvVar -Name "LAWS_DB_BACKEND" -PreviousValue $previousLawsDbBackend
     Restore-EnvVar -Name "LAWS_DB_CLOUD" -PreviousValue $previousLawsDbCloud
-}
-
-Write-Host "Building laws collector image in ACR: $image"
-az acr build `
-  --registry $AcrName `
-  --image "$imageRepository`:$ImageTag" `
-  --file "src/services/laws_collector/Dockerfile" `
-  . `
-  --no-logs `
-  --only-show-errors `
-  --output none
-if ($LASTEXITCODE -ne 0) {
-    throw "ACR build failed for laws collector image '$image'."
 }
 
 Write-Host "Deploying laws collector ACA job: $ContainerAppName"

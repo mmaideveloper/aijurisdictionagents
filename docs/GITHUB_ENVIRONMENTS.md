@@ -608,6 +608,47 @@ At minimum, you should expect these values to differ between `test` and `prod`:
 
 Use manual workflow dispatch and set `github_environment` to `test` or `prod`.
 
+The five ACR-backed application workflows expose the same safety controls:
+
+| `create_image` | `deploy` | Result |
+| --- | --- | --- |
+| `false` | `false` | Run validation/tests only; do not authenticate to or upload to ACR |
+| `true` | `false` | Build and upload the commit/image tag; do not mutate Container Apps or Jobs |
+| `false` | `true` | Treat image creation as enabled, upload a new image, then deploy that image |
+| `true` | `true` | Upload a new image, then deploy that image |
+
+Both inputs default to `false`. This applies to `API Build and Deploy`,
+`web_build_deploy`, `Laws Collector Build and Deploy`, `Email Scheduler Build and
+Deploy`, and `Document Processor Build and Deploy`. Deployment always forces image
+creation, so a deployment cannot silently reuse a stale tag. No new GitHub Environment
+variables or secrets are required in `test` or `prod`.
+
+Minimal build-only examples from an authenticated repository checkout:
+
+```powershell
+gh workflow run api_build_deploy.yml -f create_image=true -f deploy=false -f github_environment=test
+gh workflow run web_build_deploy.yml -f create_image=true -f deploy=false -f github_environment=test
+gh workflow run laws_collector_build_deploy.yml -f create_image=true -f deploy=false -f github_environment=test
+gh workflow run email_build_deploy.yml -f create_image=true -f deploy=false -f github_environment=test
+gh workflow run document_processor_build_deploy.yml -f create_image=true -f deploy=false -f github_environment=test
+```
+
+Run the offline workflow/build-only contract validation before pushing changes:
+
+```powershell
+.\scripts\validate_acr_workflow_controls.ps1
+```
+
+The validation replaces `az` and `python` with process-local test doubles and does not
+authenticate to Azure, upload images, or mutate infrastructure.
+
+For a deployment, set only `deploy=true` (and the target environment); the workflow
+computes effective image creation as `create_image || deploy`:
+
+```powershell
+gh workflow run api_build_deploy.yml -f deploy=true -f github_environment=prod
+```
+
 Typical order:
 
 1. `infra_deploy`
@@ -638,21 +679,23 @@ Observability note:
 
 ## 14. Current Workflow Defaults
 
-Some workflows default to `dev` for push-based execution. The laws collector and email scheduler workflows are build/test by default and deploy only when manually dispatched with `deploy=true`.
+Push and pull-request execution is validation-only for the five ACR-backed application workflows. It may build a local Docker image as a test artifact, but it does not authenticate to or upload to ACR. ACR image publication and Azure deployment require manual dispatch.
 
 That means:
 
 - `API Build and Deploy` runs tests and builds the Docker image on pull requests and pushes to `main`, but does not deploy by default.
-- `API Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy to Azure Container Apps.
+- `API Build and Deploy` has manual boolean `create_image` and `deploy` inputs, both defaulting to `false`; `deploy=true` forces image creation before deployment.
 - `API Build and Deploy` waits for Azure Container App provisioning to settle before applying secret and environment updates, which reduces transient `ContainerAppOperationInProgress` failures during deployment
 - `API Build and Deploy` now fails during environment validation when `AZURE_OPENAI_API_KEY` is empty, because the deployed API always requires that secret for Azure OpenAI access
 - `API Build and Deploy` injects `EMAIL_DB_OPTION=azure`, `EMAIL_DB_CLOUD=secretref:db-cloud`, and `EMAIL_DB_LOCAL=/tmp/email.sqlite3` automatically, so email outbox storage follows the API PostgreSQL deployment.
 - `API Build and Deploy` injects SMTP settings and vehicle validation settings into the API Container App; `EMAIL_SMTP_PASSWORD` and `CAR_VALIDATION_API_KEY` are stored as Container App secrets.
 - `API Build and Deploy` fails during environment validation when `EMAIL_TRANSPORT=smtp` and `EMAIL_SMTP_PASSWORD` is empty.
 - `Laws Collector Build and Deploy` runs tests and builds the laws collector image on pull requests and pushes to `main`, but does not deploy by default.
-- `Laws Collector Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy the ACA Job.
+- `Laws Collector Build and Deploy` has manual boolean `create_image` and `deploy` inputs, both defaulting to `false`; build-only mode does not open a PostgreSQL firewall rule or apply migrations.
 - `Email Scheduler Build and Deploy` runs tests and builds the scheduler API image on pull requests and pushes to `main`, but does not deploy by default.
-- `Email Scheduler Build and Deploy` has a manual `workflow_dispatch` input `deploy` with default `false`; set `deploy=true` and choose `github_environment` to deploy the dedicated ACA Job.
+- `Email Scheduler Build and Deploy` has manual boolean `create_image` and `deploy` inputs, both defaulting to `false`; build-only mode does not open a PostgreSQL firewall rule or apply migrations.
+- `Document Processor Build and Deploy` no longer publishes or deploys on push; its manual boolean `create_image` and `deploy` inputs both default to `false`.
+- `web_build_deploy` uses the same two boolean inputs with safe `false` defaults and preserves its full lint/unit/E2E/build gate before image publication.
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
