@@ -1,0 +1,18 @@
+{
+  "name": "jurisdigta-mobile-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:case-rule": "node scripts/validate-e2e-case.mjs",
+    "generate:audio": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-synthetic-audio.ps1",
+    "generate:document": "node scripts/generate-payment-confirmation.mjs",
+    "test:audio": "npm run test:case-rule && npm run generate:audio && npm run generate:document && playwright test tests/audio-payment-confirmation.spec.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "http-server": "^14.1.1",
+    "pdfjs-dist": "^6.2.108"
+  }
+}

@@ -128,6 +128,25 @@ The current mobile build is kept compatible with Flutter analyzer changes in the
   - `POST /v1/users/sign-in/device`
   - `POST /v1/users/sign-in`
 - `POST /v1/users/sign-in/phone`
+
+## Registration and sign-in E2E
+
+The first mobile browser E2E test exercises the real Flutter registration and
+phone OTP sign-in UI while Playwright provides controlled, in-browser API
+responses. It does not send email, expose OTP values to application logs, or
+create users in a local or remote database.
+
+Minimal runnable example:
+
+```powershell
+cd mobile_app/e2e-playwright
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+The test starts Flutter Web on `127.0.0.1:7361` and intercepts only the test
+page's `/health` and authentication requests. Production code has no E2E bypass.
 - `PATCH /v1/users/{user_id}`
 - `GET /health`
 - `GET /version`
