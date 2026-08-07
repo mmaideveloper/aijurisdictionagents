@@ -20,6 +20,11 @@ on:
       - ".github/workflows/email_build_deploy.yml"
   workflow_dispatch:
     inputs:
+      create_image:
+        description: "Build and upload a new email scheduler image to Azure Container Registry"
+        required: false
+        type: boolean
+        default: false
       deploy:
         description: "Deploy the email scheduler ACA job"
         required: false
@@ -63,7 +68,7 @@ jobs:
   deploy_to_azure:
     runs-on: windows-latest
     needs: test_and_build
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    if: github.event_name == 'workflow_dispatch' && (inputs.create_image || inputs.deploy)
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
     permissions:
       id-token: write
@@ -94,6 +99,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Summarize requested operation
+        shell: pwsh
+        run: |
+          Write-Host "create_image_requested=${{ inputs.create_image }}"
+          Write-Host "deploy_requested=${{ inputs.deploy }}"
+          Write-Host "effective_create_image=${{ inputs.create_image || inputs.deploy }}"
+
       - name: Validate required environment variables
         shell: pwsh
         run: |
@@ -101,15 +113,21 @@ jobs:
             "AZURE_CLIENT_ID",
             "AZURE_TENANT_ID",
             "AZURE_SUBSCRIPTION_ID",
-            "AZURE_RESOURCE_GROUP",
-            "AZURE_LOCATION",
-            "AZURE_CONTAINERAPPS_ENVIRONMENT",
-            "AZURE_CONTAINER_REGISTRY",
-            "AZURE_MANAGED_IDENTITY_NAME",
-            "AZURE_POSTGRES_SERVER_NAME",
-            "AZURE_POSTGRES_ADMIN_USERNAME",
-            "AZURE_POSTGRES_ADMIN_PASSWORD"
+            "AZURE_CONTAINER_REGISTRY"
           )
+
+          $deployRequested = [System.Convert]::ToBoolean("${{ inputs.deploy }}")
+          if ($deployRequested) {
+            $required += @(
+              "AZURE_RESOURCE_GROUP",
+              "AZURE_LOCATION",
+              "AZURE_CONTAINERAPPS_ENVIRONMENT",
+              "AZURE_MANAGED_IDENTITY_NAME",
+              "AZURE_POSTGRES_SERVER_NAME",
+              "AZURE_POSTGRES_ADMIN_USERNAME",
+              "AZURE_POSTGRES_ADMIN_PASSWORD"
+            )
+          }
 
           $missing = @()
           foreach ($name in $required) {
@@ -118,7 +136,7 @@ jobs:
             }
           }
 
-          if ($env:EMAIL_TRANSPORT.Trim().ToLowerInvariant() -eq "smtp" -and [string]::IsNullOrWhiteSpace($env:EMAIL_SMTP_PASSWORD)) {
+          if ($deployRequested -and $env:EMAIL_TRANSPORT.Trim().ToLowerInvariant() -eq "smtp" -and [string]::IsNullOrWhiteSpace($env:EMAIL_SMTP_PASSWORD)) {
             $missing += "EMAIL_SMTP_PASSWORD"
           }
 
@@ -159,10 +177,12 @@ jobs:
           python-version: "3.11"
 
       - name: Ensure Azure Container Apps extension
+        if: inputs.deploy
         shell: pwsh
         run: az extension add --name containerapp --upgrade --only-show-errors
 
       - name: Allow GitHub runner IP on PostgreSQL firewall
+        if: inputs.deploy
         shell: pwsh
         run: |
           $runnerIp = (Invoke-RestMethod -Uri "https://api.ipify.org").Trim()
@@ -176,12 +196,13 @@ jobs:
             --output none
 
       - name: Install deployment dependencies
+        if: inputs.deploy
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install -e .
 
-      - name: Deploy email scheduler job
+      - name: Build and optionally deploy email scheduler job
         shell: pwsh
         run: |
           $imageTagInput = "${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}"
@@ -190,6 +211,8 @@ jobs:
           } else {
             $imageTagInput
           }
+
+          $buildOnly = -not [System.Convert]::ToBoolean("${{ inputs.deploy }}")
 
           ./infra/scripts/deploy_email_scheduler.ps1 `
             -SkipEnvFile `
@@ -213,10 +236,11 @@ jobs:
             -EmailSmtpUsername $env:EMAIL_SMTP_USERNAME `
             -EmailSmtpPassword $env:EMAIL_SMTP_PASSWORD `
             -CronExpression $env:AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION `
-            -ImageTag $imageTag
+            -ImageTag $imageTag `
+            -BuildOnly:$buildOnly
 
       - name: Remove GitHub runner firewall rule
-        if: always()
+        if: always() && inputs.deploy
         shell: pwsh
         run: |
           az postgres flexible-server firewall-rule delete `

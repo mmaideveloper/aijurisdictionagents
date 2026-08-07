@@ -22,11 +22,16 @@ on:
       - ".github/workflows/document_processor_build_deploy.yml"
   workflow_dispatch:
     inputs:
+      create_image:
+        description: "Build and upload a new document processor image to Azure Container Registry"
+        required: false
+        type: boolean
+        default: false
       deploy:
         description: "Deploy the document processor ACA job"
         required: false
         type: boolean
-        default: true
+        default: false
       github_environment:
         description: "GitHub Environment that contains Azure variables"
         required: true
@@ -68,7 +73,7 @@ jobs:
   deploy_to_azure:
     runs-on: windows-latest
     needs: test_and_build
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    if: github.event_name == 'workflow_dispatch' && (inputs.create_image || inputs.deploy)
     environment: ${{ github.event_name == 'workflow_dispatch' && inputs.github_environment || 'dev' }}
     permissions:
       id-token: write
@@ -102,6 +107,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Summarize requested operation
+        shell: pwsh
+        run: |
+          Write-Host "create_image_requested=${{ inputs.create_image }}"
+          Write-Host "deploy_requested=${{ inputs.deploy }}"
+          Write-Host "effective_create_image=${{ inputs.create_image || inputs.deploy }}"
+
       - name: Validate required environment variables
         shell: pwsh
         run: |
@@ -115,21 +127,26 @@ jobs:
             "AZURE_CLIENT_ID",
             "AZURE_TENANT_ID",
             "AZURE_SUBSCRIPTION_ID",
-            "AZURE_RESOURCE_GROUP",
-            "AZURE_CONTAINERAPPS_ENVIRONMENT",
-            "AZURE_CONTAINER_REGISTRY",
-            "AZURE_MANAGED_IDENTITY_NAME",
-            "AZURE_POSTGRES_SERVER_NAME",
-            "AZURE_POSTGRES_ADMIN_USERNAME",
-            "AZURE_POSTGRES_ADMIN_PASSWORD",
-            "AZURE_STORAGE_ACCOUNT_NAME"
+            "AZURE_CONTAINER_REGISTRY"
           )
 
-          if ($embeddingOption -ne "local") {
+          $deployRequested = [System.Convert]::ToBoolean("${{ inputs.deploy }}")
+          if ($deployRequested) {
             $required += @(
-              "AZURE_OPENAI_ENDPOINT",
-              "AZURE_OPENAI_API_KEY"
+              "AZURE_RESOURCE_GROUP",
+              "AZURE_CONTAINERAPPS_ENVIRONMENT",
+              "AZURE_MANAGED_IDENTITY_NAME",
+              "AZURE_POSTGRES_SERVER_NAME",
+              "AZURE_POSTGRES_ADMIN_USERNAME",
+              "AZURE_POSTGRES_ADMIN_PASSWORD",
+              "AZURE_STORAGE_ACCOUNT_NAME"
             )
+            if ($embeddingOption -ne "local") {
+              $required += @(
+                "AZURE_OPENAI_ENDPOINT",
+                "AZURE_OPENAI_API_KEY"
+              )
+            }
           }
 
           $missing = @()
@@ -182,10 +199,11 @@ jobs:
           pip install -e .
 
       - name: Ensure Azure Container Apps extension
+        if: inputs.deploy
         shell: pwsh
         run: az extension add --name containerapp --upgrade --only-show-errors
 
-      - name: Deploy document processor job
+      - name: Build and optionally deploy document processor job
         shell: pwsh
         run: |
           Write-Host "Document processor deploy location: $env:AZURE_DOCUMENT_PROCESSOR_LOCATION"
@@ -221,6 +239,8 @@ jobs:
             $env:AZURE_STORAGE_CONTAINER_NAME
           }
 
+          $buildOnly = -not [System.Convert]::ToBoolean("${{ inputs.deploy }}")
+
           ./infra/scripts/deploy_document_processor.ps1 `
             -SkipEnvFile `
             -SubscriptionId $env:AZURE_SUBSCRIPTION_ID `
@@ -246,4 +266,5 @@ jobs:
             -AzureOpenAIApiKey $env:AZURE_OPENAI_API_KEY `
             -CronExpression $cronExpression `
             -DocumentProcessorMaxRunningTime $env:DOCUMENT_PROCESSOR_MAX_RUNNING_TIME `
-            -ImageTag $imageTag
+            -ImageTag $imageTag `
+            -BuildOnly:$buildOnly
