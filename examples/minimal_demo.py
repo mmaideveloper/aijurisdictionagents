@@ -433,3 +433,9 @@ print(
     "document_guest_share => sender locale creates a link-only invitation; the recipient "
     "uses a short-lived email code to open one revocable PDF without registration or case access."
 )
+print(
+    "golden_case_602_document_ux => selected UI language localizes document-preview chrome and "
+    "document-share email branding; numbered legal sections stay in one complete HTML preview, "
+    "and the email includes a CTA plus a clickable fallback URL. Run "
+    "`python examples/golden_case_602_email_preview.py` for the focused email sample."
+)

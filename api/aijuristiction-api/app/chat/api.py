@@ -3593,16 +3593,16 @@ def _generated_case_document_drafts_for_storage(
     *,
     timestamp: str,
 ) -> list[_GeneratedCaseDocumentDraft]:
+    power_of_attorney_drafts = _bilingual_power_of_attorney_drafts(content, timestamp=timestamp)
+    if power_of_attorney_drafts:
+        return power_of_attorney_drafts
+
     section_drafts = _generated_case_document_drafts_from_visible_sections(
         content,
         timestamp=timestamp,
     )
     if section_drafts:
         return section_drafts
-
-    power_of_attorney_drafts = _bilingual_power_of_attorney_drafts(content, timestamp=timestamp)
-    if power_of_attorney_drafts:
-        return power_of_attorney_drafts
 
     if _looks_like_generated_case_document_for_storage(content):
         document_body = _generated_case_document_body_for_storage(content)
@@ -3624,7 +3624,7 @@ def _generated_case_document_drafts_from_visible_sections(
     timestamp: str,
 ) -> list[_GeneratedCaseDocumentDraft]:
     sections = _exportable_visible_document_sections_for_storage(content)
-    if len(sections) <= 1:
+    if not sections:
         return []
     return [
         _GeneratedCaseDocumentDraft(
@@ -3705,6 +3705,8 @@ def _sanitize_generated_legal_document_body(content: str) -> str:
         "tu je finalny dokument",
         "technicke udaje som ulozil",
         "technical data was saved",
+        "teraz pripravim oba dokumenty",
+        "teraz pripravim dokumenty",
     )
     for raw_line in visible.splitlines():
         line = raw_line.strip()
@@ -6419,7 +6421,11 @@ def _extract_visible_document_sections_for_export(content: str) -> list[dict[str
     for raw_line in content.splitlines():
         stripped = raw_line.strip()
         if stripped in {"---", "___", "***"}:
-            if current_title and current_lines:
+            if current_title:
+                current_lines.append("")
+            continue
+        if current_title and _is_visible_document_conversation_boundary(stripped):
+            if current_lines:
                 sections.append({"title": current_title, "content": "\n".join(current_lines)})
             current_title = ""
             current_lines = []
@@ -6449,6 +6455,24 @@ def _extract_visible_document_sections_for_export(content: str) -> list[dict[str
     if cleaned_sections:
         return cleaned_sections
     return [{"title": title, "content": title} for title in _extract_document_titles_from_text(content)]
+
+
+def _is_visible_document_conversation_boundary(line: str) -> bool:
+    if not line:
+        return False
+    normalized = re.sub(r"^\s{0,3}#{1,6}\s+", "", line.strip())
+    normalized = normalized.strip("*_#:- ")
+    canonical = _canonicalize_document_text(normalized).rstrip("?")
+    return canonical in {
+        "co dalej",
+        "what next",
+        "next steps",
+        "wie weiter",
+        "zhrnutie pripadu",
+        "chybajuce informacie dokumenty",
+        "rizika slabe miesta",
+        "navrhovany postup",
+    }
 
 
 def _document_section_title_from_line(line: str) -> str:

@@ -219,6 +219,9 @@ export const translations = {
     assistantComposerLabel: "Assistant message",
     assistantComposerPlaceholder: "Ask for legal research or document preparation...",
     assistantSend: "Send message",
+    assistantDocumentPreviewLabel: "Document preview",
+    assistantDocumentPreviewPage: "A4 preview {number}",
+    assistantGeneratedPdf: "Generated PDF",
     assistantRole: "Assistant",
     assistantUserRole: "You",
     assistantInitialMessage:
@@ -928,6 +931,9 @@ export const translations = {
     assistantComposerLabel: "Správa asistentovi",
     assistantComposerPlaceholder: "Požiadajte o právny výskum alebo prípravu dokumentu...",
     assistantSend: "Odoslať správu",
+    assistantDocumentPreviewLabel: "Náhľad dokumentu",
+    assistantDocumentPreviewPage: "Náhľad A4 – strana {number}",
+    assistantGeneratedPdf: "Vygenerované PDF",
     assistantRole: "Asistent",
     assistantUserRole: "Vy",
     assistantInitialMessage:
@@ -1637,6 +1643,9 @@ export const translations = {
     assistantComposerLabel: "Nachricht an den Assistenten",
     assistantComposerPlaceholder: "Fragen Sie nach Rechtsrecherche oder Dokumentvorbereitung...",
     assistantSend: "Nachricht senden",
+    assistantDocumentPreviewLabel: "Dokumentvorschau",
+    assistantDocumentPreviewPage: "A4-Vorschau – Seite {number}",
+    assistantGeneratedPdf: "Erstelltes PDF",
     assistantRole: "Assistent",
     assistantUserRole: "Sie",
     assistantInitialMessage:

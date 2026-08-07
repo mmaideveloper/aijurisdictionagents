@@ -22,6 +22,7 @@ import {
 } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
@@ -275,6 +276,8 @@ const separatorLinePattern = /^\s*-{3,}\s*$/;
 const internalAudienceLabelPattern = /^\s*(?:USER|USERT)-FACING\s*:\s*/i;
 const assistantAgentPrefixPattern = /^\s*(?:LawyerSlovakia|[A-Za-z]+Slovakia)\s*:\s*/;
 const documentTitlePattern = /^\s*(?:#{1,4}\s+.+|\*\*(?![^*]{1,80}:\*\*$).+\*\*)\s*$/;
+const documentRootTitlePattern = /(?:splnomocnen|power of attorney|potvrden|zmluv|agreement|contract|dohod|v[ýy]zv|zalob|žalob|n[áa]vrh|memorand)/i;
+const conversationBoundaryTitlePattern = /^(?:čo ďalej|co dalej|what next|next steps|wie weiter)\??$/i;
 
 const stripMarkdownHeading = (line: string): string =>
   line
@@ -283,8 +286,16 @@ const stripMarkdownHeading = (line: string): string =>
     .replace(/^\*\*(.+)\*\*$/, "$1")
     .trim();
 
-const cleanDocumentLine = (line: string): string =>
-  stripMarkdownHeading(line).replace(/\*\*([^*]+)\*\*/g, "$1");
+const isDocumentRootTitle = (line: string): boolean => {
+  if (!documentTitlePattern.test(line.trim())) {
+    return false;
+  }
+  const title = stripMarkdownHeading(line).replace(/^\d+[.)]?\s+/, "").trim();
+  return !/^\d+[.)]?\s+/.test(stripMarkdownHeading(line)) && documentRootTitlePattern.test(title);
+};
+
+const isConversationBoundaryTitle = (line: string): boolean =>
+  documentTitlePattern.test(line.trim()) && conversationBoundaryTitlePattern.test(stripMarkdownHeading(line));
 
 const normalizeVisibleAssistantText = (text: string): string =>
   text
@@ -387,6 +398,44 @@ export const parseAssistantMessagePresentation = (text: string): AssistantMessag
     };
   }
 
+  const lines = textWithoutLinks.split("\n");
+  const rootIndexes = lines.reduce<number[]>((indexes, line, index) => {
+    if (isDocumentRootTitle(line)) {
+      indexes.push(index);
+    }
+    return indexes;
+  }, []);
+  if (rootIndexes.length > 0) {
+    const documentPreviews: AssistantDocumentPreview[] = [];
+    const documentLineIndexes = new Set<number>();
+    rootIndexes.forEach((startIndex, rootIndex) => {
+      const nextRootIndex = rootIndexes[rootIndex + 1] ?? lines.length;
+      let endIndex = nextRootIndex;
+      for (let index = startIndex + 1; index < nextRootIndex; index += 1) {
+        if (isConversationBoundaryTitle(lines[index] ?? "")) {
+          endIndex = index;
+          break;
+        }
+      }
+      for (let index = startIndex; index < endIndex; index += 1) {
+        documentLineIndexes.add(index);
+      }
+      const body = lines.slice(startIndex + 1, endIndex).join("\n").trim();
+      if (looksLikeDocumentPreview(`${lines[startIndex]}\n${body}`)) {
+        documentPreviews.push({ title: stripMarkdownHeading(lines[startIndex] ?? ""), body });
+      }
+    });
+    if (documentPreviews.length > 0) {
+      const conversationalText = lines
+        .filter((_line, index) => !documentLineIndexes.has(index))
+        .filter((line) => !separatorLinePattern.test(line))
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      return { conversationalText, documentPreviews, documentLinks: links };
+    }
+  }
+
   const hasSeparators = textWithoutLinks.split("\n").some((line) => separatorLinePattern.test(line));
   const chunks = textWithoutLinks
     .split(/\n\s*-{3,}\s*\n/g)
@@ -422,66 +471,23 @@ export const parseAssistantMessagePresentation = (text: string): AssistantMessag
   };
 };
 
-const renderDocumentBody = (body: string): React.ReactNode[] => {
-  const nodes: React.ReactNode[] = [];
-  let listItems: string[] = [];
-
-  const flushList = () => {
-    if (listItems.length === 0) {
-      return;
-    }
-    nodes.push(
-      <ul key={`list-${nodes.length}`} className="assistant-document-preview__list">
-        {listItems.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    );
-    listItems = [];
-  };
-
-  body.split(/\n{2,}/).forEach((block) => {
-    const lines = block
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (lines.length === 0) {
-      return;
-    }
-    if (lines.every((line) => /^[-*]\s+/.test(line))) {
-      listItems.push(...lines.map((line) => line.replace(/^[-*]\s+/, "")));
-      return;
-    }
-    flushList();
-    nodes.push(
-      <p key={`paragraph-${nodes.length}`} className="assistant-document-preview__paragraph">
-        {lines.map(cleanDocumentLine).join(" ")}
-      </p>
-    );
-  });
-
-  flushList();
-  return nodes;
-};
-
 const AssistantDocumentPreviewCard: React.FC<{ preview: AssistantDocumentPreview; index: number }> = ({
   preview,
   index
-}) => (
-  <article className="assistant-document-preview" aria-label={`${preview.title} preview`}>
-    <div className="assistant-document-preview__sheet">
-      <header className="assistant-document-preview__letterhead">
-        <span>JurisDigta</span>
-        <small>Document preview</small>
-      </header>
-      <div className="assistant-document-preview__page-marker">A4 preview {index + 1}</div>
-      <h3>{preview.title}</h3>
-      <div className="assistant-document-preview__content">{renderDocumentBody(preview.body)}</div>
-    </div>
-  </article>
-);
+}) => {
+  const { t } = useLanguage();
+  return (
+    <LegalDocumentPreview
+      title={preview.title}
+      body={preview.body}
+      previewLabel={t("assistantDocumentPreviewLabel")}
+      pageLabel={t("assistantDocumentPreviewPage", { number: index + 1 })}
+    />
+  );
+};
 
 const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ links }) => {
+  const { t } = useLanguage();
   if (links.length === 0) {
     return null;
   }
@@ -490,7 +496,7 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
     <div className="assistant-document-actions" aria-label="Generated documents">
       {links.map((link) => (
         <a key={link.href} className="assistant-document-actions__item" href={link.href} target="_blank" rel="noreferrer">
-          <span>Generated PDF</span>
+          <span>{t("assistantGeneratedPdf")}</span>
           <strong>{link.label}</strong>
         </a>
       ))}
@@ -501,11 +507,15 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
   const presentation = parseAssistantMessagePresentation(text);
+  const conversationalText = presentation.conversationalText
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1");
 
   return (
     <>
-      {presentation.conversationalText ? (
-        <p className="assistant-message__text">{presentation.conversationalText}</p>
+      {conversationalText ? (
+        <p className="assistant-message__text">{conversationalText}</p>
       ) : null}
       {presentation.documentPreviews.map((preview, index) => (
         <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
@@ -814,7 +824,8 @@ const CaseMessageActor: React.FC<{ fallback: string }> = ({ fallback }) => {
     return typeof custom?.actor === "string" ? custom.actor : null;
   });
 
-  return <>{actor ?? fallback}</>;
+  const isInternalActor = actor !== null && /^(?:LawyerSlovakia|[A-Za-z]+Slovakia|AI Lawyer|You(?: \(.+\))?)$/i.test(actor);
+  return <>{actor && !isInternalActor ? actor : fallback}</>;
 };
 
 const CaseMessageCitations: React.FC = () => {

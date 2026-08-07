@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { fetchCaseDocumentBlob, sendCaseDocumentEmail } from "../api/caseClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { LegalDocumentPreview, splitLegalDocumentSource } from "../components/LegalDocumentPreview";
 
 const DocumentViewer: React.FC = () => {
   const { t, language } = useLanguage();
@@ -92,6 +93,10 @@ const DocumentViewer: React.FC = () => {
   }, [canLoadDocument, caseId, docId, documentFormat, documentKind, t, userId]);
 
   const handlePrint = () => {
+    if (previewText) {
+      window.print();
+      return;
+    }
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
   };
@@ -153,6 +158,11 @@ const DocumentViewer: React.FC = () => {
     }
   };
 
+  const htmlPreview = React.useMemo(
+    () => splitLegalDocumentSource(previewText, filename),
+    [filename, previewText]
+  );
+
   return (
     <div className="page document-viewer-page">
       <section className="document-viewer-shell">
@@ -192,16 +202,21 @@ const DocumentViewer: React.FC = () => {
           ) : previewUrl ? (
             <>
               {previewText ? (
-                <article className="document-viewer-text-preview" aria-label={filename}>
-                  <pre>{previewText}</pre>
-                </article>
-              ) : null}
-              <iframe
-                ref={iframeRef}
-                className="document-viewer-frame"
-                src={previewUrl}
-                title={filename}
-              />
+                <LegalDocumentPreview
+                  className="document-viewer-html-preview"
+                  title={htmlPreview.title}
+                  body={htmlPreview.body}
+                  previewLabel={t("assistantDocumentPreviewLabel")}
+                  pageLabel={t("assistantDocumentPreviewPage", { number: 1 })}
+                />
+              ) : (
+                <iframe
+                  ref={iframeRef}
+                  className="document-viewer-frame"
+                  src={previewUrl}
+                  title={filename}
+                />
+              )}
             </>
           ) : null
         ) : (
