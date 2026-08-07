@@ -38,6 +38,17 @@ npm run test:e2e
 
 The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issues #530 and #574 are covered by `e2e/assistant-branding.spec.ts`, which verifies the localized SK/EN/DE navbar, sidebar brand, and browser title after persisted direct loads, live language changes, and client-side navigation.
 
+Run the focused generated-document download/listing regression with:
+
+```bash
+npm run test:e2e -- e2e/generated-document-download.spec.ts
+```
+
+The generated-document test scopes the open-document button to its sidebar document item and
+asserts the filename-specific delete button separately. Keep these controls distinct when their
+accessible names share the same filename; do not use positional Playwright selectors to hide an
+ambiguous role query.
+
 The issue #574 test writes locale screenshots to
 `runs/e2e/issue-574-assistant-branding-{sk,en,de}.png` using synthetic account and API data.
 
