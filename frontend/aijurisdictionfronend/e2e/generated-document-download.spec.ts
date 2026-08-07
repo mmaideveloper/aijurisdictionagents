@@ -87,7 +87,20 @@ test("generated documents are downloadable and listed for the selected case", as
   await caseButton.click();
 
   await expect(page.getByRole("heading", { name: /dokumenty|documents/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /splnomocnenie_ESolutions_SK\.pdf/i })).toBeVisible();
+  const generatedFilename = "splnomocnenie_ESolutions_SK.pdf";
+  const sidebarDocumentItem = page.locator(".sidebar-document-item").filter({
+    has: page.locator(".sidebar-document-link", { hasText: generatedFilename })
+  });
+  const sidebarDocumentLink = sidebarDocumentItem.locator("button.sidebar-document-link");
+  const sidebarDeleteButton = sidebarDocumentItem.getByRole("button", {
+    name: `Delete document ${generatedFilename}`,
+    exact: true
+  });
+
+  await expect(sidebarDocumentItem).toHaveCount(1);
+  await expect(sidebarDocumentLink).toHaveCount(1);
+  await expect(sidebarDocumentLink).toBeVisible();
+  await expect(sidebarDeleteButton).toBeVisible();
 
   const documentActions = page.getByLabel("Generated documents");
   await expect(documentActions.getByRole("link", { name: /splnomocnenie_ESolutions_SK\.pdf/i })).toBeVisible();
