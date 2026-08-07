@@ -66,10 +66,31 @@ This guarantees every case has an isolated storage namespace.
 - `company_users`: user/company association and role.
 - `cases`: user/company legal cases.
 - `case_documents`: source/generated document metadata + versions.
+- `case_document_deletion_events`: minimal document-deletion tombstones containing target IDs,
+  document kind, actor, UTC timestamp, outcome, correlation ID, and linked system communication;
+  filenames, document text, embeddings, prompts, and legal content are intentionally excluded.
 - `case_communications`: chat/audio transcript references and summaries.
 - `case_citations`: privacy-minimized legal source metadata linked to case questions and assistant answers.
 
 `case_citations` stores source type, stable source id or safe URL, display label, law/court metadata where available, a short snippet, retrieval tool, optional relevance score, and creation time. It intentionally does not store full retrieved law bodies, raw court-decision text, prompts, or sensitive case/user content. Case history returns citations attached to each answer, and `/v1/cases/{case_id}/citations` returns the authorized aggregate list for the case citation panel.
+
+## User document and case deletion
+
+- `DELETE /v1/cases/{case_id}/documents/{doc_id}?user_id=...` is owner-authorized and
+  subject to the normal case write-window gate. It permanently removes the canonical payload,
+  extracted text, chunks, embeddings, document metadata, and active guest shares.
+- The document filename and legal content are not copied into the deletion audit table. A minimal
+  tombstone and a content-free `SYSTEM` case-history entry record who deleted the document and when.
+- Storage removal and relational deletion are coordinated. A storage failure restores the staged
+  payload, rolls back database changes, returns `503 document_deletion_failed`, and supplies a
+  correlation ID for a safe retry.
+- Cross-user and already-deleted targets return the same not-found behavior so the API does not
+  disclose resource existence.
+- `DELETE /v1/cases/{case_id}?user_id=...` remains a case soft delete: the case is hidden from
+  normal owner lists while the documented retention/purge and data-subject-right processes apply.
+  The web assistant exposes this action next to Export and requires explicit confirmation.
+
+Synthetic-data E2E evidence: [document and case delete controls](screenshots/issue-597-delete-controls.png).
 
 ## Minimal demo
 

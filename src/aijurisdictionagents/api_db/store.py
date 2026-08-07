@@ -163,6 +163,19 @@ class CaseDocument:
 
 
 @dataclass(frozen=True)
+class CaseDocumentDeletionEvent:
+    event_id: str
+    case_id: str
+    doc_id: str
+    document_kind: str
+    actor_user_id: str
+    correlation_id: str
+    outcome: str
+    deleted_at: str
+    communication_id: str
+
+
+@dataclass(frozen=True)
 class DocumentShare:
     share_id: str
     token_hash: str
@@ -730,6 +743,24 @@ class ApiDatabaseStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS case_document_deletion_events (
+                    event_id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL,
+                    doc_id TEXT NOT NULL,
+                    document_kind TEXT NOT NULL,
+                    actor_user_id TEXT NOT NULL,
+                    correlation_id TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    deleted_at TEXT NOT NULL,
+                    communication_id TEXT NOT NULL,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE,
+                    FOREIGN KEY(actor_user_id) REFERENCES users(user_id),
+                    FOREIGN KEY(communication_id) REFERENCES case_communications(communication_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_case_document_deletion_events_case_deleted
+                ON case_document_deletion_events(case_id, deleted_at DESC);
 
                 CREATE TABLE IF NOT EXISTS subscription_plans (
                     plan_code TEXT PRIMARY KEY,
@@ -3907,6 +3938,170 @@ class ApiDatabaseStore:
         if row is None:
             raise KeyError(f"Document {doc_id} not found for case {case_id}")
         return _row_to_case_document(row)
+
+    def delete_case_document(
+        self,
+        *,
+        case_id: str,
+        doc_id: str,
+        actor_user_id: str,
+        correlation_id: str,
+    ) -> CaseDocumentDeletionEvent:
+        """Permanently erase one case document while retaining a minimal audit tombstone."""
+
+        case = self.get_case(case_id=case_id)
+        if case.user_id != actor_user_id or case.status == "deleted":
+            raise KeyError(f"Document {doc_id} not found for case {case_id}")
+        document = self.get_case_document(case_id=case_id, doc_id=doc_id)
+        event_id = str(uuid.uuid4())
+        communication_id = str(uuid.uuid4())
+        deleted_at = _now_iso()
+        storage_path = self._resolve_storage_path(document.storage_uri)
+        staged_path = storage_path.with_name(f"{storage_path.name}.deleting-{event_id}")
+        payload_staged = False
+
+        if storage_path.exists():
+            storage_path.replace(staged_path)
+            payload_staged = True
+
+        try:
+            with self._connect() as conn:
+                owned = self._fetchone(
+                    conn,
+                    """
+                    SELECT d.doc_id
+                    FROM case_documents d
+                    JOIN cases c ON c.case_id = d.case_id
+                    WHERE d.case_id = ? AND d.doc_id = ?
+                      AND c.user_id = ? AND c.status <> 'deleted'
+                    """,
+                    (case_id, doc_id, actor_user_id),
+                )
+                if owned is None:
+                    raise KeyError(f"Document {doc_id} not found for case {case_id}")
+
+                share_rows = self._execute(
+                    conn,
+                    "SELECT share_id FROM document_shares WHERE case_id = ? AND doc_id = ?",
+                    (case_id, doc_id),
+                ).fetchall()
+                share_ids = [str(row[0]) for row in share_rows]
+                if share_ids:
+                    placeholders = ", ".join("?" for _ in share_ids)
+                    self._execute(
+                        conn,
+                        f"DELETE FROM document_share_audit_events WHERE share_id IN ({placeholders})",
+                        tuple(share_ids),
+                    )
+                self._execute(
+                    conn,
+                    "DELETE FROM document_shares WHERE case_id = ? AND doc_id = ?",
+                    (case_id, doc_id),
+                )
+                self._execute(
+                    conn,
+                    "DELETE FROM case_document_chunks WHERE case_id = ? AND doc_id = ?",
+                    (case_id, doc_id),
+                )
+                self._execute(
+                    conn,
+                    "DELETE FROM case_document_contents WHERE case_id = ? AND doc_id = ?",
+                    (case_id, doc_id),
+                )
+                result = self._execute(
+                    conn,
+                    "DELETE FROM case_documents WHERE case_id = ? AND doc_id = ?",
+                    (case_id, doc_id),
+                )
+                if result.rowcount == 0:
+                    raise KeyError(f"Document {doc_id} not found for case {case_id}")
+
+                self._execute(
+                    conn,
+                    """
+                    INSERT INTO case_communications(
+                        communication_id, case_id, channel, transcript_uri, summary, created_at
+                    ) VALUES (?, ?, 'system', NULL, ?, ?)
+                    """,
+                    (
+                        communication_id,
+                        case_id,
+                        f"SYSTEM: Document deleted at {deleted_at}.",
+                        deleted_at,
+                    ),
+                )
+                self._execute(
+                    conn,
+                    """
+                    INSERT INTO case_document_deletion_events(
+                        event_id, case_id, doc_id, document_kind, actor_user_id,
+                        correlation_id, outcome, deleted_at, communication_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'deleted', ?, ?)
+                    """,
+                    (
+                        event_id,
+                        case_id,
+                        doc_id,
+                        document.kind,
+                        actor_user_id,
+                        correlation_id,
+                        deleted_at,
+                        communication_id,
+                    ),
+                )
+                self._execute(
+                    conn,
+                    "UPDATE cases SET updated_at = ? WHERE case_id = ?",
+                    (deleted_at, case_id),
+                )
+                if payload_staged:
+                    staged_path.unlink()
+        except Exception:
+            if payload_staged and staged_path.exists() and not storage_path.exists():
+                staged_path.replace(storage_path)
+            raise
+
+        return CaseDocumentDeletionEvent(
+            event_id=event_id,
+            case_id=case_id,
+            doc_id=doc_id,
+            document_kind=document.kind,
+            actor_user_id=actor_user_id,
+            correlation_id=correlation_id,
+            outcome="deleted",
+            deleted_at=deleted_at,
+            communication_id=communication_id,
+        )
+
+    def list_case_document_deletion_events(
+        self, *, case_id: str
+    ) -> list[CaseDocumentDeletionEvent]:
+        with self._connect() as conn:
+            rows = self._execute(
+                conn,
+                """
+                SELECT event_id, case_id, doc_id, document_kind, actor_user_id,
+                       correlation_id, outcome, deleted_at, communication_id
+                FROM case_document_deletion_events
+                WHERE case_id = ?
+                ORDER BY deleted_at DESC
+                """,
+                (case_id,),
+            ).fetchall()
+        return [
+            CaseDocumentDeletionEvent(
+                event_id=str(row[0]),
+                case_id=str(row[1]),
+                doc_id=str(row[2]),
+                document_kind=str(row[3]),
+                actor_user_id=str(row[4]),
+                correlation_id=str(row[5]),
+                outcome=str(row[6]),
+                deleted_at=str(row[7]),
+                communication_id=str(row[8]),
+            )
+            for row in rows
+        ]
 
     def create_document_share(
         self,

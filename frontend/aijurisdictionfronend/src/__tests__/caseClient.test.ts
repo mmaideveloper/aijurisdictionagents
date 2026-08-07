@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchCaseDocumentBlob, fetchCaseExportBlob } from "../api/caseClient";
+import {
+  deleteApiCase,
+  deleteApiCaseDocument,
+  fetchCaseDocumentBlob,
+  fetchCaseExportBlob
+} from "../api/caseClient";
 
 vi.mock("../logging/consoleLogger", () => ({
   consoleLogger: {
@@ -112,5 +117,44 @@ describe("caseClient", () => {
     expect(exported.contentType).toBe("application/zip");
     expect(exported.filename).toBe("case-export.zip");
     await expect(exported.blob.text()).resolves.toBe("zip body");
+  });
+
+  it("deletes a case document and returns its audit tombstone", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        event_id: "event-1",
+        case_id: "case-1",
+        doc_id: "doc-1",
+        document_kind: "uploaded",
+        outcome: "deleted",
+        deleted_at: "2026-08-05T13:00:00Z",
+        communication_id: "communication-1",
+        correlation_id: "correlation-1"
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deleteApiCaseDocument("user-1", "case-1", "doc-1");
+
+    expect(fetchMock.mock.calls[0][0]).toContain(
+      "/v1/cases/case-1/documents/doc-1?user_id=user-1"
+    );
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({ method: "DELETE", headers: { "x-api-key": "aijuris" } })
+    );
+    expect(result.outcome).toBe("deleted");
+    expect(result.correlation_id).toBe("correlation-1");
+  });
+
+  it("soft-deletes a case with the configured API key header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deleteApiCase("user-1", "case-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/cases/case-1?user_id=user-1"),
+      expect.objectContaining({ method: "DELETE", headers: { "x-api-key": "aijuris" } })
+    );
   });
 });

@@ -199,6 +199,25 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         company_id=None,
         title="Minimal citation demo",
     )
+    disposable_document_id = demo_store.add_case_document(
+        case_id=demo_case.case_id,
+        kind="uploaded",
+        version=1,
+        original_filename="minimal-delete-demo.txt",
+        payload=b"synthetic disposable content",
+        uploaded_by_user_id=demo_user.user_id,
+    )
+    deletion_event = demo_store.delete_case_document(
+        case_id=demo_case.case_id,
+        doc_id=disposable_document_id,
+        actor_user_id=demo_user.user_id,
+        correlation_id="minimal-demo-correlation",
+    )
+    assert demo_store.list_case_documents(case_id=demo_case.case_id) == []
+    print(
+        "case_document_deletion => payload erased; "
+        f"audit_event={deletion_event.event_id} deleted_at={deletion_event.deleted_at}"
+    )
     demo_question_id = demo_store.add_case_message(
         case_id=demo_case.case_id,
         role="user",

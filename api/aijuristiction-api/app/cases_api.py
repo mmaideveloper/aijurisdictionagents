@@ -173,6 +173,17 @@ class CaseDocumentUploadResponse(BaseModel):
     unprocessed_document_count: int
 
 
+class CaseDocumentDeletionResponse(BaseModel):
+    event_id: str
+    case_id: str
+    doc_id: str
+    document_kind: str
+    outcome: str
+    deleted_at: str
+    communication_id: str
+    correlation_id: str
+
+
 class CaseDocumentContextResponse(BaseModel):
     processed_documents: list[str]
     unprocessed_documents: list[str]
@@ -579,6 +590,70 @@ def download_case_document(
         headers={
             'Content-Disposition': f'{disposition}; filename="{document.original_filename}"',
         },
+    )
+
+
+@router.delete('/{case_id}/documents/{doc_id}', response_model=CaseDocumentDeletionResponse)
+def delete_case_document(
+    case_id: str,
+    doc_id: str,
+    user_id: str,
+    request: Request,
+    store: ApiDatabaseStore = Depends(get_store),
+) -> CaseDocumentDeletionResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
+    correlation_id = str(request.state.correlation_id)
+    try:
+        event = store.delete_case_document(
+            case_id=case_id,
+            doc_id=doc_id,
+            actor_user_id=user_id,
+            correlation_id=correlation_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f'Document {doc_id} not found for case {case_id}',
+        ) from exc
+    except (OSError, ValueError) as exc:
+        _LOGGER.error(
+            'Case document deletion failed',
+            extra={
+                'case_id': case_id,
+                'doc_id': doc_id,
+                'correlation_id': correlation_id,
+            },
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                'code': 'document_deletion_failed',
+                'message': 'Document deletion could not be completed. Retry with the correlation id.',
+                'params': {'correlation_id': correlation_id},
+            },
+        ) from exc
+    _LOGGER.info(
+        'Case document deleted',
+        extra={
+            'case_id': case_id,
+            'doc_id': doc_id,
+            'document_kind': event.document_kind,
+            'actor_user_id': user_id,
+            'correlation_id': correlation_id,
+            'deleted_at': event.deleted_at,
+        },
+    )
+    return CaseDocumentDeletionResponse(
+        event_id=event.event_id,
+        case_id=event.case_id,
+        doc_id=event.doc_id,
+        document_kind=event.document_kind,
+        outcome=event.outcome,
+        deleted_at=event.deleted_at,
+        communication_id=event.communication_id,
+        correlation_id=event.correlation_id,
     )
 
 

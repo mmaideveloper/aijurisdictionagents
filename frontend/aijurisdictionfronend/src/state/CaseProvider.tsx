@@ -1,6 +1,8 @@
 import React from "react";
 import {
   createApiCase,
+  deleteApiCase,
+  deleteApiCaseDocument,
   getCaseHistory,
   listCases,
   uploadApiCaseDocuments,
@@ -131,6 +133,8 @@ type CaseContextValue = {
   isLoadingCases: boolean;
   caseLoadError: string | null;
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
+  deleteCase: (caseId: string) => Promise<void>;
+  deleteDocument: (caseId: string, docId: string) => Promise<void>;
   loadCaseData: (caseId: string) => Promise<CaseRecord | null>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
@@ -146,6 +150,7 @@ type CaseContextValue = {
 const CaseContext = React.createContext<CaseContextValue | undefined>(undefined);
 const CASE_STORAGE_KEY = "aijurisdictionfrontend.mock.cases.v1";
 const STORED_DOCUMENT_MESSAGE_PATTERN = /^Stored (?<count>\d+) uploaded documents? in mock profile storage\.$/;
+const DOCUMENT_DELETED_MESSAGE_PATTERN = /^Document deleted at (?<deletedAt>.+)\.$/;
 const LOCALIZED_INTERACTION_PREFIX = "__aj_i18n__:";
 
 type LocalizedInteractionDescriptor = {
@@ -298,6 +303,13 @@ const localizeInteractionMessage = (
         : "mockCreatedCaseStoredDocumentsPlural",
       { count }
     );
+  }
+
+  const documentDeletedMatch = message.match(DOCUMENT_DELETED_MESSAGE_PATTERN);
+  if (documentDeletedMatch?.groups?.deletedAt) {
+    return translate(language, "sidebarDocumentDeletedHistory", {
+      deletedAt: documentDeletedMatch.groups.deletedAt
+    });
   }
 
   return message;
@@ -842,9 +854,8 @@ const mapApiCase = (
   historyDocuments: ApiCaseDocument[] = [],
   historyCitations: ApiCaseCitation[] = []
 ): CaseRecord => {
-  const documents = historyDocuments
-    .map((document) => mapApiDocument(apiCase.case_id, document))
-    .filter(isUserVisibleGeneratedDocument);
+  const documents = historyDocuments.map((document) => mapApiDocument(apiCase.case_id, document));
+  const legalDocumentCount = documents.filter(isUserVisibleGeneratedDocument).length;
   const messagesWithDocumentLinks = appendGeneratedDocumentLinksToHistory({
     apiCase,
     messages: historyMessages,
@@ -871,7 +882,7 @@ const mapApiCase = (
     selectedMode: "Draft",
     selectedCommunicationMode: "Chat",
     workspace: {
-      meta: `${documents.length} legal document${documents.length === 1 ? "" : "s"} / ${historyMessages.length} message${historyMessages.length === 1 ? "" : "s"}`,
+      meta: `${legalDocumentCount} legal document${legalDocumentCount === 1 ? "" : "s"} / ${historyMessages.length} message${historyMessages.length === 1 ? "" : "s"}`,
       objective: apiCase.title,
       nextAction: "Open the selected case data and continue the chat.",
       jurisdiction: "SK",
@@ -1072,6 +1083,93 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return localizeCaseRecord(newCase, language);
   }, [language, user?.userId]);
 
+  const deleteCase = React.useCallback(
+    async (caseId: string) => {
+      const target = storedCases.find((caseItem) => caseItem.id === caseId);
+      if (!target) {
+        throw new Error(`Case ${caseId} was not found.`);
+      }
+      if (target.source === "api") {
+        if (!user?.userId) {
+          throw new Error("Sign in before deleting a case.");
+        }
+        await deleteApiCase(user.userId, caseId);
+      }
+      delete sessionIdsByCaseRef.current[caseId];
+      setStoredCases((previous) => {
+        const remaining = previous.filter((caseItem) => caseItem.id !== caseId);
+        setActiveCaseId((current) => {
+          if (current !== caseId) {
+            return current;
+          }
+          const nextCaseId = remaining[0]?.id ?? null;
+          setHasSelectedCase(Boolean(nextCaseId));
+          return nextCaseId;
+        });
+        return remaining;
+      });
+    },
+    [storedCases, user?.userId]
+  );
+
+  const deleteDocument = React.useCallback(
+    async (caseId: string, docId: string) => {
+      const target = storedCases.find((caseItem) => caseItem.id === caseId);
+      if (!target?.documents.some((document) => document.id === docId)) {
+        throw new Error(`Document ${docId} was not found.`);
+      }
+      if (target.source === "api") {
+        if (!user?.userId) {
+          throw new Error("Sign in before deleting a document.");
+        }
+        const event = await deleteApiCaseDocument(user.userId, caseId, docId);
+        setStoredCases((previous) =>
+          previous.map((caseItem) =>
+            caseItem.id === caseId
+              ? {
+                  ...caseItem,
+                  documents: caseItem.documents.filter((document) => document.id !== docId),
+                  interactionHistory: [
+                    ...caseItem.interactionHistory,
+                    {
+                      id: event.communication_id,
+                      createdAt: event.deleted_at,
+                      actor: "System",
+                      message: `Document deleted at ${event.deleted_at}.`,
+                      citations: []
+                    }
+                  ]
+                }
+              : caseItem
+          )
+        );
+        return;
+      }
+      const deletedAt = new Date().toISOString();
+      setStoredCases((previous) =>
+        previous.map((caseItem) =>
+          caseItem.id === caseId
+            ? {
+                ...caseItem,
+                documents: caseItem.documents.filter((document) => document.id !== docId),
+                interactionHistory: [
+                  ...caseItem.interactionHistory,
+                  {
+                    id: `${caseId}-document-deleted-${Date.now()}`,
+                    createdAt: deletedAt,
+                    actor: "System",
+                    message: `Document deleted at ${deletedAt}.`,
+                    citations: []
+                  }
+                ]
+              }
+            : caseItem
+        )
+      );
+    },
+    [storedCases, user?.userId]
+  );
+
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
   }, []);
@@ -1208,6 +1306,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      deleteCase,
+      deleteDocument,
       loadCaseData,
       setActiveCase,
       selectCase,
@@ -1229,6 +1329,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isLoadingCases,
       caseLoadError,
       createCase,
+      deleteCase,
+      deleteDocument,
       loadCaseData,
       setActiveCase,
       selectCase,
