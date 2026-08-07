@@ -79,7 +79,13 @@ def test_slovak_guest_document_share_otp_pdf_and_revocation(monkeypatch, tmp_pat
     assert invitation_row is not None
     assert invitation_row[0] == "Bol vám zdieľaný právny dokument | JurisDigta"
     assert "must-not-appear" not in invitation_row[1]
-    assert "attachments" not in json.loads(invitation_row[2])
+    invitation_metadata = json.loads(invitation_row[2])
+    assert "attachments" not in invitation_metadata
+    invitation_html = invitation_metadata["html_body"]
+    assert "display:inline-block" in invitation_html
+    assert invitation_payload["share_url"] in invitation_html
+    assert f"href='{invitation_payload['share_url']}'" in invitation_html
+    assert "Otvoriť chránený dokument" in invitation_html
 
     code_request = client.post(f"/v1/document-shares/{share_token}/request-code")
     assert code_request.status_code == 200

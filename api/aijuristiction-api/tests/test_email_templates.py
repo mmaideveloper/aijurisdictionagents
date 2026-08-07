@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from typing import Any, cast
 
 from app.services.email import EmailNotificationService
@@ -84,6 +85,28 @@ def test_scheduler_brands_legacy_non_otp_email_and_keeps_code_plain() -> None:
     second_email = sent[2]
     assert second_email["html_body"] is None
     assert second_email["attachments"] == []
+
+
+def test_branded_document_share_email_uses_selected_slovak_locale() -> None:
+    metadata = ensure_branded_email_metadata(
+        subject="Bol vám zdieľaný právny dokument | JurisDigta",
+        body="Otvorte chránený dokument.",
+        metadata={
+            "event": "document_share_invitation",
+            "locale": "sk",
+            "html_body": "<p><a href='https://agent.test/shared-documents/token'>Otvoriť chránený dokument</a></p>",
+        },
+    )
+
+    assert '<html lang="sk">' in metadata["html_body"]
+    assert "Tento e-mail zámerne neobsahuje nepotrebné údaje" in metadata["html_body"]
+    header = next(item for item in metadata["attachments"] if item["content_id"] == HEADER_CID)
+    footer = next(item for item in metadata["attachments"] if item["content_id"] == FOOTER_CID)
+    header_svg = base64.b64decode(header["content_base64"]).decode("utf-8")
+    footer_svg = base64.b64decode(footer["content_base64"]).decode("utf-8")
+    assert "Oznámenie právneho pracovného postupu" in header_svg
+    assert "Právne dokumenty s podporou AI" in footer_svg
+    assert "Professional legal workflow notification" not in header_svg
 
 
 def test_smtp_sender_attaches_inline_assets_as_related(monkeypatch: Any) -> None:

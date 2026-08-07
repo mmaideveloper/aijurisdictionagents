@@ -919,6 +919,53 @@ Podpis: ______________________`);
     expect(presentation.documentPreviews[0]?.body).toContain("PP472DT");
   });
 
+  it("keeps every numbered section of golden case 602 in one complete document preview", () => {
+    const presentation = parseAssistantMessagePresentation(`LawyerSlovakia:
+
+**Potvrdenie o úplnom splatení súkromnej pôžičky**
+
+**1. Údaje o stranách**
+
+| Strana | Údaje |
+|---|---|
+| **Veriteľ** | Peter Vzorový, adresa: Testová 200, Testovo, Slovensko |
+| **Dlžník** | Ján Testovací, adresa: Testová 123, Testovo, Slovensko |
+
+**2. Úvodná veta**
+Toto potvrdenie vyjadruje úplné splatenie pôžičky 3 000 EUR.
+
+---
+
+**3. Obsah potvrdenia**
+Veriteľ nemá voči dlžníkovi žiadne ďalšie nároky.
+
+---
+
+**4. Podpisy**
+Peter Vzorový, podpis: __________________
+Ján Testovací, podpis: __________________
+
+---
+
+**5. Dodatočné poznámky**
+Potvrdenie je vyhotovené v dvoch rovnocenných vyhotoveniach.
+
+---
+
+**Čo ďalej?**
+Pred podpisom skontrolujte všetky údaje.`);
+
+    expect(presentation.documentPreviews).toHaveLength(1);
+    expect(presentation.documentPreviews[0]?.title).toBe("Potvrdenie o úplnom splatení súkromnej pôžičky");
+    expect(presentation.documentPreviews[0]?.body).toContain("1. Údaje o stranách");
+    expect(presentation.documentPreviews[0]?.body).toContain("3. Obsah potvrdenia");
+    expect(presentation.documentPreviews[0]?.body).toContain("4. Podpisy");
+    expect(presentation.documentPreviews[0]?.body).toContain("5. Dodatočné poznámky");
+    expect(presentation.conversationalText).toContain("Čo ďalej?");
+    expect(presentation.conversationalText).toContain("Pred podpisom skontrolujte všetky údaje.");
+    expect(presentation.conversationalText).not.toContain("LawyerSlovakia");
+  });
+
   it("moves generated PDF links into separate document actions", () => {
     const presentation = parseAssistantMessagePresentation(`Splnomocnenie je pripravene.
 

@@ -1580,9 +1580,13 @@ def _document_share_email_content(
     plain = "\n\n".join((copy["greeting"], copy["body"], f"{copy['action']}: {share_url}", expiry, copy["warning"], copy["unexpected"]))
     escaped_url = html.escape(share_url, quote=True)
     html_body = (
-        "<html><body style='font-family:Arial,sans-serif;color:#1f2937'>"
+        f"<html lang='{html.escape(locale, quote=True)}'><body style='font-family:Arial,sans-serif;color:#1f2937'>"
         f"<p>{html.escape(copy['greeting'])}</p><p>{html.escape(copy['body'])}</p>"
-        f"<p><a href='{escaped_url}'>{html.escape(copy['action'])}</a></p>"
+        "<p style='margin:24px 0'>"
+        f"<a href='{escaped_url}' style='display:inline-block;background:#06397a;color:#ffffff;"
+        "padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:700'>"
+        f"{html.escape(copy['action'])}</a></p>"
+        f"<p style='overflow-wrap:anywhere'><a href='{escaped_url}'>{escaped_url}</a></p>"
         f"<p>{html.escape(expiry)}</p><p>{html.escape(copy['warning'])}</p>"
         f"<p>{html.escape(copy['unexpected'])}</p></body></html>"
     )

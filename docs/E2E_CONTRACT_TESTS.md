@@ -47,6 +47,12 @@ This repository now includes deterministic end-to-end simulations for two docume
    - Confirms that the guest remains outside `/auth`, receives no case access, and still sees the qualified-human-review warning.
    - Uses synthetic identities, tokens, and PDF bytes only; the test does not log real recipients, OTPs, legal content, or share secrets.
 
+8. `frontend/aijurisdictionfronend/e2e/golden-case-602-document-preview.spec.ts`
+   - Sends the exact synthetic Slovak question from issue #602 with the disclosed Ollama Cloud `gpt-oss:20b` profile.
+   - Verifies that numbered sections separated by Markdown rules remain in one complete document preview.
+   - Verifies Slovak preview labels, removal of internal agent/Markdown text, the formatted HTML document viewer, and the Slovak document-share request.
+   - Optionally renders the production document-share email sample and captures review-safe screenshots from synthetic data.
+
 ## Files
 
 - Root mirror test: `root_contract_end_to_end_test.py`
@@ -87,6 +93,20 @@ Run the unregistered guest document-share frontend scenario:
 cd frontend/aijurisdictionfronend
 npm run test:e2e:guest-document-share
 ```
+
+Run golden case #602 and optionally create screenshot evidence:
+
+```powershell
+.\conda\python.exe examples\golden_case_602_email_preview.py output\playwright\issue-602-email-preview.html
+$env:GOLDEN_602_EMAIL_PREVIEW = (Resolve-Path output\playwright\issue-602-email-preview.html).Path
+$env:GOLDEN_602_EVIDENCE_DIR = (Resolve-Path docs\images).Path
+Set-Location frontend\aijurisdictionfronend
+npm run test:e2e -- golden-case-602-document-preview.spec.ts
+```
+
+The live-provider check must retain the configured provider gate. Missing Ollama Cloud or
+Azure Foundry credentials must not be replaced with `mock`; deterministic route fixtures are
+used only for browser/UI regression coverage.
 
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.
 

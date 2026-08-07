@@ -6959,6 +6959,60 @@ def test_generated_payment_confirmation_document_uses_legal_filename() -> None:
     assert filename == "potvrdenie_o_zaplateni_20260622T152930Z.pdf"
 
 
+def test_golden_case_602_storage_keeps_complete_confirmation_across_separators() -> None:
+    import app.chat.api as chat_api
+
+    content = """LawyerSlovakia:
+
+**Potvrdenie o úplnom splatení súkromnej pôžičky**
+
+**1. Údaje o stranách**
+Veriteľ: Peter Vzorový
+Dlžník: Ján Testovací
+
+**2. Úvodná veta**
+Toto potvrdenie vyjadruje úplné splatenie pôžičky 3 000 EUR.
+
+---
+
+**3. Obsah potvrdenia**
+Veriteľ nemá voči dlžníkovi žiadne ďalšie nároky.
+
+---
+
+**4. Podpisy**
+Peter Vzorový, podpis: __________________
+Ján Testovací, podpis: __________________
+
+---
+
+**5. Dodatočné poznámky**
+Potvrdenie je vyhotovené v dvoch rovnocenných vyhotoveniach.
+
+---
+
+**Čo ďalej?**
+Pred podpisom skontrolujte správnosť údajov a právne dôsledky dokumentu.
+"""
+
+    drafts = chat_api._generated_case_document_drafts_for_storage(
+        content,
+        timestamp="20260807T120000Z",
+    )
+
+    assert len(drafts) == 1
+    body = drafts[0].body
+    assert "Potvrdenie o úplnom splatení súkromnej pôžičky" in body
+    assert "1. Údaje o stranách" in body
+    assert "Peter Vzorový" in body
+    assert "3. Obsah potvrdenia" in body
+    assert "žiadne ďalšie nároky" in body
+    assert "4. Podpisy" in body
+    assert "5. Dodatočné poznámky" in body
+    assert "Čo ďalej?" not in body
+    assert "LawyerSlovakia" not in body
+
+
 def test_pending_payment_confirmation_reply_is_synthesized_for_storage() -> None:
     from app.chat.api import _synthesized_generated_case_document_body_for_storage
 

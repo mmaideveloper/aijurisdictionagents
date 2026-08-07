@@ -10,9 +10,26 @@ FOOTER_CID = "jurisdigta-email-footer@jurisdigta"
 _BRANDED_TEMPLATE_VERSION = "jurisdigta-email-v1"
 _OTP_EVENTS = {"registration_code", "sign_in_code", "otp", "one_time_code"}
 
-_HEADER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="900" height="210" viewBox="0 0 900 210" role="img" aria-label="JurisDigta header"><rect width="900" height="210" fill="#f8fafc"/><path d="M0 0h900v24H0z" fill="#1b7f8e"/><path d="M0 186h900v24H0z" fill="#d6a84f"/><rect x="64" y="54" width="96" height="96" rx="18" fill="#ffffff" stroke="#1b7f8e" stroke-width="6"/><path d="M112 82v42M88 104l24-10 24 10M88 104l-12 22M136 104l12 22" fill="none" stroke="#172033" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="76" cy="126" r="9" fill="#d6a84f"/><circle cx="148" cy="126" r="9" fill="#d6a84f"/><circle cx="112" cy="94" r="9" fill="#1b7f8e"/><rect x="96" y="126" width="32" height="20" rx="3" fill="#172033"/><text x="190" y="98" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" fill="#172033">JurisDigta</text><text x="192" y="134" font-family="Arial, sans-serif" font-size="20" fill="#475569">Professional legal workflow notification</text></svg>"""
-
-_FOOTER_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="900" height="150" viewBox="0 0 900 150" role="img" aria-label="JurisDigta footer"><rect width="900" height="150" fill="#172033"/><path d="M0 0h900v8H0z" fill="#d6a84f"/><text x="64" y="58" font-family="Georgia, 'Times New Roman', serif" font-size="25" font-weight="700" fill="#ffffff">JurisDigta</text><text x="64" y="91" font-family="Arial, sans-serif" font-size="16" fill="#cbd5e1">AI-assisted legal documents require user or professional review before filing, signing, or reliance.</text><text x="64" y="120" font-family="Arial, sans-serif" font-size="14" fill="#94a3b8">Privacy by design | GDPR-aware workflows | EU AI Act human oversight</text></svg>"""
+_BRANDING_COPY = {
+    "en": {
+        "header": "Professional legal workflow notification",
+        "review": "AI-assisted legal documents require user or professional review before filing, signing, or reliance.",
+        "privacy": "Privacy by design | GDPR-aware workflows | EU AI Act human oversight",
+        "notice": "This email intentionally excludes unnecessary legal case detail. Keep account access private and contact support if the message is unexpected.",
+    },
+    "sk": {
+        "header": "Oznámenie právneho pracovného postupu",
+        "review": "Právne dokumenty s podporou AI vyžadujú pred podaním, podpisom alebo použitím ľudskú kontrolu.",
+        "privacy": "Ochrana súkromia | Súlad s GDPR | Ľudský dohľad podľa Aktu o AI",
+        "notice": "Tento e-mail zámerne neobsahuje nepotrebné údaje o právnom prípade. Chráňte prístup k účtu a pri neočakávanej správe kontaktujte podporu.",
+    },
+    "de": {
+        "header": "Benachrichtigung zum juristischen Arbeitsablauf",
+        "review": "KI-unterstützte Rechtsdokumente erfordern vor Einreichung, Unterzeichnung oder Nutzung eine menschliche Prüfung.",
+        "privacy": "Datenschutz durch Technikgestaltung | DSGVO | Menschliche Aufsicht nach dem KI-Gesetz",
+        "notice": "Diese E-Mail enthält bewusst keine unnötigen Falldetails. Schützen Sie Ihren Kontozugang und kontaktieren Sie bei einer unerwarteten Nachricht den Support.",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -129,7 +146,7 @@ def build_case_documents_email(*, case_subject: str, version: str, correlation_i
     return _email(subject=subject, text_body=body, html_body=html)
 
 
-def build_generic_branded_email(*, subject: str, body: str) -> BrandedEmail:
+def build_generic_branded_email(*, subject: str, body: str, locale: str = "en") -> BrandedEmail:
     clean_subject = _display_value(subject) or "JurisDigta notification"
     paragraphs = [paragraph for paragraph in _plain_text_paragraphs(body) if paragraph]
     if not paragraphs:
@@ -139,8 +156,9 @@ def build_generic_branded_email(*, subject: str, body: str) -> BrandedEmail:
         greeting=None,
         paragraphs=paragraphs,
         details=[],
+        locale=locale,
     )
-    return _email(subject=clean_subject, text_body=body, html_body=html)
+    return _email(subject=clean_subject, text_body=body, html_body=html, locale=locale)
 
 
 def ensure_branded_email_metadata(*, subject: str, body: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -150,16 +168,18 @@ def ensure_branded_email_metadata(*, subject: str, body: str, metadata: dict[str
         return metadata
 
     prepared = dict(metadata)
+    locale = _email_locale(prepared.get("locale"))
     existing_attachments = _metadata_attachments(prepared)
     existing_html = prepared.get("html_body")
     if isinstance(existing_html, str) and existing_html.strip():
         email = _email(
             subject=subject,
             text_body=body,
-            html_body=_wrap_existing_html(subject=subject, html_body=existing_html),
+            html_body=_wrap_existing_html(subject=subject, html_body=existing_html, locale=locale),
+            locale=locale,
         )
     else:
-        email = build_generic_branded_email(subject=subject, body=body)
+        email = build_generic_branded_email(subject=subject, body=body, locale=locale)
     prepared["html_body"] = email.html_body
     prepared["attachments"] = list(email.inline_attachments) + existing_attachments
     prepared["template"] = _BRANDED_TEMPLATE_VERSION
@@ -195,22 +215,23 @@ def _metadata_attachments(metadata: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(item) for item in attachments if isinstance(item, dict)]
 
 
-def _wrap_existing_html(*, subject: str, html_body: str) -> str:
+def _wrap_existing_html(*, subject: str, html_body: str, locale: str) -> str:
     return _render_branded_layout(
         title=_display_value(subject) or "JurisDigta notification",
         greeting=None,
         paragraphs=[],
         details=[],
         raw_html=html_body,
+        locale=locale,
     )
 
 
-def _email(*, subject: str, text_body: str, html_body: str) -> BrandedEmail:
+def _email(*, subject: str, text_body: str, html_body: str, locale: str = "en") -> BrandedEmail:
     return BrandedEmail(
         subject=subject,
         text_body=text_body,
         html_body=html_body,
-        inline_attachments=_inline_attachments(),
+        inline_attachments=_inline_attachments(locale),
     )
 
 
@@ -221,7 +242,10 @@ def _render_branded_layout(
     paragraphs: list[str],
     details: list[tuple[str, str]],
     raw_html: str | None = None,
+    locale: str = "en",
 ) -> str:
+    resolved_locale = _email_locale(locale)
+    branding = _BRANDING_COPY[resolved_locale]
     detail_rows = "".join(
         "<tr>"
         f"<th style=\"padding:10px 12px;text-align:left;border-bottom:1px solid #e2e8f0;color:#475569;font-size:13px;\">{escape(label)}</th>"
@@ -251,7 +275,7 @@ def _render_branded_layout(
         else ""
     )
     return f"""<!doctype html>
-<html lang="en">
+<html lang="{resolved_locale}">
   <body style="margin:0;background:#eef2f7;padding:24px;font-family:Arial,Helvetica,sans-serif;">
     <table role="presentation" style="width:100%;border-collapse:collapse;">
       <tr>
@@ -265,7 +289,7 @@ def _render_branded_layout(
                 {paragraph_html}
                 {raw_section}
                 {details_table}
-                <p style="margin:18px 0 0;color:#475569;font-size:13px;line-height:1.55;">This email intentionally excludes unnecessary legal case detail. Keep account access private and contact support if the message is unexpected.</p>
+                <p style="margin:18px 0 0;color:#475569;font-size:13px;line-height:1.55;">{escape(branding["notice"])}</p>
               </td>
             </tr>
             <tr><td><img src="cid:{FOOTER_CID}" width="760" alt="JurisDigta privacy and review footer" style="display:block;width:100%;height:auto;border:0;" /></td></tr>
@@ -277,19 +301,34 @@ def _render_branded_layout(
 </html>"""
 
 
-def _inline_attachments() -> list[dict[str, str]]:
+def _inline_attachments(locale: str) -> list[dict[str, str]]:
     return [
         _inline_svg_attachment(
             filename="jurisdigta-email-header.svg",
             content_id=HEADER_CID,
-            content=_HEADER_SVG,
+            content=_header_svg(locale),
         ),
         _inline_svg_attachment(
             filename="jurisdigta-email-footer.svg",
             content_id=FOOTER_CID,
-            content=_FOOTER_SVG,
+            content=_footer_svg(locale),
         ),
     ]
+
+
+def _header_svg(locale: str) -> str:
+    copy = _BRANDING_COPY[_email_locale(locale)]
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="900" height="210" viewBox="0 0 900 210" role="img" aria-label="JurisDigta"><rect width="900" height="210" fill="#f8fafc"/><path d="M0 0h900v24H0z" fill="#1b7f8e"/><path d="M0 186h900v24H0z" fill="#d6a84f"/><rect x="64" y="54" width="96" height="96" rx="18" fill="#ffffff" stroke="#1b7f8e" stroke-width="6"/><path d="M112 82v42M88 104l24-10 24 10M88 104l-12 22M136 104l12 22" fill="none" stroke="#172033" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="76" cy="126" r="9" fill="#d6a84f"/><circle cx="148" cy="126" r="9" fill="#d6a84f"/><circle cx="112" cy="94" r="9" fill="#1b7f8e"/><rect x="96" y="126" width="32" height="20" rx="3" fill="#172033"/><text x="190" y="98" font-family="Georgia, 'Times New Roman', serif" font-size="42" font-weight="700" fill="#172033">JurisDigta</text><text x="192" y="134" font-family="Arial, sans-serif" font-size="20" fill="#475569">{escape(copy["header"])}</text></svg>"""
+
+
+def _footer_svg(locale: str) -> str:
+    copy = _BRANDING_COPY[_email_locale(locale)]
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="900" height="150" viewBox="0 0 900 150" role="img" aria-label="JurisDigta"><rect width="900" height="150" fill="#172033"/><path d="M0 0h900v8H0z" fill="#d6a84f"/><text x="64" y="58" font-family="Georgia, 'Times New Roman', serif" font-size="25" font-weight="700" fill="#ffffff">JurisDigta</text><text x="64" y="91" font-family="Arial, sans-serif" font-size="16" fill="#cbd5e1">{escape(copy["review"])}</text><text x="64" y="120" font-family="Arial, sans-serif" font-size="14" fill="#94a3b8">{escape(copy["privacy"])}</text></svg>"""
+
+
+def _email_locale(value: object) -> str:
+    normalized = str(value or "en").strip().lower().split("-", 1)[0]
+    return normalized if normalized in _BRANDING_COPY else "en"
 
 
 def _inline_svg_attachment(*, filename: str, content_id: str, content: str) -> dict[str, str]:

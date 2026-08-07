@@ -42,6 +42,13 @@ invitation, verification email, and guest viewer (EN/SK/DE; unsupported values
 explicitly fall back to EN). `JURISDIGTA_AGENT_BASE_URL` controls the link base.
 `DOCUMENT_SHARE_LIFETIME_DAYS` defaults to 7 and is bounded to 1-30 days.
 
+The localized HTML invitation contains both a prominent protected-document
+action and the protected URL as an explicit clickable fallback. The plain-text
+MIME alternative keeps the URL for clients that do not render HTML. Header,
+footer, privacy notice, and human-review notice use the sender-selected UI
+language; the invitation still excludes case titles, party names, document
+content, and other unnecessary legal-case details.
+
 Share tokens, OTPs, and document sessions are stored only as hashes. Recipient
 email is encrypted at rest with the existing application credential-protection
 key chain. Responses use no-store/no-referrer/no-index protections. Audit events
