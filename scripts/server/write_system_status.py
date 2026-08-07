@@ -25,6 +25,9 @@ HTTP_REQUEST_PATTERN = re.compile(
     r"(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+->\s+"
     r"(?P<status>\d{3})\s+\((?P<duration_ms>\d+)\s+ms\)"
 )
+AI_MODEL_TIMEOUT_PATTERN = re.compile(
+    r"\bai_model_processing_timeout\b[^\n]*\bprovider_class=(?P<provider_class>local|external)\b"
+)
 START_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] starting laws collector daily job")
 FINISH_PATTERN = re.compile(r"^\[(?P<timestamp>[^\]]+)\] laws collector daily job finished")
 DOCUMENT_PROCESSOR_START_PATTERN = re.compile(
@@ -188,6 +191,7 @@ def _container_status(name: str, *, log_since: str, include_http_metrics: bool =
     }
     if include_http_metrics:
         payload["http"] = _http_log_metrics(log_text)
+        payload["ai_model_timeouts"] = _ai_model_timeout_metrics(log_text)
     return payload
 
 
@@ -217,6 +221,19 @@ def _http_log_metrics(text: str) -> dict[str, Any]:
         "duration_max_ms": duration_max_ms,
         "by_status_class": by_status_class,
         "by_method": by_method,
+    }
+
+
+def _ai_model_timeout_metrics(text: str) -> dict[str, int]:
+    counts = {"local": 0, "external": 0}
+    for match in AI_MODEL_TIMEOUT_PATTERN.finditer(text):
+        provider_class = match.group("provider_class")
+        counts[provider_class] += 1
+    return {
+        "window_seconds": 3600,
+        "local": counts["local"],
+        "external": counts["external"],
+        "total": counts["local"] + counts["external"],
     }
 
 

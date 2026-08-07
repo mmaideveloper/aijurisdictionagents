@@ -108,6 +108,11 @@ def test_mcp_root_shows_assistant_setup_and_registration_steps() -> None:
     assert "/mcp/login" in response.text
     assert "ChatGPT custom connector" in response.text
     assert "Claude" in response.text
+    assert "Claude Desktop" in response.text
+    assert "mcp-remote@latest" in response.text
+    assert "C:\\\\Progra~1\\\\nodejs\\\\npx.cmd" in response.text
+    assert "YOUR_BEARER_TOKEN" in response.text
+    assert "Claude > Settings > Development > Edit Config" in response.text
     assert "VS Code" in response.text
     assert "Perplexity" in response.text
     assert "/.well-known/oauth-protected-resource/mcp" in response.text
@@ -120,7 +125,26 @@ def test_mcp_root_localizes_for_slovak_browser() -> None:
     assert '<html lang="sk">' in response.text
     assert "Registracia" in response.text
     assert "Nastavenie asistenta" in response.text
+    assert "Claude Desktop" in response.text
+    assert "mcp-remote@latest" in response.text
+    assert "C:\\\\Progra~1\\\\nodejs\\\\npx.cmd" in response.text
+    assert "YOUR_BEARER_TOKEN" in response.text
     assert "Metadata autorizacneho servera" in response.text
+    assert "/mcp/sign-up" in response.text
+    assert "Authorization: Bearer" in response.text
+
+
+def test_mcp_root_localizes_for_german_browser() -> None:
+    response = client.get("/", headers={"accept-language": "de-DE,de;q=0.9,en;q=0.8"})
+    assert response.status_code == 200
+    assert '<html lang="de">' in response.text
+    assert "Registrierung" in response.text
+    assert "Assistent einrichten" in response.text
+    assert "Claude Desktop" in response.text
+    assert "mcp-remote@latest" in response.text
+    assert "C:\\\\Progra~1\\\\nodejs\\\\npx.cmd" in response.text
+    assert "YOUR_BEARER_TOKEN" in response.text
+    assert "Metadaten des Autorisierungsservers" in response.text
     assert "/mcp/sign-up" in response.text
     assert "Authorization: Bearer" in response.text
 
@@ -135,4 +159,5 @@ def test_mcp_root_uses_forwarded_public_origin() -> None:
     )
     assert response.status_code == 200
     assert "https://mcp.jurisdigta.eu/mcp" in response.text
+    assert '"https://mcp.jurisdigta.eu/mcp"' in response.text
     assert "https://mcp.jurisdigta.eu/.well-known/oauth-authorization-server" in response.text

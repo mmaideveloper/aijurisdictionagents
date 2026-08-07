@@ -4,7 +4,9 @@ import { useCases, type CaseDocumentRecord } from "../state/CaseProvider";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "./LanguageProvider";
 import { BsBoxArrowLeft, BsChevronDown, BsChevronRight } from "react-icons/bs";
+import { FaDownload, FaTrashAlt } from "react-icons/fa";
 import { caseStatusTranslationKeys } from "../state/caseStatus";
+import { fetchCaseExportBlob } from "../api/caseClient";
 
 const statusClass = (status: string) => status.toLowerCase().replace(/\s+/g, "-");
 
@@ -14,10 +16,26 @@ type SidebarProps = {
 
 export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const navigate = useNavigate();
-  const { cases, activeCase, selectCase, isLoadingCases, caseLoadError } = useCases();
+  const {
+    cases,
+    activeCase,
+    selectCase,
+    deleteCase,
+    deleteDocument,
+    isLoadingCases,
+    caseLoadError
+  } = useCases();
   const { user } = useAuth();
   const { t } = useLanguage();
   const [isSelectedCaseExpanded, setIsSelectedCaseExpanded] = React.useState(false);
+  const [exportingCaseId, setExportingCaseId] = React.useState<string | null>(null);
+  const exportInFlightCaseId = React.useRef<string | null>(null);
+  const [caseExportMessage, setCaseExportMessage] = React.useState<string | null>(null);
+  const [caseExportError, setCaseExportError] = React.useState<string | null>(null);
+  const [deletingCaseId, setDeletingCaseId] = React.useState<string | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = React.useState<string | null>(null);
+  const [deleteMessage, setDeleteMessage] = React.useState<string | null>(null);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setIsSelectedCaseExpanded(false);
@@ -38,14 +56,88 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
     window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
   };
 
+  const exportActiveCase = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!activeCase || !user?.userId || exportInFlightCaseId.current !== null) {
+      return;
+    }
+
+    exportInFlightCaseId.current = activeCase.id;
+    setExportingCaseId(activeCase.id);
+    setCaseExportError(null);
+    setCaseExportMessage(null);
+    try {
+      const exported = await fetchCaseExportBlob({
+        userId: user.userId,
+        caseId: activeCase.id
+      });
+      const objectUrl = URL.createObjectURL(exported.blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = exported.filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(() => {
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      }, 1_000);
+      setCaseExportMessage(t("profileCaseExportStarted"));
+    } catch (error) {
+      setCaseExportError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
+    } finally {
+      exportInFlightCaseId.current = null;
+      setExportingCaseId(null);
+    }
+  };
+
+  const deleteActiveCase = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (!activeCase || deletingCaseId || exportingCaseId) {
+      return;
+    }
+    if (!window.confirm(t("sidebarDeleteCaseConfirm", { title: activeCase.title }))) {
+      return;
+    }
+    setDeletingCaseId(activeCase.id);
+    setDeleteMessage(null);
+    setDeleteError(null);
+    try {
+      await deleteCase(activeCase.id);
+      setDeleteMessage(t("sidebarDeleteCaseSuccess"));
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : t("sidebarDeleteCaseFailed"));
+    } finally {
+      setDeletingCaseId(null);
+    }
+  };
+
+  const deleteCaseDocument = async (document: CaseDocumentRecord) => {
+    if (!activeCase || deletingDocumentId) {
+      return;
+    }
+    if (!window.confirm(t("sidebarDeleteDocumentConfirm", { filename: document.originalFilename }))) {
+      return;
+    }
+    setDeletingDocumentId(document.id);
+    setDeleteMessage(null);
+    setDeleteError(null);
+    try {
+      await deleteDocument(activeCase.id, document.id);
+      setDeleteMessage(t("sidebarDeleteDocumentSuccess"));
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : t("sidebarDeleteDocumentFailed"));
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
   return (
     <aside className="workspace-panel workspace-panel--left">
       <div className="sidebar">
         <div className="sidebar-inner">
           <div className="sidebar-brand">
-            <div className="brand-mark" aria-hidden="true">
-              AJ
-            </div>
+            <img className="brand-mark" src="/login-shield.png" alt="" aria-hidden="true" />
             <div>
               <strong>{t("appName")}</strong>
               <span>{t("tagline")}</span>
@@ -84,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 {cases.map((caseItem) => {
                   const isActive = caseItem.id === activeCase?.id;
                   return (
-                    <li key={caseItem.id}>
+                    <li key={caseItem.id} className="case-item-container">
                       <button
                         type="button"
                         className={`case-item${isActive ? " active" : ""}`}
@@ -102,10 +194,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                         </div>
                         <span className="case-status-label">{t(caseStatusTranslationKeys[caseItem.status])}</span>
                       </button>
+                      {isActive ? (
+                        <div className="case-item-actions">
+                          <button
+                            type="button"
+                            className="button ghost icon-button profile-case-export-button case-export-button"
+                            onClick={(event) => void exportActiveCase(event)}
+                            disabled={exportingCaseId === caseItem.id || deletingCaseId === caseItem.id}
+                            aria-busy={exportingCaseId === caseItem.id}
+                            aria-label={t("profileCaseExport")}
+                            title={t("profileCaseExport")}
+                          >
+                            <FaDownload aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            className="button ghost icon-button case-delete-button"
+                            onClick={(event) => void deleteActiveCase(event)}
+                            disabled={deletingCaseId === caseItem.id || exportingCaseId === caseItem.id}
+                            aria-busy={deletingCaseId === caseItem.id}
+                            aria-label={t("sidebarDeleteCase")}
+                            title={t("sidebarDeleteCase")}
+                          >
+                            <FaTrashAlt aria-hidden="true" />
+                          </button>
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
               </ul>
+              {caseExportError ? <p className="form-error" role="alert">{caseExportError}</p> : null}
+              {caseExportMessage ? <p className="hint" role="status">{caseExportMessage}</p> : null}
+              {deleteError ? <p className="form-error" role="alert">{deleteError}</p> : null}
+              {deleteMessage ? <p className="hint" role="status">{deleteMessage}</p> : null}
             </div>
           </div>
 
@@ -158,7 +280,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                 {activeCase.documents.length > 0 ? (
                   <ul>
                     {activeCase.documents.map((document) => (
-                      <li key={document.id}>
+                      <li key={document.id} className="sidebar-document-item">
                         <button
                           type="button"
                           className="sidebar-document-link"
@@ -166,6 +288,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
                         >
                           <span title={document.originalFilename}>{document.originalFilename}</span>
                           <small>{document.sizeLabel}</small>
+                        </button>
+                        <button
+                          type="button"
+                          className="button ghost icon-button sidebar-document-delete-button"
+                          onClick={() => void deleteCaseDocument(document)}
+                          disabled={deletingDocumentId === document.id}
+                          aria-busy={deletingDocumentId === document.id}
+                          aria-label={t("sidebarDeleteDocument", { filename: document.originalFilename })}
+                          title={t("sidebarDeleteDocument", { filename: document.originalFilename })}
+                        >
+                          <FaTrashAlt aria-hidden="true" />
                         </button>
                       </li>
                     ))}

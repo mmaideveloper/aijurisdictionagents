@@ -23,6 +23,7 @@ from app.admin_users_api import router as admin_users_router
 from app.ai_model_admin_api import router as ai_model_admin_router
 from app.contact_api import router as contact_router
 from app.document_templates.api import router as document_templates_router
+from app.document_shares_api import router as document_shares_router
 from app.effective_model_routing_api import router as effective_model_routing_router
 from app.flow_packs.api import router as flow_packs_router
 from app.laws_api import router as laws_router
@@ -47,10 +48,15 @@ from app.voice_intent_api import router as voice_intent_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
+from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ENV_PATH = _REPO_ROOT / ".env"
 dotenv.load_dotenv(_REPO_ENV_PATH, override=False)
+
+# Fail at API configuration load instead of waiting for the first slow model request.
+read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", 600.0)
+read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_VISIBLE_PROGRESS", 15.0)
 
 API_VERSION = get_api_version()
 DEFAULT_API_LLM_PROVIDER = "model_routing"
@@ -258,6 +264,7 @@ app.include_router(admin_users_router)
 app.include_router(ai_model_admin_router)
 app.include_router(contact_router)
 app.include_router(document_templates_router)
+app.include_router(document_shares_router)
 app.include_router(effective_model_routing_router)
 app.include_router(flow_packs_router)
 app.include_router(laws_router)

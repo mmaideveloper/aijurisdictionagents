@@ -118,7 +118,14 @@ def record_from_infosud_payload(
     guid = source_guid or _first_text(payload, "guid", "id", "uuid")
     raw_court = payload.get("sud")
     court: dict[str, Any] = raw_court if isinstance(raw_court, dict) else {}
-    court_name = _first_text(court, "nazov", "name", default=_first_text(payload, "sudNazov"))
+    raw_original_court = payload.get("povodnySud")
+    original_court: dict[str, Any] = raw_original_court if isinstance(raw_original_court, dict) else {}
+    court_name = _first_text(
+        original_court,
+        "nazov",
+        "name",
+        default=_first_text(court, "nazov", "name", default=_first_text(payload, "sudNazov")),
+    )
     court_type = _first_text(court, "typSudu", "typ", default=_first_text(payload, "typSudu"))
     raw_text = _decision_text(payload)
     pseudonymized = pseudonymize_court_decision_text(raw_text)

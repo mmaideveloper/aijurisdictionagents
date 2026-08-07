@@ -6,6 +6,10 @@ The collector is separate from `laws_collector` because court decisions have dif
 
 ## Storage
 
+Applied migration files are immutable because their checksums are recorded in the
+database. Add schema and index changes in a new numbered migration instead of
+editing an existing migration; deployment stops on a checksum mismatch.
+
 - SQL assets: `databases/court-decision-collector/`
 - Local runtime data: `runs/storage/court-decision-collector/`
 - Default database backend: PostgreSQL
@@ -17,6 +21,29 @@ The first schema stores:
 - `court_decision_versions`: raw text, pseudonymized public text, checksums, metadata, and embedding vectors
 - `court_decision_import_state`: restart cursor and latest processed decision
 - `court_decision_update_events`: audit trail for created, updated, and unchanged imports
+- `court_decision_enrichments`: PDF provenance, processing state, complete source metadata,
+  pseudonymized summary/topics, and summary embedding metadata
+- `court_decision_content_chunks`: pseudonymized chunks and local embedding vectors
+
+## On-demand PDF enrichment
+
+Exact-decision requests use a cache-first pipeline. Only the configured InfoSud decision endpoint
+and `https://obcan.justice.sk/content/public/item/` PDF URLs are accepted. The service stores the
+complete source JSON, validates and atomically caches the PDF under
+`runs/storage/court-decision-collector/`, extracts text with local OCR fallback, pseudonymizes it,
+creates a local extractive summary/topics, chunks the content, and uses the shared local embedding
+runtime. An unchanged second request is a cache hit and performs no duplicate processing.
+
+```powershell
+$env:SYSTEM_EMBEDDING_MODEL_OPTION="local"
+$env:SYSTEM_EMBEDDING_MODEL="all-MiniLM-L6-v2"
+.\conda\python.exe -m services.court_decision_collector `
+  --enrich-source-url "https://obcan.justice.sk/pilot/api/ress-isu-service/v1/rozhodnutie/24beca89-d93b-4cfc-b664-bb28148db9da:34712443-63f4-4a0e-96fe-60bec5bc06f0"
+```
+
+Return metadata plus the pseudonymized AI-generated summary by default. Full pseudonymized text is
+explicit; raw PDF/text remains controlled internal data. Broad topical search covers enriched
+content only and must disclose that unprocessed PDFs may contain additional matches.
 
 ## Privacy and legal-risk controls
 
@@ -139,7 +166,11 @@ The MCP server exposes:
 
 - `getVersion()` includes court-decision collector version, status, latest imported decision/source GUID, and latest import time.
 - `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
-- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, include_snippets)` for metadata-first search. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+- `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, court_name, sort, include_snippets)` for metadata-first search. `court_name` is an exact normalized named-court filter, while `court_type` selects a generic court category. `issue_date` remains the original source value for provenance; `issue_date_normalized DATE` drives calendar sorting and year filtering. Invalid/missing dates sort last and are surfaced through data-quality metadata. The default `year_filter_mode` is `published_in`, and snippets are omitted unless `include_snippets=true`.
+
+Migration `databases/court-decision-collector/migrations/0002_normalize_issue_date_and_court_name.sql` backfills typed dates and normalized court names. Its validation query reports parsed, invalid, and missing dates; unparseable values remain `NULL` and are never replaced with invented dates.
+
+When InfoSud supplies `povodnySud`, that court is the issuing court used by search. The current successor court in `sud` remains preserved in the raw metadata. This prevents reorganized Kežmarok decisions (`OSKK`) currently administered by Poprad from being presented as decisions issued by Poprad (`OSPP`).
 - `getCourtDecision(decision_id, full_version, outputMode)` where the default response is metadata-only. `full_version=true` returns bounded pseudonymized public text. `outputMode=internal_raw` remains restricted to controlled internal runtimes.
 - `searchLegalSources(query, source_types, published_year, year_filter_mode, limit_per_source)` for protected combined metadata search across current consolidated laws and court decisions. The MCP server is model-free; clients parse natural-language questions and pass structured filters.
 

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "local-core": {"required": ["DB_OPTION", "DB_LOCAL", "STORAGE_OPTION", "STORE_LOCAL"], "optional": ["LLM_PROVIDER", "SYSTEM_STATUS_FILE", "DOCUMENT_SHARE_LIFETIME_DAYS"]},
+    "codex-agent": {"extends": ["local-core"], "required": ["SYSTEM_EMBEDDING_MODEL_OPTION", "SYSTEM_EMBEDDING_MODEL"], "optional": ["AI_MODEL_CREDENTIAL_ENCRYPTION_KEY"]},
+    "laws-collector": {"extends": ["local-core"], "required": ["LAWS_COUNTRY", "LAWS_STORAGE_LOCAL", "LAWS_WORKER_FIXTURE", "LAWS_WORKER_MAX_CYCLES", "LAWS_WORKER_MAX_PROBES"]},
+    "azure-dev": {"required": ["AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_RESOURCE_GROUP", "AZURE_LOCATION"]},
+    "mcp-local": {"extends": ["local-core"], "required": ["MCP_PORT", "MCP_API_JWT_SECRET", "MCP_CORS_ALLOW_ORIGINS"]}
+  }
+}

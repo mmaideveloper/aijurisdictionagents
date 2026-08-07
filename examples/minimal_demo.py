@@ -5,6 +5,28 @@ from datetime import datetime, timedelta, timezone
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
+from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
+
+print(
+    "local_model_timeout => "
+    f"deadline={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_TIMEOUT_SECONDS', 600)}s, "
+    f"visible_progress={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_VISIBLE_PROGRESS', 15)}s; "
+    "typed local/external timeout errors remain privacy-safe and never silently change providers."
+)
+
+print(
+    "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
+    "only key names/statuses are reported and secret values remain redacted."
+)
+print(
+    "model_routing_request_store => database migrations and schema initialization run at API "
+    "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
+)
+print(
+    "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
+    "verification on a verified browser; a new browser for a TOTP-enabled account offers both "
+    "authenticator and email verification, while logout still ends the active session."
+)
 
 agent = AIAudioToolRecognizerAgent()
 print("speechtype default => message (review STT transcript before send)")
@@ -46,12 +68,41 @@ print(
     "mcp_async_legal_search => broad newest-result queries can call "
     "startLegalSearch(tool_name='searchCourtDecisions', arguments={'query':'podnajom', "
     "'sort':'latest', 'limit':10}), then poll getLegalSearchStatus and fetch "
-    "getLegalSearchResult with the returned user-scoped search_id."
+    "getLegalSearchResult with the returned user-scoped search_id. Degraded search "
+    "payloads expose async_fallback retry metadata only, without assistant-facing "
+    "instruction fields."
+)
+print(
+    "mcp_court_decision_latest_search => sort aliases such as date_desc are canonicalized "
+    "to latest, and court-decision MCP search uses the scoped "
+    "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
+)
+print(
+    "mcp_named_court_latest_search => searchCourtDecisions(query='sudne rozhodnutia', "
+    "court_name='Okresny sud Poprad', sort='latest', limit=5) applies an exact normalized "
+    "court filter and calendar-date ordering; check data_quality.latest_label_safe before "
+    "describing the metadata-only results as newest."
+)
+print(
+    "court_decision_on_demand_enrichment => exact allowlisted InfoSud decisions are cached as "
+    "complete metadata + validated PDF + pseudonymized local summary/topics/chunks/embeddings."
 )
 print(
     "mcp_first_all_model_routes => Slovak legal, jurisdiction, and legal-document-by-law "
     "chat turns retrieve bounded JurisDigta MCP context before local Ollama or external "
     "models receive the prompt."
+)
+print(
+    "mcp_user_visible_proof_notice => frontend/mobile streams show the backend-localized "
+    "notice when JurisDigta MCP is contacted for latest legal information; SK='JurisDigta MCP "
+    "server bol kontaktovaný na získanie najnovších právnych informácií.', DE='Der JurisDigta "
+    "MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.', EN='JurisDigta "
+    "MCP Server was contacted to retrieve the latest legal information.'"
+)
+print(
+    "legal_web_search_approval_gate => AIWebSearchAgent legal-source fallback is blocked until "
+    "the current turn has explicit user approval for external web search; missing MCP results do "
+    "not silently trigger internet search."
 )
 print(
     "mcp_status_for_free_ollama => free-plan local Ollama chat can still answer MCP status "
@@ -62,6 +113,11 @@ print(
     "mcp_endpoint_claude_compat => /MCP remains accepted for Claude web and existing clients; "
     "it now advertises OAuth protected-resource metadata and requires the same per-user "
     "OAuth or MCP API key authentication for protected legal tools as /mcp."
+)
+print(
+    "mcp_claude_desktop_bearer_config => MCP setup page shows Claude Desktop users how to "
+    "log in at /mcp/login, generate a short-lived bearer token, and add mcp-remote@latest "
+    "with Authorization: Bearer YOUR_BEARER_TOKEN in Claude > Settings > Development > Edit Config."
 )
 print(
     "mcp_endpoint_vscode_oauth => VS Code can use only type=http and "
@@ -90,6 +146,11 @@ print(
     "and keeps the token endpoint closed to client_credentials."
 )
 print(
+    "mcp_oauth_claude_metadata => JurisDigta validates Claude's hosted client_id metadata "
+    "for https://claude.ai/api/mcp/auth_callback without requiring local unit tests to fetch "
+    "the live Claude metadata URL."
+)
+print(
     "mcp_oauth_e2e_bypass => synthetic free/paid E2E users can skip MFA only for MCP OAuth when "
     "MCP_OAUTH_TEST_MFA_BYPASS_ENABLED, allowlisted emails, and a future expiry are configured."
 )
@@ -114,9 +175,11 @@ print(
     "for model answer/document comparison, including legal-document structure and human-review checks."
 )
 print(
-    "unlimited_access_emails => "
-    f"{sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}"
+    "active_case_export => My Cases and My Profile download the authorized case ZIP, keep the Blob URL "
+    "alive until the browser starts the download, and expose the request correlation_id in manifest.json "
+    "for case-scoped support tracing without embedding raw logs."
 )
+print(f"unlimited_access_emails => {sorted(ApiDatabaseStore.unlimited_access_email_allowlist())}")
 print(
     "case_write_window_expired_error => "
     f"API 403 responses use code {CASE_WRITE_WINDOW_EXPIRED_CODE} with plan/day params "
@@ -135,6 +198,25 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         user_id=demo_user.user_id,
         company_id=None,
         title="Minimal citation demo",
+    )
+    disposable_document_id = demo_store.add_case_document(
+        case_id=demo_case.case_id,
+        kind="uploaded",
+        version=1,
+        original_filename="minimal-delete-demo.txt",
+        payload=b"synthetic disposable content",
+        uploaded_by_user_id=demo_user.user_id,
+    )
+    deletion_event = demo_store.delete_case_document(
+        case_id=demo_case.case_id,
+        doc_id=disposable_document_id,
+        actor_user_id=demo_user.user_id,
+        correlation_id="minimal-demo-correlation",
+    )
+    assert demo_store.list_case_documents(case_id=demo_case.case_id) == []
+    print(
+        "case_document_deletion => payload erased; "
+        f"audit_event={deletion_event.event_id} deleted_at={deletion_event.deleted_at}"
     )
     demo_question_id = demo_store.add_case_message(
         case_id=demo_case.case_id,
@@ -266,10 +348,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         f"{selected_route.provider.provider_code}/{selected_route.model_profile.model_code}"
     )
     e2e_users = provision_e2e_test_users(store=demo_store, password="demo-e2e-password")
-    print(
-        "e2e_test_users => "
-        + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users)
-    )
+    print("e2e_test_users => " + ", ".join(f"{item.email}:{item.plan_code}" for item in e2e_users))
     demo_store.upsert_ai_model_profile(
         model_profile_id="local_ollama_llama32",
         provider_id="local_ollama",
@@ -329,6 +408,12 @@ print(
     "and sanitized errors through protected operational status."
 )
 print(
+    "privacy_notice => /privacy identifies Esolutions SK s.r.o. as controller; "
+    "discloses local Ollama and consent-gated EU Azure AI Foundry processing; "
+    "uses Slovak-law retention criteria; and confirms human review without "
+    "solely automated legal approvals."
+)
+print(
     "court_decision_collector => imports Slovak court decisions into a separate "
     "PostgreSQL store with vectors, retry-hardened InfoSud requests, and "
     "pseudonymized MCP search output; run "
@@ -343,4 +428,8 @@ print(
     "loan_confirmation_regression => Slovak first-turn private loan confirmation "
     "requests route deterministically to CASE_UPDATE_JSON case.documents content "
     "and generated PDF export instead of local-model echo text."
+)
+print(
+    "document_guest_share => sender locale creates a link-only invitation; the recipient "
+    "uses a short-lived email code to open one revocable PDF without registration or case access."
 )

@@ -16,6 +16,7 @@ GET /v1/system/status?minutes=60
 - API/database/LLM/system/email scheduler/document processor/laws collector status through `scripts/server/export_system_status_metrics.py`.
 - Error counts for API, laws collector, and PostgreSQL from the status endpoint.
 - Total imported laws over time, last imported law number/year, next law to check, latest laws collector run timestamps, and latest run duration.
+- Privacy-safe local versus external AI model processing-timeout counts, with exact selected-range totals in the provisioned Errors dashboard and one-hour exporter gauges for alerting.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
 - Court-decision collector status, imported decision/version counts, latest imported decision safe short name and published date, newest stored decision issue date, embedding-vector coverage, worker activity counts, activity timestamps, and sanitized recent errors.

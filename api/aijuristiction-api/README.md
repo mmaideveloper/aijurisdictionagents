@@ -80,6 +80,7 @@ Required setup for chat model routing:
 - A paid subscription is considered active for routing only while `starts_at` has begun and `ends_at` is empty or in the future. Expired paid rows fall back to the Free/local Ollama route.
 - Subscription checkout creates a `pending` subscription only. The subscription becomes active only after `/v1/users/subscriptions/{subscription_id}/confirm-payment` confirms payment, which queues a payment-confirmed email with a generated invoice attached as both PDF and UBL XML.
 - The assistant UI should read `/v1/model-routing/effective` for the signed-in user before displaying model disclosure text. This endpoint returns only privacy-minimized route metadata, so Free users see the same local Ollama model that the backend will actually use.
+- Admin-selected chat or document-drafting requests may send `model_profile_id` together with the current `user_id` and, when needed for allowlist-based admin access on older sessions, `user_email`. Minimal request example: `POST /v1/chat/sessions/{session_id}/stream` with `{"instruction":"Priprav navrh dokumentu.","user_simulation_mode":"ReadUser","user_id":"<signed-in-user-id>","user_email":"admin@example.com","model_profile_id":"local_ollama_default"}`.
 - Azure Foundry chat endpoint belongs in `ai_model_providers.base_url`.
 - Azure Foundry API key or token belongs in encrypted `ai_model_credentials`, managed through `/v1/admin/ai-models`.
 - Set `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` and `JURISDIGTA_ADMIN_EMAILS` in deployed environments.
@@ -591,7 +592,7 @@ The dedicated local database layout guide now lives under `docs/DATABASE_LAYOUT.
 
 - `GET /v1/cases/{case_id}/history?user_id=...&offset=0&limit=5` returns the selected case's persisted chat history page plus stored case-document metadata.
 - `GET /v1/cases/{case_id}/ai-model-audit?user_id=...&offset=0&limit=50` returns the case model audit trail for authorized case users, including the session, question message, answer message, provider, model, route type, estimated input/output tokens, estimated cost, and a bounded question preview plus SHA-256 hash. The full question remains in the authorized case history instead of being duplicated in the audit ledger.
-- `GET /v1/cases/{case_id}/export?user_id=...` returns an on-demand ZIP export for active paid subscriptions. The ZIP is intended as a golden regression fixture and includes `manifest.json`, `case.json`, `messages.jsonl`, `ai-model-audit.json`, `citations.json`, `warnings.json`, `sha256sums.txt`, source document payloads, and rendered PDFs for generated documents. The export is scoped to the selected case and excludes provider secrets, API keys, payment details, environment values, and unrelated user/case data.
+- `GET /v1/cases/{case_id}/export?user_id=...` returns an on-demand ZIP export for active paid subscriptions. The ZIP is intended as a golden regression fixture and includes `manifest.json`, `case.json`, `messages.jsonl`, `ai-model-audit.json`, `citations.json`, `warnings.json`, `sha256sums.txt`, source document payloads, and rendered PDFs for generated documents. `manifest.json` includes the request `correlation_id`, matching the API response trace header, so authorized operators can locate the export request in redacted operational logs. The export is scoped to the selected case and excludes provider secrets, API keys, payment details, environment values, raw logs, and unrelated user/case data.
 - `GET /v1/admin/cases/{case_id}/export?user_id=...&reason=...` lets an authorized admin export a selected user's non-deleted case for support or test-fixture preparation. The admin endpoint requires a reason and records a `case.export` admin audit event.
 - `GET /v1/cases/{case_id}/documents/{doc_id}?user_id=...` downloads a previously stored case document or chat attachment.
 - `GET /v1/cases/{case_id}/documents/{doc_id}/pdf?user_id=...` renders the client-visible assistant draft tied to a generated technical case document as a PDF, without exposing the stored JSON payload.
@@ -934,6 +935,7 @@ Current E2E specs:
 - `tests/chat-simulator.spec.ts`
 - `tests/mobile-auth-subscription.spec.ts` (covers mobile login + subscription request flow against user endpoints)
 - `tests/payment-process.spec.ts` (simulates synthetic user checkout, sandbox payment confirmation, and payment guard rails)
+- `tests/frontend-admin-local-model-selection.spec.ts` (browser suite: admin selects `Local Ollama - qwen3:4b`, regular users stay on the default local route without a selector, and the assistant workspace sends the selected model profile with signed-in user context)
 - Negative auth test in `tests/chat.spec.ts` runs only when `RUN_NEGATIVE_AUTH_TESTS=1`.
 
 Scheduled E2E status:
@@ -1079,3 +1081,10 @@ Cross-session memory formatting demo:
 ```bash
 python examples/conversation_memory_minimal_demo.py
 ```
+
+### Follow-up routing after document generation
+
+Document-generation intent is evaluated from the current user turn. Prior requests remain available as factual
+context, but they do not authorize another PDF. Questions such as `Aké sú chýbajúce údaje?`, model-selection
+questions, and MCP capability questions continue through the normal answer route unless the current message
+explicitly requests a new or updated document.

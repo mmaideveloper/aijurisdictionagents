@@ -312,6 +312,8 @@ Court-decision collector settings are required before enabling court-decision MC
 | `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
 | `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
 | `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |
+| `COURT_DECISIONS_MAX_PDF_BYTES` | Maximum accepted on-demand InfoSud PDF size, default `26214400` (25 MiB) |
+| `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS` | Scoped PostgreSQL statement timeout for MCP court-decision search, default `600000`; do not replace the global legal-search timeout with this value |
 | `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP` | Keep `false` for external MCP users; set `true` only for a controlled internal runtime approved to retrieve raw court-decision text |
 
 The laws collector workflow reuses these shared Azure deployment variables:
@@ -389,6 +391,22 @@ Paste those values without extra whitespace. The mobile workflow trims accidenta
 line breaks, validates the keystore and alias with `keytool`, and warns early if
 the selected GitHub Environment contains stale or mismatched signing secrets.
 
+### Plugin release workflow
+
+`.github/workflows/plugin_release.yml` packages `plugins/jurisdigta/` and the
+repository marketplace into a versioned ZIP, creates a SHA-256 checksum, and
+publishes both files as a GitHub prerelease.
+
+- Dispatch the workflow manually from `main`.
+- The version and immutable tag come from
+  `plugins/jurisdigta/.codex-plugin/plugin.json`.
+- The workflow uses repository `GITHUB_TOKEN` with scoped `contents: write`
+  permission.
+- It does not use the `test` or `prod` GitHub Environments.
+- No variables or secrets must be added to either Environment.
+- Plugin releases use `make_latest: false`, preserving the stable mobile APK
+  release returned by GitHub's latest-release API.
+
 ## 11. Configure Self-Managed Production Server Variables
 
 These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
@@ -434,6 +452,11 @@ Optional `prod` GitHub Environment variables:
 | `INSTALL_OLLAMA` | `1` | Self-managed deploy installs/configures Ollama and pulls the seeded free-plan model `qwen3:1.7b`; set `0` only for controlled rollback or prevalidated manual install |
 | `OLLAMA_METRICS_PORT` | `9109` | Host-local Prometheus exporter port for Ollama runtime metrics |
 | `OLLAMA_METRICS_TIMEOUT` | `5` | Timeout in seconds for Ollama exporter API probes |
+
+The production runtime secret file referenced by `JURISDIGTA_ENV_FILE` must also contain
+`LOCAL_LLM_REQUEST_TIMEOUT_SECONDS=600` and `LOCAL_LLM_REQUEST_VISIBLE_PROGRESS=15`.
+The deploy script passes both values explicitly into the API and MCP containers. They are
+runtime settings, not GitHub Environment variables or secrets.
 
 Required `prod` GitHub Environment secret:
 

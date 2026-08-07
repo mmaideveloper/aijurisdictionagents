@@ -19,11 +19,13 @@ import Profile from "./pages/Profile";
 import AIModelAdmin from "./pages/AIModelAdmin";
 import AdminProviderCredentials from "./pages/AdminProviderCredentials";
 import DocumentViewer from "./pages/DocumentViewer";
+import SharedDocumentViewer from "./pages/SharedDocumentViewer";
 import Disclaimer from "./pages/Disclaimer";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import NotFound from "./pages/NotFound";
 import { isAgentHost } from "./routing";
+import { useLanguage } from "./components/LanguageProvider";
 
 interface ProtectedRouteProps {
   children: React.ReactElement;
@@ -67,6 +69,14 @@ const RootRoute: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  const { pathname } = useLocation();
+  const { t } = useLanguage();
+  const productName = t("appName");
+
+  React.useEffect(() => {
+    document.title = productName;
+  }, [pathname, productName]);
+
   return (
     <PageLayout>
       <Routes>
@@ -198,6 +208,7 @@ const App: React.FC = () => {
           path="/app/documents/view"
           element={<DocumentViewer />}
         />
+        <Route path="/shared-documents/:shareToken" element={<SharedDocumentViewer />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/disclaimer" element={<Disclaimer />} />
         <Route path="/terms" element={<TermsOfService />} />

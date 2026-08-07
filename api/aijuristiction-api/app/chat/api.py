@@ -57,6 +57,7 @@ from app.versioning import get_api_version, get_core_version
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
 from aijurisdictionagents.llm import get_embedding_client
+from aijurisdictionagents.llm.base import ModelProcessingTimeout, read_positive_finite_env_seconds
 from aijurisdictionagents.llm.routing import (
     ModelRouteUnavailable,
     RoutedLLMClient,
@@ -79,7 +80,7 @@ _CORE_VERSION = get_core_version()
 _LOGGER = logging.getLogger(__name__)
 _LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
 _STREAM_KEEPALIVE_SECONDS = 15.0
-_STREAM_STATUS_SECONDS = 60.0
+_STREAM_STATUS_SECONDS = 15.0
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -161,6 +162,8 @@ class CreateMessageRequest(BaseModel):
 
 class ReplyRequest(BaseModel):
     content: str
+    user_id: UUID | None = None
+    user_email: str | None = None
     model_profile_id: str | None = None
 
 
@@ -306,15 +309,20 @@ def _resolve_session_llm_route(
     *,
     session: Session,
     task_type: str,
+    request_user_id: str | None = None,
+    request_user_email: str | None = None,
     selected_model_profile_id: str | None = None,
 ) -> RoutedLLMClient:
     store = _get_store()
-    user_id = str(session.user_id) if session.user_id else ""
+    user_id = (request_user_id or "").strip()
+    if not user_id:
+        user_id = str(session.user_id) if session.user_id else ""
     if not user_id and session.case_id:
         try:
             user_id = store.get_case(case_id=session.case_id).user_id
         except KeyError:
             user_id = ""
+    user_email = (request_user_email or "").strip().lower()
     try:
         normalized_selected_profile_id = (
             selected_model_profile_id or session.selected_model_profile_id or ""
@@ -323,6 +331,7 @@ def _resolve_session_llm_route(
             return get_routed_llm_client(
                 store=store,
                 user_id=user_id,
+                user_email=user_email,
                 task_type=task_type,
                 selected_model_profile_id=normalized_selected_profile_id,
             )
@@ -1111,10 +1120,15 @@ def _persist_direct_assistant_message(
     session: Session,
     content: str,
     agent_name: str,
+    allow_document_generation: bool = True,
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
-    generated_doc_ids = _persist_generated_case_document_if_needed(session=session, content=content)
+    generated_doc_ids = (
+        _persist_generated_case_document_if_needed(session=session, content=content)
+        if allow_document_generation
+        else []
+    )
     content = _attach_generated_case_document_references(
         session=session,
         content=content,
@@ -1410,6 +1424,8 @@ def _run_direct_lawyer_turn(
     session_id: UUID,
     session: Session,
     content: str,
+    request_user_id: str | None = None,
+    request_user_email: str | None = None,
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
@@ -1458,6 +1474,7 @@ def _run_direct_lawyer_turn(
             session=session,
             content=status_reply,
             agent_name="LawyerStatus",
+            allow_document_generation=False,
         )
         _record_case_ai_model_audit(
             session=session,
@@ -1488,6 +1505,17 @@ def _run_direct_lawyer_turn(
     )
     processing_events = list(preparation.processing_events)
     if preparation.direct_reply is not None:
+        _LOGGER.info(
+            "Chat route selected",
+            extra={
+                "chat_route": "country_direct_reply",
+                "current_turn_document_request": _user_requested_document_generation(
+                    content=content,
+                    previous_messages=prior_messages,
+                ),
+                "generated_artifact_payload": _extract_case_update(preparation.direct_reply) is not None,
+            },
+        )
         normalized_direct_reply = _finalize_document_ready_reply_if_needed(
             session=session,
             messages=history,
@@ -1498,6 +1526,10 @@ def _run_direct_lawyer_turn(
             session=session,
             content=normalized_direct_reply,
             agent_name="Assistant",
+            allow_document_generation=_user_requested_document_generation(
+                content=content,
+                previous_messages=prior_messages,
+            ),
         )
         _record_case_ai_model_audit(
             session=session,
@@ -1517,11 +1549,53 @@ def _run_direct_lawyer_turn(
 
     from aijurisdictionagents.agents import create_lawyer_agent
 
-    routed_llm = _resolve_session_llm_route(session=session, task_type="chat_reply")
+    routed_llm = _resolve_session_llm_route(
+        session=session,
+        task_type="chat_reply",
+        request_user_id=request_user_id,
+        request_user_email=request_user_email,
+    )
+    runtime_reply = _runtime_question_reply(
+        content=content,
+        route=routed_llm,
+        prior_messages=prior_messages,
+    )
+    if runtime_reply is not None:
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=runtime_reply,
+            agent_name="Assistant",
+            allow_document_generation=False,
+        )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="chat_status",
+            source="chat.direct_reply",
+            model_used=False,
+            route=routed_llm,
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            processing_events,
+            routed_llm,
+        )
     lawyer = create_lawyer_agent(routed_llm.client, session.country)
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
     document_generation_requested = _user_requested_document_generation(content=content, previous_messages=prior_messages)
+    _LOGGER.info(
+        "Chat route selected",
+        extra={
+            "chat_route": "model_answer",
+            "current_turn_document_request": document_generation_requested,
+            "generated_artifact_payload": False,
+        },
+    )
     use_compact_local_prompt = _is_free_local_reply_route(routed_llm)
     if use_compact_local_prompt:
         prompt_override = _build_compact_free_local_lawyer_prompt(
@@ -1611,6 +1685,7 @@ def _run_direct_lawyer_turn(
             session=session,
             content=mcp_status_context.direct_reply,
             agent_name="Assistant",
+            allow_document_generation=False,
         )
         processing_events.append(mcp_status_context.processing_event)
         if processing_event_callback is not None:
@@ -1682,6 +1757,7 @@ def _run_direct_lawyer_turn(
         session=session,
         content=normalized_lawyer_content,
         agent_name=lawyer_message.agent_name,
+        allow_document_generation=document_generation_requested,
     )
     _record_case_ai_model_audit(
         session=session,
@@ -1726,6 +1802,54 @@ def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_te
 
 def _is_free_local_reply_route(route: RoutedLLMClient) -> bool:
     return bool(route.route_type == "free_local" and route.provider == "local_ollama")
+
+
+def _runtime_question_reply(
+    *,
+    content: str,
+    route: RoutedLLMClient,
+    prior_messages: list[Message] | None = None,
+) -> str | None:
+    normalized = _canonicalize_document_text(content)
+    asks_missing_data = "chybajuc" in normalized and any(
+        marker in normalized for marker in ("udaj", "data", "inform")
+    )
+    if asks_missing_data:
+        prior_text = "\n".join(
+            _canonicalize_document_text(_user_visible_text(message.content))
+            for message in (prior_messages or [])
+            if message.role == MessageRole.ASSISTANT
+        )
+        missing_fields: list[str] = []
+        candidates = (
+            ("poskytovatel pozicky bude doplneny", "poskytovateľ/platiteľ"),
+            ("prijemca bude doplneny", "príjemca"),
+            ("datum bude doplneny", "dátum platby alebo splatnosti"),
+            ("[mesto]", "miesto vystavenia"),
+            ("[datum vystavenia]", "dátum vystavenia"),
+        )
+        for marker, label in candidates:
+            if marker in prior_text and label not in missing_fields:
+                missing_fields.append(label)
+        if missing_fields:
+            return "V pripravenom dokumente chýbajú tieto údaje: " + ", ".join(missing_fields) + "."
+        return "V predchádzajúcej odpovedi nie sú označené žiadne konkrétne chýbajúce údaje."
+
+    asks_model = "model" in normalized and any(
+        marker in normalized for marker in ("aky", "ktory", "nazov", "pouziv")
+    )
+    if asks_model:
+        return f"V tomto chate používam model {route.model} cez poskytovateľa {route.provider}."
+
+    asks_mcp_runtime = "mcp" in normalized and any(
+        marker in normalized for marker in ("lokal", "local", "pouziv")
+    )
+    if not asks_mcp_runtime:
+        return None
+    remote_mcp = os.getenv("INTERNAL_MCP_BASE_URL", os.getenv("MCP_PUBLIC_BASE_URL", "")).strip()
+    if remote_mcp and remote_mcp != "unknown-variable":
+        return "JurisDigta MCP používam cez interné sieťové pripojenie, nie lokálne v procese API."
+    return "Áno. JurisDigta MCP je v tomto nasadení volané lokálne v procese API."
 
 
 def _build_compact_free_local_lawyer_prompt(
@@ -1819,6 +1943,8 @@ class StartSessionStreamRequest(BaseModel):
     communication_minutes: float | None = None
     user_simulation_mode: Literal["ReadUser", "AIUserSimulatorAgent"] = "ReadUser"
     user_replies: List[str] = Field(default_factory=list)
+    user_id: UUID | None = None
+    user_email: str | None = None
     model_profile_id: str | None = None
 
 
@@ -1852,6 +1978,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    if session.user_id is None and payload.user_id is not None:
+        session.user_id = payload.user_id
     _ensure_case_write_access_for_session(session)
 
     content = payload.content.strip()
@@ -1865,6 +1993,8 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
             session_id=session_id,
             session=session,
             content=content,
+            request_user_id=str(payload.user_id) if payload.user_id else None,
+            request_user_email=payload.user_email,
         )
     )
     _persist_session_history_document_if_needed(session=session, session_id=session_id)
@@ -1901,6 +2031,8 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED and payload.user_simulation_mode != "ReadUser":
         raise HTTPException(status_code=409, detail="Session already completed")
+    if session.user_id is None and payload.user_id is not None:
+        session.user_id = payload.user_id
     if payload.model_profile_id is not None:
         session.selected_model_profile_id = payload.model_profile_id.strip() or None
     _ensure_case_write_access_for_session(session)
@@ -2153,12 +2285,18 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             event_queue.put(("done", {"session_id": str(session_id)}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
-            _LOGGER.exception(
-                "Discussion stream worker failed | session_id=%s error_type=%s",
-                session_id,
-                type(exc).__name__,
+            timeout_payload = _model_timeout_error_payload(
+                exc,
+                session=session,
+                task_type="discussion_stream",
             )
-            event_queue.put(("error", {"message": str(exc)}))
+            if timeout_payload is None:
+                _LOGGER.exception(
+                    "Discussion stream worker failed | session_id=%s error_type=%s",
+                    session_id,
+                    type(exc).__name__,
+                )
+            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
         finally:
             event_queue.put(None)
 
@@ -2290,6 +2428,8 @@ def _stream_read_user_session(
                     session_id=session_id,
                     session=session,
                     content=payload.instruction,
+                    request_user_id=str(payload.user_id) if payload.user_id else None,
+                    request_user_email=payload.user_email,
                     supplemental_documents=inline_documents,
                     processing_event_callback=processing_event_callback,
                     user_message_callback=user_message_callback,
@@ -2342,12 +2482,18 @@ def _stream_read_user_session(
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
         except Exception as exc:  # noqa: BLE001
             _repository.mark_failed(session_id)
-            _LOGGER.exception(
-                "ReadUser stream worker failed | session_id=%s error_type=%s",
-                session_id,
-                type(exc).__name__,
+            timeout_payload = _model_timeout_error_payload(
+                exc,
+                session=session,
+                task_type="chat_reply",
             )
-            event_queue.put(("error", {"message": str(exc)}))
+            if timeout_payload is None:
+                _LOGGER.exception(
+                    "ReadUser stream worker failed | session_id=%s error_type=%s",
+                    session_id,
+                    type(exc).__name__,
+                )
+            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
         finally:
             event_queue.put(None)
 
@@ -4504,18 +4650,76 @@ def _stream_still_working_message(*, country: str, language: str | None) -> str:
     return "Still working on the answer. Verification or document preparation is taking longer; I will send the result as soon as it is ready."
 
 
+def _model_timeout_message(*, provider_class: str, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    local_model = provider_class == "local"
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return "Časový limit lokálneho modelu vypršal." if local_model else "Časový limit externého modelu vypršal."
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return "Časový limit lokálního modelu vypršel." if local_model else "Časový limit externího modelu vypršel."
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return "Zeitüberschreitung beim lokalen Modell." if local_model else "Zeitüberschreitung beim externen Modell."
+    return "Timeout on local model." if local_model else "Timeout on external model."
+
+
+def _model_timeout_error_payload(
+    exc: Exception,
+    *,
+    session: Session,
+    task_type: str,
+) -> dict[str, object] | None:
+    if not isinstance(exc, ModelProcessingTimeout):
+        return None
+    timeout_seconds = exc.timeout_seconds or 0.0
+    _LOGGER.warning(
+        "ai_model_processing_timeout provider_class=%s provider=%s model=%s "
+        "task_type=%s timeout_seconds=%.3f elapsed_seconds=%.3f error_code=%s",
+        exc.provider_class,
+        exc.provider,
+        exc.model,
+        task_type,
+        timeout_seconds,
+        exc.elapsed_seconds,
+        exc.code,
+    )
+    return {
+        "code": exc.code,
+        "message": _model_timeout_message(
+            provider_class=exc.provider_class,
+            country=session.country,
+            language=session.language,
+        ),
+        "params": {
+            "provider_class": exc.provider_class,
+            "timeout_seconds": timeout_seconds,
+        },
+    }
+
+
+def _stream_visible_progress_seconds() -> float:
+    return float(
+        read_positive_finite_env_seconds(
+            "LOCAL_LLM_REQUEST_VISIBLE_PROGRESS",
+            _STREAM_STATUS_SECONDS,
+        )
+    )
+
+
 def _stream_event_queue(
     *,
     event_queue: Queue[tuple[str, dict[str, object]] | None],
     session: Session,
 ) -> Generator[str, None, None]:
     last_visible_status_at = time.monotonic()
+    visible_progress_seconds = _stream_visible_progress_seconds()
+    poll_seconds = min(_STREAM_KEEPALIVE_SECONDS, visible_progress_seconds)
     while True:
         try:
-            item = event_queue.get(timeout=_STREAM_KEEPALIVE_SECONDS)
+            item = event_queue.get(timeout=poll_seconds)
         except Empty:
             now = time.monotonic()
-            if now - last_visible_status_at >= _STREAM_STATUS_SECONDS:
+            if now - last_visible_status_at >= visible_progress_seconds:
                 last_visible_status_at = now
                 status_body: dict[str, object] = {
                     "stage": "still_working",

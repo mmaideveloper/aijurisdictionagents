@@ -187,6 +187,7 @@ def export_admin_case(
         user_id=user_id,
         store=store,
         exported_by=f"admin:{admin.email}",
+        correlation_id=str(request.state.correlation_id),
     )
 
 

@@ -58,6 +58,17 @@ python scripts/sync_codex_skills.py --force
 
 For details, see `docs/PROJECT_SKILLS.md`.
 
+## Shared Jurisdigta Codex Plugin
+
+The team plugin is versioned under `plugins/jurisdigta/` and published through the repository marketplace:
+
+```bash
+codex plugin marketplace add mmaideveloper/aijurisdictionagents --ref main
+codex plugin add jurisdigta@jurisdigta
+```
+
+See [the plugin guide](docs/JURISDIGTA_PLUGIN.md) for update commands and versioned GitHub prerelease downloads.
+
 ## Portable Codex Automations
 
 Repo-owned Codex automation templates are versioned under `.codex/automations/`.
@@ -311,8 +322,16 @@ Case storage (Slovak advice mode):
 - Uploaded files are copied to `cases/<case-id>/documents/` with a date prefix.
 - Use `--case-id <guid>` to append a new discussion entry to an existing case.
 
-Environment variables are loaded from `.env` if present. Copy `.env.example` to `.env`
-and edit as needed.
+Environment variables are loaded from `.env` if present. `.env.example` is the
+key schema; profile rules are documented in `docs/ENV_VARIABLES.md`. Audit a
+local profile without printing values:
+
+```powershell
+.\scripts\sync_env_profile.ps1 -Mode Audit -Profile local-core -Strict
+```
+
+Temporary Azure infrastructure settings use ignored `.env.dev` and must be
+passed explicitly to infrastructure scripts.
 
 To use OpenAI, set:
 

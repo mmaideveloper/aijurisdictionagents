@@ -1,5 +1,24 @@
 # JurisDigta Environment Sync
 
+> **Current canonical workflow:** use `scripts/sync_env_profile.ps1` and
+> `docs/ENV_VARIABLES.md`. The encrypted USB attached to `jurisdigta-server` is
+> authoritative and developer laptops pull profiles. The older
+> `sync_jurisdigta_env.ps1` push flow is retained only for historical reference
+> and must not be used to publish a laptop `.env`.
+
+Run the mandatory redacted implementation gate with:
+
+```powershell
+.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent
+```
+
+If the trusted server is temporarily unavailable, audit the last verified local
+copy without retrieving secrets:
+
+```powershell
+.\scripts\sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict
+```
+
 This runbook defines how workstation `.env` files are aligned with `.env.example`
 and copied to the self-managed `jurisdigta-server`.
 

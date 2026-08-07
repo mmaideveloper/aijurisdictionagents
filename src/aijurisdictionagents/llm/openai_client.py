@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 import logging
+import time
 from typing import Iterable, Sequence
 
-from openai import OpenAI
+from openai import APITimeoutError, OpenAI
 
-from .base import log_llm_request, log_llm_response
+from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,17 @@ class OpenAIClient:
         }
         if self._config.max_tokens is not None:
             request_kwargs["max_tokens"] = self._config.max_tokens
-        response = self._client.chat.completions.create(**request_kwargs)
+        started_at = time.monotonic()
+        try:
+            response = self._client.chat.completions.create(**request_kwargs)
+        except APITimeoutError as exc:
+            raise ModelProcessingTimeout(
+                provider_class="external",
+                provider=self._config.provider_label,
+                model=self._config.model,
+                timeout_seconds=_client_timeout_seconds(self._client),
+                elapsed_seconds=elapsed_seconds(started_at),
+            ) from exc
         content = response.choices[0].message.content if response.choices else ""
         normalized = (content or "").strip()
         log_llm_response(
@@ -111,3 +122,9 @@ def _to_openai_role(role: str) -> str:
     if role in {"user", "assistant", "system"}:
         return role
     return "user"
+
+
+def _client_timeout_seconds(client: OpenAI) -> float | None:
+    timeout = getattr(client, "timeout", None)
+    read_timeout = getattr(timeout, "read", None)
+    return float(read_timeout) if isinstance(read_timeout, (int, float)) else None

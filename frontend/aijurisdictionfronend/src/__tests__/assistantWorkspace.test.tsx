@@ -44,6 +44,8 @@ const labels: Record<string, string> = {
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
   assistantEmptyMessageResponse: "Please enter a question or drafting instruction.",
   assistantApiErrorResponse: "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+  assistantLocalModelTimeout: "Časový limit lokálneho modelu vypršal.",
+  assistantExternalModelTimeout: "Časový limit externého modelu vypršal.",
   assistantCaseWriteWindowExpiredDetail:
     "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia.",
   assistantAuthLoadingResponse: "I am checking your account before starting the legal assistant. Please try again in a moment.",
@@ -340,6 +342,8 @@ describe("AssistantWorkspace", () => {
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: "Pouzi vybrany model",
+      userId: "user-1",
+      userEmail: "admin@example.com",
       modelProfileId: "azure_foundry_gpt_4o_mini",
       signal: expect.any(AbortSignal)
     });
@@ -542,11 +546,92 @@ describe("AssistantWorkspace", () => {
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       instruction: prompt,
+      userId: "user-1",
+      userEmail: "admin@example.com",
       modelProfileId: undefined,
       signal: expect.any(AbortSignal)
     });
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
+  });
+
+  it("shows the JurisDigta MCP proof notice from backend processing events", async () => {
+    const prompt = "Daj mi sumar zo zakona 192/2026";
+    const proofNotice =
+      "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií.";
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-07-14T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "processing",
+        data: {
+          stage: "mcp_law_context",
+          message: proofNotice,
+          details: {
+            user_visible: true,
+            source_notice_i18n: {
+              sk: proofNotice,
+              de: "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.",
+              en: "JurisDigta MCP Server was contacted to retrieve the latest legal information."
+            }
+          }
+        }
+      };
+      yield {
+        event: "message",
+        data: {
+          id: "message-1",
+          session_id: "session-1",
+          role: "assistant",
+          content: "Sumar zakona 192/2026 z MCP kontextu.",
+          agent_name: "AI Lawyer",
+          created_at: "2026-07-14T00:00:01Z"
+        }
+      };
+      yield {
+        event: "done",
+        data: { session_id: "session-1", status: "completed" }
+      };
+    });
+
+    render(<AssistantWorkspace />);
+
+    const result = capturedAdapter?.run({
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: prompt }]
+        }
+      ],
+      abortSignal: new AbortController().signal
+    });
+
+    const streamedTexts: string[] = [];
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        const text = update.content?.[0]?.text;
+        if (text) {
+          streamedTexts.push(text);
+        }
+      }
+    } else if (result) {
+      const update = await result;
+      const text = update.content?.[0]?.text;
+      if (text) {
+        streamedTexts.push(text);
+      }
+    }
+
+    expect(streamedTexts[0]).toBe(proofNotice);
+    expect(streamedTexts.at(-1)).toBe(`${proofNotice}\n\nSumar zakona 192/2026 z MCP kontextu.`);
   });
 
   it("localizes expired free-plan write errors from the JurisDigta chat API", async () => {
@@ -598,6 +683,56 @@ describe("AssistantWorkspace", () => {
 
     expect(lastResult?.content?.[0]?.text).toContain("Tento prípad je iba na čítanie");
     expect(lastResult?.content?.[0]?.text).not.toContain("Case is read-only");
+  });
+
+  it("replaces repeated progress and renders a local timeout without a network error", async () => {
+    vi.mocked(createChatSession).mockResolvedValue({
+      id: "session-1",
+      user_id: "user-1",
+      case_id: "case-1",
+      country: "SK",
+      language: "sk",
+      discussion_type: "advice",
+      state: "active",
+      created_at: "2026-08-05T00:00:00Z"
+    });
+    vi.mocked(streamSession).mockImplementation(async function* () {
+      yield {
+        event: "processing",
+        data: { stage: "still_working", message: "Stále pracujem na odpovedi." }
+      };
+      yield {
+        event: "processing",
+        data: { stage: "still_working", message: "Stále pracujem na odpovedi." }
+      };
+      yield {
+        event: "error",
+        data: {
+          code: "local_model_timeout",
+          message: "Timeout on local model.",
+          params: { provider_class: "local", timeout_seconds: 600 }
+        }
+      };
+    });
+
+    render(<AssistantWorkspace />);
+    const result = capturedAdapter?.run({
+      messages: [{ role: "user", content: [{ type: "text", text: "Jednoduchá testovacia otázka" }] }],
+      abortSignal: new AbortController().signal
+    });
+
+    const streamedTexts: string[] = [];
+    if (result && Symbol.asyncIterator in result) {
+      for await (const update of result) {
+        const text = update.content?.[0]?.text;
+        if (text) streamedTexts.push(text);
+      }
+    }
+
+    expect(streamedTexts[0]).toBe("Stále pracujem na odpovedi.");
+    expect(streamedTexts[1]).toBe("Stále pracujem na odpovedi.");
+    expect(streamedTexts.at(-1)).toBe("Časový limit lokálneho modelu vypršal.");
+    expect(streamedTexts.at(-1)).not.toContain("network");
   });
 
   it("adds generated document links to the completed assistant response", async () => {

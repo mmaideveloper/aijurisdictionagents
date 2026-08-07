@@ -108,3 +108,19 @@ def test_postgres_migration_apply_uses_lock_and_records_execution(
         "unlock:api",
     ]
 
+
+def test_court_decision_metadata_search_index_uses_immutable_expression() -> None:
+    migration = Path(
+        "databases/court-decision-collector/migrations/0001_search_indexes.sql"
+    ).read_text(encoding="utf-8")
+    init_schema = Path(
+        "databases/court-decision-collector/initdb/001_schema.sql"
+    ).read_text(encoding="utf-8")
+
+    for sql in (migration, init_schema):
+        metadata_index = sql.split(
+            "idx_court_decision_documents_metadata_search_text", maxsplit=1
+        )[1].split(");", maxsplit=1)[0]
+        assert "concat_ws" not in metadata_index
+        assert "'simple'::regconfig" in metadata_index
+        assert "COALESCE(court_name, '')" in metadata_index

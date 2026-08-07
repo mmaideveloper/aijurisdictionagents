@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaDownload } from "react-icons/fa";
 import { fetchCaseExportBlob } from "../api/caseClient";
@@ -40,6 +40,11 @@ const Profile: React.FC = () => {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [exportingCaseId, setExportingCaseId] = useState<string | null>(null);
+  const exportInFlightCaseId = useRef<string | null>(null);
+  const [caseExportMessage, setCaseExportMessage] = useState<string | null>(null);
+  const [caseExportError, setCaseExportError] = useState<string | null>(null);
+  const [expandedCaseIds, setExpandedCaseIds] = useState<Set<string>>(() => new Set());
+  const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(() => new Set());
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [totpSetup, setTotpSetup] = useState<{
@@ -52,6 +57,21 @@ const Profile: React.FC = () => {
   const [isMfaSubmitting, setIsMfaSubmitting] = useState(false);
   const selectedPlan = plans.find((option) => !option.disabled) ?? plans[0];
   const openedCases = cases.filter((caseItem) => caseItem.status !== "Completed");
+
+  const toggleExpandedId = (
+    id: string,
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>
+  ) => {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     setForm({
@@ -123,12 +143,13 @@ const Profile: React.FC = () => {
     caseItem: (typeof cases)[number]
   ) => {
     event.stopPropagation();
-    if (!user?.userId) {
+    if (!user?.userId || exportInFlightCaseId.current !== null) {
       return;
     }
+    exportInFlightCaseId.current = caseItem.id;
     setExportingCaseId(caseItem.id);
-    setProfileError(null);
-    setProfileMessage(null);
+    setCaseExportError(null);
+    setCaseExportMessage(null);
     try {
       const exported = await fetchCaseExportBlob({
         userId: user.userId,
@@ -141,11 +162,15 @@ const Profile: React.FC = () => {
       anchor.rel = "noopener";
       document.body.appendChild(anchor);
       anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => {
+        anchor.remove();
+        URL.revokeObjectURL(objectUrl);
+      }, 1_000);
+      setCaseExportMessage(t("profileCaseExportStarted"));
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
+      setCaseExportError(error instanceof Error ? error.message : t("profileCaseExportFailed"));
     } finally {
+      exportInFlightCaseId.current = null;
       setExportingCaseId(null);
     }
   };
@@ -341,60 +366,103 @@ const Profile: React.FC = () => {
             <p className="hint">{t("profileOpenedCasesSubtitle")}</p>
             {openedCases.length > 0 ? (
               <ul className="profile-case-list">
-                {openedCases.map((caseItem) => (
-                  <li key={caseItem.id} className="profile-case-item">
-                    <button
-                      type="button"
-                      className="profile-case-button"
-                      onClick={() => {
-                        selectCase(caseItem.id);
-                        navigate("/");
-                      }}
-                    >
-                      <span title={caseItem.title}>{caseItem.title}</span>
-                      <small title={t(caseStatusTranslationKeys[caseItem.status])}>
-                        {t(caseStatusTranslationKeys[caseItem.status])}
-                      </small>
-                    </button>
-                    <button
-                      type="button"
-                      className="button ghost icon-button profile-case-export-button"
-                      onClick={(event) => void handleExportCase(event, caseItem)}
-                      disabled={exportingCaseId === caseItem.id}
-                      title={t("profileCaseExport")}
-                      aria-label={t("profileCaseExport")}
-                    >
-                      <FaDownload aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
+                {openedCases.map((caseItem) => {
+                  const isExpanded = expandedCaseIds.has(caseItem.id);
+                  const canExpand = caseItem.title.length > 32;
+                  return (
+                    <li key={caseItem.id} className="profile-case-item">
+                      <button
+                        type="button"
+                        className={`profile-case-button${isExpanded ? " is-expanded" : ""}`}
+                        onClick={() => {
+                          selectCase(caseItem.id);
+                          navigate("/");
+                        }}
+                      >
+                        <span title={caseItem.title}>{caseItem.title}</span>
+                        <small title={t(caseStatusTranslationKeys[caseItem.status])}>
+                          {t(caseStatusTranslationKeys[caseItem.status])}
+                        </small>
+                      </button>
+                      {canExpand ? (
+                        <button
+                          type="button"
+                          className="profile-text-toggle"
+                          onClick={() => toggleExpandedId(caseItem.id, setExpandedCaseIds)}
+                          aria-expanded={isExpanded}
+                          aria-label={t(isExpanded ? "profileTextCollapse" : "profileTextExpand")}
+                          title={t(isExpanded ? "profileTextCollapse" : "profileTextExpand")}
+                        >
+                          …
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="button ghost icon-button profile-case-export-button"
+                        onClick={(event) => void handleExportCase(event, caseItem)}
+                        disabled={exportingCaseId === caseItem.id}
+                        title={t("profileCaseExport")}
+                        aria-label={t("profileCaseExport")}
+                      >
+                        <FaDownload aria-hidden="true" />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="hint">{t("profileOpenedCasesEmpty")}</p>
             )}
+            {caseExportError ? (
+              <p className="form-error" role="alert">
+                {caseExportError}
+              </p>
+            ) : null}
+            {caseExportMessage ? (
+              <p className="hint" role="status">
+                {caseExportMessage}
+              </p>
+            ) : null}
           </article>
           <article className="card">
             <h2>{t("profileDocumentsTitle")}</h2>
             <p className="hint">{t("profileDocumentsSubtitle")}</p>
             {documents.length > 0 ? (
               <ul className="profile-document-list">
-                {documents.map((document) => (
-                  <li key={document.id} className="profile-document-item">
-                    <button
-                      type="button"
-                      className="profile-document-button"
-                      onClick={() => handleOpenDocument(document)}
-                    >
-                      <strong title={document.originalFilename}>{document.originalFilename}</strong>
-                      <small title={document.caseTitle}>
-                        {t("profileDocumentCaseLabel")}: {document.caseTitle}
+                {documents.map((document) => {
+                  const isExpanded = expandedDocumentIds.has(document.id);
+                  const canExpand =
+                    document.originalFilename.length > 28 || document.caseTitle.length > 32;
+                  return (
+                    <li key={document.id} className="profile-document-item">
+                      <button
+                        type="button"
+                        className={`profile-document-button${isExpanded ? " is-expanded" : ""}`}
+                        onClick={() => handleOpenDocument(document)}
+                      >
+                        <strong title={document.originalFilename}>{document.originalFilename}</strong>
+                        <small title={document.caseTitle}>
+                          {t("profileDocumentCaseLabel")}: {document.caseTitle}
+                        </small>
+                      </button>
+                      {canExpand ? (
+                        <button
+                          type="button"
+                          className="profile-text-toggle"
+                          onClick={() => toggleExpandedId(document.id, setExpandedDocumentIds)}
+                          aria-expanded={isExpanded}
+                          aria-label={t(isExpanded ? "profileTextCollapse" : "profileTextExpand")}
+                          title={t(isExpanded ? "profileTextCollapse" : "profileTextExpand")}
+                        >
+                          …
+                        </button>
+                      ) : null}
+                      <small className="profile-document-meta" title={document.sizeLabel}>
+                        {document.sizeLabel}
                       </small>
-                    </button>
-                    <small className="profile-document-meta" title={document.sizeLabel}>
-                      {document.sizeLabel}
-                    </small>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="hint">{t("profileDocumentsEmpty")}</p>

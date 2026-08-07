@@ -1,10 +1,12 @@
-﻿export type Language = "en" | "sk" | "de";
+﻿import { PRODUCT_NAMES, type BrandLanguage } from "../branding";
+
+export type Language = BrandLanguage;
 
 export type TranslationValues = Record<string, string | number>;
 
 export const translations = {
   en: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.en,
     tagline: "Multi-agent legal intelligence with audit-ready outputs.",
     commonUser: "User",
     navHome: "Home",
@@ -142,6 +144,8 @@ export const translations = {
     authMfaTotpCode: "Authenticator code",
     authMfaVerify: "Verify MFA",
     authMfaInvalid: "Invalid MFA code.",
+    authMfaExpired: "The MFA request expired. Sign in again to get a new request.",
+    authMfaRestartRequired: "The MFA code was not accepted. Sign in again and enter a current code.",
     authMfaEmailSent: "Email OTP code sent.",
     authCreateTitle: "Create your JurisDigta account",
     authCreateBody: "Enter only the details needed to create your account: phone number, email, and password.",
@@ -224,6 +228,8 @@ export const translations = {
       "I am checking your account before starting the legal assistant. Please try again in a moment.",
     assistantApiErrorResponse:
       "The assistant could not complete the JurisDigta API request. Status: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Timeout on local model.",
+    assistantExternalModelTimeout: "Timeout on external model.",
     assistantCaseWriteWindowExpiredDetail:
       "This case is read-only because the {plan} plan allows edits for {days} day(s) after creation. You can still read the case history, or create a new case to continue editing.",
     caseTitle: "Create a case",
@@ -335,6 +341,17 @@ export const translations = {
     sidebarSelectedCaseOutput: "Output",
     sidebarSelectedDocuments: "Documents",
     sidebarSelectedDocumentsEmpty: "No documents stored for this case.",
+    sidebarDeleteDocument: "Delete document {filename}",
+    sidebarDeleteDocumentConfirm:
+      "Permanently delete {filename}? The file, extracted content, embeddings, and active share links will be removed. A minimal timestamped audit record will remain.",
+    sidebarDeleteDocumentSuccess: "Document deleted and recorded in the case history.",
+    sidebarDeleteDocumentFailed: "Could not delete the document.",
+    sidebarDocumentDeletedHistory: "Document deleted at {deletedAt}.",
+    sidebarDeleteCase: "Delete case",
+    sidebarDeleteCaseConfirm:
+      "Soft-delete case {title}? It will be hidden from your case list and cannot be restored from the normal user interface.",
+    sidebarDeleteCaseSuccess: "Case deleted.",
+    sidebarDeleteCaseFailed: "Could not delete the case.",
     sidebarSelectedChats: "Chats",
     sidebarSelectedChatsEmpty: "No chat history stored for this case.",
     documentViewerTitle: "Document preview",
@@ -347,7 +364,7 @@ export const translations = {
     documentViewerSendEmail: "Send by email",
     documentViewerSendingEmail: "Sending...",
     documentViewerEmailRequired: "Enter recipient email.",
-    documentViewerEmailSent: "Email queued with {count} attachment(s).",
+    documentViewerEmailSent: "Protected document link queued. The recipient must verify by email.",
     documentViewerEmailFailed: "Could not send document email.",
     documentViewerLoadFailed: "Could not load document.",
     documentViewerDownloadFailed: "Could not download document.",
@@ -461,6 +478,9 @@ export const translations = {
     profileOpenedCasesEmpty: "No opened cases yet.",
     profileCaseExport: "Export case",
     profileCaseExportFailed: "Could not export case.",
+    profileCaseExportStarted: "Case export download started.",
+    profileTextExpand: "Show full text",
+    profileTextCollapse: "Collapse text",
     profileDocumentsTitle: "My Documents",
     profileDocumentsSubtitle: "Uploaded documents from your case intake flow.",
     profileDocumentsEmpty: "No uploaded documents yet.",
@@ -692,10 +712,10 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "The page you are looking for is not part of this design set.",
     notFoundAction: "Back to home",
-    footerCopy: "Design concept for AIJurisdiction."
+    footerCopy: `Design concept for ${PRODUCT_NAMES.en}.`
   },
   sk: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.sk,
     tagline: "Multiagentná právna inteligencia s auditovateľnými výstupmi.",
     commonUser: "Používateľ",
     navHome: "Domov",
@@ -833,6 +853,8 @@ export const translations = {
     authMfaTotpCode: "Kód z aplikácie",
     authMfaVerify: "Overiť MFA",
     authMfaInvalid: "Neplatný MFA kód.",
+    authMfaExpired: "Platnosť MFA požiadavky vypršala. Prihláste sa znova a získajte novú požiadavku.",
+    authMfaRestartRequired: "MFA kód nebol prijatý. Prihláste sa znova a zadajte aktuálny kód.",
     authMfaEmailSent: "Email OTP kód bol odoslaný.",
     authCreateTitle: "Vytvorte si účet JurisDigta",
     authCreateBody: "Zadajte iba údaje potrebné na vytvorenie účtu: telefónne číslo, e-mail a heslo.",
@@ -915,6 +937,8 @@ export const translations = {
       "Overujem vaše konto pred spustením právneho asistenta. Skúste to, prosím, o chvíľu znova.",
     assistantApiErrorResponse:
       "Asistent nemohol dokončiť požiadavku na JurisDigta API. Stav: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Časový limit lokálneho modelu vypršal.",
+    assistantExternalModelTimeout: "Časový limit externého modelu vypršal.",
     assistantCaseWriteWindowExpiredDetail:
       "Tento prípad je iba na čítanie, pretože plán {plan} umožňuje úpravy po dobu {days} dňa/dní od vytvorenia. Históriu prípadu si stále môžete čítať alebo vytvoriť nový prípad a pokračovať v úpravách.",
     caseTitle: "Vytvoriť prípad",
@@ -1026,6 +1050,17 @@ export const translations = {
     sidebarSelectedCaseOutput: "Výstup",
     sidebarSelectedDocuments: "Dokumenty",
     sidebarSelectedDocumentsEmpty: "Pre tento prípad nie sú uložené dokumenty.",
+    sidebarDeleteDocument: "Odstrániť dokument {filename}",
+    sidebarDeleteDocumentConfirm:
+      "Natrvalo odstrániť {filename}? Súbor, extrahovaný obsah, embeddingy a aktívne odkazy na zdieľanie budú odstránené. Zostane iba minimálny auditný záznam s časom.",
+    sidebarDeleteDocumentSuccess: "Dokument bol odstránený a udalosť bola zaznamenaná v histórii prípadu.",
+    sidebarDeleteDocumentFailed: "Dokument sa nepodarilo odstrániť.",
+    sidebarDocumentDeletedHistory: "Dokument bol odstránený {deletedAt}.",
+    sidebarDeleteCase: "Odstrániť prípad",
+    sidebarDeleteCaseConfirm:
+      "Soft-delete prípad {title}? Prípad sa skryje zo zoznamu a z bežného používateľského rozhrania ho nebude možné obnoviť.",
+    sidebarDeleteCaseSuccess: "Prípad bol odstránený.",
+    sidebarDeleteCaseFailed: "Prípad sa nepodarilo odstrániť.",
     sidebarSelectedChats: "Chaty",
     sidebarSelectedChatsEmpty: "Pre tento prípad nie je uložená história chatu.",
     documentViewerTitle: "Náhľad dokumentu",
@@ -1038,7 +1073,7 @@ export const translations = {
     documentViewerSendEmail: "Poslať e-mailom",
     documentViewerSendingEmail: "Odosiela sa...",
     documentViewerEmailRequired: "Zadajte e-mail príjemcu.",
-    documentViewerEmailSent: "E-mail bol zaradený do fronty s {count} prílohou/prílohami.",
+    documentViewerEmailSent: "Odkaz na chránený dokument bol zaradený do fronty. Príjemca sa musí overiť e-mailom.",
     documentViewerEmailFailed: "Dokument sa nepodarilo odoslať e-mailom.",
     documentViewerLoadFailed: "Dokument sa nepodarilo načítať.",
     documentViewerDownloadFailed: "Dokument sa nepodarilo stiahnuť.",
@@ -1152,6 +1187,9 @@ export const translations = {
     profileOpenedCasesEmpty: "Zatiaľ nie sú otvorené prípady.",
     profileCaseExport: "Exportovať prípad",
     profileCaseExportFailed: "Prípad sa nepodarilo exportovať.",
+    profileCaseExportStarted: "Sťahovanie exportu prípadu sa začalo.",
+    profileTextExpand: "Zobraziť celý text",
+    profileTextCollapse: "Zbaliť text",
     profileDocumentsTitle: "Moje dokumenty",
     profileDocumentsSubtitle: "Nahrané dokumenty z intake flow prípadu.",
     profileDocumentsEmpty: "Zatiaľ nie sú nahrané žiadne dokumenty.",
@@ -1383,10 +1421,10 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "Stránka nie je súčasťou tohto dizajnu.",
     notFoundAction: "Späť na domov",
-    footerCopy: "Dizajnový koncept pre AIJurisdiction."
+    footerCopy: `Dizajnový koncept pre ${PRODUCT_NAMES.sk}.`
   },
   de: {
-    appName: "AIJurisdiction",
+    appName: PRODUCT_NAMES.de,
     tagline: "Multi-Agenten-Rechtsintelligenz mit auditierbaren Ergebnissen.",
     commonUser: "Benutzer",
     navHome: "Start",
@@ -1524,6 +1562,8 @@ export const translations = {
     authMfaTotpCode: "Authenticator-Code",
     authMfaVerify: "MFA bestaetigen",
     authMfaInvalid: "Ungueltiger MFA-Code.",
+    authMfaExpired: "Die MFA-Anfrage ist abgelaufen. Melden Sie sich erneut an, um eine neue Anfrage zu erhalten.",
+    authMfaRestartRequired: "Der MFA-Code wurde nicht akzeptiert. Melden Sie sich erneut an und geben Sie einen aktuellen Code ein.",
     authMfaEmailSent: "E-Mail OTP-Code gesendet.",
     authCreateTitle: "JurisDigta-Konto erstellen",
     authCreateBody: "Geben Sie nur die fuer das Konto erforderlichen Daten ein: Telefonnummer, E-Mail und Passwort.",
@@ -1606,6 +1646,8 @@ export const translations = {
       "Ich pruefe Ihr Konto, bevor der Rechtsassistent startet. Bitte versuchen Sie es gleich erneut.",
     assistantApiErrorResponse:
       "Der Assistent konnte die JurisDigta-API-Anfrage nicht abschließen. Status: {status}. Detail: {detail}",
+    assistantLocalModelTimeout: "Zeitüberschreitung beim lokalen Modell.",
+    assistantExternalModelTimeout: "Zeitüberschreitung beim externen Modell.",
     assistantCaseWriteWindowExpiredDetail:
       "Dieser Fall ist schreibgeschützt, weil der Tarif {plan} Änderungen nur {days} Tag(e) nach der Erstellung erlaubt. Sie können den Fallverlauf weiter lesen oder einen neuen Fall erstellen, um weiterzuarbeiten.",
     caseTitle: "Fall erstellen",
@@ -1717,6 +1759,17 @@ export const translations = {
     sidebarSelectedCaseOutput: "Ausgabe",
     sidebarSelectedDocuments: "Dokumente",
     sidebarSelectedDocumentsEmpty: "Für diesen Fall sind keine Dokumente gespeichert.",
+    sidebarDeleteDocument: "Dokument {filename} löschen",
+    sidebarDeleteDocumentConfirm:
+      "{filename} endgültig löschen? Datei, extrahierter Inhalt, Embeddings und aktive Freigabelinks werden entfernt. Nur ein minimaler Audit-Eintrag mit Zeitstempel bleibt bestehen.",
+    sidebarDeleteDocumentSuccess: "Das Dokument wurde gelöscht und im Fallverlauf protokolliert.",
+    sidebarDeleteDocumentFailed: "Das Dokument konnte nicht gelöscht werden.",
+    sidebarDocumentDeletedHistory: "Dokument gelöscht am {deletedAt}.",
+    sidebarDeleteCase: "Fall löschen",
+    sidebarDeleteCaseConfirm:
+      "Fall {title} soft-löschen? Er wird aus der Fallliste ausgeblendet und kann über die normale Benutzeroberfläche nicht wiederhergestellt werden.",
+    sidebarDeleteCaseSuccess: "Fall gelöscht.",
+    sidebarDeleteCaseFailed: "Der Fall konnte nicht gelöscht werden.",
     sidebarSelectedChats: "Chats",
     sidebarSelectedChatsEmpty: "Für diesen Fall ist kein Chatverlauf gespeichert.",
     documentViewerTitle: "Dokumentvorschau",
@@ -1729,7 +1782,7 @@ export const translations = {
     documentViewerSendEmail: "Per E-Mail senden",
     documentViewerSendingEmail: "Wird gesendet...",
     documentViewerEmailRequired: "Geben Sie die Empfänger-E-Mail ein.",
-    documentViewerEmailSent: "E-Mail mit {count} Anhang/Anhängen wurde eingereiht.",
+    documentViewerEmailSent: "Der geschützte Dokumentlink wurde eingereiht. Der Empfänger muss sich per E-Mail bestätigen.",
     documentViewerEmailFailed: "Dokument konnte nicht per E-Mail gesendet werden.",
     documentViewerLoadFailed: "Dokument konnte nicht geladen werden.",
     documentViewerDownloadFailed: "Dokument konnte nicht heruntergeladen werden.",
@@ -1843,6 +1896,9 @@ export const translations = {
     profileOpenedCasesEmpty: "Noch keine offenen Fälle.",
     profileCaseExport: "Fall exportieren",
     profileCaseExportFailed: "Fall konnte nicht exportiert werden.",
+    profileCaseExportStarted: "Der Download des Fallexports wurde gestartet.",
+    profileTextExpand: "Vollständigen Text anzeigen",
+    profileTextCollapse: "Text einklappen",
     profileDocumentsTitle: "Meine Dokumente",
     profileDocumentsSubtitle: "Hochgeladene Dokumente aus dem Fall-Intake.",
     profileDocumentsEmpty: "Noch keine hochgeladenen Dokumente.",
@@ -2074,7 +2130,7 @@ export const translations = {
     notFoundTitle: "404",
     notFoundBody: "Diese Seite gehört nicht zu diesem Design-Set.",
     notFoundAction: "Zurück zur Startseite",
-    footerCopy: "Designkonzept für AIJurisdiction."
+    footerCopy: `Designkonzept für ${PRODUCT_NAMES.de}.`
   }
 } as const;
 

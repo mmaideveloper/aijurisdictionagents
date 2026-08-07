@@ -18,6 +18,11 @@ const PrivacyPolicy: React.FC = () => {
             <section key={section.heading} className="legal-section-card">
               <h2>{section.heading}</h2>
               <p>{section.body}</p>
+              {section.links?.map((link) => (
+                <p key={link.href}>
+                  <a href={link.href}>{link.label}</a>
+                </p>
+              ))}
             </section>
           ))}
         </div>

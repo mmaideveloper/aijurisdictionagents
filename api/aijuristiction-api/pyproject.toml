@@ -1,6 +1,6 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260522"
+version = "1.0.260534"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,7 +28,7 @@ dependencies = [
 dev = [
   "pytest>=8.4.2",
   "pypdf>=6.0",
-  "ruff>=0.12.8",
+  "ruff>=0.12.8,<0.16",
   "mypy>=1.17.1",
 ]
 

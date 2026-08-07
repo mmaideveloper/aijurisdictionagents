@@ -13,7 +13,7 @@ from aijurisdictionagents.api_db import (
 )
 
 from .azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
-from .base import LLMClient
+from .base import LLMClient, read_positive_finite_env_seconds
 from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
 
@@ -61,6 +61,7 @@ def get_routed_llm_client(
     *,
     store: ApiDatabaseStore,
     user_id: str,
+    user_email: str = "",
     task_type: str = "default",
     external_acknowledged: bool = False,
     selected_model_profile_id: str | None = None,
@@ -95,6 +96,7 @@ def get_routed_llm_client(
     if normalized_selected_profile_id:
         route = store.resolve_selected_ai_model_route(
             user_id=user_id,
+            user_email=user_email,
             plan_code=plan.plan_code,
             task_type=task_type,
             model_profile_id=normalized_selected_profile_id,
@@ -143,7 +145,7 @@ def get_routed_llm_client(
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
-            fallback_reason="",
+            fallback_reason=_fallback_reason(route),
         )
 
     if provider_type in {"local_llamacpp_openai", "local_lmstudio"}:
@@ -165,7 +167,7 @@ def get_routed_llm_client(
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
-            fallback_reason="",
+            fallback_reason=_fallback_reason(route),
         )
 
     if provider_type in {"azurefoundry", "azure_foundry", "azure"}:
@@ -199,7 +201,7 @@ def get_routed_llm_client(
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
-            fallback_reason="",
+            fallback_reason=_fallback_reason(route),
         )
 
     if provider_type == "openai":
@@ -222,7 +224,7 @@ def get_routed_llm_client(
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
-            fallback_reason="",
+            fallback_reason=_fallback_reason(route),
         )
 
     raise ModelRouteUnavailable(f'Unsupported model provider type "{provider.provider_type}".')
@@ -256,7 +258,14 @@ def _temperature() -> float:
 
 
 def _local_timeout_seconds() -> float:
-    return float(os.getenv("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", "120"))
+    return read_positive_finite_env_seconds("LOCAL_LLM_REQUEST_TIMEOUT_SECONDS", 600.0)
+
+
+def _fallback_reason(route: AIModelRouteSelection) -> str:
+    normalized_route_type = route.route_type.strip().lower()
+    if "fallback" in normalized_route_type:
+        return route.reason
+    return ""
 
 
 def _resolve_azure_openai_api_version(*, model: str, provider_api_version: str) -> str:

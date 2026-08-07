@@ -97,9 +97,9 @@ Required owner: infrastructure operator with PostgreSQL administrator access.
 
 1. Create a separate database such as `court_decisions_sk`.
 2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
-3. Apply `databases/court-decision-collector/initdb/001_schema.sql`.
+3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database. Keep the metadata full-text search index expression immutable for PostgreSQL production deploys.
 4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
-5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISIONS_MAX_PDF_BYTES=26214400`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`. Apply `databases/court-decision-collector/migrations/0002_on_demand_enrichment.sql`, install/validate the existing local PDF/OCR runtime, and grant write access only to the dedicated storage path. Validate the Komárno example twice (cache miss then hit). Roll back by disabling enrichment before removing the new tables; retain PDFs until the approved deletion workflow handles them.
 6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
 7. Validate console logs include `processing_decision source_guid=...` and no raw decision body or personal identifier is logged.
 8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
@@ -532,6 +532,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Keep the dedicated SSH folder local to the workstation. Only public keys belong in `/home/jurisdigta-admin/.ssh/authorized_keys` on the server.
 - Required model-credential encryption secret: `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`.
 - Chat provider/model/deployment routing is stored in API database tables, not `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, or `AZURE_OPENAI_DEPLOYMENT`.
+- Local Ollama requests use `LOCAL_LLM_REQUEST_TIMEOUT_SECONDS=600`; the assistant emits a replaceable localized progress status every `LOCAL_LLM_REQUEST_VISIBLE_PROGRESS=15` seconds. Both values must be finite and greater than zero or API startup fails. A local timeout is reported as `local_model_timeout`, never as a network failure and never as permission to fall back to an external provider.
 - Seeded free/default local route: provider `local_ollama`, exact model `qwen3:1.7b`, profile `local_ollama_default`. In self-managed Docker production, the API stores the private Docker gateway URL such as `http://172.18.0.1:11434/v1` because `127.0.0.1` inside the API container is not the host Ollama service.
 - Production admins can manage local Ollama registry models from the protected AI Model Admin page. The Admin tool lists models through the server-local Ollama API, starts registry pulls, and can physically remove unused models. Ollama must stay bound to localhost or the private Docker gateway; do not expose it through Cloudflare Tunnel, nginx, router NAT, or a public firewall rule.
 - Admin removal is intentionally blocked when the model is the seeded/default local model, marked `is_default_for_free`, referenced by an enabled route policy, selected by `LOCAL_LLM_MODEL`, or currently loaded while configured for active routing. Change route policies/defaults first, verify the new model works, then remove the old unused model.
@@ -543,6 +544,7 @@ The self-managed production deployment script performs the Ollama install, priva
 - Optional controlled MCP OAuth E2E values in `/srv/jurisdigta/secrets/jurisdigta.env`: keep `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` by default. For explicit Claude connector validation, set `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=true`, `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS=mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu`, `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z`, and `JURISDIGTA_E2E_TEST_USER_PASSWORD` in secret storage. Provision or refresh the synthetic accounts with `python scripts/provision_e2e_users.py` from the deployed API environment. Roll back by setting `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false`, redeploying/restarting the MCP service, and confirming OAuth login returns the OTP page for those test users.
 - Required privileged test-account value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`. Keep this allowlist restricted to approved test/operator accounts, validate it before deploy, and roll back by removing the email from the server-local env file and redeploying/restarting the API.
 - Required admin value in `/srv/jurisdigta/secrets/jurisdigta.env`: `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com` or another approved operator list. Required owner: JurisDigta infrastructure operator with Cloudflare Access admin rights. Cloudflare Access must protect the admin hostname and forward `cf-access-authenticated-user-email`; validate with an admin role or allowlisted account opening `/app/admin`, seeing Users/model/credential controls, and a non-admin account receiving `403` from admin APIs. Roll back by removing the email from `JURISDIGTA_ADMIN_EMAILS` or changing the user role back to `user`, redeploying/restarting the API, and confirming the admin API rejects the account.
+- Required web MFA reuse value in the encrypted USB `codex-agent.env` profile and `/srv/jurisdigta/secrets/jurisdigta.env`: `MFA_REUSE_WINDOW_HOURS=12`. Required owner: JurisDigta infrastructure operator. Apply it with an atomic, permission-preserving update that does not print other environment values, then recreate the API container through the standard production deployment so Docker reloads the env file. Validate with a redacted equality/count check and by confirming a user who completed MFA can log out and sign in again within 12 hours without another MFA challenge. Roll back by setting `MFA_REUSE_WINDOW_HOURS=0`, redeploying/restarting the API, and confirming every new sign-in requires MFA.
 - The self-managed deploy script injects `INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070` into the API container so internal assistant law lookups call the dedicated MCP service over the Docker network.
 - Public DNS/TLS values may include `jurisdigta.eu`, `www.jurisdigta.eu`, `api.jurisdigta.eu`, `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `services.jurisdigta.eu`, and `admin.jurisdigta.eu`.
 - Self-managed court-decision collector default: container `jurisdigta-court-decision-collector`, database `court_decisions_sk`, Docker restart policy `unless-stopped`, no Docker HTTP healthcheck because it is a worker, and log path `/srv/jurisdigta/runs/logs/court-decision-collector.log`.
@@ -645,6 +647,16 @@ The self-managed production deployment script performs the Ollama install, priva
 - Remove Docker/GitHub CLI/nginx packages only if the server is being decommissioned.
 - Remove the deploy-only public key from `/home/jurisdigta-admin/.ssh/authorized_keys` and delete/rotate `JURISDIGTA_SSH_PRIVATE_KEY` if GitHub deployment access must be revoked.
 
+### Production Docker Image Retention
+
+- Required owner: the `jurisdigta-admin` deployment operator with Docker access.
+- Every successful `Deployment/server/deploy_jurisdigta_prod.sh` run keeps `:local` plus one `:previous` tag for API, web, document processor, document engine, and laws collector images.
+- Retention is finalized only after health validation. Older dangling images and unused build cache are then removed; Docker volumes and `/srv/jurisdigta/runs` are never cleanup targets.
+- Validate with `docker image ls --format '{{.Repository}}:{{.Tag}}' | grep -E '^(aijuristiction-api|jurisdigta-(web|document-processor|document-engine|laws-collector)):(local|previous)$'` and `docker system df`.
+- Roll back by tagging the affected `:previous` image as `:local`, recreating that service with its normal production arguments, and validating its local health endpoint.
+- If cleanup itself causes an operational concern, omit `finalize_image_retention` in a controlled rollback deployment; do not replace it with global volume or runtime-storage deletion.
+- Keep `/srv/jurisdigta/secrets/jurisdigta.env` owned by `root:jurisdigta-admin` at mode `0640`; validate with `stat -c '%a %U %G %n' /srv/jurisdigta/secrets/jurisdigta.env`. This is distinct from encrypted USB profile files, which remain mode `0600`.
+
 ### Privacy And Compliance Notes
 
 - Treat server environment files, PostgreSQL data, document storage, logs, and backups as sensitive operational data.
@@ -656,3 +668,14 @@ The self-managed production deployment script performs the Ollama install, priva
 - Local model routing keeps case content inside JurisDigta-controlled infrastructure, but normal server access controls, retention, deletion, and privacy-safe logging still apply.
 - Keep legal-risk outputs subject to human oversight before production traffic is enabled.
 - For Cloudflare Tunnel and Access, avoid logging personal data, legal documents, API keys, database credentials, or full user prompts in edge, dashboard, or application logs.
+
+### Encrypted USB environment profile store
+
+- Owner: JurisDigta server operator. The USB encryption/recovery key must be held outside the USB and outside Git/Codex context.
+- Prerequisite: complete issue #395 encryption, stable UUID mount, integrity, retention, and recovery controls for `/mnt/jurisdigta-backup`.
+- Store profiles under `/mnt/jurisdigta-backup/jurisdigta-env/profiles` with directory mode `0700` and files mode `0600`.
+- Install or rotate a profile with `sudo Deployment/server/install_env_usb_profile.sh <profile> <operator-source-file>`; the command never prints values.
+- Validate from a developer laptop with `.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent`. Pinned SSH host verification and per-developer keys are mandatory.
+- Revoke a departing developer's SSH key, delete their local `.env`/`.env.dev` and protected backups, and retain only the approved server audit event containing actor, profile, key names, version/checksum, and result.
+- Rollback uses the encrypted/versioned USB backup repository from issue #395. Restore into an isolated location, audit names/checksums without values, then materialize atomically.
+- If the USB is missing, has the wrong UUID, is read-only/full, or fails integrity validation, fail closed and alert through privacy-safe monitoring. Never fall back to a plaintext laptop push.

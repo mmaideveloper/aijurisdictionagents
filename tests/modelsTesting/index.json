@@ -28,6 +28,8 @@
   "cases": [
     {
       "case_key": "issue-513-loan-confirmation",
+      "scenario_id": "01-private-loan-payment-confirmation",
+      "fixture_status": "legacy_seed_requires_native_export_replacement",
       "zip_path": "cases/issue-513-loan-confirmation-case-export.zip",
       "sha256": "2057CAB079A8BCA76C9115CCBC87413B26CE86C8C62DDCC576CED7B18275442E",
       "source_issue": "https://github.com/mmaideveloper/aijurisdictionagents/issues/513",
@@ -39,6 +41,15 @@
       "data_classification": "synthetic_test_fixture",
       "fixture_purpose": "Compare whether a model generates a Slovak loan-confirmation answer and legal-document draft instead of echoing the user prompt.",
       "prompt_kind": "single_turn_case_creation",
+      "expected_route": {
+        "free": {
+          "provider": "local_ollama",
+          "is_external": false
+        },
+        "paid": {
+          "record_actual_provider_model_and_route_type": true
+        }
+      },
       "expected_outputs": {
         "answer": {
           "must_contain": [

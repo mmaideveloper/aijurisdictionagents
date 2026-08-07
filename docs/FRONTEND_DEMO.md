@@ -18,6 +18,12 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+## Authentication layout
+
+The sign-in and registration views share the card at `/auth`. On wide screens, the
+card is centered and limited to `480px`; on narrower screens, it shrinks with the
+page while the header and footer remain full-width.
+
 ## Minimal runnable example
 
 From repo root:

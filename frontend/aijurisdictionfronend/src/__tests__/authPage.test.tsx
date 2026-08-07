@@ -65,6 +65,8 @@ const labels: Record<string, string> = {
   authMfaTotpCode: "Authenticator code",
   authMfaVerify: "Verify MFA",
   authMfaInvalid: "Invalid MFA code.",
+  authMfaExpired: "The MFA request expired. Sign in again to get a new request.",
+  authMfaRestartRequired: "The MFA code was not accepted. Sign in again and enter a current code.",
   authMfaEmailSent: "Email OTP code sent.",
   authCreateTitle: "New account",
   authCreateBody: "Create account text.",
@@ -105,7 +107,7 @@ describe("Auth page", () => {
     mockSendSignUpCode.mockResolvedValue(undefined);
     mockSignUp.mockResolvedValue(true);
     mockSendMfaEmailCode.mockResolvedValue(undefined);
-    mockVerifyMfa.mockResolvedValue(true);
+    mockVerifyMfa.mockResolvedValue("verified");
   });
 
   afterEach(() => {
@@ -190,6 +192,66 @@ describe("Auth page", () => {
       expect(mockVerifyMfa).toHaveBeenCalledWith("mfa-token", "totp", "123456");
     });
     expect(screen.getByTestId("current-path").textContent).toBe("/app/assistant");
+  });
+
+  it("allows a fresh sign-in after an expired MFA challenge without refreshing", async () => {
+    const user = userEvent.setup();
+    const challenge = {
+      status: "mfa_required" as const,
+      challenge: {
+        mfaRequired: true as const,
+        mfaToken: "expired-mfa-token",
+        userId: "user-1",
+        email: "local.dev@jurisdigta.test",
+        methods: ["totp"],
+        reuseWindowHours: 0
+      }
+    };
+    mockSignIn.mockResolvedValueOnce(challenge).mockResolvedValueOnce(challenge);
+    mockVerifyMfa.mockResolvedValueOnce("expired_challenge");
+    renderAuthPage();
+
+    await user.type(screen.getByLabelText("Email"), "local.dev@jurisdigta.test");
+    await user.type(screen.getByLabelText("Password"), "LocalTest123!");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.type(screen.getByLabelText("Authenticator code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify MFA" }));
+
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The MFA request expired. Sign in again to get a new request."
+    );
+    expect(screen.queryByRole("button", { name: "Verify MFA" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(mockSignIn).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves sign-in available after an incorrect single-use MFA attempt", async () => {
+    const user = userEvent.setup();
+    mockSignIn.mockResolvedValueOnce({
+      status: "mfa_required",
+      challenge: {
+        mfaRequired: true,
+        mfaToken: "mfa-token",
+        userId: "user-1",
+        email: "local.dev@jurisdigta.test",
+        methods: ["totp"],
+        reuseWindowHours: 0
+      }
+    });
+    mockVerifyMfa.mockResolvedValueOnce("invalid_code");
+    renderAuthPage();
+
+    await user.type(screen.getByLabelText("Email"), "local.dev@jurisdigta.test");
+    await user.type(screen.getByLabelText("Password"), "LocalTest123!");
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.type(screen.getByLabelText("Authenticator code"), "000000");
+    await user.click(screen.getByRole("button", { name: "Verify MFA" }));
+
+    expect((screen.getByRole("button", { name: "Sign in" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("alert").textContent).toBe(
+      "The MFA code was not accepted. Sign in again and enter a current code."
+    );
   });
 
   it("creates an account and opens the assistant workspace", async () => {

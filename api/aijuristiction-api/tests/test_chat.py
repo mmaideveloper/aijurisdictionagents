@@ -1755,6 +1755,247 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
     assert entries[0]["task_type"] == "chat_reply"
 
 
+def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_path) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    import app.users.api as users_api
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+
+    class _NoopEmailScheduler:
+        def enqueue(self, *, recipient: str, subject: str, body: str, metadata: dict[str, object]) -> str:
+            return "email-ignored"
+
+    class _FakeExternalLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "Paid external model answer from test."
+
+    class _NoopDocumentProcessor:
+        def __init__(self, store):
+            self.store = store
+
+        def process_documents(self, documents):
+            return None
+
+    def _routed_paid_client(
+        *,
+        store,
+        user_id,
+        task_type="default",
+        external_acknowledged=False,
+        selected_model_profile_id=None,
+    ):
+        plan = store.get_effective_subscription_plan(user_id=user_id)
+        subscription = store.get_effective_user_subscription(user_id=user_id)
+        route = store.resolve_ai_model_route(
+            user_id=user_id,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            external_acknowledged=external_acknowledged,
+        )
+        assert route.provider is not None
+        assert route.model_profile is not None
+        assert selected_model_profile_id is None
+        return RoutedLLMClient(
+            client=_FakeExternalLLM(),
+            route=route,
+            plan=plan,
+            subscription=subscription,
+            provider=route.provider.provider_code,
+            model=route.model_profile.deployment_name or route.model_profile.model_code,
+            route_type=route.route_type,
+            fallback_reason="",
+        )
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "get_routed_llm_client", _routed_paid_client)
+    monkeypatch.setattr(chat_api, "DocumentProcessor", _NoopDocumentProcessor)
+    app.dependency_overrides[users_api.get_email_scheduler] = lambda: _NoopEmailScheduler()
+    try:
+        sign_up_response = client.post(
+            "/v1/users/sign-up",
+            headers=AUTH_HEADERS,
+            json={
+                "phone_number": "+421900777889",
+                "email": "paid-external-e2e@example.com",
+                "password": "secret",
+                "first_name": "Paid",
+                "last_name": "External",
+            },
+        )
+        assert sign_up_response.status_code == 201
+        user_id = sign_up_response.json()["user_id"]
+        subscription_response = client.post(
+            f"/v1/users/{user_id}/subscriptions",
+            headers=AUTH_HEADERS,
+            json={"plan_code": "case"},
+        )
+        assert subscription_response.status_code == 201
+        paid_response = client.patch(
+            f"/v1/users/subscriptions/{subscription_response.json()['subscription_id']}",
+            headers=AUTH_HEADERS,
+            json={"status": "paid"},
+        )
+        assert paid_response.status_code == 200
+        case_response = client.post(
+            "/v1/cases",
+            headers=AUTH_HEADERS,
+            json={"user_id": user_id, "title": "Paid external routing e2e"},
+        )
+        assert case_response.status_code == 201
+        case_id = case_response.json()["case_id"]
+        session_response = client.post(
+            "/v1/chat/sessions",
+            headers=AUTH_HEADERS,
+            json={
+                "user_id": user_id,
+                "case_id": case_id,
+                "country": "SK",
+                "discussion_type": "advice",
+                "language": "EN",
+            },
+        )
+        assert session_response.status_code == 200
+        session_id = session_response.json()["id"]
+
+        reply_response = client.post(
+            f"/v1/chat/sessions/{session_id}/reply",
+            headers=AUTH_HEADERS,
+            json={"content": "Please review my tenant dispute and suggest next steps."},
+        )
+        assert reply_response.status_code == 200
+        audit_response = client.get(
+            f"/v1/cases/{case_id}/ai-model-audit?user_id={user_id}&limit=5",
+            headers=AUTH_HEADERS,
+        )
+        assert audit_response.status_code == 200
+    finally:
+        app.dependency_overrides.pop(users_api.get_email_scheduler, None)
+
+    entries = audit_response.json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["provider"] == "azure_foundry"
+    assert entries[0]["model"] == "gpt-4o-mini"
+    assert entries[0]["route_type"] == "external"
+    assert entries[0]["task_type"] == "chat_reply"
+    assert "tenant dispute" in entries[0]["question_preview"]
+    assert "Paid external model answer" not in entries[0]["question_preview"]
+    assert "secret" not in audit_response.text.lower()
+
+
+def test_stream_selected_model_accepts_allowlisted_email_without_session_user_id(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+
+    class _FakeLocalLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "Admin selected local model answer from test."
+
+    class _NoopDocumentProcessor:
+        def __init__(self, store):
+            self.store = store
+
+        def process_documents(self, documents):
+            return None
+
+    observed: dict[str, str] = {}
+
+    def _routed_selected_client(
+        *,
+        store,
+        user_id,
+        user_email="",
+        task_type="default",
+        external_acknowledged=False,
+        selected_model_profile_id=None,
+    ):
+        observed["user_id"] = user_id
+        observed["user_email"] = user_email
+        observed["task_type"] = task_type
+        observed["selected_model_profile_id"] = selected_model_profile_id or ""
+        plan = (
+            store.get_effective_subscription_plan(user_id=user_id)
+            if user_id
+            else store.get_subscription_plan(plan_code="free")
+        )
+        route = store.resolve_selected_ai_model_route(
+            user_id=user_id,
+            user_email=user_email,
+            plan_code=plan.plan_code,
+            task_type=task_type,
+            model_profile_id=selected_model_profile_id or "",
+        )
+        return RoutedLLMClient(
+            client=_FakeLocalLLM(),
+            route=route,
+            plan=plan,
+            subscription=None,
+            provider=route.provider.provider_code if route.provider is not None else "local_ollama",
+            model=(
+                route.model_profile.deployment_name or route.model_profile.model_code
+                if route.model_profile is not None
+                else "local_ollama_default"
+            ),
+            route_type=route.route_type,
+            fallback_reason=route.reason,
+        )
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_UNLIMITED_ACCESS_EMAILS", "admin-selected@example.com")
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "get_routed_llm_client", _routed_selected_client)
+    monkeypatch.setattr(chat_api, "DocumentProcessor", _NoopDocumentProcessor)
+
+    store = chat_api._get_store()
+    store.create_user(email="admin-selected@example.com", password="secret", full_name="Selector Email")
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        headers=AUTH_HEADERS,
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+        },
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "Priprav navrh splnomocnenia.",
+            "user_simulation_mode": "ReadUser",
+            "user_email": "admin-selected@example.com",
+            "model_profile_id": "local_ollama_default",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert "Admin selected local model answer from test." in events
+    assert observed == {
+        "user_id": "",
+        "user_email": "admin-selected@example.com",
+        "task_type": "chat_reply",
+        "selected_model_profile_id": "local_ollama_default",
+    }
+
+
 def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
@@ -1809,6 +2050,72 @@ def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:
     assert context.document is not None
     assert context.document.path == "internal-mcp-law-context.txt"
     assert "§ 588" in context.document.content
+
+
+def test_mcp_law_context_exposes_localized_user_visible_contact_notice(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": "doc-192-2026",
+                        "law_identifier_text": "192/2026 Z. z.",
+                        "title": "Testovaci zakon",
+                    }
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "law_identifier_text": "192/2026 Z. z.",
+                "title": "Testovaci zakon",
+                "content_text": "Testovaci obsah zakona 192/2026.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+
+    sk_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="sk-SK",
+    )
+    de_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="de-DE",
+    )
+    en_context = build_mcp_law_context(
+        query="Daj mi sumar zo zakona 192/2026",
+        country="SK",
+        language="en-US",
+    )
+
+    assert sk_context is not None
+    assert de_context is not None
+    assert en_context is not None
+    assert (
+        sk_context.processing_event["message"]
+        == "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií."
+    )
+    assert (
+        de_context.processing_event["message"]
+        == "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen."
+    )
+    assert (
+        en_context.processing_event["message"]
+        == "JurisDigta MCP Server was contacted to retrieve the latest legal information."
+    )
+    details = sk_context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["user_visible"] is True
+    assert details["source_notice_i18n"] == {
+        "sk": "JurisDigta MCP server bol kontaktovaný na získanie najnovších právnych informácií.",
+        "de": "Der JurisDigta MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.",
+        "en": "JurisDigta MCP Server was contacted to retrieve the latest legal information.",
+    }
 
 
 def test_mcp_law_context_uses_latest_sort_for_latest_law_question(monkeypatch) -> None:
@@ -1916,7 +2223,70 @@ def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(mo
     assert citations[0]["retrieval_tool"] == "JurisDigta MCP searchCourtDecisions"
 
 
-def test_mcp_law_context_warns_when_official_web_fallback_is_used(monkeypatch) -> None:
+def test_mcp_law_context_extracts_poprad_and_latest_from_typo_question(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {
+            "laws": [],
+            "court_decisions": [
+                {
+                    "decision_id": "poprad-1",
+                    "court_name": "Okresny sud Poprad",
+                    "file_number": "20C/444/2012",
+                    "issue_date": "31.12.2012",
+                    "source_url": "https://example.test/poprad-1",
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    context = build_mcp_law_context(
+        query="daj mi posledne sudne rozdhodnuties s okresneho sudu Poprad",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls[0][0] == "searchLegalSources"
+    assert calls[0][1]["court_name"] == "Okresny sud Poprad"
+    assert calls[0][1]["sort"] == "latest"
+
+
+def test_mcp_law_context_blocks_web_fallback_without_user_approval(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        assert name == "searchLegalSources"
+        return {"laws": [], "court_decisions": []}
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    monkeypatch.setattr(
+        "app.chat.mcp_law_context.AIWebSearchAgent",
+        lambda: SimpleNamespace(
+            search=lambda **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected web search"))
+        ),
+    )
+
+    context = build_mcp_law_context(
+        query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert "AIWebSearchAgent internet fallback was not used" in context.prompt_note
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["source_origin"] == "system_vector_db"
+    assert details["web_search_status"] == "blocked_pending_user_approval"
+    assert details["web_search_approval_required"] is True
+
+
+def test_mcp_law_context_warns_when_approved_official_web_fallback_is_used(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
     def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
@@ -1946,6 +2316,7 @@ def test_mcp_law_context_warns_when_official_web_fallback_is_used(monkeypatch) -
         query="Daj mi top 5 sudnych rozhodnuti ohladom podnajmu?",
         country="SK",
         language="sk-SK",
+        web_search_approved=True,
     )
 
     assert context is not None
@@ -3890,6 +4261,133 @@ def test_slovak_private_loan_confirmation_first_turn_generates_document() -> Non
     assert "CASE_UPDATE_JSON" not in drafts[0].body
 
 
+def test_slovak_loan_agreement_followups_do_not_regenerate_payment_confirmation() -> None:
+    from app.chat.country_services.slovakia import prepare_slovakia_direct_reply
+    from app.chat.models import Message, MessageRole, Session
+
+    session = Session(country="SK", language="sk-SK")
+    initial_content = (
+        "Priprav mi navrh Zmluvy o pozicke medzi fyzickymi osobami. "
+        "Veritel: Jan Testovaci. Dlznik: Peter Vzorovy. Vyska pozicky: 8 000 EUR. "
+        "Peniaze budu odovzdane bankovym prevodom 15. 8. 2026 a vratene 15. 8. 2027. "
+        "Zmluva ma obsahovat potvrdenie jej prijatia."
+    )
+    initial_message = Message(session_id=session.id, role=MessageRole.USER, content=initial_content)
+
+    initial_preparation = prepare_slovakia_direct_reply(
+        session=session,
+        messages=[initial_message],
+        current_content=initial_content,
+        prior_messages=[],
+        normalize_document_lines=lambda text: [text],
+        extract_document_facts=lambda lines: {},
+        current_turn_confirms_document_generation=lambda content, previous_messages: False,
+        build_share_transfer_lines=lambda facts: [],
+    )
+
+    assert initial_preparation.direct_reply is None
+
+    prior_messages = [
+        initial_message,
+        Message(
+            session_id=session.id,
+            role=MessageRole.ASSISTANT,
+            content=(
+                "Tu je konecna verzia dokumentu - dokument je pripraveny na export a stiahnutie. "
+                "Ktory konkretny chybajuci udaj mam potvrdit ako prvy?"
+            ),
+        ),
+    ]
+    followups = (
+        "Ake su chybajuce udaje?",
+        "daj mi zoznam chybajucich udajov?",
+        "aky je nazov modelu ktory pouzivam?",
+        "pouzivas lokalny mcp?",
+    )
+
+    for followup in followups:
+        current_message = Message(session_id=session.id, role=MessageRole.USER, content=followup)
+        preparation = prepare_slovakia_direct_reply(
+            session=session,
+            messages=[*prior_messages, current_message],
+            current_content=followup,
+            prior_messages=prior_messages,
+            normalize_document_lines=lambda text: [text],
+            extract_document_facts=lambda lines: {},
+            current_turn_confirms_document_generation=lambda content, previous_messages: False,
+            build_share_transfer_lines=lambda facts: [],
+        )
+
+        assert preparation.direct_reply is None, followup
+        assert preparation.processing_events == []
+
+
+def test_direct_assistant_persistence_requires_current_turn_document_authorization(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.models import Message, Session
+
+    session = Session(country="SK", language="sk-SK", case_id="case-591")
+    persisted_documents: list[str] = []
+
+    def fake_persist_generated_document(*, session: Session, content: str) -> list[str]:
+        persisted_documents.append(content)
+        return ["document-591"]
+
+    monkeypatch.setattr(chat_api, "_persist_generated_case_document_if_needed", fake_persist_generated_document)
+    monkeypatch.setattr(chat_api, "_persist_case_message_if_needed", lambda **kwargs: None)
+    monkeypatch.setattr(chat_api._repository, "add_message", lambda message: message)
+
+    reply = "Tu je historicky CASE_UPDATE_JSON s dokumentom, ale aktualny tah je otazka."
+    persisted = chat_api._persist_direct_assistant_message(
+        session_id=session.id,
+        session=session,
+        content=reply,
+        agent_name="Assistant",
+        allow_document_generation=False,
+    )
+
+    assert isinstance(persisted, Message)
+    assert persisted_documents == []
+    assert "Generated case document:" not in persisted.content
+
+
+def test_runtime_questions_receive_direct_answers_without_model_or_document_generation(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.chat import api as chat_api
+
+    route = SimpleNamespace(model="qwen3:1.7b", provider="local_ollama")
+    assert chat_api._runtime_question_reply(
+        content="Aky je nazov modelu ktory pouzivam?",
+        route=route,
+    ) == "V tomto chate používam model qwen3:1.7b cez poskytovateľa local_ollama."
+
+    monkeypatch.delenv("INTERNAL_MCP_BASE_URL", raising=False)
+    monkeypatch.delenv("MCP_PUBLIC_BASE_URL", raising=False)
+    assert chat_api._runtime_question_reply(
+        content="Pouzivas lokalny MCP?",
+        route=route,
+    ) == "Áno. JurisDigta MCP je v tomto nasadení volané lokálne v procese API."
+
+    prior_message = chat_api.Message(
+        session_id=chat_api.Session().id,
+        role=chat_api.MessageRole.ASSISTANT,
+        content=(
+            "Platitel: Poskytovatel pozicky bude doplneny pred podpisom. "
+            "Prijemca: Prijemca bude doplneny pred podpisom. "
+            "V [mesto], dna [datum vystavenia]"
+        ),
+    )
+    missing_reply = chat_api._runtime_question_reply(
+        content="Ake su chybajuce udaje?",
+        route=route,
+        prior_messages=[prior_message],
+    )
+    assert missing_reply is not None
+    assert "poskytovateľ/platiteľ" in missing_reply
+    assert "miesto vystavenia" in missing_reply
+
+
 def test_document_export_uses_latest_legal_document_body_without_assistant_notes() -> None:
     from app.chat import api as chat_api
     from app.chat.country_services.slovakia import (
@@ -5106,6 +5604,45 @@ def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeyp
     assert "Stale pracujem na odpovedi" in events
     assert "Overenie je hotove" in events
     assert events.index('"stage": "still_working"') < events.index('"role": "assistant"')
+
+
+def test_stream_read_user_returns_typed_local_model_timeout(monkeypatch, caplog) -> None:
+    from app.chat import api as chat_api
+    from aijurisdictionagents.llm.base import ModelProcessingTimeout
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    def timed_out_direct_turn(**kwargs):
+        raise ModelProcessingTimeout(
+            provider_class="local",
+            provider="local_ollama",
+            model="qwen3:4b",
+            timeout_seconds=600,
+            elapsed_seconds=600.1,
+        )
+
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", timed_out_direct_turn)
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={"instruction": "synteticka testovacia otazka", "user_simulation_mode": "ReadUser"},
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert '"code": "local_model_timeout"' in events
+    assert r"\u010casov\u00fd limit lok\u00e1lneho modelu vypr\u0161al." in events
+    assert events.count("event: error") == 1
+    assert caplog.text.count("ai_model_processing_timeout provider_class=local") == 1
+    assert "synteticka testovacia otazka" not in caplog.text
 
 
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:

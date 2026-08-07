@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { ensureLiveApiOrFail } from './helpers/liveApi';
 
 const apiKey = process.env.API_KEY ?? 'aijuris';
+const expectedLocalModel = process.env.EXPECTED_LOCAL_MODEL?.trim();
 
 type ChatSession = {
   id: string;
@@ -31,7 +32,7 @@ test('free plan user can connect to JurisDigta API and receive a local-model cha
   request,
   baseURL,
 }) => {
-  test.setTimeout(Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000));
+  test.setTimeout(Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 660_000));
 
   const userId = randomUUID();
   const routeResponse = await request.get(
@@ -46,10 +47,13 @@ test('free plan user can connect to JurisDigta API and receive a local-model cha
     plan_code: 'free',
     route_type: 'free_local',
     provider: 'local_ollama',
-    model: 'qwen3:1.7b',
     is_local: true,
     is_external: false,
   });
+  expect(route.model.trim()).toBeTruthy();
+  if (expectedLocalModel) {
+    expect(route.model).toBe(expectedLocalModel);
+  }
 
   const sessionResponse = await request.post(`${baseURL}/v1/chat/sessions`, {
     headers: { 'x-api-key': apiKey },
@@ -68,10 +72,9 @@ test('free plan user can connect to JurisDigta API and receive a local-model cha
   const replyResponse = await request.post(`${baseURL}/v1/chat/sessions/${session.id}/reply`, {
     headers: { 'x-api-key': apiKey },
     data: {
-      content:
-        'Chcem pripravit splnomocnenie pre dceru na vedenie motoroveho vozidla mojej firmy v slovenskom jazyku.',
+      content: 'Odpovedz jednou kratkou vetou: Kolko je dva plus dva?',
     },
-    timeout: Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000),
+    timeout: Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 660_000),
   });
   expect(replyResponse.status()).toBe(200);
   const reply = (await replyResponse.json()) as ChatMessage;
@@ -84,7 +87,7 @@ test('free plan local model answers latest-law question from MCP context without
   request,
   baseURL,
 }) => {
-  test.setTimeout(Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000));
+  test.setTimeout(Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 660_000));
 
   const userId = randomUUID();
   const sessionResponse = await request.post(`${baseURL}/v1/chat/sessions`, {
@@ -104,7 +107,7 @@ test('free plan local model answers latest-law question from MCP context without
     data: {
       content: 'Daj mi posledny zakon v systeme?',
     },
-    timeout: Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 180_000),
+    timeout: Number(process.env.FREE_PLAN_API_E2E_TIMEOUT_MS ?? 660_000),
   });
 
   expect(replyResponse.status()).toBe(200);

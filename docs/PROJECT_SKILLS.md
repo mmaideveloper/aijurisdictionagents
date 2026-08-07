@@ -12,6 +12,17 @@ This repository vendors the Codex skills needed for local development so they ar
 - `laws-collector`: starts and verifies the local laws collector worker loop
 - `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
 
+## Repository plugin
+
+`plugins/jurisdigta/` packages four Jurisdigta workflows:
+
+- `report-jurisdigta-bug`: guided, privacy-safe incident investigation and confirmed GitHub bug creation
+- `manage-jurisdigta-adr`: source-backed Architecture Decision Record and architecture-task management
+- `prepare-jurisdigta-task`: requirements review, improvement recommendations, readiness interview, confirmed GitHub creation, Ready project status, and `Reviewed by Codex` comment
+- `implement-jurisdigta-task`: latest-main task implementation in an isolated worktree with unit tests, applicable Playwright E2E coverage, screenshots, PR creation, and task status updates
+
+See `docs/JURISDIGTA_PLUGIN.md` for usage, safeguards, and minimal prompt examples.
+
 ## Skill files
 
 Each skill lives under `skills/<name>/` and contains:

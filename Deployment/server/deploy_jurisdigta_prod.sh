@@ -32,8 +32,12 @@ LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-qwen3:1.7b}"
 LOCAL_LLM_BASE_URL="${LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434}"
 LOCAL_LLM_OPENAI_BASE_URL="${LOCAL_LLM_OPENAI_BASE_URL:-http://127.0.0.1:11434/v1}"
 LOCAL_LLM_HEALTH_URL="${LOCAL_LLM_HEALTH_URL:-http://127.0.0.1:11434/api/tags}"
+LOCAL_LLM_REQUEST_TIMEOUT_SECONDS="${LOCAL_LLM_REQUEST_TIMEOUT_SECONDS:-600}"
+LOCAL_LLM_REQUEST_VISIBLE_PROGRESS="${LOCAL_LLM_REQUEST_VISIBLE_PROGRESS:-15}"
 OLLAMA_HOST_BIND="${OLLAMA_HOST_BIND:-}"
 export DOCKER_BUILDKIT=0
+
+PREPARED_IMAGE_REPOSITORIES=()
 
 log() {
   printf '[jurisdigta-deploy] %s\n' "$*"
@@ -46,6 +50,50 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+prepare_image_rollback_candidate() {
+  local repository="$1"
+  local candidate="${repository}:rollback-candidate"
+  local current="${repository}:local"
+
+  if docker image inspect "$candidate" >/dev/null 2>&1; then
+    PREPARED_IMAGE_REPOSITORIES+=("$repository")
+    log "preserving existing rollback candidate for $repository from an earlier interrupted deployment"
+    return
+  fi
+  if ! docker image inspect "$current" >/dev/null 2>&1; then
+    log "no existing $current image to preserve on first deployment"
+    return
+  fi
+
+  docker image tag "$current" "$candidate"
+  PREPARED_IMAGE_REPOSITORIES+=("$repository")
+  log "preserved $current as $candidate"
+}
+
+finalize_image_retention() {
+  local repository
+  local candidate
+  local previous
+
+  log "finalizing Docker image retention after successful health validation"
+  for repository in "${PREPARED_IMAGE_REPOSITORIES[@]}"; do
+    candidate="${repository}:rollback-candidate"
+    previous="${repository}:previous"
+    if ! docker image inspect "$candidate" >/dev/null 2>&1; then
+      continue
+    fi
+    docker image tag "$candidate" "$previous"
+    docker image rm "$candidate" >/dev/null
+    log "retained $previous for one-version rollback"
+  done
+
+  # Re-tagging the rollback candidate leaves versions older than :previous
+  # dangling. Prune only images not referenced by a tag or container; volumes
+  # and running images are outside this operation.
+  docker image prune -f
+  docker builder prune -a -f
 }
 
 postgres_url() {
@@ -326,6 +374,7 @@ start_postgres_and_build_image() {
   compose_env
   cd "$APP_DIR/api/aijuristiction-api"
   docker compose --env-file "$ENV_FILE" up -d postgres
+  prepare_image_rollback_candidate "aijuristiction-api"
   docker compose --env-file "$ENV_FILE" build api
 }
 
@@ -366,6 +415,8 @@ start_api_and_mcp() {
     -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
     -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
     -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
+    -e LOCAL_LLM_REQUEST_TIMEOUT_SECONDS="$LOCAL_LLM_REQUEST_TIMEOUT_SECONDS" \
+    -e LOCAL_LLM_REQUEST_VISIBLE_PROGRESS="$LOCAL_LLM_REQUEST_VISIBLE_PROGRESS" \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
@@ -403,6 +454,8 @@ start_api_and_mcp() {
     -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
     -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
     -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
+    -e LOCAL_LLM_REQUEST_TIMEOUT_SECONDS="$LOCAL_LLM_REQUEST_TIMEOUT_SECONDS" \
+    -e LOCAL_LLM_REQUEST_VISIBLE_PROGRESS="$LOCAL_LLM_REQUEST_VISIBLE_PROGRESS" \
     -e LAWS_COUNTRY="${LAWS_COUNTRY:-SK}" \
     -e LAWS_DB_BACKEND=postgres \
     -e LAWS_DB_CLOUD="$laws_db_cloud" \
@@ -478,9 +531,11 @@ run_schema_migrations() {
   log "applying API and laws database schema migrations in the API image"
   local api_db_cloud
   local laws_db_cloud
+  local court_decisions_db_cloud
   local local_llm_base_url
   api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
   laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
   local_llm_base_url="$(local_llm_container_base_url)"
 
   docker run --rm \
@@ -505,6 +560,21 @@ run_schema_migrations() {
     --env-file "$ENV_FILE" \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
     -e DB_OPTION=postgres \
+    -e DB_CLOUD="$court_decisions_db_cloud" \
+    -e DB_LOCAL=/workspace/runs/storage/court-decision-collector/sqlite/court_decisions.sqlite3 \
+    -e STORAGE_OPTION=local \
+    -e STORE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
+    -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
+    -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
+    -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \
+    aijuristiction-api:local \
+    python /workspace/scripts/databases/apply_db_migrations.py --project court-decision-collector
+
+  docker run --rm \
+    --network aijuristiction-api_default \
+    --env-file "$ENV_FILE" \
+    -v "$DEPLOY_ROOT/runs:/workspace/runs" \
+    -e DB_OPTION=postgres \
     -e DB_CLOUD="$api_db_cloud" \
     -e DB_LOCAL=/workspace/runs/storage/api/sqlite/api.sqlite3 \
     -e STORAGE_OPTION=local \
@@ -522,6 +592,7 @@ deploy_web() {
   log "building and starting frontend web container"
   cd "$APP_DIR/frontend/aijurisdictionfronend"
   local chat_model_label="${AZURE_OPENAI_DEPLOYMENT:-Azure Foundry model}"
+  prepare_image_rollback_candidate "jurisdigta-web"
   docker build \
     --build-arg "VITE_API_BASE_URL=$WEB_API_BASE_URL" \
     --build-arg "VITE_CHAT_MODEL_LABEL=$chat_model_label" \
@@ -539,6 +610,7 @@ deploy_web() {
 build_laws_collector() {
   log "building laws collector image"
   cd "$APP_DIR"
+  prepare_image_rollback_candidate "jurisdigta-laws-collector"
   docker build -t jurisdigta-laws-collector:local -f src/services/laws_collector/Dockerfile .
 }
 
@@ -594,6 +666,7 @@ start_court_decision_collector() {
 build_document_processor() {
   log "building document processor image"
   cd "$APP_DIR"
+  prepare_image_rollback_candidate "jurisdigta-document-processor"
   docker build -t jurisdigta-document-processor:local -f src/services/document_processor/Dockerfile .
 }
 
@@ -605,6 +678,7 @@ build_document_engine() {
 
   log "building document engine image"
   cd "$APP_DIR/services/document-engine-service"
+  prepare_image_rollback_candidate "jurisdigta-document-engine"
   docker build -t jurisdigta-document-engine:local .
 }
 
@@ -1026,5 +1100,6 @@ install_log_retention_cron
 start_monitoring
 connect_api_to_monitoring_network
 validate_health
+finalize_image_retention
 
 log "production deployment complete"

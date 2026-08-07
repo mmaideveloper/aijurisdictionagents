@@ -1,8 +1,13 @@
 import { Language } from "../data/translations";
+import { PRODUCT_NAMES } from "../branding";
 
 type LegalSection = {
   heading: string;
   body: string;
+  links?: Array<{
+    label: string;
+    href: string;
+  }>;
 };
 
 type LegalDocument = {
@@ -32,43 +37,77 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       terms: "Terms of Service"
     },
     privacy: {
-      title: "Privacy Policy",
+      title: "Privacy Notice",
       summary:
-        "This policy explains how AIJurisdiction handles personal and case-related data in the platform.",
+        "This notice explains how Jurisdigta AI lawyer processes personal and case-related data in the platform.",
       sections: [
         {
-          heading: "Data We Collect",
+          heading: "Controller and privacy contact",
           body:
-            "We may collect account data, submitted case content, uploaded files, and usage logs needed to operate and secure the service."
+            "The controller is Esolutions SK s.r.o., Company ID (IČO) 46491261, Tax ID (DIČ) 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slovakia. Privacy requests can be sent to info@jurisdigta.eu. No data protection officer has currently been appointed."
         },
         {
-          heading: "How We Use Data",
+          heading: "Data we collect",
           body:
-            "Data is used to provide platform features, improve system quality, detect misuse, and support legal and security obligations."
+            "We process account and contact details, authentication and subscription data, case content, prompts, AI outputs, uploaded and generated documents, user approvals, and security and operational logs. Case files may contain third-party data, special-category data, or information about criminal convictions and offences; submit only data that is necessary and that you are entitled to use."
         },
         {
-          heading: "Data Sharing",
+          heading: "Purposes and legal bases",
           body:
-            "We do not sell personal data. Data may be shared with service providers acting on our instructions or when required by law."
+            "We use data to create and administer accounts, provide cases and requested AI-assisted functions, secure and support the service, prevent misuse, meet Slovak and EU legal obligations, and establish or defend legal claims. The legal bases are performance of a contract (GDPR Article 6(1)(b)), legal obligations (Article 6(1)(c)), and legitimate interests in service security, reliability, misuse prevention, and legal-claim protection (Article 6(1)(f)). Consent (Article 6(1)(a)) applies when you approve optional external AI processing. Special-category or criminal-offence data is processed only where an applicable GDPR and Slovak-law condition permits it, including where necessary for legal claims."
         },
         {
-          heading: "Retention and Security",
+          heading: "AI models and user approval",
           body:
-            "We keep data only as long as needed for service and compliance purposes and apply reasonable technical and organizational safeguards."
+            "Local Ollama models are the default and process case content within Jurisdigta-controlled infrastructure. Microsoft Azure AI Foundry in an EU data region is used only after your explicit approval for the relevant external processing. You may refuse or withdraw that approval for future external processing without losing the local route. AI outputs are drafts and require human review."
         },
         {
-          heading: "Your Rights",
+          heading: "Recipients and transfers",
           body:
-            "Depending on your jurisdiction, you may request access, correction, deletion, or processing restrictions for your personal data."
+            "We do not sell personal data. Access is limited to authorized personnel and processors supporting hosting, communications, security, accounting, and service operation. Microsoft receives approved content only when the external Azure AI Foundry route is selected. Processing is configured for the EU data region and no transfer outside the EEA is intended. If that changes, we will identify the transfer and applicable GDPR safeguard before it begins."
+        },
+        {
+          heading: "Retention and deletion",
+          body:
+            "Retention follows the purpose of each category and applicable Slovak law. Account data is kept while the account is active and as needed to close it. Case content, uploads, prompts, and outputs are kept while the case or account requires them and longer only where a legal obligation or legal claim justifies it. Security logs and approval records are kept only for the period needed to secure the service and demonstrate compliance. Accounting documents are kept for the statutory period, generally ten years following the relevant accounting year under Act No. 431/2002 Coll. You may request deletion through the privacy contact; legal exceptions will be explained in the response."
+        },
+        {
+          heading: "Security and data minimization",
+          body:
+            "We use access controls, authentication, restricted administration, privacy-minimized logging, and technical and organizational safeguards appropriate to the risk. Users should avoid including unrelated personal data in case files. No internet or AI service can be guaranteed completely secure."
+        },
+        {
+          heading: "Your rights",
+          body:
+            "Subject to legal conditions, you may request access, rectification, erasure, restriction, portability, or object to processing based on legitimate interests. Where processing relies on consent, you may withdraw it at any time for future processing without affecting earlier lawful processing. Send requests to info@jurisdigta.eu; we may verify your identity before releasing or changing data.",
+          links: [{ label: "Email the privacy contact", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Complaints",
+          body:
+            "If you believe your data has been processed unlawfully, you may contact us first or lodge a complaint with the Personal Data Protection Office of the Slovak Republic, Galvaniho 7/B, 821 04 Bratislava, Slovakia.",
+          links: [
+            { label: "Slovak Data Protection Office", href: "https://dataprotection.gov.sk/en/contact/" }
+          ]
+        },
+        {
+          heading: "Required data and consequences",
+          body:
+            "Account and case data marked as required is contractually necessary to register, authenticate, and provide the requested service. Without it, we may be unable to open an account, process a case, or provide the selected function. Optional external-AI approval is not required for the local model route."
+        },
+        {
+          heading: "Automated decisions and human oversight",
+          body:
+            "Jurisdigta does not make approvals or legal decisions based solely on automated processing and does not use profiling that produces legal or similarly significant effects. AI-generated legal-risk outputs remain drafts for human review; users retain responsibility for deciding whether and how to use them."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 15, 2026"
     },
     disclaimer: {
       title: "Disclaimer",
       summary:
-        "AIJurisdiction provides AI-generated legal information for support purposes and not as a substitute for professional legal counsel.",
+        `${PRODUCT_NAMES.en} provides AI-generated legal information for support purposes only; it is not a substitute for professional legal advice.`,
       sections: [
         {
           heading: "AI-Generated Information",
@@ -81,14 +120,19 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
             "Content is informational only and does not constitute legal advice for any specific matter."
         },
         {
+          heading: "Human Review Required",
+          body:
+            "Have a qualified legal professional verify important outputs before you make a legal decision, meet a deadline, or submit a filing."
+        },
+        {
           heading: "No Attorney-Client Relationship",
           body:
-            "Using this platform does not create an attorney-client relationship between you and AIJurisdiction or its operators."
+            `Using this platform does not create an attorney-client relationship between you and ${PRODUCT_NAMES.en} or its operators.`
         },
         {
           heading: "Limitation of Liability",
           body:
-            "To the fullest extent permitted by law, AIJurisdiction is not liable for losses or damages arising from reliance on platform outputs."
+            `To the fullest extent permitted by law, the operators of ${PRODUCT_NAMES.en} are not liable for losses or damages arising from reliance on platform outputs. This notice does not exclude or limit liability that cannot lawfully be excluded or limited.`
         },
         {
           heading: "No Warranty",
@@ -103,7 +147,12 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "User Responsibility",
           body:
-            "You are solely responsible for decisions, filings, and actions taken based on or influenced by platform content."
+            "You remain responsible for decisions, filings, and actions taken based on or influenced by platform content."
+        },
+        {
+          heading: "Privacy and Data Minimization",
+          body:
+            "Do not submit personal data or special-category personal data unless it is necessary for your request. The Privacy Policy explains the purposes of processing, retention, and your rights, including access, correction, deletion, and restriction."
         },
         {
           heading: "External Resources",
@@ -113,174 +162,245 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
         {
           heading: "Right to Modify",
           body:
-            "We may update this disclaimer and platform behavior at any time. Continued use indicates acceptance of updates."
+            "We may update this disclaimer and platform functionality. We will communicate material changes when required by applicable law; the current version and its date are shown on this page."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 25, 2026"
     },
     terms: {
       title: "Terms of Service",
       summary:
-        "These terms govern your use of AIJurisdiction services, interfaces, and generated outputs.",
+        "These terms govern your use of Jurisdigta AI Lawyer services, interfaces, and generated outputs.",
       sections: [
         {
           heading: "Acceptance of Terms",
           body:
-            "By accessing or using AIJurisdiction, you agree to comply with these terms and all applicable laws."
+            "By accessing or using Jurisdigta AI Lawyer, you agree to these terms and to comply with all applicable laws."
         },
         {
           heading: "Permitted Use",
           body:
-            "You may use the service only for lawful purposes and must not submit content that violates rights, laws, or contractual duties."
+            "You may use the service only for lawful purposes. You must not upload content that violates another person's rights, applicable laws, or contractual obligations."
         },
         {
           heading: "Account and Access",
           body:
-            "You are responsible for maintaining account confidentiality and for all activities performed under your credentials."
+            "You are responsible for keeping your credentials secure and for all activities performed through your account."
         },
         {
           heading: "Intellectual Property",
           body:
-            "Platform software, branding, and underlying systems remain the property of AIJurisdiction and its licensors."
+            "The software, branding, and underlying systems of the Jurisdigta AI Lawyer platform are protected by the intellectual property rights of their respective owners."
         },
         {
           heading: "Service Changes",
           body:
-            "We may update, suspend, or discontinue features at any time, including changes required by legal or security obligations."
+            "We may update, suspend, or discontinue features, including when changes are required by legal or security obligations."
+        },
+        {
+          heading: "Personal Data Protection",
+          body:
+            "When using the service, provide only the data necessary for the relevant purpose and upload only content that you are authorized to provide. For more information about personal data processing, see the Privacy Policy.",
+          links: [
+            {
+              href: "/privacy",
+              label: "Privacy Policy"
+            }
+          ]
+        },
+        {
+          heading: "AI-Generated Outputs and Human Oversight",
+          body:
+            "AI-generated outputs may be inaccurate, incomplete, or outdated. Verify them and ensure appropriate human review, by a qualified lawyer where necessary, before any decision, filing, or other action with legal consequences."
         }
       ],
       lastUpdatedLabel: "Last Updated",
-      lastUpdated: "February 18, 2026"
+      lastUpdated: "July 15, 2026"
     }
   },
   sk: {
     footerLinks: {
-      privacy: "Ochrana sukromia",
+      privacy: "Ochrana súkromia",
       disclaimer: "Upozornenie",
-      terms: "Podmienky sluzby"
+      terms: "Podmienky služby"
     },
     privacy: {
-      title: "Ochrana sukromia",
+      title: "Ochrana súkromia",
       summary:
-        "Tieto pravidla vysvetluju, ako AIJurisdiction spracuva osobne a pripadove udaje v platforme.",
+        "Tieto pravidlá vysvetľujú, ako Jurisdigta AI právnik spracúva osobné a prípadové údaje v platforme.",
       sections: [
         {
-          heading: "Ake udaje zbierame",
+          heading: "Prevádzkovateľ a kontakt pre ochranu súkromia",
           body:
-            "Mozeme zbierat udaje o ucte, obsah pripadu, nahrane subory a prevadzkove logy potrebne na bezpecnu prevadzku sluzby."
+            "Prevádzkovateľom je Esolutions SK s.r.o., IČO 46491261, DIČ 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slovenská republika. Žiadosti týkajúce sa ochrany osobných údajov posielajte na info@jurisdigta.eu. Zodpovedná osoba zatiaľ nebola určená."
         },
         {
-          heading: "Ako udaje pouzivame",
+          heading: "Aké údaje zbierame",
           body:
-            "Udaje pouzivame na poskytovanie funkcii, zlepsovanie kvality systemu, detekciu zneuzitia a plnenie pravnych povinnosti."
+            "Spracúvame údaje o účte a kontaktné údaje, autentifikačné a predplatiteľské údaje, obsah prípadov, zadania, výstupy AI, nahrané a vytvorené dokumenty, súhlasy používateľa a bezpečnostné a prevádzkové záznamy. Prípadové spisy môžu obsahovať údaje tretích osôb, osobitné kategórie údajov alebo údaje o odsúdeniach a trestných činoch; uvádzajte len údaje, ktoré sú nevyhnutné a ktoré ste oprávnení použiť."
         },
         {
-          heading: "Zdielanie udajov",
+          heading: "Aké údaje používame",
           body:
-            "Osobne udaje nepredavame. Udaje mozeme zdielat s poskytovatelmi sluzieb alebo ak to vyzaduje zakon."
+            "Údaje používame na vytvorenie a správu účtu, poskytovanie prípadov a vyžiadaných funkcií podporovaných AI, zabezpečenie a podporu služby, predchádzanie zneužitiu, plnenie povinností podľa slovenského a európskeho práva a uplatňovanie alebo obhajovanie právnych nárokov. Právnym základom je plnenie zmluvy (čl. 6 ods. 1 písm. b) GDPR), zákonná povinnosť (písm. c)) a oprávnený záujem na bezpečnosti, spoľahlivosti, prevencii zneužitia a ochrane právnych nárokov (písm. f)). Súhlas (písm. a)) sa používa pri voliteľnom externom spracovaní AI. Osobitné kategórie údajov alebo údaje o trestných činoch spracúvame iba vtedy, keď to umožňuje GDPR a slovenské právo, najmä ak je to nevyhnutné na právne nároky."
         },
         {
-          heading: "Uchovavanie a bezpecnost",
+          heading: "Modely AI a súhlas používateľa",
           body:
-            "Udaje uchovavame len po nevyhnutny cas a pouzivame primerane technicke a organizacne ochrany."
+            "Predvolene používame lokálne modely Ollama, ktoré spracúvajú obsah prípadov v infraštruktúre kontrolovanej Jurisdigtou. Microsoft Azure AI Foundry v dátovej oblasti EÚ použijeme iba po vašom výslovnom súhlase s príslušným externým spracovaním. Súhlas môžete odmietnuť alebo odvolať pre budúce externé spracovanie bez straty lokálnej trasy. Výstupy AI sú návrhy a vyžadujú ľudskú kontrolu."
         },
         {
-          heading: "Vase prava",
+          heading: "Zdieľanie údajov",
           body:
-            "Podla jurisdikcie mozete poziadat o pristup, opravu, vymazanie alebo obmedzenie spracuvania osobnych udajov."
+            "Osobné údaje nepredávame. Prístup majú iba oprávnené osoby a sprostredkovatelia zabezpečujúci hosting, komunikáciu, bezpečnosť, účtovníctvo a prevádzku služby. Microsoft dostane schválený obsah iba pri výbere externej trasy Azure AI Foundry. Spracovanie je nastavené na dátovú oblasť EÚ a prenos mimo EHP sa neplánuje. Ak sa to zmení, pred prenosom uvedieme jeho rozsah a príslušnú záruku podľa GDPR."
+        },
+        {
+          heading: "Uchovávanie a bezpečnosť",
+          body:
+            "Dobu uchovávania určujeme podľa účelu každej kategórie a platného slovenského práva. Údaje o účte uchovávame počas aktívneho účtu a na jeho uzavretie. Obsah prípadov, nahrané súbory, zadania a výstupy uchovávame, kým ich vyžaduje prípad alebo účet, a dlhšie iba vtedy, ak to odôvodňuje zákonná povinnosť alebo právny nárok. Bezpečnostné záznamy a doklady o súhlase uchovávame len na zabezpečenie služby a preukázanie súladu. Účtovné doklady uchovávame počas zákonnej lehoty, spravidla desať rokov nasledujúcich po príslušnom účtovnom roku podľa zákona č. 431/2002 Z. z. O vymazanie môžete požiadať cez kontakt pre ochranu súkromia; prípadné zákonné výnimky vysvetlíme v odpovedi. Používame primerané technické a organizačné bezpečnostné opatrenia a minimalizované záznamy."
+        },
+        {
+          heading: "Vaše práva",
+          body:
+            "Za podmienok stanovených právnymi predpismi môžete požiadať o prístup, opravu, vymazanie, obmedzenie spracúvania a prenosnosť údajov alebo namietať proti spracúvaniu na základe oprávneného záujmu. Súhlas môžete kedykoľvek odvolať pre budúce spracovanie bez vplyvu na predchádzajúce zákonné spracovanie. Žiadosť pošlite na info@jurisdigta.eu; pred sprístupnením alebo zmenou údajov môžeme overiť vašu totožnosť.",
+          links: [{ label: "Napísať kontaktu pre ochranu súkromia", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Sťažnosť dozornému orgánu",
+          body:
+            "Ak sa domnievate, že vaše údaje spracúvame nezákonne, môžete najprv kontaktovať nás alebo podať návrh na začatie konania na Úrad na ochranu osobných údajov Slovenskej republiky, Galvaniho 7/B, 821 04 Bratislava.",
+          links: [
+            { label: "Úrad na ochranu osobných údajov SR", href: "https://dataprotection.gov.sk/sk/kontakt/" }
+          ]
+        },
+        {
+          heading: "Povinné údaje a následky neposkytnutia",
+          body:
+            "Údaje o účte a prípade označené ako povinné sú zmluvne potrebné na registráciu, autentifikáciu a poskytnutie požadovanej služby. Bez nich nemusíme byť schopní vytvoriť účet, spracovať prípad alebo poskytnúť vybranú funkciu. Súhlas s externou AI nie je potrebný na použitie lokálneho modelu."
+        },
+        {
+          heading: "Automatizované rozhodovanie a ľudský dohľad",
+          body:
+            "Jurisdigta nevykonáva schválenia ani právne rozhodnutia založené výlučne na automatizovanom spracúvaní a nepoužíva profilovanie s právnymi alebo podobne významnými účinkami. Výstupy AI s právnym rizikom zostávajú návrhmi na ľudskú kontrolu; používateľ rozhoduje, či a ako ich použije."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "15. júla 2026"
     },
     disclaimer: {
       title: "Upozornenie",
       summary:
-        "AIJurisdiction poskytuje AI generovane pravne informacie len na podporne ucely, nie ako nahradu pravneho poradenstva.",
+        `${PRODUCT_NAMES.sk} poskytuje právne informácie generované umelou inteligenciou iba na podporné účely; nenahrádzajú odborné právne poradenstvo.`,
       sections: [
         {
-          heading: "AI generovane informacie",
+          heading: "Informácie generované umelou inteligenciou",
           body:
-            "Vystupy su generovane AI modelmi a mozu obsahovat nepresnosti, vynechania alebo zastarane pravne vyklady."
+            "Výstupy vytvárajú modely umelej inteligencie a môžu obsahovať nepresnosti, chýbajúce informácie alebo zastarané právne výklady."
         },
         {
-          heading: "Nejde o pravne poradenstvo",
+          heading: "Nejde o právne poradenstvo",
           body:
-            "Obsah je iba informativny a nepredstavuje pravne poradenstvo pre konkretnu situaciu."
+            "Obsah má iba informačný charakter a nepredstavuje právne poradenstvo pre konkrétnu situáciu."
         },
         {
-          heading: "Bez vztahu klient pravnik",
+          heading: "Vyžaduje sa ľudská kontrola",
           body:
-            "Pouzivanie platformy nevytvara vztah klient-pravnik medzi vami a AIJurisdiction alebo jeho prevadzkovatelmi."
+            "Pred prijatím právneho rozhodnutia, dodržaním lehoty alebo podaním dokumentu si nechajte dôležité výstupy overiť kvalifikovaným právnikom."
+        },
+        {
+          heading: "Nevzniká vzťah medzi klientom a právnikom",
+          body:
+            `Používaním platformy nevzniká vzťah medzi klientom a právnikom, a to ani medzi vami a prevádzkovateľmi služby ${PRODUCT_NAMES.sk}.`
         },
         {
           heading: "Obmedzenie zodpovednosti",
           body:
-            "V maximalnom rozsahu povolenom zakonmi AIJurisdiction nezodpoveda za skody vzniknute spoliehanim sa na vystupy platformy."
+            `V najširšom rozsahu povolenom právnymi predpismi prevádzkovatelia služby ${PRODUCT_NAMES.sk} nezodpovedajú za škody vzniknuté v dôsledku spoliehania sa na výstupy platformy. Toto upozornenie nevylučuje ani neobmedzuje zodpovednosť, ktorú podľa zákona nemožno vylúčiť alebo obmedziť.`
         },
         {
-          heading: "Bez zaruky",
+          heading: "Bez záruky",
           body:
-            "Sluzba aj generovany obsah su poskytovane v stave \"ako su\" a \"podla dostupnosti\" bez zaruk."
+            "Služba aj generovaný obsah sa poskytujú v stave „tak, ako sú“ a „podľa dostupnosti“, bez záruk."
         },
         {
-          heading: "Jurisdikcna platnost",
+          heading: "Územná pôsobnosť práva",
           body:
-            "Pravna relevantnost sa lisi podla krajiny a regionu. Pouzivatel musi platnost overit s kvalifikovanym pravnikom."
+            "Právna relevantnosť sa líši podľa krajiny a regiónu. Používateľ si musí uplatniteľnosť informácií overiť s kvalifikovaným právnikom."
         },
         {
-          heading: "Zodpovednost pouzivatela",
+          heading: "Zodpovednosť používateľa",
           body:
-            "Za rozhodnutia, podania a kroky vykonane na zaklade obsahu platformy nesiete plnu zodpovednost vy."
+            "Naďalej zodpovedáte za rozhodnutia, podania a kroky vykonané na základe obsahu platformy alebo pod jeho vplyvom."
         },
         {
-          heading: "Externe zdroje",
+          heading: "Ochrana súkromia a minimalizácia údajov",
           body:
-            "Odkazy na externe predpisy alebo zdroje su orientacne a mozu sa menit bez predchadzajuceho upozornenia."
+            "Nevkladajte osobné údaje ani osobitné kategórie osobných údajov, ak nie sú pre vašu požiadavku nevyhnutné. Účely spracúvania, dobu uchovávania a vaše práva vrátane prístupu, opravy, vymazania a obmedzenia spracúvania vysvetľujú Zásady ochrany súkromia."
         },
         {
-          heading: "Pravo na zmenu",
+          heading: "Externé zdroje",
           body:
-            "Toto upozornenie aj funkcionalitu platformy mozeme kedykolvek upravit. Dalsie pouzivanie znamena suhlas so zmenami."
+            "Odkazy na externé právne predpisy alebo zdroje sú orientačné a môžu sa zmeniť bez predchádzajúceho upozornenia."
+        },
+        {
+          heading: "Právo na zmenu",
+          body:
+            "Toto upozornenie aj funkcie platformy môžeme upraviť. O podstatných zmenách budeme informovať, ak to vyžadujú platné právne predpisy; aktuálne znenie a dátum sú uvedené na tejto stránke."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "25. júla 2026"
     },
     terms: {
-      title: "Podmienky sluzby",
+      title: "Podmienky služby",
       summary:
-        "Tieto podmienky upravuju pouzivanie sluzieb, rozhrani a vystupov AIJurisdiction.",
+        "Tieto podmienky upravujú používanie služieb, rozhraní a výstupov platformy Jurisdigta AI právnik.",
       sections: [
         {
           heading: "Prijatie podmienok",
           body:
-            "Pouzivanim AIJurisdiction suhlasite s tymito podmienkami a s platnymi pravnymi predpismi."
+            "Používaním platformy Jurisdigta AI právnik súhlasíte s týmito podmienkami a zaväzujete sa dodržiavať platné právne predpisy."
         },
         {
-          heading: "Povolene pouzitie",
+          heading: "Povolené použitie",
           body:
-            "Sluzbu mozete pouzivat iba zakonny sposobom a nesmiete nahravat obsah, ktory porusuje prava alebo zmluvne povinnosti."
+            "Službu môžete používať iba zákonným spôsobom. Nesmiete nahrávať obsah, ktorý porušuje práva iných osôb, právne predpisy alebo zmluvné povinnosti."
         },
         {
-          heading: "Ucet a pristup",
+          heading: "Účet a prístup",
           body:
-            "Za bezpecnost prihlasovacich udajov a aktivity vykonane cez vas ucet zodpovedate vy."
+            "Zodpovedáte za bezpečnosť svojich prihlasovacích údajov a za všetky aktivity vykonané prostredníctvom svojho účtu."
         },
         {
-          heading: "Dusevne vlastnictvo",
+          heading: "Duševné vlastníctvo",
           body:
-            "Softver, znacka a podkladove systemy platformy zostavaju majetkom AIJurisdiction a jeho licencnych partnerov."
+            "Softvér, značka a podkladové systémy platformy Jurisdigta AI právnik sú chránené právami duševného vlastníctva ich príslušných vlastníkov."
         },
         {
-          heading: "Zmeny sluzby",
+          heading: "Zmeny služby",
           body:
-            "Funkcie mozeme upravit, pozastavit alebo ukoncit, vratane zmien vyzadovanych pravnymi alebo bezpecnostnymi povinnostami."
+            "Funkcie môžeme upraviť, pozastaviť alebo ukončiť, a to aj v prípade zmien vyžadovaných právnymi alebo bezpečnostnými povinnosťami."
+        },
+        {
+          heading: "Ochrana osobných údajov",
+          body:
+            "Pri používaní služby poskytujte iba údaje potrebné na daný účel a nahrávajte len obsah, ktorý ste oprávnení poskytnúť. Ďalšie informácie o spracúvaní osobných údajov nájdete na stránke Ochrana súkromia.",
+          links: [
+            {
+              href: "/privacy",
+              label: "Ochrana súkromia"
+            }
+          ]
+        },
+        {
+          heading: "Výstupy umelej inteligencie a ľudský dohľad",
+          body:
+            "Výstupy vytvorené umelou inteligenciou môžu byť nepresné, neúplné alebo neaktuálne. Pred rozhodnutím, podaním alebo iným úkonom s právnymi následkami ich overte a zabezpečte primerané ľudské posúdenie, podľa potreby kvalifikovaným právnikom."
         }
       ],
-      lastUpdatedLabel: "Posledna aktualizacia",
-      lastUpdated: "18. februar 2026"
+      lastUpdatedLabel: "Posledná aktualizácia",
+      lastUpdated: "15. júla 2026"
     }
   },
   de: {
@@ -290,48 +410,77 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
       terms: "Nutzungsbedingungen"
     },
     privacy: {
-      title: "Datenschutz",
+      title: "Datenschutzhinweise",
       summary:
-        "Diese Hinweise erklaren, wie AIJurisdiction personenbezogene und fallbezogene Daten verarbeitet.",
+        "Diese Hinweise erklären, wie Jurisdigta AI Anwalt personenbezogene und fallbezogene Daten auf der Plattform verarbeitet.",
       sections: [
+        {
+          heading: "Verantwortlicher und Datenschutzkontakt",
+          body:
+            "Verantwortlicher ist Esolutions SK s.r.o., Unternehmens-ID (IČO) 46491261, Steuer-ID (DIČ) 2820020907, Partizánska 665/101, 059 18 Spišské Bystré, Slowakei. Datenschutzanfragen richten Sie an info@jurisdigta.eu. Ein Datenschutzbeauftragter wurde derzeit nicht benannt."
+        },
         {
           heading: "Welche Daten wir erfassen",
           body:
-            "Wir konnen Kontodaten, Fallinhalte, hochgeladene Dateien und Nutzungsprotokolle erfassen, soweit dies fur den Betrieb erforderlich ist."
+            "Wir verarbeiten Konto- und Kontaktdaten, Authentifizierungs- und Abonnementdaten, Fallinhalte, Eingaben, KI-Ausgaben, hochgeladene und erzeugte Dokumente, Nutzereinwilligungen sowie Sicherheits- und Betriebsprotokolle. Fallakten können Daten Dritter, besondere Datenkategorien oder Angaben zu strafrechtlichen Verurteilungen und Straftaten enthalten; übermitteln Sie nur erforderliche Daten, zu deren Verwendung Sie berechtigt sind."
         },
         {
-          heading: "Wie wir Daten verwenden",
+          heading: "Zwecke und Rechtsgrundlagen",
           body:
-            "Daten werden genutzt, um Funktionen bereitzustellen, die Systemqualitat zu verbessern, Missbrauch zu erkennen und Pflichten zu erfullen."
+            "Wir verwenden Daten zur Konto- und Fallverwaltung, für angeforderte KI-gestützte Funktionen, Sicherheit und Support, Missbrauchsprävention, gesetzliche Pflichten sowie zur Geltendmachung oder Verteidigung von Rechtsansprüchen. Rechtsgrundlagen sind Vertragserfüllung (Art. 6 Abs. 1 Buchst. b DSGVO), rechtliche Verpflichtungen (Buchst. c), berechtigte Interessen an Sicherheit, Zuverlässigkeit, Missbrauchsprävention und Rechtsschutz (Buchst. f) sowie Einwilligung (Buchst. a) für optionale externe KI-Verarbeitung. Besondere Datenkategorien oder Straftatendaten verarbeiten wir nur, wenn eine Bedingung der DSGVO und des slowakischen Rechts erfüllt ist, insbesondere soweit dies für Rechtsansprüche erforderlich ist."
         },
         {
-          heading: "Weitergabe von Daten",
+          heading: "KI-Modelle und Einwilligung",
           body:
-            "Wir verkaufen keine personenbezogenen Daten. Eine Weitergabe kann an Dienstleister oder bei gesetzlicher Verpflichtung erfolgen."
+            "Standardmäßig verwenden wir lokale Ollama-Modelle in einer von Jurisdigta kontrollierten Infrastruktur. Microsoft Azure AI Foundry in einer EU-Datenregion wird nur nach Ihrer ausdrücklichen Einwilligung in die jeweilige externe Verarbeitung genutzt. Sie können diese für künftige externe Verarbeitung verweigern oder widerrufen, ohne die lokale Route zu verlieren. KI-Ausgaben sind Entwürfe und erfordern menschliche Prüfung."
+        },
+        {
+          heading: "Empfänger und Übermittlungen",
+          body:
+            "Wir verkaufen keine personenbezogenen Daten. Zugriff erhalten nur befugte Personen und Auftragsverarbeiter für Hosting, Kommunikation, Sicherheit, Buchhaltung und Betrieb. Microsoft erhält genehmigte Inhalte nur bei Auswahl der externen Azure-AI-Foundry-Route. Die Verarbeitung ist für die EU-Datenregion konfiguriert; eine Übermittlung außerhalb des EWR ist nicht beabsichtigt. Sollte sich dies ändern, nennen wir vorab Umfang und DSGVO-Garantie."
         },
         {
           heading: "Speicherung und Sicherheit",
           body:
-            "Daten werden nur so lange gespeichert, wie es fur Service und Compliance notwendig ist, mit angemessenen Schutzmassnahmen."
+            "Die Speicherdauer richtet sich nach dem Zweck jeder Datenkategorie und dem anwendbaren slowakischen Recht. Kontodaten bleiben während des aktiven Kontos und seiner Abwicklung gespeichert. Fallinhalte, Uploads, Eingaben und Ausgaben bleiben erhalten, solange Fall oder Konto sie benötigen, und länger nur, wenn eine gesetzliche Pflicht oder ein Rechtsanspruch dies rechtfertigt. Sicherheitsprotokolle und Einwilligungsnachweise werden nur zur Absicherung und zum Compliance-Nachweis aufbewahrt. Buchungsunterlagen werden grundsätzlich zehn Jahre nach dem betreffenden Geschäftsjahr gemäß Gesetz Nr. 431/2002 Slg. aufbewahrt. Eine Löschung können Sie beim Datenschutzkontakt beantragen; gesetzliche Ausnahmen erläutern wir in der Antwort. Wir setzen angemessene technische und organisatorische Maßnahmen sowie minimierte Protokolle ein."
         },
         {
           heading: "Ihre Rechte",
           body:
-            "Je nach Rechtsraum konnen Sie Auskunft, Berichtigung, Loschung oder Einschrankung der Verarbeitung verlangen."
+            "Unter den gesetzlichen Voraussetzungen können Sie Auskunft, Berichtigung, Löschung, Einschränkung und Datenübertragbarkeit verlangen oder einer Verarbeitung aufgrund berechtigter Interessen widersprechen. Einwilligungen können Sie jederzeit für die Zukunft widerrufen, ohne die Rechtmäßigkeit früherer Verarbeitung zu berühren. Schreiben Sie an info@jurisdigta.eu; vor einer Datenfreigabe oder -änderung dürfen wir Ihre Identität prüfen.",
+          links: [{ label: "Datenschutzkontakt anschreiben", href: "mailto:info@jurisdigta.eu" }]
+        },
+        {
+          heading: "Beschwerde",
+          body:
+            "Wenn Sie eine rechtswidrige Verarbeitung vermuten, können Sie zunächst uns kontaktieren oder sich beim Amt für den Schutz personenbezogener Daten der Slowakischen Republik, Galvaniho 7/B, 821 04 Bratislava, beschweren.",
+          links: [
+            { label: "Slowakische Datenschutzbehörde", href: "https://dataprotection.gov.sk/en/contact/" }
+          ]
+        },
+        {
+          heading: "Erforderliche Daten und Folgen",
+          body:
+            "Als erforderlich gekennzeichnete Konto- und Falldaten werden vertraglich für Registrierung, Authentifizierung und die angeforderte Leistung benötigt. Ohne sie können wir möglicherweise kein Konto anlegen, keinen Fall bearbeiten oder die gewählte Funktion bereitstellen. Die Einwilligung in externe KI ist für die lokale Modellroute nicht erforderlich."
+        },
+        {
+          heading: "Automatisierte Entscheidungen und menschliche Aufsicht",
+          body:
+            "Jurisdigta trifft keine Genehmigungen oder Rechtsentscheidungen ausschließlich automatisiert und verwendet kein Profiling mit rechtlicher oder ähnlich erheblicher Wirkung. Rechtlich riskante KI-Ausgaben bleiben Entwürfe zur menschlichen Prüfung; Nutzer entscheiden selbst, ob und wie sie diese verwenden."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "15. Juli 2026"
     },
     disclaimer: {
       title: "Haftungsausschluss",
       summary:
-        "AIJurisdiction stellt KI-generierte Rechtsinformationen zur Verfugung, jedoch keine individuelle Rechtsberatung.",
+        `${PRODUCT_NAMES.de} stellt KI-generierte Rechtsinformationen ausschließlich zur Unterstützung bereit; sie ersetzen keine professionelle Rechtsberatung.`,
       sections: [
         {
           heading: "KI-generierte Inhalte",
           body:
-            "Ausgaben werden durch KI-Modelle erzeugt und konnen unvollstandig, ungenau oder veraltet sein."
+            "Ausgaben werden von KI-Modellen erzeugt und können unvollständig, ungenau oder veraltet sein."
         },
         {
           heading: "Keine Rechtsberatung",
@@ -339,77 +488,103 @@ export const legalContent: Record<Language, LegalContentByLanguage> = {
             "Alle Inhalte dienen nur der Information und ersetzen keine professionelle Rechtsberatung."
         },
         {
-          heading: "Kein Mandatsverhaltnis",
+          heading: "Menschliche Prüfung erforderlich",
           body:
-            "Durch die Nutzung entsteht kein Mandats- oder Anwaltsverhaltnis mit AIJurisdiction oder den Betreibern."
+            "Lassen Sie wichtige Ausgaben von einer qualifizierten juristischen Fachkraft prüfen, bevor Sie rechtliche Entscheidungen treffen, Fristen einhalten oder Dokumente einreichen."
+        },
+        {
+          heading: "Kein Mandatsverhältnis",
+          body:
+            `Durch die Nutzung entsteht kein Mandats- oder Anwaltsverhältnis mit ${PRODUCT_NAMES.de} oder dessen Betreibern.`
         },
         {
           heading: "Haftungsbegrenzung",
           body:
-            "Soweit gesetzlich zulassig, haftet AIJurisdiction nicht fur Schaden durch Vertrauen auf Plattformausgaben."
+            `Soweit gesetzlich zulässig, haften die Betreiber von ${PRODUCT_NAMES.de} nicht für Schäden, die durch das Vertrauen auf Plattformausgaben entstehen. Dieser Hinweis schließt keine Haftung aus und beschränkt sie nicht, soweit dies gesetzlich unzulässig ist.`
         },
         {
-          heading: "Keine Gewahrleistung",
+          heading: "Keine Gewährleistung",
           body:
-            "Der Dienst und alle Inhalte werden ohne Gewahr auf \"as is\"- und \"as available\"-Basis bereitgestellt."
+            "Der Dienst und alle Inhalte werden ohne Gewähr in der jeweils verfügbaren Form bereitgestellt."
         },
         {
           heading: "Jurisdiktionsbezug",
           body:
-            "Die rechtliche Anwendbarkeit variiert je nach Land und Region und muss durch qualifizierte Juristen gepruft werden."
+            "Die rechtliche Anwendbarkeit variiert je nach Land und Region und muss durch eine qualifizierte juristische Fachkraft geprüft werden."
         },
         {
-          heading: "Verantwortung der Nutzer",
+          heading: "Verantwortung der Nutzenden",
           body:
-            "Sie tragen die alleinige Verantwortung fur Entscheidungen und Handlungen auf Basis der Plattforminhalte."
+            "Sie bleiben für Entscheidungen, Einreichungen und Handlungen verantwortlich, die auf Plattforminhalten beruhen oder von ihnen beeinflusst werden."
+        },
+        {
+          heading: "Datenschutz und Datenminimierung",
+          body:
+            "Übermitteln Sie keine personenbezogenen Daten oder besonderen Kategorien personenbezogener Daten, sofern sie für Ihre Anfrage nicht erforderlich sind. Die Datenschutzerklärung erläutert Verarbeitungszwecke, Speicherdauer und Ihre Rechte, einschließlich Auskunft, Berichtigung, Löschung und Einschränkung."
         },
         {
           heading: "Externe Quellen",
           body:
-            "Verweise auf externe Gesetze oder Links dienen nur der Orientierung und konnen sich ohne Mitteilung andern."
+            "Verweise auf externe Gesetze, Links oder Quellen dienen nur der Orientierung und können sich ohne vorherige Mitteilung ändern."
         },
         {
-          heading: "Recht auf Anderung",
+          heading: "Recht auf Änderung",
           body:
-            "Wir konnen diesen Haftungsausschluss und Plattformfunktionen jederzeit andern. Weitere Nutzung gilt als Zustimmung."
+            "Wir können diesen Haftungsausschluss und die Plattformfunktionen ändern. Über wesentliche Änderungen informieren wir, soweit dies nach geltendem Recht erforderlich ist; die aktuelle Fassung und ihr Datum werden auf dieser Seite angezeigt."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "25. Juli 2026"
     },
     terms: {
       title: "Nutzungsbedingungen",
       summary:
-        "Diese Bedingungen regeln die Nutzung von AIJurisdiction, einschliesslich Oberflachen und erzeugter Inhalte.",
+        "Diese Bedingungen regeln die Nutzung der Dienste, Benutzeroberflächen und generierten Ausgaben von Jurisdigta AI Anwalt.",
       sections: [
         {
           heading: "Annahme der Bedingungen",
           body:
-            "Mit Zugriff auf AIJurisdiction stimmen Sie diesen Bedingungen sowie den anwendbaren Gesetzen zu."
+            "Indem Sie auf Jurisdigta AI Anwalt zugreifen oder die Plattform nutzen, erklären Sie sich mit diesen Bedingungen einverstanden und verpflichten sich, die geltenden Rechtsvorschriften einzuhalten."
         },
         {
-          heading: "Zulassige Nutzung",
+          heading: "Zulässige Nutzung",
           body:
-            "Die Plattform darf nur rechtmassig genutzt werden. Unzulassige oder rechtsverletzende Inhalte sind untersagt."
+            "Sie dürfen den Dienst nur zu rechtmäßigen Zwecken nutzen. Sie dürfen keine Inhalte hochladen, die Rechte Dritter, Rechtsvorschriften oder vertragliche Pflichten verletzen."
         },
         {
           heading: "Konto und Zugriff",
           body:
-            "Sie sind fur die Vertraulichkeit Ihrer Zugangsdaten und fur alle Kontoaktivitaten verantwortlich."
+            "Sie sind für die Sicherheit Ihrer Zugangsdaten und für alle über Ihr Konto ausgeführten Aktivitäten verantwortlich."
         },
         {
           heading: "Geistiges Eigentum",
           body:
-            "Software, Marke und zugrunde liegende Systeme verbleiben im Eigentum von AIJurisdiction und seinen Lizenzgebern."
+            "Software, Marke und zugrunde liegende Systeme der Plattform Jurisdigta AI Anwalt sind durch die Rechte des geistigen Eigentums ihrer jeweiligen Inhaber geschützt."
         },
         {
-          heading: "Anderungen am Dienst",
+          heading: "Änderungen am Dienst",
           body:
-            "Wir konnen Funktionen jederzeit anpassen, aussetzen oder einstellen, auch zur Einhaltung rechtlicher oder sicherheitsbezogener Vorgaben."
+            "Wir können Funktionen ändern, aussetzen oder einstellen, auch wenn dies aufgrund rechtlicher oder sicherheitsbezogener Verpflichtungen erforderlich ist."
+        },
+        {
+          heading: "Schutz personenbezogener Daten",
+          body:
+            "Stellen Sie bei der Nutzung des Dienstes nur Daten bereit, die für den jeweiligen Zweck erforderlich sind, und laden Sie nur Inhalte hoch, zu deren Bereitstellung Sie berechtigt sind. Weitere Informationen zur Verarbeitung personenbezogener Daten finden Sie unter Datenschutz.",
+          links: [
+            {
+              href: "/privacy",
+              label: "Datenschutz"
+            }
+          ]
+        },
+        {
+          heading: "KI-Ausgaben und menschliche Aufsicht",
+          body:
+            "KI-generierte Ausgaben können ungenau, unvollständig oder veraltet sein. Prüfen Sie sie und stellen Sie vor Entscheidungen, Einreichungen oder anderen Handlungen mit rechtlichen Folgen eine angemessene menschliche Kontrolle sicher, erforderlichenfalls durch einen qualifizierten Rechtsanwalt."
         }
       ],
       lastUpdatedLabel: "Letzte Aktualisierung",
-      lastUpdated: "18. Februar 2026"
+      lastUpdated: "15. Juli 2026"
     }
   }
 };
