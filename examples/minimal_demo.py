@@ -93,6 +93,11 @@ print(
     "models receive the prompt."
 )
 print(
+    "mcp_postgres_case_citations => PostgreSQL MCP law searches use a parameter-safe, "
+    "transaction-local statement timeout so retrieved sources can persist as answer-level "
+    "and case-level citations."
+)
+print(
     "mcp_user_visible_proof_notice => frontend/mobile streams show the backend-localized "
     "notice when JurisDigta MCP is contacted for latest legal information; SK='JurisDigta MCP "
     "server bol kontaktovaný na získanie najnovších právnych informácií.', DE='Der JurisDigta "
