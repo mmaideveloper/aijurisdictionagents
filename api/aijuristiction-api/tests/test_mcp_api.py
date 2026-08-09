@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
@@ -30,6 +31,59 @@ from services.court_decision_collector.domain import CourtDecisionSearchResult
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 api_client = TestClient(api_app)
 mcp_client = TestClient(mcp_app)
+
+
+def test_postgres_laws_query_session_sets_parameterized_statement_timeout(monkeypatch) -> None:
+    executed: list[tuple[str, tuple[object, ...]]] = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+        def execute(self, query: str, params: tuple[object, ...]) -> None:
+            if query.startswith("SET LOCAL statement_timeout"):
+                raise SyntaxError('syntax error at or near "$1"')
+            executed.append((query, params))
+
+    class FakeResult:
+        def fetchall(self) -> list[tuple[int]]:
+            return [(1,)]
+
+    class FakeConnection:
+        closed = False
+
+        def cursor(self) -> FakeCursor:
+            return FakeCursor()
+
+        def execute(self, query: str, params: tuple[object, ...]) -> FakeResult:
+            executed.append((query, params))
+            return FakeResult()
+
+        def close(self) -> None:
+            self.closed = True
+
+    connection = FakeConnection()
+    fake_psycopg = SimpleNamespace(connect=lambda uri: connection)
+    monkeypatch.setattr(
+        mcp_api,
+        "_laws_db_config",
+        lambda: SimpleNamespace(backend="postgres", cloud_uri="postgresql://redacted"),
+    )
+    monkeypatch.setattr(mcp_api.importlib, "import_module", lambda name: fake_psycopg)
+
+    with mcp_api._LawsQuerySession(statement_timeout_ms=30_000) as laws:
+        assert laws.backend == "postgres"
+        assert laws.param == "%s"
+        assert laws.query_all("SELECT %s", (1,)) == [(1,)]
+
+    assert executed == [
+        ("SELECT set_config('statement_timeout', %s, true)", ("30000ms",)),
+        ("SELECT %s", (1,)),
+    ]
+    assert connection.closed is True
 
 
 def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(monkeypatch, tmp_path: Path) -> None:

@@ -2530,7 +2530,10 @@ class _LawsQuerySession:
             self._connection = psycopg.connect(config.cloud_uri)
             if self._statement_timeout_ms is not None:
                 with self._connection.cursor() as cursor:
-                    cursor.execute("SET LOCAL statement_timeout = %s", (self._statement_timeout_ms,))
+                    cursor.execute(
+                        "SELECT set_config('statement_timeout', %s, true)",
+                        (f"{self._statement_timeout_ms}ms",),
+                    )
             logger.info("mcp_laws_db_session_opened backend=postgres")
 
             def query_all(query: str, params: Sequence[Any]) -> list[Sequence[Any]]:
