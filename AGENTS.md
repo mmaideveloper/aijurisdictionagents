@@ -134,6 +134,9 @@ Custom project skills:
 - `testdocument` at `skills/testdocument/SKILL.md`
   - Purpose: generate preview PDFs for every enabled document template through the local API preview renderer and write them under `runs\testdocument\document-template-pdfs`.
   - Script: `.\skills\testdocument\scripts\test_document_templates.ps1`
+- `prepare-golden-test` at `skills/prepare-golden-test/SKILL.md`
+  - Purpose: quarantine and deterministically validate a native synthetic case-export ZIP, register it as `technical_reviewed`, and promote the same PR to `native_reviewed` only after explicit human approval.
+  - Script: `.\skills\prepare-golden-test\scripts\prepare_golden_test.ps1`
 - `start-api` at `skills/start-api/SKILL.md`
   - Purpose: start and health-check local `aijuristiction-api`.
   - Script: `.\skills\start-api\scripts\start_api.ps1`

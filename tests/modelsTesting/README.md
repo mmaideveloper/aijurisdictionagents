@@ -21,17 +21,36 @@ Each case is stored as a ZIP under `cases/` and registered in `index.json`. The 
 - Legal-document fixtures must assert human review before signing, filing, or reliance.
 - If a fixture includes personal-looking values, mark them as synthetic in `index.json`.
 
-## Adding A Case
+## Adding a case
 
-1. Create or obtain a sanitized ZIP export for one scenario.
-2. Add the ZIP under `tests/modelsTesting/cases/`.
-3. Add one entry to `tests/modelsTesting/index.json`.
-4. Include expected answer/document assertions, similarity thresholds, and legal-document checks.
-5. Run:
+Provide the native ZIP and source issue to the repository-local skill:
+
+```text
+Use prepare-golden-test for issue #602 with the attached exported ZIP.
+```
+
+The skill copies the unchanged input to ignored
+`runs/model-validation/issue-<number>/<run-id>/`, validates it, and only then promotes it to
+`tests/modelsTesting/cases/` and updates `index.json`. Quarantine holds transient reports and
+PDF/text/first-page evidence; it is not a second golden database and must be deleted after
+review/merge or within seven days.
+
+Every new entry starts as `technical_reviewed` after automated safety, checksum, schema, document,
+PDF, source-fact, assertion, citation/warning, and persisted model-audit checks pass. A human must
+then review the genuine production case/export path and explicitly approve the baseline. The same
+PR receives a small promotion commit to `native_reviewed` and reruns validation. A manually
+assembled ZIP may remain a development seed or `technical_reviewed`, but it cannot become
+`native_reviewed` because it does not prove the production conversation, document, PDF, checksum,
+and model-audit path.
+
+Run:
 
 ```powershell
 .\conda\python.exe -m pytest tests\test_models_testing_fixtures.py
 ```
+
+The skill opens the dedicated PR and moves the issue to `In review`, but never merges. A later
+human-approved close-task workflow performs the merge.
 
 The runner in `aijurisdictionagents.golden_cases` supports both the native export from issue #471
 (`manifest.json`, `messages.jsonl`, `ai-model-audit.json`, documents and warnings) and the older
@@ -56,8 +75,8 @@ created through JurisDigta using the process below before marking scenario 01 le
    export manifest, transcript, model audit, warnings and generated PDF. Confirm
    `manifest.json.models_used` and `ai-model-audit.json.entries` identify the actual provider, model,
    route type and status used for the case. Do not enter these values manually.
-6. Store the reviewed ZIP under `cases/`, update its SHA-256 and rules in `index.json`, and set
-   `fixture_status` to `native_reviewed`.
+6. Use `prepare-golden-test` to create the initial `technical_reviewed` PR. Promote the same PR to
+   `native_reviewed` only after explicit human approval and a successful validation rerun.
 
 The export contains personal-looking synthetic data and model audit metadata, so retain only the
 minimum fixture, never credentials or payment details. Failed/live outputs belong under ignored

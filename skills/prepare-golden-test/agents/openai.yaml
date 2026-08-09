@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Golden Test"
+  short_description: "Validate and stage native golden-case exports"
+  default_prompt: "Use $prepare-golden-test to validate and stage a native case-export ZIP for a source issue."
