@@ -10,6 +10,12 @@ Every user-facing E2E scenario must prove both the machine contract and the resu
 4. Render the first PDF page to PNG next to the final UI preview screenshot.
 5. Use ordered names: `01-audio-transcript.png`, `02-message-submitted.png`, `03-document-preview.png`, `04-generated-document.pdf`, and `05-pdf-first-page.png`.
 
+For a golden document scenario, use `prepare-golden-test` after exporting the case. Its ignored
+quarantine must retain the final-state screenshot when the scenario is user-facing, the generated
+PDF, extracted expected text, and the first-page PNG. The validator checks PDF structure and text;
+the screenshot remains visual evidence and cannot replace those checks. The tracked golden ZIP
+remains the only fixture, while extracted evidence stays transient.
+
 ## Voice scenarios
 
 - Use only an approved synthetic audio fixture; real-person recordings are prohibited.

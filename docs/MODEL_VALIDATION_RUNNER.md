@@ -26,7 +26,7 @@ local Ollama, activate the paid Case plan through the sandbox payment flow, repl
 turns, and answer matching assistant questions from the golden transcript. An unmatched question may
 receive a conservative configured answer, but the result must contain a warning.
 
-For each run, write ignored artifacts under `runs/model-validation/<run-id>/`: transcript, warnings,
+For each run, write ignored artifacts under `runs/model-validation/issue-<number>/<run-id>/`: transcript, warnings,
 actual `provider`, `model`, `route_type`, status, fallback reason, timing/token/cost fields, exported
 ZIP/PDF text and comparison JSON. Authentication secrets and payment details must never be copied to
 fixtures or reports.
@@ -37,6 +37,18 @@ only when at least one audit entry exists and every entry contains non-empty `pr
 `route_type` and `status`. Whether the case facts were entered manually or generated synthetically
 does not change this requirement: the model identity must come from the persisted server audit, never
 from a manually typed fixture label.
+
+The canonical production route is Azure Foundry (`azurefoundry`). Invoke the reusable workflow with
+a prompt such as:
+
+```text
+Use prepare-golden-test for issue #602 with the attached exported ZIP.
+```
+
+The skill derives provider, model, route type, and status only from the persisted export audit,
+cross-checks `manifest.json.models_used`, calculates the fixture SHA-256, and generates or validates
+the registry entry deterministically. A requested route mismatch is a hard failure; missing Azure
+credentials or access for a live check must never cause a silent switch to mock or another provider.
 
 Passing deterministic checks means the output conforms to the reviewed fixture; it is not automatic
 approval of legal correctness. A qualified human must review material legal changes and any output
@@ -68,21 +80,29 @@ Use this checklist for every scenario that will become automated golden-test dat
     `ai-model-audit.json.entries`. Every audit entry must contain the actual non-empty `provider`,
     `model`, `route_type`, and `status` persisted by the server. Never type these values into the
     fixture manually.
-11. Copy the reviewed immutable ZIP to `tests/modelsTesting/cases/` using a stable filename.
-12. Register the fixture in `tests/modelsTesting/index.json`, including its SHA-256, scenario ID,
-    classification, expected route, required/forbidden assertions, citations, document type/count,
-    and similarity thresholds.
-13. Set `fixture_status` to `native_reviewed` only after the content review and model-audit checks
-    pass. Legacy or incomplete fixtures must remain marked as seeds and are not automation-ready.
+11. Run `prepare-golden-test`. It quarantines and validates the original, then copies the unchanged
+    ZIP to `tests/modelsTesting/cases/` using a stable filename.
+12. Review its deterministic `tests/modelsTesting/index.json` entry: SHA-256, source issue, scenario
+    ID, synthetic classification, actual audited route, required/forbidden assertions, legal marker
+    phrases, citations, document type/count, and similarity thresholds.
+13. The initial preparation PR must use `technical_reviewed`. A human reviews the genuine production
+    path and approves the baseline; only then may the same PR receive a small `native_reviewed`
+    promotion commit and rerun all checks. A manually assembled ZIP remains a seed or
+    `technical_reviewed` and cannot establish native production provenance.
 14. Run `.\conda\python.exe examples\model_validation_runner_demo.py --fixture <zip-path>` and
     `.\conda\python.exe -m pytest tests\test_golden_cases.py
     tests\test_models_testing_fixtures.py`.
-15. Keep every later replay export separate under ignored `runs/model-validation/<run-id>/` and
+15. Keep every later replay export separate under ignored
+    `runs/model-validation/issue-<number>/<run-id>/` and
     compare normalized text, required facts, citations, document type/count, decision/status, and
     model audit. Never compare raw PDF bytes or overwrite the reviewed golden ZIP.
 
 If any step fails, do not promote the ZIP to `native_reviewed`. Correct the synthetic case in
 JurisDigta, repeat the human review, create a new export, and update the registered checksum.
+
+The skill delivers a dedicated branch/worktree, commit, pushed branch, PR to `main`, issue comment,
+and `In review` status. It never merges the PR. Merge remains part of the separate human-approved
+close-task workflow after `native_reviewed` validation passes.
 
 ## Adding coverage
 

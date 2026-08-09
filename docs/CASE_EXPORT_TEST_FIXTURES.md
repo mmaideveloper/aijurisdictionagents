@@ -22,6 +22,27 @@ GET /v1/admin/cases/{case_id}/export?user_id={target_user_id}&reason={admin_reas
 
 The exported ZIP is intended as the source of truth for automated model-validation runs. It includes case metadata, user/system messages, AI model audit data, citations, warnings, source documents, rendered PDFs, and checksums where available.
 
+## Upload, quarantine, and promotion
+
+Use the repository-local `prepare-golden-test` skill for every new native export. For example:
+
+```text
+Use prepare-golden-test for issue #602 with the attached exported ZIP.
+```
+
+The skill first copies the submitted ZIP unchanged to
+`runs/model-validation/issue-<number>/<run-id>/`. This ignored directory is temporary quarantine,
+not a second fixture database. It preserves the original while archive paths, compressed sizes,
+executables, secrets/payment credentials, native schemas, internal checksums, issue facts, PDFs,
+citations, warnings, and persisted model-audit fields are checked. Validation reports, extracted PDF
+text, a retained PDF copy, and its first-page PNG also stay there. Delete the quarantine run after
+review/merge or within seven days.
+
+Only after every deterministic check passes may the unchanged ZIP be copied to
+`tests/modelsTesting/cases/` and registered in `tests/modelsTesting/index.json`. That directory is
+the only tracked golden-fixture location. Unsafe, incomplete, non-synthetic, or unrelated case
+exports must fail before tracked promotion.
+
 ## Model Testing Fixture Database
 
 Tracked golden fixtures live under `tests/modelsTesting/`.
@@ -44,3 +65,9 @@ Regression issue `#518` keeps the Slovak private loan-confirmation prompt determ
 - Keep generated fixture retention aligned with the test retention policy.
 - Mark committed fixtures as synthetic or dedicated-test-account data in `tests/modelsTesting/index.json`.
 - Legal-document fixtures must include human-review expectations and checks for document structure, parties, operative statement, and signature blocks.
+
+The preparation delivery boundary is deliberate: the skill creates a dedicated branch/worktree,
+validates and promotes a `technical_reviewed` fixture, runs tests, commits, pushes, opens a PR to
+`main`, comments on the issue, and moves the task to `In review`. It never merges automatically.
+After explicit human approval, the same PR receives a small `native_reviewed` promotion commit and
+reruns validation; the normal human-approved close-task workflow performs any later merge.

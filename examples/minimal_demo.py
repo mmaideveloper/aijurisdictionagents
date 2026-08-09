@@ -180,6 +180,12 @@ print(
     "for model answer/document comparison, including legal-document structure and human-review checks."
 )
 print(
+    "prepare_golden_test => ask `Use prepare-golden-test for issue #602 with the attached "
+    "exported ZIP.`; the skill quarantines and validates the unchanged native export, records its "
+    "persisted model audit as technical_reviewed, and requires explicit human approval before "
+    "native_reviewed. It opens a PR but never merges it."
+)
+print(
     "active_case_export => My Cases and My Profile download the authorized case ZIP, keep the Blob URL "
     "alive until the browser starts the download, and expose the request correlation_id in manifest.json "
     "for case-scoped support tracing without embedding raw logs."
