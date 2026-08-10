@@ -117,6 +117,27 @@ Set-Location frontend\aijurisdictionfronend
 npm run test:e2e -- golden-case-602-document-preview.spec.ts
 ```
 
+Run the opt-in issue #612 live browser regression against the production EU Azure Foundry
+project while keeping the API, frontend, database, files, and synthetic user local:
+
+```powershell
+.\scripts\run_issue_612_azure_foundry_e2e.ps1
+```
+
+The runner configures `azureFoundryEU / gpt-5-mini` at the project endpoint ending in
+`/api/projects/documentprocessing`, then verifies that the streamed reply succeeds through the
+OpenAI-compatible `/openai/v1` client without a legacy `api-version` query parameter. It refuses
+mock fallback and fails when the production credential is unavailable. When a static Foundry key
+or token is not configured, the runner authenticates only as the repository service principal and
+uses a short-lived Cognitive Services token; it never uses the currently signed-in Azure user.
+Evidence is written under
+`runs/e2e/issue-612-azure-foundry-v1/<UTC timestamp>/`: a sanitized JSON manifest and a final-state
+screenshot. The isolated SQLite database and files are kept under
+`runs/storage/issue-612-azure-foundry-e2e/<UTC timestamp>/`. Both paths are Git-ignored and must be
+removed within seven days. The request uses a generated identity and a fixed connectivity marker;
+no customer, legal-case, password, token, or credential content is retained. The response remains
+an AI draft requiring human review and is not used for an automated legal decision.
+
 The live-provider check must retain the configured provider gate. Missing Ollama Cloud or
 Azure Foundry credentials must not be replaced with `mock`; deterministic route fixtures are
 used only for browser/UI regression coverage.
