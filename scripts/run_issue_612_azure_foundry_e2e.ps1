@@ -1,6 +1,7 @@
 param(
     [string]$Endpoint = "https://ai-mmatonok4721ai562138909778.services.ai.azure.com/api/projects/documentprocessing",
     [string]$Model = "gpt-5-mini",
+    [string]$EnvFilePath = ".env",
     [int]$ApiPort = 8080,
     [int]$FrontendPort = 5189
 )
@@ -28,7 +29,12 @@ function Import-SelectedDotEnvValues {
     }
 }
 
-Import-SelectedDotEnvValues -Path (Join-Path $repoRoot ".env") -Names @(
+$resolvedEnvFilePath = if ([IO.Path]::IsPathRooted($EnvFilePath)) {
+    $EnvFilePath
+} else {
+    Join-Path $repoRoot $EnvFilePath
+}
+Import-SelectedDotEnvValues -Path $resolvedEnvFilePath -Names @(
     "AZURE_OPENAI_API_KEY",
     "AZURE_OPENAI_AD_TOKEN",
     "AZURE_CLIENT_ID",
@@ -39,7 +45,7 @@ Import-SelectedDotEnvValues -Path (Join-Path $repoRoot ".env") -Names @(
 
 if (-not $env:AZURE_OPENAI_API_KEY -and -not $env:AZURE_OPENAI_AD_TOKEN) {
     if (Get-Command az -ErrorAction SilentlyContinue) {
-        & (Join-Path $repoRoot "infra\scripts\login_service_principal.ps1")
+        & (Join-Path $repoRoot "infra\scripts\login_service_principal.ps1") -EnvFilePath $EnvFilePath
         if ($LASTEXITCODE -ne 0) {
             throw "Azure service-principal login failed."
         }

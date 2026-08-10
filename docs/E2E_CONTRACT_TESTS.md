@@ -124,6 +124,12 @@ project while keeping the API, frontend, database, files, and synthetic user loc
 .\scripts\run_issue_612_azure_foundry_e2e.ps1
 ```
 
+For explicitly temporary Azure infrastructure credentials stored in the ignored `.env.dev`, use:
+
+```powershell
+.\scripts\run_issue_612_azure_foundry_e2e.ps1 -EnvFilePath .env.dev
+```
+
 The runner configures `azureFoundryEU / gpt-5-mini` at the project endpoint ending in
 `/api/projects/documentprocessing`, then verifies that the streamed reply succeeds through the
 OpenAI-compatible `/openai/v1` client without a legacy `api-version` query parameter. It refuses
