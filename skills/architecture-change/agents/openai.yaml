@@ -1,0 +1,4 @@
+interface:
+  display_name: "Architecture Change"
+  short_description: "Coordinate architecture artifacts end to end"
+  default_prompt: "Use $architecture-change to guide this change from use case through architecture decisions and implementation readiness."

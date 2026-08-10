@@ -1,0 +1,12 @@
+flowchart LR
+  caller["Calling container"]
+  subgraph container["Container boundary"]
+    entry["Entry component<br/><responsibility>"]
+    core["Domain component<br/><responsibility>"]
+    adapter["Adapter component<br/><responsibility>"]
+  end
+  external["External dependency"]
+  caller -->|"<request>"| entry
+  entry -->|"<command/query>"| core
+  core -->|"<operation>"| adapter
+  adapter -->|"<interface/data>"| external

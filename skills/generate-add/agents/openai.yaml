@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate ADD"
+  short_description: "Create an architecture design document"
+  default_prompt: "Use $generate-add to create an Architecture Design Document from approved use cases and repository evidence."

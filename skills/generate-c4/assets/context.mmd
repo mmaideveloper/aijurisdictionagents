@@ -1,0 +1,9 @@
+flowchart LR
+  %% <system> <state> system-context view
+  person["Person<br/><role>"]
+  subgraph boundary["System boundary"]
+    system["System<br/><responsibility>"]
+  end
+  external["External system<br/><responsibility>"]
+  person -->|"<action/data>"| system
+  system -->|"<action/data; interface if known>"| external

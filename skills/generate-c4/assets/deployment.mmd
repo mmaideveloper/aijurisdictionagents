@@ -1,0 +1,8 @@
+flowchart TB
+  subgraph zone["Environment / trust zone"]
+    subgraph node["Deployment node"]
+      workload["Workload<br/><container instance>"]
+    end
+    data[("Managed data service")]
+  end
+  workload -->|"<protocol/data>"| data

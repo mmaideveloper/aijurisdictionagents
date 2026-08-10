@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate ADR"
+  short_description: "Create and review architecture decisions"
+  default_prompt: "Use $generate-adr to create, update, review, or supersede an architecture decision record."

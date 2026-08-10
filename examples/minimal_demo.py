@@ -8,6 +8,12 @@ from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 
 print(
+    "architecture_change_skills => Use Case -> ADD draft -> C4 views -> ADRs -> "
+    "reconcile ADD/C4 -> Implementation -> Conformance review; artifacts remain "
+    "source-backed and GDPR/EU AI Act gated."
+)
+
+print(
     "local_model_timeout => "
     f"deadline={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_TIMEOUT_SECONDS', 600)}s, "
     f"visible_progress={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_VISIBLE_PROGRESS', 15)}s; "
