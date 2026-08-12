@@ -118,7 +118,8 @@ def build_session_result_metadata(
     final_recommendation: str,
     base_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    metadata = dict(base_metadata or {})
+    metadata = dict(session.metadata)
+    metadata.update(base_metadata or {})
     visible_messages = _visible_messages(messages)
     first_user_message = next(
         (message.content for message in visible_messages if message.role == MessageRole.USER),

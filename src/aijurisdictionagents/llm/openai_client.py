@@ -56,6 +56,8 @@ class OpenAIClient:
             provider="openai",
             agent_name=agent_name,
             request_payload=messages,
+            message_count=len(conversation),
+            document_count=len(documents),
         )
         response = self._client.chat.completions.create(
             model=self._config.model,

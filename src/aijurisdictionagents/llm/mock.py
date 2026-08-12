@@ -41,6 +41,8 @@ class MockLLMClient:
             provider="mock",
             agent_name=agent_name,
             request_payload=request_payload,
+            message_count=len(conversation),
+            document_count=len(documents),
         )
         user_message = _latest_user_message(conversation)
         first_user_message = _first_user_message(conversation)

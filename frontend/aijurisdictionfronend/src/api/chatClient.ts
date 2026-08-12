@@ -33,11 +33,13 @@ export type CreateChatSessionInput = {
   country?: string;
   language?: string;
   discussionType?: "advice" | "court";
+  modelProfileId?: string;
 };
 
 export type ReplyToSessionInput = {
   sessionId: string;
   content: string;
+  modelProfileId?: string;
 };
 
 export class ApiRequestError extends Error {
@@ -137,7 +139,12 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
 
 export const createChatSession = async (input: CreateChatSessionInput = {}): Promise<ChatSession> => {
   const config = resolveApiConfig();
-  return requestJson<ChatSession>("/v1/chat/sessions", {
+  consoleLogger.info("Chat request diagnostics", {
+    action: "create_session",
+    session_id: null,
+    model_profile_id: input.modelProfileId || null
+  });
+  const session = await requestJson<ChatSession>("/v1/chat/sessions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -147,13 +154,25 @@ export const createChatSession = async (input: CreateChatSessionInput = {}): Pro
       case_id: input.caseId || null,
       country: input.country || config.country,
       language: input.language || config.language,
-      discussion_type: input.discussionType || "advice"
+      discussion_type: input.discussionType || "advice",
+      model_profile_id: input.modelProfileId || null
     })
   });
+  consoleLogger.info("Chat request diagnostics", {
+    action: "create_session_completed",
+    session_id: session.id,
+    model_profile_id: input.modelProfileId || null
+  });
+  return session;
 };
 
 export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMessage> => {
   const config = resolveApiConfig();
+  consoleLogger.info("Chat request diagnostics", {
+    action: "reply",
+    session_id: input.sessionId,
+    model_profile_id: input.modelProfileId || null
+  });
   return requestJson<ChatMessage>(`/v1/chat/sessions/${input.sessionId}/reply`, {
     method: "POST",
     headers: {
@@ -161,7 +180,8 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
       "x-api-key": config.apiKey
     },
     body: JSON.stringify({
-      content: input.content
+      content: input.content,
+      model_profile_id: input.modelProfileId || null
     })
   });
 };

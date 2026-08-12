@@ -1561,6 +1561,161 @@ def test_reply_endpoint_persists_user_and_returns_lawyer_message() -> None:
     assert "vzor najomnej zmluvy" in lawyer_message_2["content"].lower()
 
 
+def test_reply_endpoint_sanitizes_reasoning_like_response_and_stores_diagnostics(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.repository import InMemoryChatRepository
+
+    class _FakeLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            return SimpleNamespace(
+                content=(
+                    "Okay, let me try to work through this step by step. "
+                    "The closest order template might be the closest, but I need to make sure "
+                    "it's appropriate.\n\nNext"
+                ),
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        chat_api,
+        "build_session_result_metadata",
+        lambda **kwargs: dict(kwargs["base_metadata"] or {}),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FakeLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "sk",
+            "model_profile_id": "local_ollama:qwen3:4b",
+            "provider": "ollama",
+            "provider_display_name": "Local Ollama",
+            "route_type": "local",
+            "is_local": True,
+            "is_external": False,
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Priprav navrh podania."},
+        headers={
+            **AUTH_HEADERS,
+            "x-request-id": "req-test-reply",
+            "x-correlation-id": "corr-test-reply",
+        },
+    )
+    assert reply_response.status_code == 200
+    payload = reply_response.json()
+    assert payload["role"] == "assistant"
+    assert "nedokonceny interny vystup modelu" in payload["content"].lower()
+    assert "step by step" not in payload["content"].lower()
+    assert "next" not in payload["content"].lower()
+
+    messages_response = client.get(
+        f"/v1/chat/sessions/{session_id}/messages",
+        headers=AUTH_HEADERS,
+    )
+    assert messages_response.status_code == 200
+    messages = messages_response.json()
+    assert messages[-1]["content"] == payload["content"]
+    assert "step by step" not in messages[-1]["content"].lower()
+
+    result_response = client.get(
+        f"/v1/chat/sessions/{session_id}/result",
+        headers=AUTH_HEADERS,
+    )
+    assert result_response.status_code == 200
+    result_payload = result_response.json()
+    assert result_payload["final_recommendation"] == payload["content"]
+    assert result_payload["metadata"]["model_profile_id"] == "local_ollama:qwen3:4b"
+    assert result_payload["metadata"]["provider"] == "ollama"
+    assert result_payload["metadata"]["provider_display_name"] == "Local Ollama"
+    assert result_payload["metadata"]["route_type"] == "local"
+    assert result_payload["metadata"]["is_local"] is True
+    assert result_payload["metadata"]["is_external"] is False
+    assert result_payload["metadata"]["response_finish_reason"] == "quality_guard_blocked"
+    assert result_payload["metadata"]["response_shape_flags"]["looks_like_reasoning"] is True
+    assert result_payload["metadata"]["response_shape_flags"]["contains_next_prefix"] is True
+
+
+def test_stream_read_user_emits_quality_audit_event_for_blocked_response(monkeypatch) -> None:
+    from app.chat import api as chat_api
+    from app.chat.repository import InMemoryChatRepository
+
+    class _FakeLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            return SimpleNamespace(
+                content=(
+                    "Okay, let me think this through step by step before I answer fully.\n"
+                    "I need to check whether the template fits the facts.\n\nNext"
+                ),
+                agent_name="LawyerSlovakia",
+            )
+
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(
+        chat_api,
+        "build_session_result_metadata",
+        lambda **kwargs: dict(kwargs["base_metadata"] or {}),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FakeLawyer(),
+    )
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers={
+            **AUTH_HEADERS,
+            "x-request-id": "req-test-stream",
+            "x-correlation-id": "corr-test-stream",
+        },
+        json={
+            "instruction": "Priprav navrh podania.",
+            "documents": [],
+            "question_timeout_seconds": 30,
+            "max_discussion_minutes": 1,
+            "communication_minutes": 1,
+            "user_simulation_mode": "ReadUser",
+            "model_profile_id": "local_ollama:qwen3:4b",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert 'event: processing' in events
+    assert '"stage": "audit"' in events
+    assert '"reason": "quality_guard_blocked"' in events
+    assert "nedokonceny interny vystup modelu" in events.lower()
+    assert "step by step" not in events.lower()
+    assert "event: result" in events
+
+
 def test_stream_read_user_pauses_and_waits_for_manual_reply() -> None:
     from app.chat import api as chat_api
     from app.chat.models import SessionState

@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 import json
 import logging
+import os
 import re
 import time
 import textwrap
@@ -15,7 +16,7 @@ from threading import Thread
 from typing import Any, List, Literal, Optional, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
@@ -60,9 +61,26 @@ _LINUX_DEJAVU_FONT_DIRS = (
     Path("/usr/share/fonts/dejavu"),
 )
 _REGISTERED_PDF_FONT_FAMILIES: set[str] = set()
+_ROUTE_METADATA_KEYS = (
+    "model_profile_id",
+    "provider",
+    "provider_display_name",
+    "route_type",
+    "is_local",
+    "is_external",
+)
 
 
-class CreateSessionRequest(BaseModel):
+class RouteSelectionRequest(BaseModel):
+    model_profile_id: str | None = None
+    provider: str | None = None
+    provider_display_name: str | None = None
+    route_type: str | None = None
+    is_local: bool | None = None
+    is_external: bool | None = None
+
+
+class CreateSessionRequest(RouteSelectionRequest):
     user_id: Optional[UUID] = None
     case_id: str | None = None
     country: str = "SK"
@@ -76,7 +94,7 @@ class CreateMessageRequest(BaseModel):
     content: str
 
 
-class ReplyRequest(BaseModel):
+class ReplyRequest(RouteSelectionRequest):
     content: str
 
 
@@ -388,6 +406,192 @@ def _message_payload(message: Message) -> dict[str, object]:
     }
 
 
+def _configured_model_name() -> str:
+    deployment = str(os.getenv("AZURE_OPENAI_DEPLOYMENT") or "").strip()
+    configured_model = str(os.getenv("OPENAI_MODEL") or "").strip()
+    return deployment or configured_model
+
+
+def _provider_display_name(provider: str) -> str:
+    mapping = {
+        "azurefoundry": "Azure Foundry",
+        "azure": "Azure Foundry",
+        "openai": "OpenAI",
+        "mock": "Mock LLM",
+        "ollama": "Local Ollama",
+    }
+    return mapping.get(provider, provider.replace("_", " ").title() or "Unknown Provider")
+
+
+def _stored_route_metadata(session: Session) -> dict[str, object]:
+    return {
+        key: session.metadata[key]
+        for key in _ROUTE_METADATA_KEYS
+        if key in session.metadata and session.metadata[key] is not None
+    }
+
+
+def _resolve_route_metadata(*, payload: RouteSelectionRequest | None, session: Session | None = None) -> dict[str, object]:
+    route_metadata = dict(_stored_route_metadata(session) if session is not None else {})
+    if payload is not None:
+        for key in _ROUTE_METADATA_KEYS:
+            value = getattr(payload, key, None)
+            if isinstance(value, str):
+                value = value.strip() or None
+            if value is not None:
+                route_metadata[key] = value
+
+    provider = str(route_metadata.get("provider") or os.getenv("LLM_PROVIDER") or "azurefoundry").strip().lower()
+    model_profile_id = str(
+        route_metadata.get("model_profile_id")
+        or os.getenv("LLM_MODEL_PROFILE_ID")
+        or _configured_model_name()
+        or provider
+    ).strip()
+    is_local = bool(
+        route_metadata.get("is_local")
+        if route_metadata.get("is_local") is not None
+        else provider in {"mock", "ollama", "local"} or model_profile_id.startswith("local_")
+    )
+    is_external = bool(
+        route_metadata.get("is_external")
+        if route_metadata.get("is_external") is not None
+        else not is_local
+    )
+    provider_display_name = str(
+        route_metadata.get("provider_display_name") or _provider_display_name(provider)
+    ).strip()
+    route_type = str(
+        route_metadata.get("route_type") or ("local" if is_local else "external")
+    ).strip()
+    return {
+        "model_profile_id": model_profile_id,
+        "provider": provider,
+        "provider_display_name": provider_display_name,
+        "route_type": route_type,
+        "is_local": is_local,
+        "is_external": is_external,
+    }
+
+
+def _store_route_metadata(session: Session, route_metadata: dict[str, object]) -> None:
+    session.metadata = {
+        **session.metadata,
+        **{key: value for key, value in route_metadata.items() if key in _ROUTE_METADATA_KEYS},
+    }
+
+
+def _log_model_route_decision(
+    *,
+    session: Session,
+    request_id: str | None,
+    correlation_id: str | None,
+    route_metadata: dict[str, object],
+) -> None:
+    _LOGGER.info(
+        (
+            "MODEL_ROUTE_DECISION session_id=%s request_id=%s correlation_id=%s "
+            "model_profile_id=%s provider=%s provider_display_name=%s route_type=%s "
+            "is_local=%s is_external=%s model=%s"
+        ),
+        session.id,
+        request_id,
+        correlation_id,
+        route_metadata.get("model_profile_id"),
+        route_metadata.get("provider"),
+        route_metadata.get("provider_display_name"),
+        route_metadata.get("route_type"),
+        route_metadata.get("is_local"),
+        route_metadata.get("is_external"),
+        _configured_model_name(),
+    )
+
+
+def _response_shape_flags(content: str) -> dict[str, bool]:
+    visible_text = _user_visible_text(content)
+    normalized = " ".join(visible_text.split())
+    lowered = normalized.lower()
+    stripped = normalized.rstrip()
+    looks_like_reasoning = bool(
+        re.match(
+            (
+                r"^(?:okay[, ]+)?(?:let me|i need to|i should|i will|first[, ]+i(?:'ll)?|"
+                r"step by step|let's work through)"
+            ),
+            lowered,
+        )
+    ) or ("step by step" in lowered and "i need to" in lowered)
+    contains_next_prefix = bool(re.search(r"(?:^|\s)next\s*$", stripped, flags=re.IGNORECASE))
+    ends_mid_sentence = bool(stripped) and stripped[-1] not in set(".!?)]}\"'")
+    return {
+        "looks_like_reasoning": looks_like_reasoning,
+        "ends_mid_sentence": ends_mid_sentence,
+        "contains_next_prefix": contains_next_prefix,
+    }
+
+
+def _evaluate_response_quality(content: str) -> dict[str, object]:
+    shape_flags = _response_shape_flags(content)
+    blocked = bool(shape_flags["looks_like_reasoning"] or shape_flags["contains_next_prefix"])
+    finish_reason = "quality_guard_blocked" if blocked else (
+        "incomplete" if shape_flags["ends_mid_sentence"] else "completed"
+    )
+    return {
+        "response_finish_reason": finish_reason,
+        "response_shape_flags": shape_flags,
+        "blocked": blocked,
+    }
+
+
+def _store_response_diagnostics(session: Session, diagnostics: dict[str, object]) -> None:
+    session.metadata = {
+        **session.metadata,
+        "response_finish_reason": diagnostics["response_finish_reason"],
+        "response_shape_flags": diagnostics["response_shape_flags"],
+    }
+
+
+def _quality_guard_fallback_message(*, session: Session) -> str:
+    normalized_country = (session.country or "").strip().upper()
+    normalized_language = (session.language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return (
+            "Ospravedlnujem sa, tuto odpoved nemozem bezpecne zobrazit, pretoze vyzera ako "
+            "nedokonceny interny vystup modelu. Skuste prosim poziadavku zopakovat este raz."
+        )
+    if normalized_country == "CZ" or normalized_language.startswith(("cs", "cz")):
+        return (
+            "Omlouvam se, tuto odpoved nemohu bezpecne zobrazit, protoze vypada jako "
+            "nedokonceny interni vystup modelu. Zkuste prosim pozadavek zopakovat jeste jednou."
+        )
+    if normalized_country in {"AT", "DE", "CH"} or normalized_language.startswith("de"):
+        return (
+            "Entschuldigung, diese Antwort kann ich nicht sicher anzeigen, weil sie wie eine "
+            "unvollstaendige interne Modellausgabe wirkt. Bitte versuchen Sie die Anfrage erneut."
+        )
+    return (
+        "I cannot safely show that answer because it appears to be an incomplete internal model output. "
+        "Please try the request again."
+    )
+
+
+def _emit_response_quality_audit_event(
+    *,
+    processing_event_callback: Callable[[dict[str, object]], None] | None,
+    diagnostics: dict[str, object],
+) -> None:
+    if processing_event_callback is None:
+        return
+    processing_event_callback(
+        {
+            "stage": "audit",
+            "status": "response_blocked",
+            "reason": diagnostics["response_finish_reason"],
+            "response_shape_flags": diagnostics["response_shape_flags"],
+        }
+    )
+
+
 def _assistant_requests_user_reply(content: str) -> bool:
     return "?" in content
 
@@ -424,6 +628,9 @@ def _run_direct_lawyer_turn(
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
+    route_metadata: dict[str, object] | None = None,
+    request_id: str | None = None,
+    correlation_id: str | None = None,
 ) -> tuple[Message, Message, str, list[dict[str, object]]]:
     persisted_user = _repository.add_message(
         Message(
@@ -446,6 +653,14 @@ def _run_direct_lawyer_turn(
 
     llm = get_llm_client()
     lawyer = create_lawyer_agent(llm, session.country)
+    resolved_route_metadata = route_metadata or _resolve_route_metadata(payload=None, session=session)
+    _store_route_metadata(session, resolved_route_metadata)
+    _log_model_route_decision(
+        session=session,
+        request_id=request_id,
+        correlation_id=correlation_id,
+        route_metadata=resolved_route_metadata,
+    )
 
     history = _repository.list_messages(session_id)
     prior_messages = history[:-1]
@@ -539,6 +754,21 @@ def _run_direct_lawyer_turn(
         sources=[],
         system_prompt_override=prompt_override,
     )
+    response_diagnostics = _evaluate_response_quality(lawyer_message.content)
+    _store_response_diagnostics(session, response_diagnostics)
+    if bool(response_diagnostics["blocked"]):
+        _emit_response_quality_audit_event(
+            processing_event_callback=processing_event_callback,
+            diagnostics=response_diagnostics,
+        )
+        sanitized_content = _quality_guard_fallback_message(session=session)
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=sanitized_content,
+            agent_name=lawyer_message.agent_name,
+        )
+        return persisted_user, persisted_lawyer, sanitized_content, preparation.processing_events
     normalized_lawyer_content = _enforce_single_question_turn(
         _prepend_document_status_note(
             reply=lawyer_message.content,
@@ -556,7 +786,7 @@ def _run_direct_lawyer_turn(
     return persisted_user, persisted_lawyer, visible_lawyer_content, preparation.processing_events
 
 
-class StartSessionStreamRequest(BaseModel):
+class StartSessionStreamRequest(RouteSelectionRequest):
     instruction: str
     documents: List[InputDocument] = Field(default_factory=list)
     question_timeout_seconds: float = 300
@@ -568,12 +798,14 @@ class StartSessionStreamRequest(BaseModel):
 
 @router.post("/sessions", response_model=Session)
 def create_session(payload: CreateSessionRequest) -> Session:
+    route_metadata = _resolve_route_metadata(payload=payload)
     session = Session(
         user_id=payload.user_id,
         case_id=payload.case_id,
         country=payload.country,
         language=payload.language,
         discussion_type=payload.discussion_type,
+        metadata=route_metadata,
     )
     created = _repository.create_session(session)
     _bootstrap_case_history_if_needed(session=created)
@@ -591,7 +823,7 @@ def create_message(payload: CreateMessageRequest) -> Message:
 
 
 @router.post("/sessions/{session_id}/reply", response_model=Message)
-def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
+def reply_to_session(session_id: UUID, payload: ReplyRequest, request: Request) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -604,6 +836,9 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         session_id=session_id,
         session=session,
         content=content,
+        route_metadata=_resolve_route_metadata(payload=payload, session=session),
+        request_id=getattr(request.state, "request_id", None),
+        correlation_id=getattr(request.state, "correlation_id", None),
     )
     _repository.set_result(
         session_id,
@@ -626,14 +861,21 @@ def list_session_messages(session_id: UUID) -> List[Message]:
 
 
 @router.post("/sessions/{session_id}/stream")
-def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> StreamingResponse:
+def stream_session(session_id: UUID, payload: StartSessionStreamRequest, request: Request) -> StreamingResponse:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if session.state == SessionState.COMPLETED:
         raise HTTPException(status_code=409, detail="Session already completed")
     if payload.user_simulation_mode == "ReadUser":
-        return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
+        return _stream_read_user_session(
+            session_id=session_id,
+            session=session,
+            payload=payload,
+            route_metadata=_resolve_route_metadata(payload=payload, session=session),
+            request_id=getattr(request.state, "request_id", None),
+            correlation_id=getattr(request.state, "correlation_id", None),
+        )
 
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
     replies = deque(payload.user_replies)
@@ -878,6 +1120,9 @@ def _stream_read_user_session(
     session_id: UUID,
     session: Session,
     payload: StartSessionStreamRequest,
+    route_metadata: dict[str, object],
+    request_id: str | None,
+    correlation_id: str | None,
 ) -> StreamingResponse:
     inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
@@ -897,6 +1142,9 @@ def _stream_read_user_session(
                 supplemental_documents=inline_documents,
                 processing_event_callback=processing_event_callback,
                 user_message_callback=user_message_callback,
+                route_metadata=route_metadata,
+                request_id=request_id,
+                correlation_id=correlation_id,
             )
             current_messages = _repository.list_messages(session_id)
             if not current_messages:
@@ -1253,6 +1501,9 @@ def _build_direct_reply_result(
             "document_requested": document_requested,
             "document_confirmed": document_confirmed,
             "document_ready": document_ready,
+            **_stored_route_metadata(session),
+            "response_finish_reason": session.metadata.get("response_finish_reason", "unknown"),
+            "response_shape_flags": session.metadata.get("response_shape_flags", {}),
         },
     )
     return SessionResult(
