@@ -23,6 +23,15 @@ print(
     "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
 )
 print(
+    "azure_foundry_v1 => GPT-5 and explicit v1/preview routes use the OpenAI-compatible "
+    "/openai/v1 path without a legacy api-version query parameter."
+)
+print(
+    "azure_foundry_v1_live_e2e => run scripts/run_issue_612_azure_foundry_e2e.ps1; "
+    "it uses isolated synthetic local state, the production EU Foundry connection, and "
+    "retains a sanitized final screenshot for at most seven days."
+)
+print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
     "verification on a verified browser; a new browser for a TOTP-enabled account offers both "
     "authenticator and email verification, while logout still ends the active session."

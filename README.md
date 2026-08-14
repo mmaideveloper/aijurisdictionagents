@@ -343,10 +343,14 @@ To use OpenAI, set:
 To use Azure Foundry (Azure OpenAI), set:
 
 - `LLM_PROVIDER=azurefoundry`
-- `AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/`
+- `AZURE_OPENAI_ENDPOINT=https://YOUR_RESOURCE_NAME.openai.azure.com/` or a Microsoft Foundry project endpoint such as `https://YOUR_RESOURCE.services.ai.azure.com/api/projects/YOUR_PROJECT`
 - `AZURE_OPENAI_DEPLOYMENT=your_deployment_name`
 - `AZURE_OPENAI_API_KEY=...` (or `AZURE_OPENAI_AD_TOKEN=...`)
-- `AZURE_OPENAI_API_VERSION=2024-12-01-preview` (optional override; GPT-5-family routes use the Azure OpenAI v1 preview API)
+- `AZURE_OPENAI_API_VERSION=2024-12-01-preview` (optional override; GPT-5-family routes use the OpenAI-compatible `/openai/v1` path)
+
+GPT-5-family and explicit `v1`/`preview` routes use the standard OpenAI client against
+`<endpoint>/openai/v1` and never send the legacy `api-version` query parameter. Dated API
+versions continue to use the legacy Azure OpenAI client for backward compatibility.
 
 Or use the minimal example script:
 

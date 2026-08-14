@@ -5,10 +5,11 @@ from dataclasses import dataclass
 import logging
 import ssl
 import time
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 import httpx
-from openai import APITimeoutError, AzureOpenAI
+from openai import APITimeoutError, AzureOpenAI, OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 import truststore
 
 from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
@@ -32,16 +33,23 @@ class AzureFoundryClient:
         self._config = config
         _clear_blank_azure_openai_auth_env()
         http_client = _build_system_trust_http_client()
-        client_kwargs = _build_azure_client_kwargs(config)
-        if config.azure_ad_token:
+        if _uses_v1_api(config.api_version):
+            self._client: OpenAI | AzureOpenAI = OpenAI(
+                base_url=_build_v1_base_url(config.endpoint),
+                api_key=config.azure_ad_token or config.api_key,
+                http_client=http_client,
+            )
+        elif config.azure_ad_token:
             self._client = AzureOpenAI(
-                **client_kwargs,
+                azure_endpoint=config.endpoint,
+                api_version=config.api_version.strip(),
                 azure_ad_token=config.azure_ad_token,
                 http_client=http_client,
             )
         else:
             self._client = AzureOpenAI(
-                **client_kwargs,
+                azure_endpoint=config.endpoint,
+                api_version=config.api_version.strip(),
                 api_key=config.api_key,
                 http_client=http_client,
             )
@@ -53,7 +61,7 @@ class AzureFoundryClient:
         conversation: Sequence[Message],
         documents: Sequence[Document],
     ) -> str:
-        messages = [{"role": "system", "content": system_prompt}]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         if documents:
             messages.append({"role": "system", "content": _render_documents(documents)})
 
@@ -76,7 +84,7 @@ class AzureFoundryClient:
             response = self._client.chat.completions.create(
                 model=self._config.deployment,
                 temperature=self._config.temperature,
-                messages=messages,
+                messages=cast(Iterable[ChatCompletionMessageParam], messages),
             )
         except APITimeoutError as exc:
             raise ModelProcessingTimeout(
@@ -156,17 +164,15 @@ def _clear_blank_azure_openai_auth_env() -> None:
     _optional_env("AZURE_OPENAI_AD_TOKEN")
 
 
-def _build_azure_client_kwargs(config: AzureFoundryConfig) -> dict[str, str]:
-    api_version = config.api_version.strip()
-    if api_version.lower() in {"v1", "preview"}:
-        return {
-            "base_url": f"{config.endpoint.rstrip('/')}/openai/v1",
-            "api_version": "preview",
-        }
-    return {
-        "azure_endpoint": config.endpoint,
-        "api_version": api_version,
-    }
+def _uses_v1_api(api_version: str) -> bool:
+    return api_version.strip().lower() in {"v1", "preview"}
+
+
+def _build_v1_base_url(endpoint: str) -> str:
+    normalized = endpoint.rstrip("/")
+    if normalized.endswith("/openai/v1"):
+        return normalized
+    return f"{normalized}/openai/v1"
 
 
 def _build_system_trust_http_client() -> httpx.Client:
@@ -174,7 +180,7 @@ def _build_system_trust_http_client() -> httpx.Client:
     return httpx.Client(verify=context)
 
 
-def _client_timeout_seconds(client: AzureOpenAI) -> float | None:
+def _client_timeout_seconds(client: OpenAI | AzureOpenAI) -> float | None:
     timeout = getattr(client, "timeout", None)
     read_timeout = getattr(timeout, "read", None)
     return float(read_timeout) if isinstance(read_timeout, (int, float)) else None
