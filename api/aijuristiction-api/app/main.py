@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.cases_api import router as cases_router
+from app.case_types.api import router as case_types_router
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
 from app.admin_cases_api import router as admin_cases_router
@@ -270,6 +271,7 @@ app.include_router(flow_packs_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(case_types_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)

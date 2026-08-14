@@ -20,6 +20,11 @@ The initial seed now contains the user-provided Slovak template groups:
 - Plne moci a autorizacie
 - Nehnutelnosti a najom
 
+It now also seeds a deterministic snapshot of the direct template/form entries listed on the Ministry of Justice SR page
+`https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/` as reviewed on August 14, 2026.
+This import boundary intentionally excludes nested external subcatalog contents such as `eZaloby`, `spravcovia`,
+or other linked collections that require opening a second index page.
+
 ## Storage
 
 Runtime data uses SQLite under repository runtime storage:
@@ -37,6 +42,22 @@ Notes:
 - delete is implemented as soft delete
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
+- the same catalog database now also stores `case_types`, `case_type_templates`, and `case_prompts`
+
+## Case Types And Prompts
+
+The same backing catalog database now stores reusable case metadata on top of `document_templates`:
+
+- `case_types`: stable case IDs/keys, names, short descriptions, keywords, and enable/delete flags
+- `case_type_templates`: many-to-many links from a case type to zero, one, or many suitable templates
+- `case_prompts`: exactly one editable stored reusable prompt per case type
+
+Default behavior:
+
+- every seeded template creates one seeded case type with the same title
+- every seeded case type gets one generic reusable prompt
+- manually created case types can exist without any linked template
+- linked templates can be added later without reseeding the catalog
 
 ## Endpoints
 
@@ -49,6 +70,12 @@ All endpoints require `x-api-key`.
 - `DELETE /v1/document-templates/{template_key}?jurisdiction=SK`
 - `GET /v1/document-templates/match/search?request_text=...&country=SK&template_kind=rental_agreement`
 - `GET /v1/document-templates/{template_key}/preview/pdf?jurisdiction=SK`
+- `GET /v1/case-types?jurisdiction=SK`
+- `GET /v1/case-types/{case_type_key}?jurisdiction=SK`
+- `POST /v1/case-types`
+- `PATCH /v1/case-types/{case_type_key}?jurisdiction=SK`
+- `DELETE /v1/case-types/{case_type_key}?jurisdiction=SK`
+- `GET /v1/case-types/resolve/search?request_text=...&country=SK`
 
 Template payloads also support:
 
@@ -70,6 +97,25 @@ This is intended as the selection layer for future contract rendering:
 1. detect the client request intent
 2. find the best template candidate
 3. render a concrete draft by filling placeholders from extracted facts
+
+## Case-Type Resolution Behavior
+
+The case-type resolve endpoint scores case types using:
+
+- case-type name
+- case-type keywords
+- case-type description
+- linked template titles and keywords
+
+If no direct case-type score is found, the store falls back to template matching and then resolves the linked case type
+for the matched template when possible.
+
+This allows the system to:
+
+1. infer which legal case the user likely wants to work on
+2. retrieve the reusable prompt for that case type
+3. check whether one or more suitable templates already exist in `document_templates`
+4. continue gracefully even when a case type currently has no template
 
 ## Chat Export Behavior
 
@@ -194,6 +240,12 @@ Recommended runtime folder:
 
 ```bash
 python examples/document_templates_minimal_demo.py
+```
+
+Resolve a case type and inspect its linked templates/prompt:
+
+```bash
+python examples/case_types_minimal_demo.py
 ```
 
 Generate one sample third-party corporate PDF output:
