@@ -2,7 +2,7 @@
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AIModelAdmin from "../pages/AIModelAdmin";
 
@@ -557,6 +557,9 @@ describe("AIModelAdmin Ollama management", () => {
 
     await user.click(await screen.findByRole("button", { name: /adminProfilesTitle/ }));
     await user.click(screen.getAllByRole("button", { name: /adminEdit/ }).at(0) as HTMLElement);
+    fireEvent.change(screen.getByLabelText("adminProfileModelParameters"), {
+      target: { value: '{"temperature":null,"max_tokens":512}' }
+    });
     await user.type(screen.getByLabelText("adminReason"), "Update model profile.");
     await user.click(screen.getByRole("button", { name: /adminSaveProfile/ }));
 
@@ -565,6 +568,7 @@ describe("AIModelAdmin Ollama management", () => {
         expect.objectContaining({ userId: "admin-1" }),
         expect.objectContaining({
           model_profile_id: "local_ollama_default",
+          model_parameters: { temperature: null, max_tokens: 512 },
           reason: "Update model profile."
         })
       );

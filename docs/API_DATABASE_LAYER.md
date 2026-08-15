@@ -210,8 +210,8 @@ python examples/subscription_minimal_demo.py
 
 The API database now includes a policy-driven model routing foundation:
 
-- `ai_model_providers`: local or external provider metadata such as `local_ollama`, `azure_foundry`, `openai`, base URL, region, data zone, API version, and health URL.
-- `ai_model_profiles`: provider model/deployment metadata plus context window, default-free-plan marker, and price-per-1M-token metadata.
+- `ai_model_providers`: local or external provider metadata such as `local_ollama`, `azure_foundry`, `openai`, base URL, region, data zone, API version, health URL, and validated non-secret request-parameter defaults.
+- `ai_model_profiles`: provider model/deployment metadata plus context window, default-free-plan marker, price-per-1M-token metadata, and validated per-deployment request-parameter overrides.
 - `ai_model_credentials`: encrypted provider secrets such as API keys or Azure AD tokens. The runtime decrypts these only when a selected route needs them; admin endpoints redact secret values unless an authorized admin explicitly requests reveal.
 - `ai_model_groups` and `ai_model_group_users`: optional assignment of users to model groups for staged rollout or premium routing.
 - `ai_model_user_overrides`: one current per-user direct model override. Admins can assign any enabled local or external model profile to a user, update the assignment, or disable it with a mandatory reason. Disabled rows remain for operational traceability while `ai_model_admin_audit_events` preserves create/update/disable history.
@@ -226,6 +226,22 @@ For the production web app, email/password or MFA sign-in returns a device-bound
 
 Web MFA login challenges expire after 10 minutes and are single-use, including after an unsuccessful verification attempt. This limits replay and brute-force opportunities. When verification reports an invalid or expired challenge, the web client must discard its challenge token, remove the MFA form, and re-enable password sign-in so the user can obtain a fresh challenge without refreshing the page. Client and server logs must not include the MFA token, TOTP secret, or verification code; this preserves data minimization while keeping the authentication transition traceable at the request level.
 Keep external-provider API keys in backend secrets and store only provider references, base URLs, deployment names, data-zone flags, prices, and health URLs in these tables.
+
+`model_parameters_json` is additive configuration on both providers and profiles. Provider parameters are merged first and profile parameters take precedence. A profile value of JSON `null` removes an inherited key; the client then omits that keyword rather than inventing a replacement value. This is required for mixed Azure Foundry portfolios where, for example, `gpt-4o-mini` may accept `temperature: 0.2` while `gpt-5-mini` accepts only its model default. Supported scalar keys are allowlisted and type/range checked before persistence. Unknown keys, nested objects, credentials, endpoints, prompts, and case/user data are rejected. Admin audit summaries retain only sorted parameter names, not values.
+
+Example provider defaults:
+
+```json
+{"temperature": 0.2, "top_p": 0.9}
+```
+
+Example `gpt-5-mini` profile override:
+
+```json
+{"temperature": null, "max_completion_tokens": 512}
+```
+
+The effective request contains `top_p` and `max_completion_tokens`; `temperature` is absent. Rollback is configuration-only: replace both JSON objects with `{}`. The additive columns remain in place so existing routes and audit history stay readable.
 Provider deletion is soft-delete only. `DELETE /v1/admin/ai-models/providers/{provider_id}` sets provider delete metadata, disables the provider, disables linked model profiles and credentials, and records a `provider.soft_delete` audit event without returning or logging provider secrets. Deleted providers stay in the database and audit trail, but dashboard tables, routing, and normal selectable provider lists exclude deleted providers.
 Admin routing records use the same table-first lifecycle pattern: Providers, `Modely a ceny`, `Používateľské skupiny`, and `Smerovacie politiky` first show active records in a table, then expose Add/Edit forms with Save/Cancel. Delete operations for providers, model profiles, groups, and route policies are soft deletes with audit events and are hidden from normal Admin tables after refresh. Default free model profiles and profiles referenced by enabled route policies cannot be deleted until the default or policy reference is changed.
 

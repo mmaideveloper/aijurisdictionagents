@@ -6,6 +6,7 @@ from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizer
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
+from aijurisdictionagents.model_parameters import merge_model_parameters
 
 print(
     "local_model_timeout => "
@@ -302,7 +303,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         plan_code="free",
         task_type="chat_reply",
     )
-    demo_store.upsert_ai_model_provider(
+    azure_provider = demo_store.upsert_ai_model_provider(
         provider_code="azure_foundry",
         provider_type="azurefoundry",
         display_name="Azure AI Foundry",
@@ -310,7 +311,22 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         api_version="2024-12-01-preview",
         data_zone="eu",
         is_external=True,
+        model_parameters={"temperature": 0.2},
     )
+    gpt_5_mini_profile = demo_store.upsert_ai_model_profile(
+        model_profile_id="azure_foundry_gpt_5_mini_demo",
+        provider_id=azure_provider.provider_id,
+        model_code="gpt-5-mini",
+        deployment_name="gpt-5-mini",
+        eu_data_zone_capable=True,
+        model_parameters={"temperature": None, "max_completion_tokens": 512},
+    )
+    gpt_5_mini_parameters = merge_model_parameters(
+        azure_provider.model_parameters,
+        gpt_5_mini_profile.model_parameters,
+        provider_type=azure_provider.provider_type,
+    )
+    print(f"model_parameters_gpt_5_mini => {gpt_5_mini_parameters}")
     case_route = demo_store.resolve_ai_model_route(
         user_id=demo_user.user_id,
         plan_code="case",

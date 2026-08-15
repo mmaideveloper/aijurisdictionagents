@@ -1,5 +1,7 @@
 import { chatApiRuntimeConfig } from "./chatClient";
 
+export type ModelParameters = Record<string, boolean | number | string | null>;
+
 export interface AIModelProvider {
   provider_id: string;
   provider_code: string;
@@ -12,6 +14,7 @@ export interface AIModelProvider {
   is_external: boolean;
   is_local: boolean;
   health_check_url: string;
+  model_parameters?: ModelParameters;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -25,6 +28,7 @@ export interface AIModelProfile {
   provider_id: string;
   model_code: string;
   deployment_name: string;
+  model_parameters?: ModelParameters;
   context_window_tokens: number;
   input_price_per_1m: number;
   cached_input_price_per_1m: number;
@@ -273,6 +277,7 @@ export interface ProviderUpsertInput {
   region: string;
   data_zone: string;
   health_check_url: string;
+  model_parameters: ModelParameters;
   is_external: boolean;
   is_local: boolean;
   enabled: boolean;
@@ -284,6 +289,7 @@ export interface ProfileUpsertInput {
   provider_id: string;
   model_code: string;
   deployment_name: string;
+  model_parameters: ModelParameters;
   input_price_per_1m: number;
   cached_input_price_per_1m: number;
   output_price_per_1m: number;
