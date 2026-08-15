@@ -157,6 +157,11 @@ const AIModelAdmin: React.FC = () => {
   const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
+  const [formSubmitting, setFormSubmitting] = React.useState(false);
+  const formSubmittingRef = React.useRef(false);
+  const editFormRef = React.useRef<HTMLFormElement | null>(null);
+  const adminContentRef = React.useRef<HTMLElement | null>(null);
+  const formWasOpenRef = React.useRef(false);
 
   const adminUserId = user?.userId ?? "";
   const adminAuth = React.useMemo(
@@ -322,6 +327,20 @@ const AIModelAdmin: React.FC = () => {
     }
   };
 
+  const runFormAction = async (action: () => Promise<unknown>, successMessage: string) => {
+    if (formSubmittingRef.current) {
+      return false;
+    }
+    formSubmittingRef.current = true;
+    setFormSubmitting(true);
+    try {
+      return await runAction(action, successMessage);
+    } finally {
+      formSubmittingRef.current = false;
+      setFormSubmitting(false);
+    }
+  };
+
   const deleteAdminCase = async (caseItem: AdminCaseSummary) => {
     if (!selectedCaseUser || !caseDeleteReason.trim()) {
       setError(t("adminCasesReasonRequired"));
@@ -441,7 +460,7 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveUserForm = async () => {
-    const saved = await runAction(
+    const saved = await runFormAction(
       () => updateAdminUser(adminAuth, userForm.user_id, {
         role: userForm.role,
         is_enabled: userForm.is_enabled,
@@ -501,7 +520,7 @@ const AIModelAdmin: React.FC = () => {
   };
   const saveCredentialForm = async () => {
     const isExistingWithoutSecret = Boolean(credentialForm.credential_id) && !credentialForm.secret_value.trim();
-    const saved = await runAction(
+    const saved = await runFormAction(
       () => isExistingWithoutSecret
         ? patchAIModelCredential(adminAuth, credentialForm.credential_id as string, {
           enabled: credentialForm.enabled,
@@ -547,7 +566,7 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveProviderAdminForm = async () => {
-    const saved = await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
+    const saved = await runFormAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
     if (saved) {
       setProviderForm(emptyProvider);
       setProviderMode("table");
@@ -587,7 +606,7 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveProfileForm = async () => {
-    const saved = await runAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminProfileSaved"));
+    const saved = await runFormAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminProfileSaved"));
     if (saved) {
       setProfileForm(emptyProfile);
       setProfileMode("table");
@@ -669,7 +688,7 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveGroupForm = async () => {
-    const saved = await runAction(() => upsertAIModelGroup(adminAuth, groupForm), t("adminGroupSaved"));
+    const saved = await runFormAction(() => upsertAIModelGroup(adminAuth, groupForm), t("adminGroupSaved"));
     if (saved) {
       setGroupForm(emptyGroup);
       setGroupMode("table");
@@ -706,7 +725,7 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const savePolicyForm = async () => {
-    const saved = await runAction(() => upsertAIModelRoutePolicy(adminAuth, policyForm), t("adminPolicySaved"));
+    const saved = await runFormAction(() => upsertAIModelRoutePolicy(adminAuth, policyForm), t("adminPolicySaved"));
     if (saved) {
       setPolicyForm(emptyPolicy);
       setPolicyMode("table");
@@ -729,11 +748,49 @@ const AIModelAdmin: React.FC = () => {
     await reloadOllama();
   };
   const selectAdminSection = (section: AdminSection) => {
+    setUserMode("table");
+    setProviderMode("table");
+    setProviderCredentialsMode("table");
+    setProfileMode("table");
+    setGroupMode("table");
+    setPolicyMode("table");
+    setUserForm(emptyUserForm);
+    setProviderForm(emptyProvider);
+    setCredentialForm(emptyCredential);
+    setProfileForm(emptyProfile);
+    setGroupForm(emptyGroup);
+    setPolicyForm(emptyPolicy);
+    setStatus("");
+    setError("");
     setActiveSection(section);
     if (section === "ollama") {
       void reloadOllama();
     }
   };
+
+  const activeFormMode: AdminFormMode = activeSection === "users"
+    ? userMode
+    : activeSection === "providers"
+      ? providerMode
+      : activeSection === "profiles"
+        ? profileMode
+        : activeSection === "credentials"
+          ? providerCredentialsMode
+          : activeSection === "groups"
+            ? groupMode
+            : activeSection === "policies"
+              ? policyMode
+              : "table";
+
+  React.useEffect(() => {
+    const formIsOpen = activeFormMode !== "table";
+    if (formIsOpen) {
+      editFormRef.current?.focus();
+    } else if (formWasOpenRef.current) {
+      adminContentRef.current?.focus();
+    }
+    formWasOpenRef.current = formIsOpen;
+  }, [activeFormMode, activeSection]);
 
   const sections: Array<{ key: AdminSection; label: string; icon: React.ReactNode }> = [
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
@@ -785,78 +842,81 @@ const AIModelAdmin: React.FC = () => {
           ))}
         </aside>
 
-        <section className="admin-content">
+        <section className="admin-content" ref={adminContentRef} tabIndex={-1}>
           {activeSection === "users" ? (
             <section className="admin-table-section">
               <h2>{t("adminUsersTitle")}</h2>
-              <div className="admin-table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("adminUser")}</th>
-                      <th>{t("adminRole")}</th>
-                      <th>{t("adminStatus")}</th>
-                      <th>{t("adminAction")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleUsers.map((item) => (
-                      <tr key={item.user_id}>
-                        <td>{item.full_name} ({item.email})</td>
-                        <td>{item.role}</td>
-                        <td>{item.is_enabled ? t("adminEnabled") : t("adminDisabled")}</td>
-                        <td>
-                          <div className="admin-inline-actions">
-                            <button className="button ghost" type="button" onClick={() => showUserEditForm(item)}>
-                              <FaEdit aria-hidden="true" />{t("adminEdit")}
-                            </button>
-                            <button
-                              className="button ghost"
-                              type="button"
-                              onClick={() => void runAction(
-                                () => updateAdminUser(adminAuth, item.user_id, {
-                                  role: item.role === "admin" ? "user" : "admin",
-                                  is_enabled: item.is_enabled,
-                                  reason: "Updated from admin user management."
-                                }),
-                                t("adminUserSaved")
-                              )}
-                            >
-                              {item.role === "admin" ? t("adminMakeUser") : t("adminMakeAdmin")}
-                            </button>
-                            <button
-                              className="button ghost"
-                              type="button"
-                              onClick={() => void runAction(
-                                () => updateAdminUser(adminAuth, item.user_id, {
-                                  role: item.role === "admin" ? "admin" : "user",
-                                  is_enabled: !item.is_enabled,
-                                  reason: "Updated from admin user management."
-                                }),
-                                t("adminUserSaved")
-                              )}
-                            >
-                              {item.is_enabled ? t("adminDisableUser") : t("adminEnableUser")}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!visibleUsers.length ? <p className="admin-muted">{t("adminEmptyUsers")}</p> : null}
-              </div>
-              <div className="admin-pagination">
-                <span>{t("adminPaginationSummary", {
-                  start: usersTotal ? usersOffset + 1 : 0,
-                  end: Math.min(usersOffset + usersLimit, usersTotal),
-                  total: usersTotal
-                })}</span>
-                <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
-                <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
-              </div>
-              {userMode !== "table" ? (
-                <form className="admin-form-stack" onSubmit={(event) => {
+              {userMode === "table" ? (
+                <>
+                  <div className="admin-table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>{t("adminUser")}</th>
+                          <th>{t("adminRole")}</th>
+                          <th>{t("adminStatus")}</th>
+                          <th>{t("adminAction")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleUsers.map((item) => (
+                          <tr key={item.user_id}>
+                            <td>{item.full_name} ({item.email})</td>
+                            <td>{item.role}</td>
+                            <td>{item.is_enabled ? t("adminEnabled") : t("adminDisabled")}</td>
+                            <td>
+                              <div className="admin-inline-actions">
+                                <button className="button ghost" type="button" onClick={() => showUserEditForm(item)}>
+                                  <FaEdit aria-hidden="true" />{t("adminEdit")}
+                                </button>
+                                <button
+                                  className="button ghost"
+                                  type="button"
+                                  onClick={() => void runAction(
+                                    () => updateAdminUser(adminAuth, item.user_id, {
+                                      role: item.role === "admin" ? "user" : "admin",
+                                      is_enabled: item.is_enabled,
+                                      reason: "Updated from admin user management."
+                                    }),
+                                    t("adminUserSaved")
+                                  )}
+                                >
+                                  {item.role === "admin" ? t("adminMakeUser") : t("adminMakeAdmin")}
+                                </button>
+                                <button
+                                  className="button ghost"
+                                  type="button"
+                                  onClick={() => void runAction(
+                                    () => updateAdminUser(adminAuth, item.user_id, {
+                                      role: item.role === "admin" ? "admin" : "user",
+                                      is_enabled: !item.is_enabled,
+                                      reason: "Updated from admin user management."
+                                    }),
+                                    t("adminUserSaved")
+                                  )}
+                                >
+                                  {item.is_enabled ? t("adminDisableUser") : t("adminEnableUser")}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {!visibleUsers.length ? <p className="admin-muted">{t("adminEmptyUsers")}</p> : null}
+                  </div>
+                  <div className="admin-pagination">
+                    <span>{t("adminPaginationSummary", {
+                      start: usersTotal ? usersOffset + 1 : 0,
+                      end: Math.min(usersOffset + usersLimit, usersTotal),
+                      total: usersTotal
+                    })}</span>
+                    <button className="secondary-button" type="button" disabled={usersOffset <= 0} onClick={() => void loadUsersPage(usersOffset - usersLimit)}>{t("adminPrevious")}</button>
+                    <button className="secondary-button" type="button" disabled={usersOffset + usersLimit >= usersTotal} onClick={() => void loadUsersPage(usersOffset + usersLimit)}>{t("adminNext")}</button>
+                  </div>
+                </>
+              ) : (
+                <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                   event.preventDefault();
                   void saveUserForm();
                 }}>
@@ -868,11 +928,11 @@ const AIModelAdmin: React.FC = () => {
                   </div>
                   <label>{t("adminReason")}<input value={userForm.reason} onChange={(event) => setUserForm({ ...userForm, reason: event.target.value })} /></label>
                   <div className="admin-inline-actions">
-                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveUser")}</button>
-                    <button className="button ghost" type="button" onClick={cancelUserForm}>{t("adminCancel")}</button>
+                    <button className="primary-button" type="submit" disabled={formSubmitting}><FaCheck aria-hidden="true" />{t("adminSaveUser")}</button>
+                    <button className="button ghost" type="button" onClick={cancelUserForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                   </div>
                 </form>
-              ) : null}
+              )}
             </section>
           ) : null}
 
@@ -1083,30 +1143,31 @@ const AIModelAdmin: React.FC = () => {
             <section className="admin-panel">
               <h2>{t("adminProvidersTitle")}</h2>
               {providerMode === "table" ? (
-                <button className="primary-button" type="button" onClick={showProviderAdminCreateForm}>
-                  <FaPlus aria-hidden="true" />{t("adminAddProvider")}
-                </button>
-              ) : null}
-              <AdminRecordsTable
-                emptyLabel={t("adminEmptyProviders")}
-                headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus"), t("adminAction")]}
-                rows={activeProviders.map((provider) => [
-                  provider.display_name,
-                  provider.provider_type,
-                  provider.base_url || provider.health_check_url || t("adminNotConfigured"),
-                  provider.enabled ? t("adminEnabled") : t("adminDisabled"),
-                  <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => showProviderAdminEditForm(provider)}>
-                      <FaEdit aria-hidden="true" />{t("adminEdit")}
-                    </button>
-                    <button className="button ghost" type="button" onClick={() => void deleteProviderFromCredentials(provider)}>
-                      <FaTrash aria-hidden="true" />{t("adminDeleteProvider")}
-                    </button>
-                  </div>
-                ])}
-              />
-              {providerMode !== "table" ? (
-                <form className="admin-form-stack" onSubmit={(event) => {
+                <>
+                  <button className="primary-button" type="button" onClick={showProviderAdminCreateForm}>
+                    <FaPlus aria-hidden="true" />{t("adminAddProvider")}
+                  </button>
+                  <AdminRecordsTable
+                    emptyLabel={t("adminEmptyProviders")}
+                    headers={[t("adminProviderCode"), t("adminProviderType"), t("adminBaseUrl"), t("adminStatus"), t("adminAction")]}
+                    rows={activeProviders.map((provider) => [
+                      provider.display_name,
+                      provider.provider_type,
+                      provider.base_url || provider.health_check_url || t("adminNotConfigured"),
+                      provider.enabled ? t("adminEnabled") : t("adminDisabled"),
+                      <div className="admin-inline-actions">
+                        <button className="button ghost" type="button" onClick={() => showProviderAdminEditForm(provider)}>
+                          <FaEdit aria-hidden="true" />{t("adminEdit")}
+                        </button>
+                        <button className="button ghost" type="button" onClick={() => void deleteProviderFromCredentials(provider)}>
+                          <FaTrash aria-hidden="true" />{t("adminDeleteProvider")}
+                        </button>
+                      </div>
+                    ])}
+                  />
+                </>
+              ) : (
+                <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                   event.preventDefault();
                   void saveProviderAdminForm();
                 }}>
@@ -1126,11 +1187,11 @@ const AIModelAdmin: React.FC = () => {
                   </div>
                   <label>{t("adminReason")}<input value={providerForm.reason} onChange={(event) => setProviderForm({ ...providerForm, reason: event.target.value })} /></label>
                   <div className="admin-inline-actions">
-                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveProvider")}</button>
-                    <button className="button ghost" type="button" onClick={cancelProviderAdminForm}>{t("adminCancel")}</button>
+                    <button className="primary-button" type="submit" disabled={formSubmitting}><FaCheck aria-hidden="true" />{t("adminSaveProvider")}</button>
+                    <button className="button ghost" type="button" onClick={cancelProviderAdminForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                   </div>
                 </form>
-              ) : null}
+              )}
             </section>
           ) : null}
 
@@ -1138,48 +1199,49 @@ const AIModelAdmin: React.FC = () => {
             <section className="admin-panel">
               <h2>{t("adminProfilesTitle")}</h2>
               {profileMode === "table" ? (
-                <button className="primary-button" type="button" onClick={showProfileCreateForm}>
-                  <FaPlus aria-hidden="true" />{t("adminAddProfile")}
-                </button>
-              ) : null}
-              <AdminRecordsTable
-                emptyLabel={t("adminEmptyProfiles")}
-                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
-                rows={activeProfiles.map((profile) => [
-                  profile.model_profile_id,
-                  providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
-                  profile.deployment_name || profile.model_code,
-                  `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
-                  `${profile.enabled ? t("adminEnabled") : t("adminDisabled")}${profile.is_default_for_free ? `, ${t("adminDefaultFreeModel")}` : ""}`,
-                  <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => showProfileEditForm(profile)}>
-                      <FaEdit aria-hidden="true" />{t("adminEdit")}
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => void saveProfileChange(
-                        profile,
-                        {
-                          enabled: true,
-                          is_default_for_free: true,
-                          reason: "Set as the default local model for free accounts."
-                        },
-                        t("adminDefaultLocalModelSet")
-                      )}
-                      hidden={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
-                    >
-                      <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
-                    </button>
-                    <button className="button ghost" type="button" onClick={() => void deleteProfileFromAdmin(profile)}>
-                      <FaTrash aria-hidden="true" />{t("adminDelete")}
-                    </button>
-                  </div>
-                ])}
-              />
-              <p className="admin-muted">{t("adminCurrentFreeModel")}: <strong>{freeDefaultLabel}</strong></p>
-              {profileMode !== "table" ? (
-                <form className="admin-form-stack" onSubmit={(event) => {
+                <>
+                  <button className="primary-button" type="button" onClick={showProfileCreateForm}>
+                    <FaPlus aria-hidden="true" />{t("adminAddProfile")}
+                  </button>
+                  <AdminRecordsTable
+                    emptyLabel={t("adminEmptyProfiles")}
+                    headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
+                    rows={activeProfiles.map((profile) => [
+                      profile.model_profile_id,
+                      providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
+                      profile.deployment_name || profile.model_code,
+                      `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
+                      `${profile.enabled ? t("adminEnabled") : t("adminDisabled")}${profile.is_default_for_free ? `, ${t("adminDefaultFreeModel")}` : ""}`,
+                      <div className="admin-inline-actions">
+                        <button className="button ghost" type="button" onClick={() => showProfileEditForm(profile)}>
+                          <FaEdit aria-hidden="true" />{t("adminEdit")}
+                        </button>
+                        <button
+                          className="button ghost"
+                          type="button"
+                          onClick={() => void saveProfileChange(
+                            profile,
+                            {
+                              enabled: true,
+                              is_default_for_free: true,
+                              reason: "Set as the default local model for free accounts."
+                            },
+                            t("adminDefaultLocalModelSet")
+                          )}
+                          hidden={profile.is_default_for_free || !(providerById.get(profile.provider_id)?.is_local ?? false)}
+                        >
+                          <FaCheck aria-hidden="true" />{t("adminSetFreeDefault")}
+                        </button>
+                        <button className="button ghost" type="button" onClick={() => void deleteProfileFromAdmin(profile)}>
+                          <FaTrash aria-hidden="true" />{t("adminDelete")}
+                        </button>
+                      </div>
+                    ])}
+                  />
+                  <p className="admin-muted">{t("adminCurrentFreeModel")}: <strong>{freeDefaultLabel}</strong></p>
+                </>
+              ) : (
+                <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                   event.preventDefault();
                   void saveProfileForm();
                 }}>
@@ -1198,11 +1260,11 @@ const AIModelAdmin: React.FC = () => {
                   </div>
                   <label>{t("adminReason")}<input value={profileForm.reason} onChange={(event) => setProfileForm({ ...profileForm, reason: event.target.value })} /></label>
                   <div className="admin-inline-actions">
-                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveProfile")}</button>
-                    <button className="button ghost" type="button" onClick={cancelProfileForm}>{t("adminCancel")}</button>
+                    <button className="primary-button" type="submit" disabled={formSubmitting}><FaCheck aria-hidden="true" />{t("adminSaveProfile")}</button>
+                    <button className="button ghost" type="button" onClick={cancelProfileForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                   </div>
                 </form>
-              ) : null}
+              )}
             </section>
           ) : null}
 
@@ -1211,39 +1273,40 @@ const AIModelAdmin: React.FC = () => {
               <h2>{t("adminCredentialsTitle")}</h2>
               <p className="admin-muted">{t("adminCredentialsHelp")}</p>
               {providerCredentialsMode === "table" ? (
-                <button className="primary-button" type="button" onClick={showCredentialCreateForm}>
-                  <FaPlus aria-hidden="true" />{t("adminSaveCredential")}
-                </button>
-              ) : null}
-              <AdminRecordsTable
-                emptyLabel={t("adminEmptyCredentials")}
-                headers={[t("adminProvider"), t("adminCredentialName"), t("adminCredentialType"), t("adminCredentialPreview"), t("adminStatus"), t("adminAction")]}
-                rows={(dashboard?.credentials ?? []).map((credential) => [
-                  providerById.get(credential.provider_id)?.display_name ?? credential.provider_id,
-                  credential.credential_name,
-                  credential.secret_type,
-                  credential.secret_preview || t("adminNotConfigured"),
-                  credential.enabled ? t("adminEnabled") : t("adminDisabled"),
-                  <div className="admin-inline-actions">
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => showCredentialEditForm(credential)}
-                    >
-                      <FaEdit aria-hidden="true" />{t("adminEdit")}
-                    </button>
-                    <button
-                      className="button ghost"
-                      type="button"
-                      onClick={() => void toggleCredential(credential)}
-                    >
-                      <FaCheck aria-hidden="true" />{credential.enabled ? t("adminDisableCredential") : t("adminEnableCredential")}
-                    </button>
-                  </div>
-                ])}
-              />
-              {providerCredentialsMode !== "table" ? (
-                <form className="admin-form-stack" onSubmit={(event) => {
+                <>
+                  <button className="primary-button" type="button" onClick={showCredentialCreateForm}>
+                    <FaPlus aria-hidden="true" />{t("adminSaveCredential")}
+                  </button>
+                  <AdminRecordsTable
+                    emptyLabel={t("adminEmptyCredentials")}
+                    headers={[t("adminProvider"), t("adminCredentialName"), t("adminCredentialType"), t("adminCredentialPreview"), t("adminStatus"), t("adminAction")]}
+                    rows={(dashboard?.credentials ?? []).map((credential) => [
+                      providerById.get(credential.provider_id)?.display_name ?? credential.provider_id,
+                      credential.credential_name,
+                      credential.secret_type,
+                      credential.secret_preview || t("adminNotConfigured"),
+                      credential.enabled ? t("adminEnabled") : t("adminDisabled"),
+                      <div className="admin-inline-actions">
+                        <button
+                          className="button ghost"
+                          type="button"
+                          onClick={() => showCredentialEditForm(credential)}
+                        >
+                          <FaEdit aria-hidden="true" />{t("adminEdit")}
+                        </button>
+                        <button
+                          className="button ghost"
+                          type="button"
+                          onClick={() => void toggleCredential(credential)}
+                        >
+                          <FaCheck aria-hidden="true" />{credential.enabled ? t("adminDisableCredential") : t("adminEnableCredential")}
+                        </button>
+                      </div>
+                    ])}
+                  />
+                </>
+              ) : (
+                <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                   event.preventDefault();
                   void saveCredentialForm();
                 }}>
@@ -1257,43 +1320,44 @@ const AIModelAdmin: React.FC = () => {
                   </div>
                   <label>{t("adminReason")}<input value={credentialForm.reason} onChange={(event) => setCredentialForm({ ...credentialForm, reason: event.target.value })} /></label>
                   <div className="admin-inline-actions">
-                    <button className="primary-button" type="submit"><FaKey aria-hidden="true" />{t("adminSaveCredential")}</button>
-                    <button className="button ghost" type="button" onClick={cancelCredentialForm}>{t("adminCancel")}</button>
+                    <button className="primary-button" type="submit" disabled={formSubmitting}><FaKey aria-hidden="true" />{t("adminSaveCredential")}</button>
+                    <button className="button ghost" type="button" onClick={cancelCredentialForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                   </div>
                 </form>
-              ) : null}
+              )}
             </section>
           ) : null}
 
           {activeSection === "groups" ? (
-            <section className="admin-grid">
+            <section className={groupMode === "table" ? "admin-grid" : undefined}>
               <section className="admin-panel">
                 <h2>{t("adminGroupsTitle")}</h2>
                 {groupMode === "table" ? (
-                  <button className="primary-button" type="button" onClick={showGroupCreateForm}>
-                    <FaPlus aria-hidden="true" />{t("adminAddGroup")}
-                  </button>
-                ) : null}
-                <AdminRecordsTable
-                  emptyLabel={t("adminEmptyGroups")}
-                  headers={[t("adminGroupCode"), t("adminDisplayName"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
-                  rows={activeGroups.map((group) => [
-                    group.group_code,
-                    group.display_name,
-                    String(group.priority),
-                    group.enabled ? t("adminEnabled") : t("adminDisabled"),
-                    <div className="admin-inline-actions">
-                      <button className="button ghost" type="button" onClick={() => showGroupEditForm(group)}>
-                        <FaEdit aria-hidden="true" />{t("adminEdit")}
-                      </button>
-                      <button className="button ghost" type="button" onClick={() => void deleteGroupFromAdmin(group)}>
-                        <FaTrash aria-hidden="true" />{t("adminDelete")}
-                      </button>
-                    </div>
-                  ])}
-                />
-                {groupMode !== "table" ? (
-                  <form className="admin-form-stack" onSubmit={(event) => {
+                  <>
+                    <button className="primary-button" type="button" onClick={showGroupCreateForm}>
+                      <FaPlus aria-hidden="true" />{t("adminAddGroup")}
+                    </button>
+                    <AdminRecordsTable
+                      emptyLabel={t("adminEmptyGroups")}
+                      headers={[t("adminGroupCode"), t("adminDisplayName"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
+                      rows={activeGroups.map((group) => [
+                        group.group_code,
+                        group.display_name,
+                        String(group.priority),
+                        group.enabled ? t("adminEnabled") : t("adminDisabled"),
+                        <div className="admin-inline-actions">
+                          <button className="button ghost" type="button" onClick={() => showGroupEditForm(group)}>
+                            <FaEdit aria-hidden="true" />{t("adminEdit")}
+                          </button>
+                          <button className="button ghost" type="button" onClick={() => void deleteGroupFromAdmin(group)}>
+                            <FaTrash aria-hidden="true" />{t("adminDelete")}
+                          </button>
+                        </div>
+                      ])}
+                    />
+                  </>
+                ) : (
+                  <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                     event.preventDefault();
                     void saveGroupForm();
                   }}>
@@ -1306,13 +1370,13 @@ const AIModelAdmin: React.FC = () => {
                     </div>
                     <label>{t("adminReason")}<input value={groupForm.reason} onChange={(event) => setGroupForm({ ...groupForm, reason: event.target.value })} /></label>
                     <div className="admin-inline-actions">
-                      <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSaveGroup")}</button>
-                      <button className="button ghost" type="button" onClick={cancelGroupForm}>{t("adminCancel")}</button>
+                      <button className="primary-button" type="submit" disabled={formSubmitting}><FaCheck aria-hidden="true" />{t("adminSaveGroup")}</button>
+                      <button className="button ghost" type="button" onClick={cancelGroupForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                     </div>
                   </form>
-                ) : null}
+                )}
               </section>
-              <form className="admin-panel" onSubmit={(event) => {
+              {groupMode === "table" ? <form className="admin-panel" onSubmit={(event) => {
                 event.preventDefault();
                 void runAction(() => addAIModelGroupMember(adminAuth, selectedGroupId, selectedUserId), t("adminSaved"));
               }}>
@@ -1329,7 +1393,7 @@ const AIModelAdmin: React.FC = () => {
                 <label>{t("adminGroup")}<select value={selectedGroupId} onChange={(event) => setSelectedGroupId(event.target.value)}>{activeGroups.map((group) => <option key={group.model_group_id} value={group.model_group_id}>{group.display_name}</option>)}</select></label>
                 <label>{t("adminUser")}<select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)}>{dashboard?.users.map((item) => <option key={item.user_id} value={item.user_id}>{item.full_name} ({item.email})</option>)}</select></label>
                 <button className="primary-button" type="submit"><FaUserPlus aria-hidden="true" />{t("adminAssignUser")}</button>
-              </form>
+              </form> : null}
             </section>
           ) : null}
 
@@ -1338,34 +1402,35 @@ const AIModelAdmin: React.FC = () => {
               <h2>{t("adminPoliciesTitle")}</h2>
               <p className="admin-muted">{t("adminPolicyHelp")}</p>
               {policyMode === "table" ? (
-                <button className="primary-button" type="button" onClick={showPolicyCreateForm}>
-                  <FaPlus aria-hidden="true" />{t("adminAddPolicy")}
-                </button>
-              ) : null}
-              <AdminRecordsTable
-                emptyLabel={t("adminEmptyPolicies")}
-                headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
-                rows={activePolicies.map((policy) => [
-                  policy.policy_id,
-                  policy.task_type,
-                  policy.plan_code || t("adminDefaultPolicy"),
-                  activeGroups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
-                  policy.preferred_external_model_profile_id ?? t("adminNotConfigured"),
-                  policy.preferred_local_model_profile_id ?? t("adminNotConfigured"),
-                  String(policy.priority),
-                  policy.enabled ? t("adminEnabled") : t("adminDisabled"),
-                  <div className="admin-inline-actions">
-                    <button className="button ghost" type="button" onClick={() => showPolicyEditForm(policy)}>
-                      <FaEdit aria-hidden="true" />{t("adminEdit")}
-                    </button>
-                    <button className="button ghost" type="button" onClick={() => void deletePolicyFromAdmin(policy)}>
-                      <FaTrash aria-hidden="true" />{t("adminDelete")}
-                    </button>
-                  </div>
-                ])}
-              />
-              {policyMode !== "table" ? (
-                <form className="admin-form-stack" onSubmit={(event) => {
+                <>
+                  <button className="primary-button" type="button" onClick={showPolicyCreateForm}>
+                    <FaPlus aria-hidden="true" />{t("adminAddPolicy")}
+                  </button>
+                  <AdminRecordsTable
+                    emptyLabel={t("adminEmptyPolicies")}
+                    headers={[t("adminPolicyId"), t("adminTaskType"), t("adminPlanCode"), t("adminGroup"), t("adminExternalModel"), t("adminLocalModel"), t("adminPriority"), t("adminStatus"), t("adminAction")]}
+                    rows={activePolicies.map((policy) => [
+                      policy.policy_id,
+                      policy.task_type,
+                      policy.plan_code || t("adminDefaultPolicy"),
+                      activeGroups.find((group) => group.model_group_id === policy.model_group_id)?.display_name ?? t("adminDefaultPolicy"),
+                      policy.preferred_external_model_profile_id ?? t("adminNotConfigured"),
+                      policy.preferred_local_model_profile_id ?? t("adminNotConfigured"),
+                      String(policy.priority),
+                      policy.enabled ? t("adminEnabled") : t("adminDisabled"),
+                      <div className="admin-inline-actions">
+                        <button className="button ghost" type="button" onClick={() => showPolicyEditForm(policy)}>
+                          <FaEdit aria-hidden="true" />{t("adminEdit")}
+                        </button>
+                        <button className="button ghost" type="button" onClick={() => void deletePolicyFromAdmin(policy)}>
+                          <FaTrash aria-hidden="true" />{t("adminDelete")}
+                        </button>
+                      </div>
+                    ])}
+                  />
+                </>
+              ) : (
+                <form ref={editFormRef} tabIndex={-1} className="admin-form-stack" onSubmit={(event) => {
                   event.preventDefault();
                   void savePolicyForm();
                 }}>
@@ -1388,11 +1453,11 @@ const AIModelAdmin: React.FC = () => {
                   </div>
                   <label>{t("adminReason")}<input value={policyForm.reason} onChange={(event) => setPolicyForm({ ...policyForm, reason: event.target.value })} /></label>
                   <div className="admin-inline-actions">
-                    <button className="primary-button" type="submit"><FaCheck aria-hidden="true" />{t("adminSavePolicy")}</button>
-                    <button className="button ghost" type="button" onClick={cancelPolicyForm}>{t("adminCancel")}</button>
+                    <button className="primary-button" type="submit" disabled={formSubmitting}><FaCheck aria-hidden="true" />{t("adminSavePolicy")}</button>
+                    <button className="button ghost" type="button" onClick={cancelPolicyForm} disabled={formSubmitting}>{t("adminCancel")}</button>
                   </div>
                 </form>
-              ) : null}
+              )}
             </section>
           ) : null}
 

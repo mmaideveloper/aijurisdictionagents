@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 
 const adminUser = {
   userId: "admin-1",
@@ -257,6 +258,93 @@ test("admin management shows users, providers, models, policies, Ollama inventor
 
   await page.getByRole("button", { name: "Admin audit" }).click();
   await expect(page.getByText("ai_task_route_policy: default:free:default")).toBeVisible();
+});
+
+test("admin edit forms replace their grids and save returns to the updated grid", async ({ page }) => {
+  let providers = dashboard.providers.map((provider) => ({ ...provider }));
+  const currentDashboard = () => ({ ...dashboard, providers });
+
+  await page.route("**/v1/admin/ai-models/providers", async (route) => {
+    const input = route.request().postDataJSON() as typeof dashboard.providers[number] & { reason?: string };
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    providers = providers.map((provider) => provider.provider_code === input.provider_code
+      ? {
+        ...provider,
+        ...input,
+        updated_at: "2026-08-15T16:00:00Z"
+      }
+      : provider);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify(providers.find((provider) => provider.provider_code === input.provider_code))
+    });
+  });
+  await page.route("**/v1/admin/ai-models", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(currentDashboard()) });
+  });
+  await page.route("**/v1/admin/users?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: dashboard.users, total: 1, limit: 25, offset: 0 })
+    });
+  });
+  await page.route("**/v1/admin/ai-models/ollama/models", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ base_url: "http://127.0.0.1:11434", models: [] })
+    });
+  });
+
+  await page.addInitScript((user) => {
+    window.localStorage.setItem("aj_frontend_lang", "en");
+    window.sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(user));
+  }, adminUser);
+
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
+
+  const editScenarios = [
+    { menu: null, rowText: "Admin User", formHeading: "Edit user" },
+    { menu: "Providers", rowText: "Local Ollama", formHeading: "Edit model provider" },
+    { menu: "Models and prices", rowText: "local_ollama_default", formHeading: "Edit model profile" },
+    { menu: "Provider credentials", rowText: "****cret", formHeading: "Edit" },
+    { menu: "User groups", rowText: "Admins", formHeading: "Edit user group" },
+    { menu: "Routing policies", rowText: "default:free:default", formHeading: "Edit routing policy" }
+  ];
+
+  for (const scenario of editScenarios) {
+    if (scenario.menu) {
+      await page.getByRole("button", { name: scenario.menu }).click();
+    }
+    const row = page.getByRole("row").filter({ hasText: scenario.rowText }).first();
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.getByRole("heading", { name: scenario.formHeading, exact: true })).toBeVisible();
+    await expect(page.locator(".admin-content table")).toHaveCount(0);
+    await expect(page.locator(".admin-form-stack")).toBeFocused();
+    await expect(page.getByRole("button", { name: scenario.menu ?? "Users" })).toBeVisible();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator(".admin-form-stack")).toHaveCount(0);
+    await expect(row).toBeVisible();
+  }
+
+  await page.getByRole("button", { name: "Providers" }).click();
+  const providerRow = page.getByRole("row").filter({ hasText: "Azure AI Foundry" });
+  await providerRow.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator(".admin-content table")).toHaveCount(0);
+  await page.getByLabel("Display name").fill("Azure AI Foundry Updated");
+  await page.getByLabel("Reason").fill("Synthetic E2E update for issue 618.");
+
+  await mkdir("output/playwright/issue-618", { recursive: true });
+  await page.screenshot({ path: "output/playwright/issue-618/01-provider-edit-form-grid-hidden.png", fullPage: true });
+  const saveProviderButton = page.getByRole("button", { name: "Save provider" });
+  await saveProviderButton.click();
+  await expect(saveProviderButton).toBeDisabled();
+
+  await expect(page.getByRole("heading", { name: "Edit model provider" })).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: "Azure AI Foundry Updated" })).toBeVisible();
+  await expect(page.locator(".admin-content table")).toBeVisible();
+  await page.screenshot({ path: "output/playwright/issue-618/02-provider-save-returns-updated-grid.png", fullPage: true });
 });
 
 test("admin can set an Ollama model as default and remove the previous non-default model", async ({ page }) => {
