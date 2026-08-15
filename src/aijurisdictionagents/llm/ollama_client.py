@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 import socket
@@ -9,6 +9,7 @@ from typing import Any, Iterable, Sequence, cast
 from urllib import error, request
 
 from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from ..model_parameters import ModelParameters
 from ..schemas import Document, Message
 
 import logging
@@ -26,6 +27,7 @@ class OllamaConfig:
     timeout_seconds: float = 600.0
     think: bool = False
     provider_label: str = "local_ollama"
+    model_parameters: ModelParameters = field(default_factory=dict)
 
 
 class OllamaClient:
@@ -57,15 +59,24 @@ class OllamaClient:
             agent_name=agent_name,
             request_payload=messages,
         )
+        options: dict[str, object] = {
+            "temperature": self._config.temperature,
+            "num_predict": self._config.max_tokens,
+        }
+        for name, value in self._config.model_parameters.items():
+            options["num_predict" if name == "max_tokens" else name] = value
+        logger.info(
+            "llm_model_parameters provider=%s model=%s parameter_names=%s",
+            self._config.provider_label,
+            self._config.model,
+            sorted(self._config.model_parameters),
+        )
         payload = {
             "model": self._config.model,
             "messages": messages,
             "stream": False,
             "think": self._config.think,
-            "options": {
-                "temperature": self._config.temperature,
-                "num_predict": self._config.max_tokens,
-            },
+            "options": options,
         }
         response_payload = self._post_json("/api/chat", payload)
         message_payload = response_payload.get("message")

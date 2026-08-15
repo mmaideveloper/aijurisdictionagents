@@ -22,6 +22,11 @@ except ImportError:  # pragma: no cover - optional dependency
     PostgresConnection = Any  # type: ignore[assignment]
 
 from .config import ApiDataConfig
+from ..model_parameters import (
+    ModelParameters,
+    deserialize_model_parameters,
+    serialize_model_parameters,
+)
 
 DEFAULT_UNLIMITED_ACCESS_EMAILS = ("mmaideveloper@gmail.com",)
 DEFAULT_ADMIN_EMAILS = ("mmaideveloper@gmail.com",)
@@ -271,6 +276,7 @@ class AIModelProvider:
     is_external: bool
     is_local: bool
     health_check_url: str
+    model_parameters: ModelParameters
     enabled: bool
     created_at: str
     updated_at: str
@@ -285,6 +291,7 @@ class AIModelProfile:
     provider_id: str
     model_code: str
     deployment_name: str
+    model_parameters: ModelParameters
     context_window_tokens: int
     input_price_per_1m: float
     cached_input_price_per_1m: float
@@ -868,21 +875,36 @@ class ApiDatabaseStore:
         is_external: bool = False,
         is_local: bool = False,
         health_check_url: str = "",
+        model_parameters: dict[str, object] | None = None,
         enabled: bool = True,
         provider_id: str | None = None,
     ) -> AIModelProvider:
         now = _now_iso()
         normalized_code = provider_code.strip().lower()
+        normalized_provider_type = provider_type.strip().lower()
         resolved_id = provider_id or normalized_code
         with self._connect() as conn:
+            existing_parameters = self._fetchone(
+                conn,
+                "SELECT model_parameters_json FROM ai_model_providers WHERE provider_code = ?",
+                (normalized_code,),
+            )
+            parameters_json = (
+                str(existing_parameters[0])
+                if model_parameters is None and existing_parameters is not None
+                else serialize_model_parameters(
+                    model_parameters,
+                    provider_type=normalized_provider_type,
+                )
+            )
             self._execute(
                 conn,
                 """
                 INSERT INTO ai_model_providers(
                     provider_id, provider_code, provider_type, display_name, base_url,
                     api_version, region, data_zone, is_external, is_local, health_check_url,
-                    enabled, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    enabled, created_at, updated_at, model_parameters_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(provider_code) DO UPDATE SET
                     provider_type = excluded.provider_type,
                     display_name = excluded.display_name,
@@ -893,13 +915,14 @@ class ApiDatabaseStore:
                     is_external = excluded.is_external,
                     is_local = excluded.is_local,
                     health_check_url = excluded.health_check_url,
+                    model_parameters_json = excluded.model_parameters_json,
                     enabled = excluded.enabled,
                     updated_at = excluded.updated_at
                 """,
                 (
                     resolved_id,
                     normalized_code,
-                    provider_type.strip().lower(),
+                    normalized_provider_type,
                     display_name.strip(),
                     base_url.strip(),
                     api_version.strip(),
@@ -911,6 +934,7 @@ class ApiDatabaseStore:
                     _bool_int(enabled),
                     now,
                     now,
+                    parameters_json,
                 ),
             )
             conn.commit()
@@ -920,7 +944,7 @@ class ApiDatabaseStore:
                 SELECT provider_id, provider_code, provider_type, display_name, base_url,
                        api_version, region, data_zone, is_external, is_local, health_check_url,
                        enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
-                       deleted_reason
+                       deleted_reason, model_parameters_json
                 FROM ai_model_providers
                 WHERE provider_code = ?
                 """,
@@ -939,7 +963,7 @@ class ApiDatabaseStore:
                 SELECT provider_id, provider_code, provider_type, display_name, base_url,
                        api_version, region, data_zone, is_external, is_local, health_check_url,
                        enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
-                       deleted_reason
+                       deleted_reason, model_parameters_json
                 FROM ai_model_providers
                 {where}
                 ORDER BY deleted_at IS NOT NULL, is_local DESC, display_name, provider_code
@@ -1020,7 +1044,7 @@ class ApiDatabaseStore:
                 SELECT provider_id, provider_code, provider_type, display_name, base_url,
                        api_version, region, data_zone, is_external, is_local, health_check_url,
                        enabled, created_at, updated_at, deleted_at, deleted_by_admin_user_id,
-                       deleted_reason
+                       deleted_reason, model_parameters_json
                 FROM ai_model_providers
                 WHERE provider_id = ?
                 """,
@@ -1036,6 +1060,7 @@ class ApiDatabaseStore:
         provider_id: str,
         model_code: str,
         deployment_name: str = "",
+        model_parameters: dict[str, object] | None = None,
         context_window_tokens: int = 0,
         input_price_per_1m: float = 0.0,
         cached_input_price_per_1m: float = 0.0,
@@ -1052,6 +1077,26 @@ class ApiDatabaseStore:
         normalized_model = model_code.strip()
         resolved_id = model_profile_id or f"{provider_id}:{normalized_model}"
         with self._connect() as conn:
+            provider_row = self._fetchone(
+                conn,
+                "SELECT provider_type FROM ai_model_providers WHERE provider_id = ? AND deleted_at IS NULL",
+                (provider_id,),
+            )
+            if provider_row is None:
+                raise ValueError("Provider does not exist")
+            existing_parameters = self._fetchone(
+                conn,
+                "SELECT model_parameters_json FROM ai_model_profiles WHERE model_profile_id = ?",
+                (resolved_id,),
+            )
+            parameters_json = (
+                str(existing_parameters[0])
+                if model_parameters is None and existing_parameters is not None
+                else serialize_model_parameters(
+                    model_parameters,
+                    provider_type=str(provider_row[0]),
+                )
+            )
             self._execute(
                 conn,
                 """
@@ -1059,12 +1104,14 @@ class ApiDatabaseStore:
                     model_profile_id, provider_id, model_code, deployment_name,
                     context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                     output_price_per_1m, billing_currency, effective_from, effective_to,
-                    eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
+                    model_parameters_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(model_profile_id) DO UPDATE SET
                     provider_id = excluded.provider_id,
                     model_code = excluded.model_code,
                     deployment_name = excluded.deployment_name,
+                    model_parameters_json = excluded.model_parameters_json,
                     context_window_tokens = excluded.context_window_tokens,
                     input_price_per_1m = excluded.input_price_per_1m,
                     cached_input_price_per_1m = excluded.cached_input_price_per_1m,
@@ -1097,6 +1144,7 @@ class ApiDatabaseStore:
                     _bool_int(enabled),
                     now,
                     now,
+                    parameters_json,
                 ),
             )
             if is_default_for_free:
@@ -1118,7 +1166,7 @@ class ApiDatabaseStore:
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
                        eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
-                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                        deleted_at, deleted_by_admin_user_id, deleted_reason, model_parameters_json
                 FROM ai_model_profiles
                 WHERE model_profile_id = ?
                 """,
@@ -1147,7 +1195,7 @@ class ApiDatabaseStore:
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
                        eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
-                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                       deleted_at, deleted_by_admin_user_id, deleted_reason, model_parameters_json
                 FROM ai_model_profiles
                 WHERE model_profile_id = ?
                 """,
@@ -1199,7 +1247,7 @@ class ApiDatabaseStore:
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
                        eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
-                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                       deleted_at, deleted_by_admin_user_id, deleted_reason, model_parameters_json
                 FROM ai_model_profiles
                 WHERE model_profile_id = ?
                 """,
@@ -1228,7 +1276,7 @@ class ApiDatabaseStore:
                        context_window_tokens, input_price_per_1m, cached_input_price_per_1m,
                        output_price_per_1m, billing_currency, effective_from, effective_to,
                        eu_data_zone_capable, is_default_for_free, enabled, created_at, updated_at,
-                       deleted_at, deleted_by_admin_user_id, deleted_reason
+                       deleted_at, deleted_by_admin_user_id, deleted_reason, model_parameters_json
                 FROM ai_model_profiles
                 {where}
                 ORDER BY deleted_at IS NOT NULL, enabled DESC, provider_id, is_default_for_free DESC, model_code
@@ -4985,12 +5033,12 @@ class ApiDatabaseStore:
             SELECT p.provider_id, p.provider_code, p.provider_type, p.display_name, p.base_url,
                    p.api_version, p.region, p.data_zone, p.is_external, p.is_local,
                    p.health_check_url, p.enabled, p.created_at, p.updated_at,
-                   p.deleted_at, p.deleted_by_admin_user_id, p.deleted_reason,
+                   p.deleted_at, p.deleted_by_admin_user_id, p.deleted_reason, p.model_parameters_json,
                    m.model_profile_id, m.provider_id, m.model_code, m.deployment_name,
                    m.context_window_tokens, m.input_price_per_1m, m.cached_input_price_per_1m,
                    m.output_price_per_1m, m.billing_currency, m.effective_from, m.effective_to,
                    m.eu_data_zone_capable, m.is_default_for_free, m.enabled, m.created_at, m.updated_at,
-                   m.deleted_at, m.deleted_by_admin_user_id, m.deleted_reason
+                   m.deleted_at, m.deleted_by_admin_user_id, m.deleted_reason, m.model_parameters_json
             FROM ai_model_profiles m
             JOIN ai_model_providers p ON p.provider_id = m.provider_id
             WHERE m.model_profile_id = ?
@@ -5003,7 +5051,7 @@ class ApiDatabaseStore:
         )
         if row is None:
             return None
-        return _row_to_ai_model_provider(row[:17]), _row_to_ai_model_profile(row[17:])
+        return _row_to_ai_model_provider(row[:18]), _row_to_ai_model_profile(row[18:])
 
     def _get_enabled_ai_model_user_override_target(
         self,
@@ -5057,7 +5105,8 @@ class ApiDatabaseStore:
                 updated_at TEXT NOT NULL,
                 deleted_at TEXT,
                 deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
-                deleted_reason TEXT NOT NULL DEFAULT ''
+                deleted_reason TEXT NOT NULL DEFAULT '',
+                model_parameters_json TEXT NOT NULL DEFAULT '{}'
             );
 
             CREATE TABLE IF NOT EXISTS ai_model_profiles (
@@ -5080,6 +5129,7 @@ class ApiDatabaseStore:
                 deleted_at TEXT,
                 deleted_by_admin_user_id TEXT NOT NULL DEFAULT '',
                 deleted_reason TEXT NOT NULL DEFAULT '',
+                model_parameters_json TEXT NOT NULL DEFAULT '{}',
                 UNIQUE(provider_id, model_code),
                 FOREIGN KEY(provider_id) REFERENCES ai_model_providers(provider_id) ON DELETE CASCADE
             );
@@ -5233,6 +5283,7 @@ class ApiDatabaseStore:
             """,
         )
         self._ensure_ai_model_profile_columns(conn)
+        self._ensure_ai_model_parameter_columns(conn)
         self._ensure_ai_model_soft_delete_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
 
@@ -5304,6 +5355,30 @@ class ApiDatabaseStore:
                 conn,
                 "ALTER TABLE ai_model_profiles ADD COLUMN is_default_for_free INTEGER NOT NULL DEFAULT 0",
             )
+
+    def _ensure_ai_model_parameter_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        for table_name in ("ai_model_providers", "ai_model_profiles"):
+            if self.uses_postgres:
+                columns = {
+                    row[0]
+                    for row in self._execute(
+                        conn,
+                        "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+                        (table_name,),
+                    ).fetchall()
+                }
+            else:
+                columns = {
+                    row[1]
+                    for row in self._execute(conn, f"PRAGMA table_info({table_name})").fetchall()
+                }
+            if "model_parameters_json" not in columns:
+                self._execute(
+                    conn,
+                    f"ALTER TABLE {table_name} ADD COLUMN model_parameters_json TEXT NOT NULL DEFAULT '{{}}'",
+                )
 
     def _ensure_ai_model_usage_audit_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -5927,6 +6002,7 @@ def _row_to_ai_model_provider(row: tuple[object, ...]) -> AIModelProvider:
         is_external=_row_bool(row[8]),
         is_local=_row_bool(row[9]),
         health_check_url=str(row[10]),
+        model_parameters=deserialize_model_parameters(row[17] if len(row) > 17 else "{}"),
         enabled=_row_bool(row[11]),
         created_at=str(row[12]),
         updated_at=str(row[13]),
@@ -5942,6 +6018,7 @@ def _row_to_ai_model_profile(row: tuple[object, ...]) -> AIModelProfile:
         provider_id=str(row[1]),
         model_code=str(row[2]),
         deployment_name=str(row[3]),
+        model_parameters=deserialize_model_parameters(row[19] if len(row) > 19 else "{}"),
         context_window_tokens=int(row[4]),
         input_price_per_1m=float(row[5]),
         cached_input_price_per_1m=float(row[6]),

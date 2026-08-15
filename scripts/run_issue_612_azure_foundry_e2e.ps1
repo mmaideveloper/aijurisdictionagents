@@ -3,7 +3,8 @@ param(
     [string]$Model = "gpt-5-mini",
     [string]$EnvFilePath = ".env",
     [int]$ApiPort = 8080,
-    [int]$FrontendPort = 5189
+    [int]$FrontendPort = 5189,
+    [string]$FinalScreenshotPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -106,8 +107,17 @@ $storageRoot = Join-Path $repoRoot "runs\storage\issue-612-azure-foundry-e2e\$ru
 $dbPath = Join-Path $storageRoot "sqlite\api.sqlite3"
 $blobRoot = Join-Path $storageRoot "files"
 $manifestPath = Join-Path $runRoot "manifest.json"
-$screenshotPath = Join-Path $runRoot "01-final-success.png"
+$screenshotPath = if ($FinalScreenshotPath) {
+    if ([IO.Path]::IsPathRooted($FinalScreenshotPath)) {
+        $FinalScreenshotPath
+    } else {
+        Join-Path $repoRoot $FinalScreenshotPath
+    }
+} else {
+    Join-Path $runRoot "01-final-success.png"
+}
 New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
+New-Item -ItemType Directory -Path (Split-Path -Parent $screenshotPath) -Force | Out-Null
 
 $env:DB_OPTION = "local"
 $env:STORAGE_OPTION = "local"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import ssl
 import time
@@ -13,6 +13,7 @@ from openai.types.chat import ChatCompletionMessageParam
 import truststore
 
 from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from ..model_parameters import ModelParameters
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -23,9 +24,10 @@ class AzureFoundryConfig:
     endpoint: str
     deployment: str
     api_version: str
-    temperature: float
+    temperature: float | None
     api_key: str | None
     azure_ad_token: str | None
+    model_parameters: ModelParameters = field(default_factory=dict)
 
 
 class AzureFoundryClient:
@@ -81,11 +83,19 @@ class AzureFoundryClient:
         )
         started_at = time.monotonic()
         try:
-            response = self._client.chat.completions.create(
-                model=self._config.deployment,
-                temperature=self._config.temperature,
-                messages=cast(Iterable[ChatCompletionMessageParam], messages),
+            request_kwargs: dict[str, Any] = {
+                "model": self._config.deployment,
+                "messages": cast(Iterable[ChatCompletionMessageParam], messages),
+            }
+            if self._config.temperature is not None:
+                request_kwargs["temperature"] = self._config.temperature
+            request_kwargs.update(self._config.model_parameters)
+            logger.info(
+                "llm_model_parameters provider=azurefoundry model=%s parameter_names=%s",
+                self._config.deployment,
+                sorted(self._config.model_parameters),
             )
+            response = self._client.chat.completions.create(**request_kwargs)
         except APITimeoutError as exc:
             raise ModelProcessingTimeout(
                 provider_class="external",

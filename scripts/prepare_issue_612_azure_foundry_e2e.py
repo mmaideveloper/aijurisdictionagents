@@ -86,6 +86,7 @@ def main() -> int:
         deployment_name=model,
         context_window_tokens=128_000,
         eu_data_zone_capable=True,
+        model_parameters={"temperature": None},
         enabled=True,
     )
     secret_type = "api_key" if api_key else "azure_ad_token"
@@ -125,6 +126,7 @@ def main() -> int:
                 "endpoint": endpoint,
                 "model": model,
                 "model_profile_id": profile_id,
+                "model_parameters": {"temperature": None},
                 "credential_type": secret_type,
             },
             indent=2,

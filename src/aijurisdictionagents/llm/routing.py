@@ -16,6 +16,7 @@ from .azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
 from .base import LLMClient, read_positive_finite_env_seconds
 from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
+from ..model_parameters import merge_model_parameters
 
 _DEFAULT_AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
 _AZURE_OPENAI_PREVIEW_API_VERSION = "preview"
@@ -121,6 +122,11 @@ def get_routed_llm_client(
     profile = route.model_profile
     provider_type = provider.provider_type.strip().lower()
     model = profile.deployment_name.strip() or profile.model_code.strip()
+    model_parameters = merge_model_parameters(
+        provider.model_parameters,
+        profile.model_parameters,
+        provider_type=provider_type,
+    )
 
     if route.route_type in {"local_unavailable", "external_unavailable", "external_ack_required", "blocked_non_eu_external"}:
         raise ModelRouteUnavailable(route.reason)
@@ -137,6 +143,7 @@ def get_routed_llm_client(
                     timeout_seconds=_local_timeout_seconds(),
                     provider_label=provider.provider_code,
                     max_tokens=256,
+                    model_parameters=model_parameters,
                 )
             ),
             route=route,
@@ -159,6 +166,8 @@ def get_routed_llm_client(
                     base_url=_openai_compatible_base_url(provider.base_url),
                     provider_label=provider.provider_code,
                     max_tokens=256,
+                    temperature=None,
+                    model_parameters=model_parameters,
                 )
             ),
             route=route,
@@ -190,9 +199,10 @@ def get_routed_llm_client(
                         model=model,
                         provider_api_version=provider.api_version,
                     ),
-                    temperature=_temperature(),
+                    temperature=None,
                     api_key=api_key,
                     azure_ad_token=azure_ad_token,
+                    model_parameters=model_parameters,
                 )
             ),
             route=route,
@@ -213,9 +223,10 @@ def get_routed_llm_client(
                 OpenAIConfig(
                     api_key=api_key,
                     model=model,
-                    temperature=_temperature(),
+                    temperature=None,
                     base_url=provider.base_url.strip() or None,
                     provider_label=provider.provider_code,
+                    model_parameters=model_parameters,
                 )
             ),
             route=route,

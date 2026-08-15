@@ -55,6 +55,7 @@ const emptyProvider = {
   region: "",
   data_zone: "eu",
   health_check_url: "",
+  model_parameters: "{}",
   is_external: true,
   is_local: false,
   enabled: true,
@@ -66,6 +67,7 @@ const emptyProfile = {
   provider_id: "",
   model_code: "",
   deployment_name: "",
+  model_parameters: "{}",
   input_price_per_1m: 0,
   cached_input_price_per_1m: 0,
   output_price_per_1m: 0,
@@ -74,6 +76,14 @@ const emptyProfile = {
   is_default_for_free: false,
   enabled: true,
   reason: ""
+};
+
+const parseModelParameters = (value: string): Record<string, boolean | number | string | null> => {
+  const parsed: unknown = JSON.parse(value || "{}");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Model parameters must be a JSON object.");
+  }
+  return parsed as Record<string, boolean | number | string | null>;
 };
 
 const emptyCredential = {
@@ -422,6 +432,7 @@ const AIModelAdmin: React.FC = () => {
     region: provider.region,
     data_zone: provider.data_zone,
     health_check_url: provider.health_check_url,
+    model_parameters: JSON.stringify(provider.model_parameters ?? {}, null, 2),
     is_external: provider.is_external,
     is_local: provider.is_local,
     enabled: provider.enabled,
@@ -556,7 +567,13 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveProviderAdminForm = async () => {
-    const saved = await runAction(() => upsertAIModelProvider(adminAuth, providerForm), t("adminProviderSaved"));
+    const saved = await runAction(
+      () => upsertAIModelProvider(adminAuth, {
+        ...providerForm,
+        model_parameters: parseModelParameters(providerForm.model_parameters)
+      }),
+      t("adminProviderSaved")
+    );
     if (saved) {
       setProviderForm(emptyProvider);
       setProviderMode("table");
@@ -567,6 +584,7 @@ const AIModelAdmin: React.FC = () => {
     provider_id: profile.provider_id,
     model_code: profile.model_code,
     deployment_name: profile.deployment_name,
+    model_parameters: JSON.stringify(profile.model_parameters ?? {}, null, 2),
     input_price_per_1m: profile.input_price_per_1m,
     cached_input_price_per_1m: profile.cached_input_price_per_1m,
     output_price_per_1m: profile.output_price_per_1m,
@@ -596,7 +614,13 @@ const AIModelAdmin: React.FC = () => {
     setError("");
   };
   const saveProfileForm = async () => {
-    const saved = await runAction(() => upsertAIModelProfile(adminAuth, profileForm), t("adminProfileSaved"));
+    const saved = await runAction(
+      () => upsertAIModelProfile(adminAuth, {
+        ...profileForm,
+        model_parameters: parseModelParameters(profileForm.model_parameters)
+      }),
+      t("adminProfileSaved")
+    );
     if (saved) {
       setProfileForm(emptyProfile);
       setProfileMode("table");
@@ -623,7 +647,11 @@ const AIModelAdmin: React.FC = () => {
     setStatus("");
     void (async () => {
       try {
-        const savedProfile = await upsertAIModelProfile(adminAuth, profileToForm(profile, overrides));
+        const form = profileToForm(profile, overrides);
+        const savedProfile = await upsertAIModelProfile(adminAuth, {
+          ...form,
+          model_parameters: parseModelParameters(form.model_parameters)
+        });
         setStatus(successMessage);
         await reload();
         await loadUsersPage(usersOffset);
@@ -1146,6 +1174,8 @@ const AIModelAdmin: React.FC = () => {
                   <label>{t("adminRegion")}<input value={providerForm.region} onChange={(event) => setProviderForm({ ...providerForm, region: event.target.value })} /></label>
                   <label>{t("adminDataZone")}<input value={providerForm.data_zone} onChange={(event) => setProviderForm({ ...providerForm, data_zone: event.target.value })} /></label>
                   <label>{t("adminHealthUrl")}<input value={providerForm.health_check_url} onChange={(event) => setProviderForm({ ...providerForm, health_check_url: event.target.value })} /></label>
+                  <label>{t("adminModelParameters")}<textarea aria-label="adminModelParameters" rows={5} value={providerForm.model_parameters} onChange={(event) => setProviderForm({ ...providerForm, model_parameters: event.target.value })} /></label>
+                  <p className="admin-muted">{t("adminModelParametersHelp")}</p>
                   <div className="admin-toggle-row">
                     <label><input type="checkbox" checked={providerForm.is_external} onChange={(event) => setProviderForm({ ...providerForm, is_external: event.target.checked })} />{t("adminExternal")}</label>
                     <label><input type="checkbox" checked={providerForm.is_local} onChange={(event) => setProviderForm({ ...providerForm, is_local: event.target.checked })} />{t("adminLocal")}</label>
@@ -1171,11 +1201,12 @@ const AIModelAdmin: React.FC = () => {
               ) : null}
               <AdminRecordsTable
                 emptyLabel={t("adminEmptyProfiles")}
-                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
+                headers={[t("adminModelCode"), t("adminProvider"), t("adminDeployment"), t("adminModelParameters"), t("adminPrices"), t("adminStatus"), t("adminAction")]}
                 rows={activeProfiles.map((profile) => [
                   profile.model_profile_id,
                   providerById.get(profile.provider_id)?.display_name ?? profile.provider_id,
-                  profile.deployment_name || profile.model_code,
+                   profile.deployment_name || profile.model_code,
+                   Object.keys(profile.model_parameters ?? {}).sort().join(", ") || t("adminNotConfigured"),
                   `${profile.input_price_per_1m}/${profile.cached_input_price_per_1m}/${profile.output_price_per_1m} ${profile.billing_currency}`,
                   `${profile.enabled ? t("adminEnabled") : t("adminDisabled")}${profile.is_default_for_free ? `, ${t("adminDefaultFreeModel")}` : ""}`,
                   <div className="admin-inline-actions">
@@ -1214,6 +1245,8 @@ const AIModelAdmin: React.FC = () => {
                   <label>{t("adminProvider")}<select value={profileForm.provider_id} onChange={(event) => setProfileForm({ ...profileForm, provider_id: event.target.value })}><option value="">{t("adminSelect")}</option>{activeProviders.map((provider) => <option key={provider.provider_id} value={provider.provider_id}>{provider.display_name}</option>)}</select></label>
                   <label>{t("adminModelCode")}<input value={profileForm.model_code} onChange={(event) => setProfileForm({ ...profileForm, model_code: event.target.value })} disabled={profileMode === "edit"} /></label>
                   <label>{t("adminDeployment")}<input value={profileForm.deployment_name} onChange={(event) => setProfileForm({ ...profileForm, deployment_name: event.target.value })} /></label>
+                  <label>{t("adminModelParameters")}<textarea aria-label="adminProfileModelParameters" rows={5} value={profileForm.model_parameters} onChange={(event) => setProfileForm({ ...profileForm, model_parameters: event.target.value })} /></label>
+                  <p className="admin-muted">{t("adminModelParametersProfileHelp")}</p>
                   <div className="admin-price-grid">
                     <label>{t("adminInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, input_price_per_1m: Number(event.target.value) })} /></label>
                     <label>{t("adminCachedInputPrice")}<input type="number" min="0" step="0.0001" value={profileForm.cached_input_price_per_1m} onChange={(event) => setProfileForm({ ...profileForm, cached_input_price_per_1m: Number(event.target.value) })} /></label>

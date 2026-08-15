@@ -131,8 +131,10 @@ For explicitly temporary Azure infrastructure credentials stored in the ignored 
 ```
 
 The runner configures `azureFoundryEU / gpt-5-mini` at the project endpoint ending in
-`/api/projects/documentprocessing`, then verifies that the streamed reply succeeds through the
-OpenAI-compatible `/openai/v1` client without a legacy `api-version` query parameter. It refuses
+`/api/projects/documentprocessing`, with the profile override `{"temperature": null}`. It then
+verifies that the streamed reply succeeds through the OpenAI-compatible `/openai/v1` client
+without a legacy `api-version` query parameter and without sending the provider's unsupported
+`temperature=0.2` default. This is also the live regression contract for issue #621. It refuses
 mock fallback and fails when the production credential is unavailable. When a static Foundry key
 or token is not configured, the runner authenticates only as the repository service principal and
 uses a short-lived Cognitive Services token; it never uses the currently signed-in Azure user.
@@ -143,6 +145,26 @@ screenshot. The isolated SQLite database and files are kept under
 removed within seven days. The request uses a generated identity and a fixed connectivity marker;
 no customer, legal-case, password, token, or credential content is retained. The response remains
 an AI draft requiring human review and is not used for an automated legal decision.
+
+For PR evidence for issue #621, retain the final screenshot in the repository while keeping the
+synthetic database and manifest ignored:
+
+```powershell
+.\scripts\run_issue_612_azure_foundry_e2e.ps1 `
+  -FinalScreenshotPath docs/screenshots/issue-621/issue-621-gpt-5-mini-success.png
+```
+
+The deterministic admin regression can be run without provider credentials:
+
+```powershell
+Set-Location frontend\aijurisdictionfronend
+node node_modules/@playwright/test/cli.js test e2e/issue-621-model-parameters.spec.ts --project=chromium
+```
+
+It uses synthetic data to verify that the saved `gpt-5-mini` profile removes an inherited
+`temperature=0.2` and retains `max_completion_tokens=512`. The reviewed final-state screenshot is
+stored at `docs/screenshots/issue-621/issue-621-model-parameters-admin.png`; the ignored result
+manifest under `runs/e2e/issue-621/` must be deleted within seven days.
 
 The live-provider check must retain the configured provider gate. Missing Ollama Cloud or
 Azure Foundry credentials must not be replaced with `mock`; deterministic route fixtures are
