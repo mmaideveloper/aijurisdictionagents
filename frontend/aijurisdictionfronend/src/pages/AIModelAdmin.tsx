@@ -44,6 +44,7 @@ import { useLanguage } from "../components/LanguageProvider";
 
 type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "audit";
 type AdminFormMode = "table" | "create" | "edit";
+type AdminDashboardLoadState = "idle" | "loading" | "success" | "error";
 
 const emptyProvider = {
   provider_code: "",
@@ -155,8 +156,10 @@ const AIModelAdmin: React.FC = () => {
   const [ollamaModel, setOllamaModel] = React.useState("");
   const [ollamaReason, setOllamaReason] = React.useState("");
   const [ollamaRemoveReason, setOllamaRemoveReason] = React.useState("");
+  const [dashboardLoadState, setDashboardLoadState] = React.useState<AdminDashboardLoadState>("idle");
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
+  const dashboardRequestInFlight = React.useRef(false);
 
   const adminUserId = user?.userId ?? "";
   const adminAuth = React.useMemo(
@@ -197,7 +200,9 @@ const AIModelAdmin: React.FC = () => {
   );
 
   const reload = React.useCallback(async () => {
-    if (!adminUserId) return;
+    if (!adminUserId || dashboardRequestInFlight.current) return;
+    dashboardRequestInFlight.current = true;
+    setDashboardLoadState("loading");
     setError("");
     try {
       const nextDashboard = await fetchAIModelAdminDashboard(adminAuth);
@@ -218,8 +223,12 @@ const AIModelAdmin: React.FC = () => {
       }));
       setSelectedGroupId((current) => current || nextDashboard.groups[0]?.model_group_id || "");
       setSelectedUserId((current) => current || nextDashboard.users[0]?.user_id || "");
+      setDashboardLoadState("success");
     } catch (loadError) {
+      setDashboardLoadState("error");
       setError(loadError instanceof Error ? loadError.message : t("adminLoadFailed"));
+    } finally {
+      dashboardRequestInFlight.current = false;
     }
   }, [adminAuth, adminUserId, t]);
 
@@ -732,6 +741,8 @@ const AIModelAdmin: React.FC = () => {
     setActiveSection(section);
     if (section === "ollama") {
       void reloadOllama();
+    } else if (dashboardLoadState !== "success") {
+      void reload();
     }
   };
 
@@ -785,7 +796,23 @@ const AIModelAdmin: React.FC = () => {
           ))}
         </aside>
 
-        <section className="admin-content">
+        <section className="admin-content" aria-busy={dashboardLoadState === "loading" && !dashboard}>
+          {activeSection !== "ollama" && dashboardLoadState === "loading" && !dashboard ? (
+            <div className="admin-panel admin-load-state" role="status">
+              <p>{t("adminLoading")}</p>
+            </div>
+          ) : null}
+
+          {activeSection !== "ollama" && dashboardLoadState === "error" && !dashboard ? (
+            <div className="admin-panel admin-load-state">
+              <p>{t("adminLoadFailed")}</p>
+              <button className="secondary-button" type="button" onClick={() => void reload()}>
+                <FaSyncAlt aria-hidden="true" />{t("adminRetry")}
+              </button>
+            </div>
+          ) : null}
+
+          {dashboard || activeSection === "ollama" ? <>
           {activeSection === "users" ? (
             <section className="admin-table-section">
               <h2>{t("adminUsersTitle")}</h2>
@@ -1493,6 +1520,7 @@ const AIModelAdmin: React.FC = () => {
               </div>
             </section>
           ) : null}
+          </> : null}
         </section>
       </div>
     </main>
