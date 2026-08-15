@@ -344,6 +344,51 @@ describe("AIModelAdmin Ollama management", () => {
     vi.clearAllMocks();
   });
 
+  it("retries the admin dashboard when a sidebar section is clicked after the initial load fails", async () => {
+    const user = userEvent.setup();
+    apiMocks.fetchAIModelAdminDashboard
+      .mockRejectedValueOnce(new Error("Failed to fetch"))
+      .mockResolvedValueOnce(dashboard);
+
+    render(<AIModelAdmin />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Failed to fetch");
+    expect(screen.queryByText("Admin User (admin@example.com)")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /adminUsersTitle/ }));
+
+    expect(await screen.findByText("Admin User (admin@example.com)")).toBeDefined();
+    await waitFor(() => {
+      expect(apiMocks.fetchAIModelAdminDashboard).toHaveBeenCalledTimes(2);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+  });
+
+  it("keeps a successful empty dashboard result without refetching on section changes", async () => {
+    const user = userEvent.setup();
+    apiMocks.fetchAIModelAdminDashboard.mockResolvedValue({
+      ...dashboard,
+      providers: [],
+      profiles: [],
+      credentials: [],
+      policies: [],
+      groups: [],
+      memberships: [],
+      users: [],
+      users_page: { total: 0, limit: 25, offset: 0 },
+      audit_events: []
+    });
+
+    render(<AIModelAdmin />);
+
+    expect(await screen.findByText("adminEmptyUsers")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminProvidersTitle/ }));
+    expect(await screen.findByText("adminEmptyProviders")).toBeDefined();
+    await user.click(screen.getByRole("button", { name: /adminUsersTitle/ }));
+
+    expect(apiMocks.fetchAIModelAdminDashboard).toHaveBeenCalledTimes(1);
+  });
+
   it("renders Ollama inventory and disables remove for protected default models", async () => {
     const user = userEvent.setup();
     render(<AIModelAdmin />);
