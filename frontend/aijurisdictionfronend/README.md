@@ -8,6 +8,9 @@ screens.
 
 - Node.js 18+
 - npm 9+
+- Python 3.10 with `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` for
+  generated-document E2E evidence; the frontend GitHub Actions workflow installs these pinned
+  packages before Playwright runs.
 
 ## Setup
 
