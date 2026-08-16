@@ -71,7 +71,9 @@ print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
     "questions and call protected searchLegalSources with structured filters such as "
     "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
-    "year_filter_mode='published_in', sort='latest'. Search defaults to metadata only; "
+    "year_filter_mode='published_in', sort='latest'. Natural-language Slovak law scenarios use "
+    "structured provision retrieval and return matched paragraph snippets; exact identifier searches "
+    "remain metadata-first. "
     "court-decision text requires getCourtDecision(full_version=True)."
 )
 print(
@@ -148,7 +150,8 @@ print(
     "http://localhost, http://127.0.0.1, and http://[::1] loopback redirect_uri support."
 )
 print(
-    "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
+    "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes without raw "
+    "legal queries, document ids, snippets, or tool text; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )
 print(
