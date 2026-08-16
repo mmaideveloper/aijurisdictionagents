@@ -33,6 +33,12 @@ print(
     "retains a sanitized final screenshot for at most seven days."
 )
 print(
+    "purchase_contract_legal_basis_e2e => from frontend/aijurisdictionfronend run "
+    "`npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts`; the synthetic "
+    "house-purchase preview and PDF repeat the verified § 588 Civil Code basis, expose the "
+    "official Slov-Lex citation, require human review, and retain ignored evidence for seven days."
+)
+print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
     "verification on a verified browser; a new browser for a TOTP-enabled account offers both "
     "authenticator and email verification, while logout still ends the active session."

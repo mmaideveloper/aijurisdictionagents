@@ -30,6 +30,10 @@ remains the only fixture, while extracted evidence stays transient.
 - Preview and PDF must say the output is a draft requiring human review before signing or reliance.
 - Assert document type, parties, amount, due date, and currency in extracted PDF text. Visual comparison supplements these assertions; it does not replace them.
 - Fail when preview is missing, PDF download fails, facts materially differ, or human-review wording is absent.
+- A legal-basis scenario must assert the same verified provision and named act in the document
+  preview, extracted PDF text, and structured citations. Use an official source URL and keep the
+  deterministic fixture's effective/as-of date visible in its metadata; the fixture does not
+  substitute for a separate live-law freshness integration test.
 
 ## Canonical audio-to-PDF scenario
 
