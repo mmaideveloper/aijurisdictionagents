@@ -1,6 +1,7 @@
 .conda/**
 conda/**
 runs/
+/output/playwright/
 logs/*.log
 !logs/.gitkeep
 /archivelaws/

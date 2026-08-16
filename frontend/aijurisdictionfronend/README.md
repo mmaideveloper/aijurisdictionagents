@@ -8,6 +8,9 @@ screens.
 
 - Node.js 18+
 - npm 9+
+- Python 3.10 with `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` for
+  generated-document E2E evidence; the frontend GitHub Actions workflow installs these pinned
+  packages before Playwright runs.
 
 ## Setup
 
@@ -37,6 +40,19 @@ npm run test:e2e
 ```
 
 The suite starts Vite locally and uses mocked JurisDigta API responses. Deployment workflows run this Playwright gate before deployment so a failed document-preview, document-download, or document-listing regression blocks release. If the default Playwright port is already in use, set `FRONTEND_E2E_PORT`, for example `FRONTEND_E2E_PORT=5190 npm run test:e2e`. Issue #503 is covered by `e2e/assistant-live-document-preview.spec.ts`, which verifies the live assistant response path and the post-refresh case-history path both show the formatted JurisDigta document preview, generated PDF action, and citation source. Issues #530 and #574 are covered by `e2e/assistant-branding.spec.ts`, which verifies the localized SK/EN/DE navbar, sidebar brand, and browser title after persisted direct loads, live language changes, and client-side navigation.
+
+Issue #623 is covered by `e2e/issue-623-purchase-law-citations.spec.ts`. The deterministic
+scenario submits `Priprav mi template na kupno predajnu zmluvu na dom, nechcem uvadzat
+podrobnosti.` and requires the full `§ 588` Civil Code basis both below the purchase-agreement
+title and as a clickable official Slov-Lex citation. It also generates and validates a real PDF,
+renders its first page, and retains privacy-safe evidence under ignored
+`output/playwright/issue-623/` for no more than seven days.
+
+Run the focused scenario from this directory with:
+
+```bash
+npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts
+```
 
 Run the focused generated-document download/listing regression with:
 
