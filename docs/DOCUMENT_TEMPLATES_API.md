@@ -84,6 +84,22 @@ Template payloads also support:
 - `disclaimer_text`
 - `disclaimer_footer`
 
+## Admin Catalog View
+
+The existing admin route at `/app/admin` now includes a read-only **Case Catalog** section that reuses:
+
+- `GET /v1/case-types`
+- `GET /v1/document-templates`
+
+The admin UI intentionally shows only generic catalog metadata plus stored reusable prompts:
+
+- case types and their enabled/disabled state
+- linked-template visibility per case type
+- document-template metadata such as title, category, kind, and source URL
+- stored generic prompt text per case type
+
+The view does not expose user-specific case data, uploaded documents, chat history, or provider secrets.
+
 ## Match behavior
 
 The match endpoint scores templates using:

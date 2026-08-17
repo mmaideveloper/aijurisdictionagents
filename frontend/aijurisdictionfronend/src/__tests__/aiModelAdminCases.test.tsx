@@ -36,6 +36,8 @@ vi.mock("../components/LanguageProvider", () => ({
 vi.mock("../api/adminModelClient", () => ({
   fetchAdminUsers: vi.fn(),
   fetchAdminCaseExportBlob: vi.fn(),
+  fetchAdminCaseCatalogCaseTypes: vi.fn(),
+  fetchAdminCaseCatalogDocumentTemplates: vi.fn(),
   fetchAdminUserCases: vi.fn(),
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAIModelUserOverride: vi.fn(),

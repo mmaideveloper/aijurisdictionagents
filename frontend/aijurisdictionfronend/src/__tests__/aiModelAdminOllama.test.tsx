@@ -9,6 +9,8 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 const apiMocks = vi.hoisted(() => ({
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAdminUsers: vi.fn(),
+  fetchAdminCaseCatalogCaseTypes: vi.fn(),
+  fetchAdminCaseCatalogDocumentTemplates: vi.fn(),
   searchAIModelAssignmentUsers: vi.fn(),
   fetchAIModelUserOverride: vi.fn(),
   upsertAIModelUserOverride: vi.fn(),

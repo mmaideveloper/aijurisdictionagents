@@ -204,6 +204,70 @@ export interface AdminCaseExportResult {
   filename: string;
 }
 
+export interface CaseCatalogPrompt {
+  case_prompt_id: string;
+  prompt_text: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DocumentTemplateCatalogItem {
+  template_id: string;
+  template_key: string;
+  jurisdiction: string;
+  language: string | null;
+  category: string;
+  title: string;
+  template_kind: string;
+  description: string;
+  source_format: string;
+  source_url: string;
+  body: string;
+  keywords: string[];
+  flow_keys: string[];
+  placeholders: string[];
+  source_refs: Array<{
+    label: string;
+    url: string;
+    publisher: string;
+    source_kind: string;
+    notes: string;
+  }>;
+  disclaimer_title: string;
+  disclaimer_text: string;
+  disclaimer_footer: string;
+  is_enabled: boolean;
+  is_deleted: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+}
+
+export interface CaseCatalogCaseType {
+  case_type_id: string;
+  case_type_key: string;
+  jurisdiction: string;
+  language: string | null;
+  name: string;
+  description: string;
+  keywords: string[];
+  is_enabled: boolean;
+  is_deleted: boolean;
+  prompt: CaseCatalogPrompt | null;
+  templates: DocumentTemplateCatalogItem[];
+  created_at: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+}
+
+export interface CaseCatalogCaseTypeListResponse {
+  items: CaseCatalogCaseType[];
+}
+
+export interface CaseCatalogDocumentTemplateListResponse {
+  items: DocumentTemplateCatalogItem[];
+}
+
 export interface AIModelAdminAuditEvent {
   audit_event_id: string;
   admin_user_id: string;
@@ -645,6 +709,34 @@ export const softDeleteAdminCase = (
     method: "DELETE",
     body: JSON.stringify({ user_id: userId, reason })
   });
+
+export const fetchAdminCaseCatalogCaseTypes = (
+  adminUserId: AdminAuthInput,
+  jurisdiction?: string
+): Promise<CaseCatalogCaseTypeListResponse> => {
+  const params = new URLSearchParams({ include_deleted: "false" });
+  if (jurisdiction?.trim()) {
+    params.set("jurisdiction", jurisdiction.trim());
+  }
+  return adminRequest<CaseCatalogCaseTypeListResponse>(`/v1/case-types?${params.toString()}`, adminUserId, {
+    method: "GET"
+  });
+};
+
+export const fetchAdminCaseCatalogDocumentTemplates = (
+  adminUserId: AdminAuthInput,
+  jurisdiction?: string
+): Promise<CaseCatalogDocumentTemplateListResponse> => {
+  const params = new URLSearchParams({ include_deleted: "false" });
+  if (jurisdiction?.trim()) {
+    params.set("jurisdiction", jurisdiction.trim());
+  }
+  return adminRequest<CaseCatalogDocumentTemplateListResponse>(
+    `/v1/document-templates?${params.toString()}`,
+    adminUserId,
+    { method: "GET" }
+  );
+};
 
 export const upsertAIModelGroup = (adminUserId: AdminAuthInput, input: GroupUpsertInput): Promise<AIModelGroup> =>
   adminRequest<AIModelGroup>("/v1/admin/ai-models/groups", adminUserId, {
