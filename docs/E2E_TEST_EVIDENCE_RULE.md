@@ -42,6 +42,32 @@ For a change involving MCP or legal retrieval, final acceptance must prove the c
 If any required service, migration, database seed, or real-model credential is unavailable, the run is
 not a pass. State the missing prerequisite and leave final real E2E validation pending.
 
+### Local real-model credential bootstrap
+
+Real-model E2E credentials are sourced from the ignored branch-local `.env` keys
+`E2E_AZURE_FOUNDRY_ENDPOINT`, `E2E_AZURE_FOUNDRY_API_VERSION`,
+`E2E_AZURE_FOUNDRY_DEPLOYMENT`, and exactly one of `E2E_AZURE_FOUNDRY_API_KEY` or
+`E2E_AZURE_FOUNDRY_AD_TOKEN`. They must not be committed, printed, attached to test evidence, or
+passed on a command line. Prefer a dedicated least-privilege E2E credential and rotate a production
+credential after any transfer outside its approved hosts.
+
+An authorized operator can start local PostgreSQL, create and migrate the branch-specific API
+database, import the currently approved `azure_foundry` / `azure_foundry_gpt_4o_mini` server
+credential without displaying it, and verify a real model call with:
+
+```powershell
+.\scripts\import_e2e_model_credentials_from_server.ps1 -VerifyModel
+```
+
+The import decrypts the credential inside the production API container, transfers it only through
+the authenticated SSH process, writes it to the ignored local `.env`, re-encrypts it with the local
+branch key, and clears process copies after use. If the branch has no valid
+`AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`, the importer creates a strong random local key and preserves
+it in the same ignored `.env`; it never replaces an existing valid key. The importer starts the
+local PostgreSQL container, derives a separate database name from the current Git branch, applies
+the current API migrations, and refuses non-loopback destination databases. The
+server credential reveal remains an auditable privileged action. Do not use this import in CI.
+
 ## Required evidence
 
 1. Capture at least one final-state screenshot after the last business outcome is visible and stable.

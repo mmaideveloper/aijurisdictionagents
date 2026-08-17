@@ -46,6 +46,20 @@ verification, downloads to a temporary protected location, merges atomically,
 validates, restores the previous local file on failure, and removes temporary
 files. There is no developer push mode.
 
+## Real-model E2E credentials
+
+The optional `E2E_AZURE_FOUNDRY_*` keys are branch-local inputs for
+`scripts/bootstrap_e2e_model_credentials.py`. They are deliberately separate from embedding
+configuration and are copied into the local API database only after encryption. Keep them in the
+ignored `.env`; `.env.example`, logs, manifests, screenshots, CI artifacts, and Git must contain
+only placeholders or redacted metadata.
+
+Use exactly one authentication value: `E2E_AZURE_FOUNDRY_API_KEY` or
+`E2E_AZURE_FOUNDRY_AD_TOKEN`. `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` must also be resolved. The
+bootstrap refuses SQLite, Azure/remote PostgreSQL, placeholder values, non-HTTPS endpoints, and
+`LLM_PROVIDER=mock`. This prevents an E2E preparation command from writing the imported credential
+to production or claiming a mock call as real-model evidence.
+
 ## USB layout
 
 The encrypted USB mount provides:
