@@ -148,12 +148,14 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
-    captured: dict[str, str] = {}
+    captured: dict[str, Any] = {}
 
     class FakeAzureFoundryClient:
         def __init__(self, config: Any) -> None:
             captured["deployment"] = config.deployment
             captured["api_version"] = config.api_version
+            captured["temperature"] = config.temperature
+            captured["model_parameters"] = config.model_parameters
 
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "test-routing-secret")
@@ -170,6 +172,7 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
         api_version="2024-10-21",
         data_zone="eu",
         is_external=True,
+        model_parameters={"temperature": 0.2, "top_p": 0.8},
     )
     store.upsert_ai_model_profile(
         model_profile_id="azure_foundry_gpt_5_mini",
@@ -179,6 +182,7 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
         billing_currency="EUR",
         eu_data_zone_capable=True,
         enabled=True,
+        model_parameters={"temperature": None, "max_completion_tokens": 512},
     )
     store.upsert_ai_task_route_policy(
         policy_id="case:chat_reply:gpt5",
@@ -203,7 +207,12 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
     )
 
     assert routed.model == "gpt-5-mini"
-    assert captured == {"deployment": "gpt-5-mini", "api_version": "preview"}
+    assert captured == {
+        "deployment": "gpt-5-mini",
+        "api_version": "preview",
+        "temperature": None,
+        "model_parameters": {"top_p": 0.8, "max_completion_tokens": 512},
+    }
 
 
 def test_expired_paid_subscription_routes_as_free_local_model(
@@ -540,6 +549,7 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
             "display_name": "Local Ollama Alt",
             "base_url": "http://127.0.0.1:11434/v1",
             "is_local": True,
+            "model_parameters": {"top_p": 0.8},
         },
     )
     profile_response = client.put(
@@ -551,6 +561,7 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
             "deployment_name": "qwen3:1.7b",
             "is_default_for_free": True,
             "enabled": True,
+            "model_parameters": {"temperature": 0.2},
         },
     )
     profiles_response = client.get(
@@ -560,11 +571,39 @@ def test_admin_model_routing_api_upserts_provider_and_profile(
 
     assert provider_response.status_code == 201
     assert provider_response.json()["base_url"] == "http://127.0.0.1:11434/v1"
+    assert provider_response.json()["model_parameters"] == {"top_p": 0.8}
     assert profile_response.status_code == 201
     assert profile_response.json()["model_code"] == "qwen3:1.7b"
     assert profile_response.json()["is_default_for_free"] is True
+    assert profile_response.json()["model_parameters"] == {"temperature": 0.2}
     assert profiles_response.status_code == 200
     assert profiles_response.json()[0]["model_profile_id"] == "local_ollama_alt_qwen"
+
+
+def test_admin_model_routing_api_rejects_disallowed_model_parameter(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "blob"))
+    monkeypatch.setenv("JURISDIGTA_ADMIN_API_KEY", "admin-secret")
+    client = TestClient(app)
+
+    response = client.put(
+        "/v1/admin/ai-models/providers/invalid_params",
+        headers={"x-api-key": "aijuris", "x-admin-api-key": "admin-secret"},
+        json={
+            "provider_code": "invalid_params",
+            "provider_type": "azurefoundry",
+            "display_name": "Invalid parameters",
+            "model_parameters": {"api_key": "must-not-be-stored"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
 
 
 def test_paid_external_route_requires_acknowledgement(tmp_path: Path) -> None:

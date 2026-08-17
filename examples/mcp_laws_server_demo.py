@@ -11,6 +11,9 @@ Fetch the human setup page:
 
 Run protected laws search:
     MCP_API_KEY=mcp_... python examples/mcp_laws_server_demo.py search
+
+Run a Slovak legal-scenario search:
+    MCP_API_KEY=mcp_... python examples/mcp_laws_server_demo.py legal-basis
 """
 
 from __future__ import annotations
@@ -56,6 +59,16 @@ def fetch_instructions_page() -> str:
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "instructions":
         print(fetch_instructions_page())
+    elif len(sys.argv) > 1 and sys.argv[1] == "legal-basis":
+        response = mcp_call(
+            "searchLaws",
+            {
+                "query": "chcem kupno predajnu zmluvu na zahradu",
+                "country_code": "SK",
+                "limit": 5,
+            },
+        )
+        print(json.dumps(response, indent=2, ensure_ascii=False))
     elif len(sys.argv) > 1 and sys.argv[1] == "search":
         response = mcp_call("searchLaws", {"query": "zakon", "country_code": "SK", "limit": 5})
         print(json.dumps(response, indent=2, ensure_ascii=False))

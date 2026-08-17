@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.security import require_admin_api_key
@@ -31,6 +31,7 @@ class AIModelProviderResponse(BaseModel):
     is_external: bool
     is_local: bool
     health_check_url: str
+    model_parameters: dict[str, bool | int | float | str | None]
     enabled: bool
 
 
@@ -39,6 +40,7 @@ class AIModelProfileResponse(BaseModel):
     provider_id: str
     model_code: str
     deployment_name: str
+    model_parameters: dict[str, bool | int | float | str | None]
     context_window_tokens: int
     input_price_per_1m: float
     cached_input_price_per_1m: float
@@ -82,6 +84,7 @@ class UpsertProviderRequest(BaseModel):
     is_external: bool = False
     is_local: bool = False
     health_check_url: str = ""
+    model_parameters: dict[str, bool | int | float | str | None] = Field(default_factory=dict)
     enabled: bool = True
 
 
@@ -89,6 +92,7 @@ class UpsertProfileRequest(BaseModel):
     provider_id: str = Field(min_length=1)
     model_code: str = Field(min_length=1)
     deployment_name: str = ""
+    model_parameters: dict[str, bool | int | float | str | None] = Field(default_factory=dict)
     context_window_tokens: int = 0
     input_price_per_1m: float = 0.0
     cached_input_price_per_1m: float = 0.0
@@ -139,20 +143,24 @@ def upsert_model_provider(
     payload: UpsertProviderRequest,
     store: ApiDatabaseStore = Depends(get_store),
 ) -> AIModelProviderResponse:
-    provider = store.upsert_ai_model_provider(
-        provider_id=provider_id,
-        provider_code=payload.provider_code,
-        provider_type=payload.provider_type,
-        display_name=payload.display_name,
-        base_url=payload.base_url,
-        api_version=payload.api_version,
-        region=payload.region,
-        data_zone=payload.data_zone,
-        is_external=payload.is_external,
-        is_local=payload.is_local,
-        health_check_url=payload.health_check_url,
-        enabled=payload.enabled,
-    )
+    try:
+        provider = store.upsert_ai_model_provider(
+            provider_id=provider_id,
+            provider_code=payload.provider_code,
+            provider_type=payload.provider_type,
+            display_name=payload.display_name,
+            base_url=payload.base_url,
+            api_version=payload.api_version,
+            region=payload.region,
+            data_zone=payload.data_zone,
+            is_external=payload.is_external,
+            is_local=payload.is_local,
+            health_check_url=payload.health_check_url,
+            model_parameters=payload.model_parameters,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _provider_response(provider)
 
 
@@ -166,22 +174,26 @@ def upsert_model_profile(
     payload: UpsertProfileRequest,
     store: ApiDatabaseStore = Depends(get_store),
 ) -> AIModelProfileResponse:
-    profile = store.upsert_ai_model_profile(
-        model_profile_id=model_profile_id,
-        provider_id=payload.provider_id,
-        model_code=payload.model_code,
-        deployment_name=payload.deployment_name,
-        context_window_tokens=payload.context_window_tokens,
-        input_price_per_1m=payload.input_price_per_1m,
-        cached_input_price_per_1m=payload.cached_input_price_per_1m,
-        output_price_per_1m=payload.output_price_per_1m,
-        billing_currency=payload.billing_currency,
-        effective_from=payload.effective_from,
-        effective_to=payload.effective_to,
-        eu_data_zone_capable=payload.eu_data_zone_capable,
-        is_default_for_free=payload.is_default_for_free,
-        enabled=payload.enabled,
-    )
+    try:
+        profile = store.upsert_ai_model_profile(
+            model_profile_id=model_profile_id,
+            provider_id=payload.provider_id,
+            model_code=payload.model_code,
+            deployment_name=payload.deployment_name,
+            model_parameters=payload.model_parameters,
+            context_window_tokens=payload.context_window_tokens,
+            input_price_per_1m=payload.input_price_per_1m,
+            cached_input_price_per_1m=payload.cached_input_price_per_1m,
+            output_price_per_1m=payload.output_price_per_1m,
+            billing_currency=payload.billing_currency,
+            effective_from=payload.effective_from,
+            effective_to=payload.effective_to,
+            eu_data_zone_capable=payload.eu_data_zone_capable,
+            is_default_for_free=payload.is_default_for_free,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _profile_response(profile)
 
 
@@ -249,6 +261,7 @@ def _provider_response(provider: AIModelProvider) -> AIModelProviderResponse:
         is_external=provider.is_external,
         is_local=provider.is_local,
         health_check_url=provider.health_check_url,
+        model_parameters=provider.model_parameters,
         enabled=provider.enabled,
     )
 
@@ -259,6 +272,7 @@ def _profile_response(profile: AIModelProfile) -> AIModelProfileResponse:
         provider_id=profile.provider_id,
         model_code=profile.model_code,
         deployment_name=profile.deployment_name,
+        model_parameters=profile.model_parameters,
         context_window_tokens=profile.context_window_tokens,
         input_price_per_1m=profile.input_price_per_1m,
         cached_input_price_per_1m=profile.cached_input_price_per_1m,

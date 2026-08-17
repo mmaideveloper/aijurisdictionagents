@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import time
 from typing import Iterable, Sequence
@@ -9,6 +9,7 @@ from typing import Iterable, Sequence
 from openai import APITimeoutError, OpenAI
 
 from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from ..model_parameters import ModelParameters
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -18,10 +19,11 @@ logger = logging.getLogger(__name__)
 class OpenAIConfig:
     api_key: str
     model: str = "gpt-4o-mini"
-    temperature: float = 0.2
+    temperature: float | None = 0.2
     base_url: str | None = None
     provider_label: str = "openai"
     max_tokens: int | None = None
+    model_parameters: ModelParameters = field(default_factory=dict)
 
 
 class OpenAIClient:
@@ -71,6 +73,15 @@ class OpenAIClient:
         }
         if self._config.max_tokens is not None:
             request_kwargs["max_tokens"] = self._config.max_tokens
+        if self._config.temperature is None:
+            request_kwargs.pop("temperature", None)
+        request_kwargs.update(self._config.model_parameters)
+        logger.info(
+            "llm_model_parameters provider=%s model=%s parameter_names=%s",
+            self._config.provider_label,
+            self._config.model,
+            sorted(self._config.model_parameters),
+        )
         started_at = time.monotonic()
         try:
             response = self._client.chat.completions.create(**request_kwargs)

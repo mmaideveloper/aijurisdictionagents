@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 from aijurisdictionagents.llm import azure_foundry_client
 from aijurisdictionagents.llm.azure_foundry_client import load_azure_foundry_config_from_env
@@ -131,3 +132,68 @@ def test_azure_foundry_client_keeps_legacy_dated_azure_api(monkeypatch) -> None:
     assert captured["api_version"] == "2024-12-01-preview"
     assert captured["api_key"] == "test-key"
     assert "base_url" not in captured
+
+
+def test_gpt_5_mini_request_omits_unconfigured_temperature(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+            self.timeout = None
+
+    monkeypatch.setattr(azure_foundry_client, "OpenAI", FakeOpenAI)
+    client = azure_foundry_client.AzureFoundryClient(
+        azure_foundry_client.AzureFoundryConfig(
+            endpoint="https://example.services.ai.azure.com/api/projects/legal",
+            deployment="gpt-5-mini",
+            api_version="preview",
+            temperature=None,
+            api_key="test-key",
+            azure_ad_token=None,
+            model_parameters={"max_completion_tokens": 128},
+        )
+    )
+
+    result = client.complete("assistant", "system", [], [])
+
+    assert result == "ok"
+    assert captured["model"] == "gpt-5-mini"
+    assert captured["max_completion_tokens"] == 128
+    assert "temperature" not in captured
+
+
+def test_explicit_profile_temperature_is_forwarded(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs: object) -> object:
+            captured.update(kwargs)
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+            self.timeout = None
+
+    monkeypatch.setattr(azure_foundry_client, "OpenAI", FakeOpenAI)
+    client = azure_foundry_client.AzureFoundryClient(
+        azure_foundry_client.AzureFoundryConfig(
+            endpoint="https://example.services.ai.azure.com/api/projects/legal",
+            deployment="gpt-4o-mini",
+            api_version="preview",
+            temperature=None,
+            api_key="test-key",
+            azure_ad_token=None,
+            model_parameters={"temperature": 0.2},
+        )
+    )
+
+    client.complete("assistant", "system", [], [])
+
+    assert captured["temperature"] == 0.2

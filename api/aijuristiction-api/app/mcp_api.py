@@ -27,6 +27,14 @@ from fastapi import APIRouter, Body, Depends, Form, Header, HTTPException, Reque
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 
 from app.laws_api import _laws_db_config, _read_laws_statistics
+from app.mcp_law_retrieval import (
+    LegalQueryProfile,
+    build_legal_query_profile,
+    compact_section_ranges,
+    parse_provision_anchor,
+    relevance_confidence,
+    score_provision_text,
+)
 from app.mcp_tokens import (
     MCP_REFRESH_TOKEN_SCOPE,
     MCP_TOKEN_SCOPE,
@@ -1954,6 +1962,11 @@ def _search_laws(
         raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
     pattern = f"%{query.lower()}%"
     exact = query.lower()
+    provision_profile = (
+        build_legal_query_profile(query)
+        if sort == "relevance" and law_year is None and law_number is None
+        else None
+    )
     logger.info(
         (
             "mcp_tool_search_laws_query country_code=%s limit=%d offset=%d "
@@ -2069,6 +2082,19 @@ def _search_laws(
                 """,
                 tuple(query_params),
             )
+            provision_rows = (
+                _query_provision_candidates(
+                    laws=laws,
+                    profile=provision_profile,
+                    country_code=country_code,
+                    published_year=published_year,
+                    law_year=law_year,
+                    law_number=law_number,
+                    candidate_limit=max(300, min(2_000, (limit + offset) * 60)),
+                )
+                if provision_profile is not None and provision_profile.search_terms
+                else []
+            )
     except Exception as exc:
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         error_kind = _legal_search_error_kind(exc)
@@ -2097,7 +2123,18 @@ def _search_laws(
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
-    results = [_search_result_from_row(row) for row in rows]
+    metadata_results = [_search_result_from_row(row) for row in rows]
+    provision_results = (
+        _rank_provision_candidates(rows=provision_rows, profile=provision_profile)
+        if provision_profile is not None
+        else []
+    )
+    results = _merge_law_search_results(
+        provision_results=provision_results,
+        metadata_results=metadata_results,
+        offset=offset,
+        limit=limit,
+    )
     logger.info("mcp_tool_search_laws_result country_code=%s result_count=%d", country_code, len(results))
     return {
         "query": query,
@@ -2105,13 +2142,281 @@ def _search_laws(
         "year_filter_mode": year_filter_mode,
         "published_year": published_year,
         "sort": sort,
-        "metadata_only": metadata_only,
+        "metadata_only": metadata_only and not provision_results,
+        "retrieval_mode": "provision_aware" if provision_results else "metadata",
+        "query_concepts": list(provision_profile.concepts) if provision_profile is not None else [],
+        "human_review_required": True,
+        "limitations": _law_search_limitations(provision_profile),
         "limit": limit,
         "offset": offset,
         "status": "ok",
         "timeout_ms": _LEGAL_SEARCH_TIMEOUT_MS,
         "results": results,
     }
+
+
+def _query_provision_candidates(
+    *,
+    laws: _LawsQueryConfig,
+    profile: LegalQueryProfile,
+    country_code: str,
+    published_year: int | None,
+    law_year: int | None,
+    law_number: int | None,
+    candidate_limit: int,
+) -> list[Sequence[Any]]:
+    filters: list[str] = []
+    filter_params: list[Any] = []
+    if law_year is not None:
+        filters.append(f"d.law_year = {laws.param}")
+        filter_params.append(law_year)
+    if law_number is not None:
+        filters.append(f"d.law_number = {laws.param}")
+        filter_params.append(law_number)
+    if published_year is not None:
+        filters.append(f"d.law_year = {laws.param}")
+        filter_params.append(published_year)
+    extra_filter = "" if not filters else " AND " + " AND ".join(filters)
+    if laws.backend == "postgres":
+        tsquery = " | ".join(f"{term}:*" for term in profile.search_terms)
+        return laws.query_all(
+            f"""
+            WITH search_query AS (
+                SELECT to_tsquery('simple', {laws.param}) AS value
+            ), latest_versions AS (
+                SELECT version_id, document_id, version_token, effective_from
+                FROM (
+                    SELECT
+                        v.version_id,
+                        v.document_id,
+                        v.version_token,
+                        v.effective_from,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY v.document_id
+                            ORDER BY v.effective_from DESC, v.version_token DESC
+                        ) AS row_number
+                    FROM law_versions AS v
+                ) AS ranked_versions
+                WHERE row_number = 1
+            )
+            SELECT
+                d.document_id,
+                d.country_code,
+                d.collection_code,
+                d.law_year,
+                d.law_number,
+                d.official_name,
+                d.lawyer_title,
+                d.source_url,
+                v.version_id,
+                v.version_token,
+                v.effective_from,
+                COALESCE(m.law_identifier_text, ''),
+                COALESCE(m.title, d.official_name),
+                COALESCE(m.law_type, ''),
+                p.anchor,
+                p.heading,
+                p.body_text,
+                p.ordinal,
+                ts_rank_cd(to_tsvector('simple', LOWER(p.body_text)), q.value) AS database_rank
+            FROM law_documents AS d
+            JOIN latest_versions AS v ON v.document_id = d.document_id
+            JOIN law_provisions AS p ON p.version_id = v.version_id
+            LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
+            CROSS JOIN search_query AS q
+            WHERE UPPER(d.country_code) = {laws.param}
+              AND to_tsvector('simple', LOWER(p.body_text)) @@ q.value
+              {extra_filter}
+            ORDER BY database_rank DESC, d.law_year DESC, p.ordinal
+            LIMIT {laws.param}
+            """,
+            tuple([tsquery, country_code, *filter_params, candidate_limit]),
+        )
+
+    term_clauses = [
+        f"LOWER(COALESCE(m.title, d.official_name) || ' ' || p.heading || ' ' || p.body_text) LIKE {laws.param}"
+        for _term in profile.search_terms
+    ]
+    return laws.query_all(
+        f"""
+        WITH latest_versions AS (
+            SELECT version_id, document_id, version_token, effective_from
+            FROM (
+                SELECT
+                    v.version_id,
+                    v.document_id,
+                    v.version_token,
+                    v.effective_from,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY v.document_id
+                        ORDER BY v.effective_from DESC, v.version_token DESC
+                    ) AS row_number
+                FROM law_versions AS v
+            ) AS ranked_versions
+            WHERE row_number = 1
+        )
+        SELECT
+            d.document_id,
+            d.country_code,
+            d.collection_code,
+            d.law_year,
+            d.law_number,
+            d.official_name,
+            d.lawyer_title,
+            d.source_url,
+            v.version_id,
+            v.version_token,
+            v.effective_from,
+            COALESCE(m.law_identifier_text, ''),
+            COALESCE(m.title, d.official_name),
+            COALESCE(m.law_type, ''),
+            p.anchor,
+            p.heading,
+            p.body_text,
+            p.ordinal,
+            0.0 AS database_rank
+        FROM law_documents AS d
+        JOIN latest_versions AS v ON v.document_id = d.document_id
+        JOIN law_provisions AS p ON p.version_id = v.version_id
+        LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
+        WHERE UPPER(d.country_code) = {laws.param}
+          AND ({' OR '.join(term_clauses)})
+          {extra_filter}
+        ORDER BY d.law_year DESC, p.ordinal
+        LIMIT {laws.param}
+        """,
+        tuple(
+            [
+                country_code,
+                *(f"%{term.lower()}%" for term in profile.search_terms),
+                *filter_params,
+                candidate_limit,
+            ]
+        ),
+    )
+
+
+def _rank_provision_candidates(
+    *,
+    rows: list[Sequence[Any]],
+    profile: LegalQueryProfile,
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        parsed_anchor = parse_provision_anchor(str(row[14]))
+        if parsed_anchor is None:
+            continue
+        relevance = score_provision_text(
+            profile=profile,
+            title=f"{row[5]} {row[6]} {row[12]}",
+            heading=str(row[15]),
+            body_text=str(row[16]),
+            database_rank=float(row[18]),
+        )
+        if relevance_confidence(relevance.score) == "low":
+            continue
+        document_id = str(row[0])
+        record = grouped.setdefault(
+            document_id,
+            {
+                **_search_result_from_row(row),
+                "matched_provisions": [],
+                "_score": 0.0,
+                "_sections": set(),
+            },
+        )
+        provisions = cast(list[dict[str, Any]], record["matched_provisions"])
+        if len(provisions) >= 24:
+            continue
+        provisions.append(
+            {
+                "anchor": str(row[14]),
+                "section_number": parsed_anchor.section_number,
+                "paragraph_number": parsed_anchor.paragraph_number,
+                "heading": str(row[15]),
+                "snippet": _bounded_law_snippet(str(row[16])),
+                "matched_terms": list(relevance.matched_terms),
+                "relevance_score": round(min(relevance.score / 40.0, 1.0), 4),
+            }
+        )
+        record["_score"] = max(float(record["_score"]), relevance.score)
+        cast(set[int], record["_sections"]).add(parsed_anchor.section_number)
+
+    results: list[dict[str, Any]] = []
+    for record in grouped.values():
+        sections = cast(set[int], record.pop("_sections"))
+        aggregate_score = float(record.pop("_score")) + min(len(sections), 8) * 0.75
+        provisions = cast(list[dict[str, Any]], record["matched_provisions"])
+        provisions.sort(
+            key=lambda provision: (
+                -float(provision["relevance_score"]),
+                int(provision["section_number"]),
+                int(provision["paragraph_number"] or 0),
+            )
+        )
+        record["relevant_sections"] = sorted(sections)
+        record["relevant_section_ranges"] = [
+            {"section_start": start, "section_end": end}
+            for start, end in compact_section_ranges(sections)
+        ]
+        record["retrieval_basis"] = "law_provisions"
+        record["relevance_score"] = round(min(aggregate_score / 40.0, 1.0), 4)
+        record["confidence"] = relevance_confidence(aggregate_score)
+        results.append(record)
+    results.sort(
+        key=lambda record: (
+            -float(record["relevance_score"]),
+            -int(record["law_year"]),
+            -int(record["law_number"]),
+        )
+    )
+    return results
+
+
+def _merge_law_search_results(
+    *,
+    provision_results: list[dict[str, Any]],
+    metadata_results: list[dict[str, Any]],
+    offset: int,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not provision_results:
+        return metadata_results
+    combined = list(provision_results)
+    seen = {str(result["document_id"]) for result in combined}
+    for result in metadata_results:
+        if str(result["document_id"]) in seen:
+            continue
+        result["retrieval_basis"] = "metadata"
+        result["confidence"] = "high" if not provision_results else "medium"
+        result["relevance_score"] = 1.0 if not provision_results else 0.5
+        result["matched_provisions"] = []
+        result["relevant_sections"] = []
+        result["relevant_section_ranges"] = []
+        combined.append(result)
+    return combined[offset : offset + limit]
+
+
+def _bounded_law_snippet(body_text: str, *, max_chars: int = 600) -> str:
+    normalized = " ".join(body_text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1].rstrip() + "…"
+
+
+def _law_search_limitations(profile: LegalQueryProfile | None) -> list[str]:
+    limitations = [
+        "Results identify potentially applicable sources and require human legal review before use."
+    ]
+    if profile is not None and "real_estate" not in profile.concepts:
+        limitations.append(
+            "No explicit real-estate context was detected; cadastral or land-specific applicability was not assumed."
+        )
+    if profile is not None and not profile.concepts:
+        limitations.append(
+            "The query did not match a supported legal concept confidently; verify relevance from the cited source text."
+        )
+    return limitations
 
 
 def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2126,6 +2431,11 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         maximum=_MAX_LAW_TEXT_CHARS,
     )
     section_start, section_end = _requested_section_range(arguments)
+    paragraph_number = _optional_positive_int(arguments.get("paragraph_number"))
+    if paragraph_number is not None and section_start is None:
+        raise HTTPException(status_code=400, detail="paragraph_number requires a section selection")
+    if paragraph_number is not None and section_start != section_end:
+        raise HTTPException(status_code=400, detail="paragraph_number requires one selected section")
     logger.info(
         "mcp_tool_get_law_text_query document_id_hash=%s offset=%d max_chars=%d section_start=%s section_end=%s",
         _stable_hash(document_id),
@@ -2147,6 +2457,7 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
                 v.version_id,
                 v.version_token,
                 v.effective_from,
+                d.source_url,
                 COALESCE(s.content_text, '') AS content_text
             FROM law_documents AS d
             JOIN law_versions AS v ON v.document_id = d.document_id
@@ -2157,24 +2468,49 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
             """,
             (document_id,),
         )
+        provision_rows = (
+            laws.query_all(
+                f"""
+                SELECT anchor, heading, body_text, ordinal
+                FROM law_provisions
+                WHERE version_id = {laws.param}
+                ORDER BY ordinal
+                """,
+                (str(rows[0][6]),),
+            )
+            if rows and section_start is not None
+            else []
+        )
     if not rows:
         logger.warning("mcp_tool_get_law_text_not_found document_id_hash=%s", _stable_hash(document_id))
         raise HTTPException(status_code=404, detail="Law document not found")
     row = rows[0]
     result_document_id = str(row[0])
     result_country_code = str(row[1])
-    result_content_text = str(row[9])
+    result_content_text = str(row[10])
     content_scope = "full"
     requested_sections: list[int] = []
     section_found = True
     source_offset = offset
     total_content_length = len(result_content_text)
     scoped_text = result_content_text
+    section_source = "source_artifact"
+    matched_provision_anchors: list[str] = []
     if section_start is not None:
         assert section_end is not None
         content_scope = "sections"
         requested_sections = list(range(section_start, section_end + 1))
-        section_extract = _extract_section_range(result_content_text, section_start, section_end)
+        structured_extract = _extract_structured_provision_range(
+            rows=provision_rows,
+            section_start=section_start,
+            section_end=section_end,
+            paragraph_number=paragraph_number,
+        )
+        section_extract = (
+            (structured_extract[0], 0)
+            if structured_extract is not None
+            else _extract_section_range(result_content_text, section_start, section_end)
+        )
         section_found = section_extract is not None
         if section_extract is None:
             scoped_text = ""
@@ -2182,6 +2518,9 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
             total_content_length = 0
         else:
             scoped_text, source_offset = section_extract
+            if structured_extract is not None:
+                section_source = "law_provisions"
+                matched_provision_anchors = structured_extract[1]
             total_content_length = len(scoped_text)
             offset = 0
     content_text = scoped_text[offset : offset + max_chars]
@@ -2197,9 +2536,13 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         "version_id": str(row[6]),
         "version_token": str(row[7]),
         "effective_from": str(row[8]),
+        "source_url": str(row[9]),
         "content_text": content_text,
         "content_scope": content_scope,
+        "section_source": section_source,
         "requested_sections": requested_sections,
+        "requested_paragraph_number": paragraph_number,
+        "matched_provision_anchors": matched_provision_anchors,
         "section_found": section_found,
         "source_offset": source_offset,
         "offset": offset,
@@ -2222,6 +2565,48 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         content_truncated,
     )
     return result
+
+
+def _extract_structured_provision_range(
+    *,
+    rows: list[Sequence[Any]],
+    section_start: int,
+    section_end: int,
+    paragraph_number: int | None,
+) -> tuple[str, list[str]] | None:
+    selected: list[tuple[str, str, str, int, int | None]] = []
+    for row in rows:
+        anchor = str(row[0])
+        parsed = parse_provision_anchor(anchor)
+        if parsed is None or not section_start <= parsed.section_number <= section_end:
+            continue
+        if paragraph_number is not None and parsed.paragraph_number != paragraph_number:
+            continue
+        selected.append(
+            (
+                anchor,
+                str(row[1]).strip(),
+                str(row[2]).strip(),
+                parsed.section_number,
+                parsed.paragraph_number,
+            )
+        )
+    if not selected:
+        return None
+
+    rendered: list[str] = []
+    anchors: list[str] = []
+    previous_section: int | None = None
+    for anchor, heading, body_text, section_number, selected_paragraph in selected:
+        anchors.append(anchor)
+        if section_number != previous_section:
+            rendered.append(f"§ {section_number}")
+            previous_section = section_number
+        if heading:
+            rendered.append(heading)
+        paragraph_label = f"({selected_paragraph}) " if selected_paragraph is not None else ""
+        rendered.append(f"{paragraph_label}{body_text}".strip())
+    return "\n".join(part for part in rendered if part).strip(), anchors
 
 
 def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -2868,8 +3253,9 @@ def _mcp_tools() -> list[dict[str, Any]]:
         {
             "name": "searchLaws",
             "description": (
-                "Search JurisDigta imported Slovak laws by title, identifier, and lawyer-facing title. "
-                "Returns metadata for the current consolidated version by default. "
+                "Search JurisDigta imported Slovak laws by title, identifier, and relevant provision text. "
+                "Natural-language legal scenarios return structured matched provisions, confidence, source URLs, "
+                "and a human-review limitation; exact identifier searches remain metadata-first. "
                 "Use sort=latest to order by latest law publication/effective metadata. "
                 "Use exact law_number and law_year when the user cites a legal identifier such as 40/1964; "
                 "otherwise prefer exact title matches over amendment acts. Use this first for Slovak legal "
@@ -2922,6 +3308,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     },
                     "section_start": {"type": "integer", "minimum": 1},
                     "section_end": {"type": "integer", "minimum": 1},
+                    "paragraph_number": {"type": "integer", "minimum": 1},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "max_chars": {
                         "type": "integer",

@@ -70,6 +70,7 @@ class AIModelProviderResponse(BaseModel):
     is_external: bool
     is_local: bool
     health_check_url: str
+    model_parameters: dict[str, bool | int | float | str | None]
     enabled: bool
     created_at: str
     updated_at: str
@@ -89,6 +90,7 @@ class AIModelProviderUpsertRequest(BaseModel):
     is_external: bool = False
     is_local: bool = False
     health_check_url: str = ""
+    model_parameters: dict[str, bool | int | float | str | None] = Field(default_factory=dict)
     enabled: bool = True
     reason: str = ""
 
@@ -106,6 +108,7 @@ class AIModelProfileResponse(BaseModel):
     provider_id: str
     model_code: str
     deployment_name: str
+    model_parameters: dict[str, bool | int | float | str | None]
     context_window_tokens: int
     input_price_per_1m: float
     cached_input_price_per_1m: float
@@ -127,6 +130,7 @@ class AIModelProfileUpsertRequest(BaseModel):
     provider_id: str = Field(min_length=1)
     model_code: str = Field(min_length=1)
     deployment_name: str = ""
+    model_parameters: dict[str, bool | int | float | str | None] = Field(default_factory=dict)
     context_window_tokens: int = Field(default=0, ge=0)
     input_price_per_1m: float = Field(default=0.0, ge=0)
     cached_input_price_per_1m: float = Field(default=0.0, ge=0)
@@ -572,19 +576,23 @@ def upsert_ai_model_provider(
     existing = {item.provider_code: item for item in store.list_ai_model_providers(include_deleted=True)}.get(
         payload.provider_code.strip().lower()
     )
-    provider = store.upsert_ai_model_provider(
-        provider_code=payload.provider_code,
-        provider_type=payload.provider_type,
-        display_name=payload.display_name,
-        base_url=payload.base_url,
-        api_version=payload.api_version,
-        region=payload.region,
-        data_zone=payload.data_zone,
-        is_external=payload.is_external,
-        is_local=payload.is_local,
-        health_check_url=payload.health_check_url,
-        enabled=payload.enabled,
-    )
+    try:
+        provider = store.upsert_ai_model_provider(
+            provider_code=payload.provider_code,
+            provider_type=payload.provider_type,
+            display_name=payload.display_name,
+            base_url=payload.base_url,
+            api_version=payload.api_version,
+            region=payload.region,
+            data_zone=payload.data_zone,
+            is_external=payload.is_external,
+            is_local=payload.is_local,
+            health_check_url=payload.health_check_url,
+            model_parameters=payload.model_parameters,
+            enabled=payload.enabled,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     _record_audit(
         store=store,
         request=request,
@@ -647,6 +655,7 @@ def upsert_ai_model_profile(
             provider_id=payload.provider_id,
             model_code=payload.model_code,
             deployment_name=payload.deployment_name,
+            model_parameters=payload.model_parameters,
             context_window_tokens=payload.context_window_tokens,
             input_price_per_1m=payload.input_price_per_1m,
             cached_input_price_per_1m=payload.cached_input_price_per_1m,
@@ -659,6 +668,8 @@ def upsert_ai_model_profile(
             enabled=payload.enabled,
             model_profile_id=payload.model_profile_id,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as exc:
         if "foreign key" not in str(exc).lower():
             raise
@@ -1700,7 +1711,7 @@ def _summary(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
     data = asdict(value) if hasattr(value, "__dataclass_fields__") else dict(value)
-    return {
+    summary = {
         key: item
         for key, item in data.items()
         if key
@@ -1713,6 +1724,11 @@ def _summary(value: Any) -> dict[str, Any]:
             "secret_value",
         }
     }
+    if "model_parameters" in summary:
+        parameters = summary["model_parameters"]
+        summary["model_parameter_names"] = sorted(parameters) if isinstance(parameters, dict) else []
+        del summary["model_parameters"]
+    return summary
 
 
 def _provider_response(item: AIModelProvider) -> AIModelProviderResponse:

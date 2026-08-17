@@ -6,6 +6,7 @@ from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizer
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
+from aijurisdictionagents.model_parameters import merge_model_parameters
 
 print(
     "local_model_timeout => "
@@ -30,6 +31,12 @@ print(
     "azure_foundry_v1_live_e2e => run scripts/run_issue_612_azure_foundry_e2e.ps1; "
     "it uses isolated synthetic local state, the production EU Foundry connection, and "
     "retains a sanitized final screenshot for at most seven days."
+)
+print(
+    "purchase_contract_legal_basis_e2e => from frontend/aijurisdictionfronend run "
+    "`npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts`; the synthetic "
+    "house-purchase preview and PDF repeat the verified § 588 Civil Code basis, expose the "
+    "official Slov-Lex citation, require human review, and retain ignored evidence for seven days."
 )
 print(
     "web_mfa_reuse => MFA_REUSE_WINDOW_HOURS=12 skips repeat MFA for 12 hours after successful "
@@ -70,7 +77,9 @@ print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
     "questions and call protected searchLegalSources with structured filters such as "
     "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
-    "year_filter_mode='published_in', sort='latest'. Search defaults to metadata only; "
+    "year_filter_mode='published_in', sort='latest'. Natural-language Slovak law scenarios use "
+    "structured provision retrieval and return matched paragraph snippets; exact identifier searches "
+    "remain metadata-first. "
     "court-decision text requires getCourtDecision(full_version=True)."
 )
 print(
@@ -147,7 +156,8 @@ print(
     "http://localhost, http://127.0.0.1, and http://[::1] loopback redirect_uri support."
 )
 print(
-    "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes; "
+    "mcp_wire_logging => MCP HTTP middleware logs redacted request/response envelopes without raw "
+    "legal queries, document ids, snippets, or tool text; "
     "set MCP_WIRE_LOGGING_ENABLED=false to disable or MCP_WIRE_LOG_MAX_BYTES to adjust preview size."
 )
 print(
@@ -302,7 +312,7 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         plan_code="free",
         task_type="chat_reply",
     )
-    demo_store.upsert_ai_model_provider(
+    azure_provider = demo_store.upsert_ai_model_provider(
         provider_code="azure_foundry",
         provider_type="azurefoundry",
         display_name="Azure AI Foundry",
@@ -310,7 +320,22 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         api_version="2024-12-01-preview",
         data_zone="eu",
         is_external=True,
+        model_parameters={"temperature": 0.2},
     )
+    gpt_5_mini_profile = demo_store.upsert_ai_model_profile(
+        model_profile_id="azure_foundry_gpt_5_mini_demo",
+        provider_id=azure_provider.provider_id,
+        model_code="gpt-5-mini",
+        deployment_name="gpt-5-mini",
+        eu_data_zone_capable=True,
+        model_parameters={"temperature": None, "max_completion_tokens": 512},
+    )
+    gpt_5_mini_parameters = merge_model_parameters(
+        azure_provider.model_parameters,
+        gpt_5_mini_profile.model_parameters,
+        provider_type=azure_provider.provider_type,
+    )
+    print(f"model_parameters_gpt_5_mini => {gpt_5_mini_parameters}")
     case_route = demo_store.resolve_ai_model_route(
         user_id=demo_user.user_id,
         plan_code="case",
