@@ -11,8 +11,12 @@ import {
   AdminCaseUser,
   AdminUserSummary,
   AdminUsersPage,
+  CaseCatalogCaseType,
+  DocumentTemplateCatalogItem,
   OllamaModelInventory,
   disableAIModelUserOverride,
+  fetchAdminCaseCatalogCaseTypes,
+  fetchAdminCaseCatalogDocumentTemplates,
   fetchAdminUsers,
   fetchAdminCaseExportBlob,
   fetchAdminUserCases,
@@ -42,9 +46,10 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "assignments" | "cases" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "audit";
 type AdminFormMode = "table" | "create" | "edit";
 type AdminDashboardLoadState = "idle" | "loading" | "success" | "error";
+type AdminCaseCatalogLoadState = "idle" | "loading" | "success" | "error";
 
 const emptyProvider = {
   provider_code: "",
@@ -156,6 +161,9 @@ const AIModelAdmin: React.FC = () => {
   const [caseUserResults, setCaseUserResults] = React.useState<AdminCaseUser[]>([]);
   const [selectedCaseUser, setSelectedCaseUser] = React.useState<AdminCaseUser | null>(null);
   const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
+  const [catalogCaseTypes, setCatalogCaseTypes] = React.useState<CaseCatalogCaseType[]>([]);
+  const [catalogTemplates, setCatalogTemplates] = React.useState<DocumentTemplateCatalogItem[]>([]);
+  const [catalogLoadState, setCatalogLoadState] = React.useState<AdminCaseCatalogLoadState>("idle");
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
   const [exportingAdminCaseId, setExportingAdminCaseId] = React.useState<string | null>(null);
   const [assignmentQuery, setAssignmentQuery] = React.useState("");
@@ -212,6 +220,19 @@ const AIModelAdmin: React.FC = () => {
   const activePolicies = React.useMemo(
     () => (dashboard?.policies ?? []).filter((policy) => !policy.deleted_at),
     [dashboard?.policies]
+  );
+  const catalogPrompts = React.useMemo(
+    () => catalogCaseTypes
+      .filter((item) => item.prompt)
+      .map((item) => ({
+        case_type_id: item.case_type_id,
+        case_type_key: item.case_type_key,
+        case_type_name: item.name,
+        jurisdiction: item.jurisdiction,
+        linked_templates: item.templates,
+        prompt: item.prompt
+      })),
+    [catalogCaseTypes]
   );
 
   const reload = React.useCallback(async () => {
@@ -330,6 +351,24 @@ const AIModelAdmin: React.FC = () => {
   React.useEffect(() => {
     void reloadOllama();
   }, [reloadOllama]);
+
+  const loadCaseCatalog = React.useCallback(async () => {
+    if (!adminUserId || catalogLoadState === "loading") return;
+    setCatalogLoadState("loading");
+    setError("");
+    try {
+      const [caseTypesResponse, templatesResponse] = await Promise.all([
+        fetchAdminCaseCatalogCaseTypes(adminAuth),
+        fetchAdminCaseCatalogDocumentTemplates(adminAuth)
+      ]);
+      setCatalogCaseTypes(caseTypesResponse.items);
+      setCatalogTemplates(templatesResponse.items);
+      setCatalogLoadState("success");
+    } catch (loadError) {
+      setCatalogLoadState("error");
+      setError(loadError instanceof Error ? loadError.message : t("adminCaseCatalogLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, catalogLoadState, t]);
 
   const runAction = async (action: () => Promise<unknown>, successMessage: string) => {
     setError("");
@@ -802,6 +841,8 @@ const AIModelAdmin: React.FC = () => {
     setActiveSection(section);
     if (section === "ollama") {
       void reloadOllama();
+    } else if (section === "caseCatalog") {
+      void loadCaseCatalog();
     } else if (dashboardLoadState !== "success") {
       void reload();
     }
@@ -835,6 +876,7 @@ const AIModelAdmin: React.FC = () => {
     { key: "users", label: t("adminUsersTitle"), icon: <FaUsers aria-hidden="true" /> },
     { key: "assignments", label: t("adminAssignmentTitle"), icon: <FaUserCog aria-hidden="true" /> },
     { key: "cases", label: t("adminCasesTitle"), icon: <FaBriefcase aria-hidden="true" /> },
+    { key: "caseCatalog", label: t("adminCaseCatalogTitle"), icon: <FaBriefcase aria-hidden="true" /> },
     { key: "providers", label: t("adminProvidersTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "profiles", label: t("adminProfilesTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "credentials", label: t("adminCredentialsTitle"), icon: <FaKey aria-hidden="true" /> },
@@ -887,13 +929,13 @@ const AIModelAdmin: React.FC = () => {
           tabIndex={-1}
           aria-busy={dashboardLoadState === "loading" && !dashboard}
         >
-          {activeSection !== "ollama" && dashboardLoadState === "loading" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && dashboardLoadState === "loading" && !dashboard ? (
             <div className="admin-panel admin-load-state" role="status">
               <p>{t("adminLoading")}</p>
             </div>
           ) : null}
 
-          {activeSection !== "ollama" && dashboardLoadState === "error" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && dashboardLoadState === "error" && !dashboard ? (
             <div className="admin-panel admin-load-state">
               <p>{t("adminLoadFailed")}</p>
               <button className="secondary-button" type="button" onClick={() => void reload()}>
@@ -902,7 +944,7 @@ const AIModelAdmin: React.FC = () => {
             </div>
           ) : null}
 
-          {dashboard || activeSection === "ollama" ? <>
+          {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" ? <>
           {activeSection === "users" ? (
             <section className="admin-table-section">
               <h2>{t("adminUsersTitle")}</h2>
@@ -1196,6 +1238,114 @@ const AIModelAdmin: React.FC = () => {
                   {!selectedCaseUser ? <p className="admin-muted">{t("adminCasesSelectUser")}</p> : null}
                 </div>
               </section>
+            </section>
+          ) : null}
+
+          {activeSection === "caseCatalog" ? (
+            <section className="admin-grid">
+              <section className="admin-panel">
+                <div className="admin-section-heading">
+                  <h2>{t("adminCaseCatalogTitle")}</h2>
+                  <button className="secondary-button" type="button" onClick={() => void loadCaseCatalog()}>
+                    {t("adminRefresh")}
+                  </button>
+                </div>
+                <p className="admin-muted">{t("adminCaseCatalogHelp")}</p>
+                <p className="admin-muted">{t("adminCaseCatalogPrivacyNote")}</p>
+              </section>
+
+              {catalogLoadState === "loading" ? (
+                <section className="admin-panel admin-load-state" role="status">
+                  <p>{t("adminCaseCatalogLoading")}</p>
+                </section>
+              ) : null}
+
+              {catalogLoadState === "error" ? (
+                <section className="admin-panel admin-load-state">
+                  <p>{t("adminCaseCatalogLoadFailed")}</p>
+                  <button className="secondary-button" type="button" onClick={() => void loadCaseCatalog()}>
+                    <FaSyncAlt aria-hidden="true" />{t("adminRetry")}
+                  </button>
+                </section>
+              ) : null}
+
+              {catalogLoadState === "success" ? (
+                <>
+                  <section className="admin-panel">
+                    <h2>{t("adminCaseCatalogCaseTypesTitle")}</h2>
+                    <AdminRecordsTable
+                      emptyLabel={t("adminCaseCatalogEmptyCaseTypes")}
+                      headers={[
+                        t("adminCaseCatalogCaseType"),
+                        t("adminCaseCatalogJurisdiction"),
+                        t("adminCaseCatalogLinkedTemplates"),
+                        t("adminCaseCatalogPromptStatus"),
+                        t("adminStatus")
+                      ]}
+                      rows={catalogCaseTypes.map((item) => [
+                        <div>
+                          <strong>{item.name}</strong>
+                          <div><small>{item.case_type_key}</small></div>
+                        </div>,
+                        [item.jurisdiction, item.language].filter(Boolean).join(" / "),
+                        renderLinkedTemplatesCell(item.templates, t),
+                        item.prompt ? t("adminCaseCatalogPromptAvailable") : t("adminCaseCatalogPromptMissing"),
+                        item.is_enabled ? t("adminEnabled") : t("adminDisabled")
+                      ])}
+                    />
+                  </section>
+
+                  <section className="admin-panel">
+                    <h2>{t("adminCaseCatalogTemplatesTitle")}</h2>
+                    <AdminRecordsTable
+                      emptyLabel={t("adminCaseCatalogEmptyTemplates")}
+                      headers={[
+                        t("adminCaseCatalogTemplate"),
+                        t("adminCaseCatalogCategory"),
+                        t("adminCaseCatalogTemplateKind"),
+                        t("adminCaseCatalogSource"),
+                        t("adminStatus")
+                      ]}
+                      rows={catalogTemplates.map((item) => [
+                        <div>
+                          <strong>{item.title}</strong>
+                          <div><small>{item.template_key}</small></div>
+                        </div>,
+                        item.category,
+                        item.template_kind,
+                        <div>
+                          <div>{item.source_format}</div>
+                          <small>{item.source_url}</small>
+                        </div>,
+                        item.is_enabled ? t("adminEnabled") : t("adminDisabled")
+                      ])}
+                    />
+                  </section>
+
+                  <section className="admin-panel">
+                    <h2>{t("adminCaseCatalogPromptsTitle")}</h2>
+                    <AdminRecordsTable
+                      emptyLabel={t("adminCaseCatalogEmptyPrompts")}
+                      headers={[
+                        t("adminCaseCatalogCaseType"),
+                        t("adminCaseCatalogLinkedTemplates"),
+                        t("adminCaseCatalogPrompt")
+                      ]}
+                      rows={catalogPrompts.map((item) => [
+                        <div>
+                          <strong>{item.case_type_name}</strong>
+                          <div><small>{item.case_type_key}</small></div>
+                        </div>,
+                        renderLinkedTemplatesCell(item.linked_templates, t),
+                        <details>
+                          <summary>{t("adminCaseCatalogViewPrompt")}</summary>
+                          <div style={{ whiteSpace: "pre-wrap" }}>{item.prompt?.prompt_text ?? ""}</div>
+                        </details>
+                      ])}
+                    />
+                  </section>
+                </>
+              ) : null}
             </section>
           ) : null}
 
@@ -1651,6 +1801,24 @@ const AdminRecordsTable: React.FC<{
     {!rows.length ? <p className="admin-muted">{emptyLabel}</p> : null}
   </div>
 );
+
+const renderLinkedTemplatesCell = (
+  templates: DocumentTemplateCatalogItem[],
+  t: (key: string, values?: Record<string, string | number>) => string
+): React.ReactNode => {
+  if (!templates.length) {
+    return t("adminCaseCatalogNoLinkedTemplates");
+  }
+  return (
+    <ul className="admin-compact-list">
+      {templates.map((template) => (
+        <li key={template.template_id || template.template_key}>
+          {template.title} ({template.template_key})
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 const formatModelSize = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes <= 0) {
