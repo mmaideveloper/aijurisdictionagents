@@ -56,6 +56,7 @@ Default behavior:
 
 - every seeded template creates one seeded case type with the same title
 - every seeded case type gets one generic reusable prompt
+- every seeded case type gets a richer default description covering typical use, required inputs, and the linked-template expectation
 - manually created case types can exist without any linked template
 - linked templates can be added later without reseeding the catalog
 

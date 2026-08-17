@@ -65,6 +65,7 @@ class DocumentTemplateStore:
         self._initialize()
         self._seed_defaults_if_empty()
         self._seed_case_types_if_empty()
+        self._refresh_seeded_case_type_descriptions()
 
     @classmethod
     def from_env(cls) -> "DocumentTemplateStore":
@@ -595,6 +596,44 @@ class DocumentTemplateStore:
         templates = self.list(include_deleted=False)
         for item in build_default_case_types(templates):
             self.create_case_type(item)
+
+    def _refresh_seeded_case_type_descriptions(self) -> None:
+        default_items = build_default_case_types(self.list(include_deleted=False))
+        if not default_items:
+            return
+        updates: list[tuple[str, str, str, str]] = []
+        for item in default_items:
+            try:
+                current = self.get_case_type(
+                    case_type_key=item.case_type_key,
+                    jurisdiction=item.jurisdiction,
+                )
+            except CaseTypeNotFoundError:
+                continue
+            if current.description.strip() == item.description.strip():
+                continue
+            updates.append(
+                (
+                    item.description.strip(),
+                    _utc_now_iso(),
+                    current.case_type_key,
+                    current.jurisdiction,
+                )
+            )
+        if not updates:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                self._sql(
+                    """
+                    UPDATE case_types
+                    SET description = ?, updated_at = ?
+                    WHERE case_type_key = ? AND jurisdiction = ?
+                    """
+                ),
+                [self._params(*values) for values in updates],
+            )
+            conn.commit()
 
     def _initialize(self) -> None:
         with self._connect() as conn:

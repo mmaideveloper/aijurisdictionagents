@@ -42,6 +42,37 @@ def test_case_type_store_seeds_case_types_from_templates(tmp_path: Path) -> None
     assert ministry_case.prompt is not None
     assert ministry_case.templates
     assert ministry_case.templates[0].template_key == "sk.justice.fees.exemption_fo"
+    assert "Typicky sa pouziva" in ministry_case.description
+    assert "Zvycajne treba pripravit" in ministry_case.description
+    assert "K pripadu existuje prepojena sablona v katalogu" in ministry_case.description
+    assert "majetkove a prijmove pomery" in ministry_case.description
+
+
+def test_case_type_store_refreshes_seeded_short_descriptions(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    db_path = tmp_path / "document_templates.sqlite3"
+
+    store.update_case_type(
+        case_type_key="sk.justice.company_registry.change_registration",
+        jurisdiction="SK",
+        payload=CaseTypeUpdateRequest(
+            description="Navrh na zapis zmeny udajov do obchodneho registra pre podania v elektronickej podobe",
+        ),
+    )
+
+    refreshed_store = DocumentTemplateStore(
+        DocumentTemplateStoreConfig(
+            db_option="sqlite",
+            db_cloud="",
+            sqlite_path=db_path,
+        )
+    )
+    refreshed_case = refreshed_store.get_case_type(
+        case_type_key="sk.justice.company_registry.change_registration",
+        jurisdiction="SK",
+    )
+    assert "Typicky sa pouziva" in refreshed_case.description
+    assert "identifikacne udaje spolocnosti" in refreshed_case.description
 
 
 def test_case_type_store_supports_case_without_template_then_linking_one(tmp_path: Path) -> None:
