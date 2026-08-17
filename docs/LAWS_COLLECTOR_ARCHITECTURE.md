@@ -1,5 +1,18 @@
 # Law Collector Architecture
 
+## MCP provision retrieval
+
+The MCP law search reads the latest consolidated `law_versions` and searches the corresponding
+`law_provisions`. Provision anchors such as `paragraf-588.odsek-1.text` preserve section and
+paragraph identity even though `source_artifacts.content_text` is flattened during collection.
+Migration `0008_add_provision_search_indexes.sql` adds version/anchor lookup indexes and a
+PostgreSQL `simple` full-text GIN index over provision bodies. This keeps scenario retrieval
+grounded in collected public-law text while `getLawText` can reconstruct a focused section range.
+
+Search logs contain query length and timing only, not raw prompts or returned legal text. Results
+include source URLs, matched anchors, limitations, and a human-review flag for transparency and
+legal-risk oversight.
+
 ## Purpose
 
 This document describes the current architecture of the `laws_collector` service implemented under `src/services/laws_collector/`.

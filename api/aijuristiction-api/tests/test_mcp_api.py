@@ -86,6 +86,36 @@ def test_postgres_laws_query_session_sets_parameterized_statement_timeout(monkey
     assert connection.closed is True
 
 
+def test_postgres_provision_search_uses_parameterized_full_text_query() -> None:
+    captured: list[tuple[str, tuple[object, ...]]] = []
+
+    def query_all(query: str, params: tuple[object, ...]) -> list[tuple[object, ...]]:
+        captured.append((query, params))
+        return []
+
+    profile = mcp_api.build_legal_query_profile("kúpna zmluva na záhradu")
+    laws = mcp_api._LawsQueryConfig(backend="postgres", query_all=query_all, param="%s")
+
+    rows = mcp_api._query_provision_candidates(
+        laws=laws,
+        profile=profile,
+        country_code="SK",
+        published_year=None,
+        law_year=None,
+        law_number=None,
+        candidate_limit=300,
+    )
+
+    assert rows == []
+    assert len(captured) == 1
+    query, params = captured[0]
+    assert "to_tsquery('simple', %s)" in query
+    assert "to_tsvector('simple', LOWER(p.body_text)) @@ q.value" in query
+    assert params[1:] == ("SK", 300)
+    assert "kúp:*" in str(params[0])
+    assert "záhrad:*" in str(params[0])
+
+
 def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     mcp_key = _create_mcp_key(tmp_path)
@@ -1317,6 +1347,263 @@ def test_mcp_get_law_text_returns_requested_section_range(monkeypatch, tmp_path:
     assert "§ 717" not in payload["content_text"]
 
 
+def test_mcp_search_laws_finds_legal_basis_from_natural_language_scenario(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Občiansky zákonník",
+        lawyer_title="Občiansky zákonník",
+        law_identifier_text="40/1964 Zb.",
+        title="Občiansky zákonník",
+        content_text="Flattened source without paragraph markers.",
+        source_url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1964/40/",
+        provisions=(
+            (
+                "paragraf-46.odsek-1.text",
+                "Písomná forma",
+                "Písomnú formu musia mať zmluvy o prevodoch nehnuteľností.",
+            ),
+            (
+                "paragraf-133.odsek-2.text",
+                "Nadobudnutie vlastníctva",
+                "Ak sa prevádza nehnuteľná vec na základe zmluvy, vlastníctvo sa "
+                "nadobúda vkladom do katastra nehnuteľností.",
+            ),
+            (
+                "paragraf-588.odsek-1.text",
+                "Kúpna zmluva",
+                "Z kúpnej zmluvy vznikne predávajúcemu povinnosť predmet "
+                "kupujúcemu odovzdať a kupujúcemu povinnosť zaplatiť cenu.",
+            ),
+            (
+                "paragraf-600.odsek-1.text",
+                "Vedľajšie dojednania",
+                "Zmluvné strany môžu dohodnúť vedľajšie dojednania pri kúpe.",
+            ),
+        ),
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-162-1995",
+        version_id="ver-162-1995",
+        metadata_id="meta-162-1995",
+        artifact_id="artifact-162-1995",
+        law_year=1995,
+        law_number=162,
+        official_name="Katastrálny zákon",
+        lawyer_title="Zákon o katastri nehnuteľností",
+        law_identifier_text="162/1995 Z. z.",
+        title="Katastrálny zákon",
+        content_text="Flattened source without paragraph markers.",
+        source_url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1995/162/",
+        provisions=(
+            (
+                "paragraf-28.odsek-1.text",
+                "Vklad",
+                "Práva k nehnuteľnostiam zo zmlúv sa zapisujú do katastra vkladom.",
+            ),
+            (
+                "paragraf-31.odsek-1.text",
+                "Konanie o návrhu na vklad",
+                "Okresný úrad preskúma zmluvu z hľadiska oprávnenia previesť "
+                "nehnuteľnosť a určitosti prejavov vôle.",
+            ),
+            (
+                "paragraf-42.odsek-2.text",
+                "Spôsobilosť listín",
+                "Zmluva musí označiť účastníkov a nehnuteľnosť podľa katastrálneho územia a parcely.",
+            ),
+        ),
+    )
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-89-2016",
+        version_id="ver-89-2016",
+        metadata_id="meta-89-2016",
+        artifact_id="artifact-89-2016",
+        law_year=2016,
+        law_number=89,
+        official_name="Zákon o výrobe a predaji tabakových výrobkov",
+        lawyer_title="Tabakové výrobky",
+        law_identifier_text="89/2016 Z. z.",
+        title="Predaj tabakových výrobkov",
+        content_text="Predaj tabakových výrobkov.",
+        provisions=(("paragraf-10.odsek-1.text", "Predaj", "Predaj tabakových výrobkov."),),
+    )
+
+    payload = None
+    for query in (
+        "chcem kupno predajnu zmluvu na zahradu",
+        "kúpna zmluva na záhradu",
+        "kúpno-predajná zmluva na pozemok",
+        "predaj záhrady",
+        "kupna zmluva zahrada",
+    ):
+        response = _mcp_call(
+            "searchLaws",
+            {"query": query, "limit": 5},
+            headers={"authorization": f"Bearer {mcp_key}"},
+        )
+
+        assert response.status_code == 200
+        payload = _tool_payload(response)
+        assert payload["retrieval_mode"] == "provision_aware"
+        assert payload["metadata_only"] is False
+        assert payload["query_concepts"] == ["purchase_contract", "real_estate"]
+        assert payload["human_review_required"] is True
+        assert {result["law_identifier_text"] for result in payload["results"][:2]} == {
+            "40/1964 Zb.",
+            "162/1995 Z. z.",
+        }
+
+    assert payload is not None
+    results = payload["results"]
+    civil_code = next(result for result in results if result["law_identifier_text"] == "40/1964 Zb.")
+    cadastral_act = next(
+        result for result in results if result["law_identifier_text"] == "162/1995 Z. z."
+    )
+    assert {46, 133, 588}.issubset(civil_code["relevant_sections"])
+    assert {28, 31, 42}.issubset(cadastral_act["relevant_sections"])
+    assert all(result["retrieval_basis"] == "law_provisions" for result in results[:2])
+    assert civil_code["source_url"].endswith("/SK/ZZ/1964/40/")
+    assert cadastral_act["source_url"].endswith("/SK/ZZ/1995/162/")
+    exact_identifier = _mcp_call(
+        "searchLaws",
+        {"query": "162/1995", "law_year": 1995, "law_number": 162},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    assert exact_identifier.status_code == 200
+    assert [result["law_identifier_text"] for result in _tool_payload(exact_identifier)["results"]] == [
+        "162/1995 Z. z."
+    ]
+
+
+def test_mcp_get_law_text_uses_structured_provisions_and_paragraph_filter(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-40-1964",
+        version_id="ver-40-1964",
+        metadata_id="meta-40-1964",
+        artifact_id="artifact-40-1964",
+        law_year=1964,
+        law_number=40,
+        official_name="Občiansky zákonník",
+        lawyer_title="Občiansky zákonník",
+        law_identifier_text="40/1964 Zb.",
+        title="Občiansky zákonník",
+        content_text="Flattened text has no section symbols.",
+        provisions=(
+            ("paragraf-46.odsek-1.text", "", "Zmluva o prevode nehnuteľnosti musí byť písomná."),
+            ("paragraf-133.odsek-1.text", "Vlastníctvo", "Hnuteľná vec sa nadobúda prevzatím."),
+            (
+                "paragraf-133.odsek-2.text",
+                "Vlastníctvo",
+                "Vlastníctvo k nehnuteľnosti sa nadobúda vkladom do katastra.",
+            ),
+            ("paragraf-588.odsek-1.text", "Kúpna zmluva", "Kupujúci zaplatí dohodnutú cenu."),
+            ("paragraf-600.odsek-1.text", "Dojednania", "Strany sa môžu dohodnúť."),
+        ),
+    )
+
+    paragraph_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-40-1964", "section_number": 133, "paragraph_number": 2},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    range_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-40-1964", "section_start": 588, "section_end": 600},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    written_form_response = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-40-1964", "section_number": 46},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert paragraph_response.status_code == 200
+    paragraph = _tool_payload(paragraph_response)
+    assert paragraph["section_source"] == "law_provisions"
+    assert paragraph["matched_provision_anchors"] == ["paragraf-133.odsek-2.text"]
+    assert "(2) Vlastníctvo k nehnuteľnosti" in paragraph["content_text"]
+    assert "Hnuteľná vec" not in paragraph["content_text"]
+    assert range_response.status_code == 200
+    section_range = _tool_payload(range_response)
+    assert section_range["section_source"] == "law_provisions"
+    assert "§ 588" in section_range["content_text"]
+    assert "§ 600" in section_range["content_text"]
+    assert written_form_response.status_code == 200
+    written_form = _tool_payload(written_form_response)
+    assert written_form["section_found"] is True
+    assert "§ 46" in written_form["content_text"]
+
+
+def test_mcp_get_law_text_returns_cadastral_section_ranges(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    _insert_law_search_fixture(
+        db_path,
+        document_id="doc-162-1995",
+        version_id="ver-162-1995",
+        metadata_id="meta-162-1995",
+        artifact_id="artifact-162-1995",
+        law_year=1995,
+        law_number=162,
+        official_name="Katastrálny zákon",
+        lawyer_title="Katastrálny zákon",
+        law_identifier_text="162/1995 Z. z.",
+        title="Katastrálny zákon",
+        content_text="Flattened text has no section symbols.",
+        provisions=(
+            ("paragraf-28.odsek-1.text", "", "Práva sa zapisujú vkladom."),
+            ("paragraf-29.odsek-1.text", "", "Vklad sa vykoná na základe rozhodnutia."),
+            ("paragraf-30.odsek-1.text", "", "Konanie sa začína na návrh."),
+            ("paragraf-31.odsek-1.text", "", "Okresný úrad preskúma zmluvu."),
+            ("paragraf-42.odsek-1.text", "", "Listina musí byť písomne vyhotovená."),
+        ),
+    )
+
+    registration = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-162-1995", "section_start": 28, "section_end": 31},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    document_form = _mcp_call(
+        "getLawText",
+        {"document_id": "doc-162-1995", "section_number": 42},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert registration.status_code == 200
+    registration_payload = _tool_payload(registration)
+    assert registration_payload["section_found"] is True
+    assert registration_payload["section_source"] == "law_provisions"
+    assert all(f"§ {section}" in registration_payload["content_text"] for section in range(28, 32))
+    assert document_form.status_code == 200
+    document_payload = _tool_payload(document_form)
+    assert document_payload["section_found"] is True
+    assert "§ 42" in document_payload["content_text"]
+
+
 def test_mcp_logs_tool_events_without_sensitive_payloads(monkeypatch, tmp_path: Path, caplog) -> None:
     _configure_env(monkeypatch, tmp_path)
     _create_laws_db(tmp_path / "laws.sqlite3")
@@ -1430,6 +1717,28 @@ def test_mcp_wire_logging_preserves_oauth_token_type_while_redacting_values() ->
     assert redacted["access_token"] == "[redacted]"
     assert redacted["refresh_token"] == "[redacted]"
     assert redacted["email"] == "[redacted]"
+
+
+def test_mcp_wire_logging_redacts_legal_queries_and_tool_text() -> None:
+    redacted = _redact_payload(
+        {
+            "params": {
+                "arguments": {"query": "synthetic legal scenario", "document_id": "doc-public"}
+            },
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": '{"snippet":"public provision body","document_id":"doc-public"}',
+                    }
+                ]
+            },
+        }
+    )
+
+    assert redacted["params"]["arguments"]["query"] == "[redacted]"
+    assert redacted["params"]["arguments"]["document_id"] == "[redacted]"
+    assert redacted["result"]["content"][0]["text"] == "[redacted]"
 
 
 def test_user_mcp_api_key_defaults_to_one_day(monkeypatch, tmp_path: Path) -> None:
@@ -2902,6 +3211,15 @@ def _create_laws_db(path: Path) -> None:
                 title TEXT NOT NULL,
                 law_type TEXT NOT NULL
             );
+            CREATE TABLE law_provisions (
+                provision_id TEXT PRIMARY KEY,
+                version_id TEXT NOT NULL,
+                anchor TEXT NOT NULL,
+                heading TEXT NOT NULL,
+                body_text TEXT NOT NULL,
+                ordinal INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
             CREATE TABLE source_artifacts (
                 artifact_id TEXT PRIMARY KEY,
                 document_id TEXT NOT NULL,
@@ -3057,7 +3375,10 @@ def _insert_law_search_fixture(
     law_identifier_text: str,
     title: str,
     content_text: str,
+    provisions: tuple[tuple[str, str, str], ...] = (),
+    source_url: str | None = None,
 ) -> None:
+    resolved_source_url = source_url or f"https://example.test/laws/{law_year}/{law_number}"
     with sqlite3.connect(path) as conn:
         conn.execute(
             """
@@ -3074,7 +3395,7 @@ def _insert_law_search_fixture(
                 law_number,
                 official_name,
                 lawyer_title,
-                f"https://example.test/laws/{law_year}/{law_number}",
+                resolved_source_url,
                 "published",
                 "2026-06-01T12:00:00Z",
             ),
@@ -3108,11 +3429,28 @@ def _insert_law_search_fixture(
                 document_id,
                 version_id,
                 "html",
-                f"https://example.test/laws/{law_year}/{law_number}",
+                resolved_source_url,
                 "local_file",
                 "ignored",
                 content_text,
                 "2026-06-01T12:00:00Z",
             ),
         )
+        for ordinal, (anchor, heading, body_text) in enumerate(provisions):
+            conn.execute(
+                """
+                INSERT INTO law_provisions(
+                    provision_id, version_id, anchor, heading, body_text, ordinal, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"{version_id}-provision-{ordinal}",
+                    version_id,
+                    anchor,
+                    heading,
+                    body_text,
+                    ordinal,
+                    "2026-06-01T12:00:00Z",
+                ),
+            )
         conn.commit()
