@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from app.document_templates.ministry_catalog import build_ministry_page_document_templates
 from app.document_templates.models import (
     DocumentTemplateDefinition,
     DownloadedTemplateSource,
@@ -14,7 +15,8 @@ from app.document_templates.models import (
 
 
 def build_default_document_templates() -> list[DocumentTemplateDefinition]:
-    return [
+    return _merge_template_seeds(
+        [
         DocumentTemplateDefinition(
             template_id="seed-sk-commercial-agency",
             template_key="sk.contract.commercial_agency",
@@ -461,7 +463,9 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             is_enabled=True,
             is_deleted=False,
         ),
-    ]
+        ],
+        build_ministry_page_document_templates(),
+    )
 
 
 def render_template(
@@ -572,4 +576,19 @@ def _todo_marker(*, field_name: str, country: str, language: str | None) -> str:
     if normalized_country == "SK" or normalized_language.startswith("sk"):
         return f"[DOPLNIT: {field_name}]"
     return f"[TODO: {field_name}]"
+
+
+def _merge_template_seeds(
+    *groups: list[DocumentTemplateDefinition],
+) -> list[DocumentTemplateDefinition]:
+    merged: list[DocumentTemplateDefinition] = []
+    seen: set[tuple[str, str]] = set()
+    for group in groups:
+        for item in group:
+            key = (item.jurisdiction, item.template_key)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+    return merged
 

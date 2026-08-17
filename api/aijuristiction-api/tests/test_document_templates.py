@@ -41,6 +41,8 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.real_estate.lease_agreement" in keys
     assert "sk.authorization.general_power_of_attorney" in keys
     assert "sk.employment.employment_contract" in keys
+    assert "sk.justice.fees.exemption_fo" in keys
+    assert "sk.justice.company_registry.initial_registration" in keys
 
 
 def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:

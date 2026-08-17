@@ -14,10 +14,18 @@ from uuid import uuid4
 
 from aijurisdictionagents.api_db.config import ApiDataConfig
 
+from app.case_types.models import (
+    CasePromptDefinition,
+    CaseTypeCreateRequest,
+    CaseTypeDefinition,
+    CaseTypeUpdateRequest,
+)
+from app.case_types.seed import build_default_case_types
 from app.document_templates.catalog import build_default_document_templates
 from app.document_templates.models import (
     DocumentTemplateCreateRequest,
     DocumentTemplateDefinition,
+    DocumentTemplateResponse,
     DocumentTemplateUpdateRequest,
     TemplateSourceReference,
 )
@@ -42,12 +50,22 @@ class DocumentTemplateAmbiguousError(ValueError):
     pass
 
 
+class CaseTypeNotFoundError(KeyError):
+    pass
+
+
+class CaseTypeConflictError(ValueError):
+    pass
+
+
 class DocumentTemplateStore:
     def __init__(self, config: DocumentTemplateStoreConfig) -> None:
         self._config = config
         self._config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self._seed_defaults_if_empty()
+        self._seed_case_types_if_empty()
+        self._refresh_seeded_case_type_descriptions()
 
     @classmethod
     def from_env(cls) -> "DocumentTemplateStore":
@@ -270,6 +288,240 @@ class DocumentTemplateStore:
             conn.commit()
         return self.get(template_key=template_key, jurisdiction=current.jurisdiction)
 
+    def list_case_types(
+        self,
+        *,
+        include_deleted: bool = False,
+        jurisdiction: str | None = None,
+    ) -> builtins.list[CaseTypeDefinition]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if not include_deleted:
+            clauses.append("is_deleted = 0")
+        if jurisdiction:
+            clauses.append("jurisdiction = ?")
+            params.append(jurisdiction.strip().upper())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"SELECT * FROM case_types {where_sql} ORDER BY name ASC"
+        with self._connect() as conn:
+            rows = conn.execute(self._sql(query), self._params(*params)).fetchall()
+        return [self._case_row_to_definition(_row_to_mapping(row)) for row in rows]
+
+    def get_case_type(
+        self,
+        *,
+        case_type_key: str,
+        jurisdiction: str | None = None,
+    ) -> CaseTypeDefinition:
+        normalized_key = case_type_key.strip().lower()
+        with self._connect() as conn:
+            if jurisdiction:
+                row = conn.execute(
+                    self._sql("SELECT * FROM case_types WHERE case_type_key = ? AND jurisdiction = ?"),
+                    self._params(normalized_key, jurisdiction.strip().upper()),
+                ).fetchone()
+                if row is None:
+                    raise CaseTypeNotFoundError(
+                        f"Case type '{case_type_key}' for jurisdiction '{jurisdiction}' was not found"
+                    )
+                return self._case_row_to_definition(_row_to_mapping(row))
+            rows = conn.execute(
+                self._sql("SELECT * FROM case_types WHERE case_type_key = ?"),
+                self._params(normalized_key),
+            ).fetchall()
+        if not rows:
+            raise CaseTypeNotFoundError(f"Case type '{case_type_key}' was not found")
+        if len(rows) > 1:
+            raise CaseTypeConflictError(
+                f"Case type '{case_type_key}' exists in multiple jurisdictions; specify jurisdiction."
+            )
+        return self._case_row_to_definition(_row_to_mapping(rows[0]))
+
+    def create_case_type(self, payload: CaseTypeCreateRequest) -> CaseTypeDefinition:
+        case_type_key = payload.case_type_key.strip().lower()
+        jurisdiction = payload.jurisdiction.strip().upper()
+        if self._case_type_exists(case_type_key=case_type_key, jurisdiction=jurisdiction):
+            raise CaseTypeConflictError(
+                f"Case type '{case_type_key}' for jurisdiction '{jurisdiction}' already exists"
+            )
+        now = _utc_now_iso()
+        case_type_id = str(uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    INSERT INTO case_types (
+                        case_type_id, case_type_key, jurisdiction, language, name, description,
+                        keywords_json, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    """
+                ),
+                self._params(
+                    case_type_id,
+                    case_type_key,
+                    jurisdiction,
+                    (payload.language or "").strip() or None,
+                    payload.name.strip(),
+                    payload.description.strip(),
+                    json.dumps(_dedupe_preserve_order(payload.keywords), ensure_ascii=False, sort_keys=True),
+                    1 if payload.is_enabled else 0,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        self._upsert_case_prompt(
+            case_type_id=case_type_id,
+            prompt_text=payload.prompt_text or _default_case_prompt_text(payload.name),
+        )
+        self._replace_case_type_templates(
+            case_type_id=case_type_id,
+            template_keys=payload.template_keys,
+            jurisdiction=jurisdiction,
+        )
+        return self.get_case_type(case_type_key=case_type_key, jurisdiction=jurisdiction)
+
+    def update_case_type(
+        self,
+        *,
+        case_type_key: str,
+        payload: CaseTypeUpdateRequest,
+        jurisdiction: str | None = None,
+    ) -> CaseTypeDefinition:
+        current = self.get_case_type(case_type_key=case_type_key, jurisdiction=jurisdiction)
+        if current.is_deleted:
+            raise CaseTypeNotFoundError(f"Case type '{case_type_key}' is deleted")
+        updated_jurisdiction = (payload.jurisdiction or current.jurisdiction).strip().upper()
+        updated = {
+            "jurisdiction": updated_jurisdiction,
+            "language": payload.language.strip() if isinstance(payload.language, str) else current.language,
+            "name": (payload.name or current.name).strip(),
+            "description": (payload.description if payload.description is not None else current.description).strip(),
+            "keywords_json": json.dumps(
+                _dedupe_preserve_order(payload.keywords)
+                if payload.keywords is not None
+                else list(current.keywords),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "is_enabled": 1 if (payload.is_enabled if payload.is_enabled is not None else current.is_enabled) else 0,
+            "updated_at": _utc_now_iso(),
+        }
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    UPDATE case_types
+                    SET jurisdiction = ?, language = ?, name = ?, description = ?, keywords_json = ?,
+                        is_enabled = ?, updated_at = ?
+                    WHERE case_type_key = ? AND jurisdiction = ?
+                    """
+                ),
+                self._params(
+                    updated["jurisdiction"],
+                    updated["language"],
+                    updated["name"],
+                    updated["description"],
+                    updated["keywords_json"],
+                    updated["is_enabled"],
+                    updated["updated_at"],
+                    current.case_type_key,
+                    current.jurisdiction,
+                ),
+            )
+            conn.commit()
+        if payload.prompt_text is not None:
+            self._upsert_case_prompt(case_type_id=current.case_type_id, prompt_text=payload.prompt_text)
+        elif current.prompt is None:
+            self._upsert_case_prompt(
+                case_type_id=current.case_type_id,
+                prompt_text=_default_case_prompt_text(str(updated["name"])),
+            )
+        if payload.template_keys is not None:
+            self._replace_case_type_templates(
+                case_type_id=current.case_type_id,
+                template_keys=payload.template_keys,
+                jurisdiction=updated_jurisdiction,
+            )
+        return self.get_case_type(case_type_key=case_type_key, jurisdiction=updated_jurisdiction)
+
+    def soft_delete_case_type(
+        self,
+        *,
+        case_type_key: str,
+        jurisdiction: str | None = None,
+    ) -> CaseTypeDefinition:
+        current = self.get_case_type(case_type_key=case_type_key, jurisdiction=jurisdiction)
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    UPDATE case_types
+                    SET is_deleted = 1, is_enabled = 0, updated_at = ?, deleted_at = ?
+                    WHERE case_type_key = ? AND jurisdiction = ?
+                    """
+                ),
+                self._params(now, now, current.case_type_key, current.jurisdiction),
+            )
+            conn.commit()
+        return self.get_case_type(case_type_key=case_type_key, jurisdiction=current.jurisdiction)
+
+    def resolve_case_type(
+        self,
+        *,
+        request_text: str,
+        country: str,
+    ) -> tuple[int, CaseTypeDefinition | None]:
+        normalized_text = _normalize_for_match(request_text)
+        if not normalized_text:
+            return 0, None
+        text_roots = _token_roots(normalized_text)
+        candidates = [
+            item
+            for item in self.list_case_types(include_deleted=False, jurisdiction=country)
+            if item.is_enabled
+        ]
+        scored: list[tuple[int, CaseTypeDefinition]] = []
+        for item in candidates:
+            score = 0
+            for keyword in item.keywords:
+                normalized_keyword = _normalize_for_match(keyword)
+                if normalized_keyword in normalized_text:
+                    score += 3
+                    continue
+                keyword_roots = _token_roots(normalized_keyword)
+                if keyword_roots and keyword_roots.issubset(text_roots):
+                    score += 1
+            name_roots = _token_roots(_normalize_for_match(item.name))
+            if name_roots and name_roots.issubset(text_roots):
+                score += 2
+            if item.description:
+                description_roots = _token_roots(_normalize_for_match(item.description))
+                if description_roots and description_roots.issubset(text_roots):
+                    score += 1
+            for template in item.templates:
+                template_title_roots = _token_roots(_normalize_for_match(template.title))
+                if template_title_roots and template_title_roots.issubset(text_roots):
+                    score += 1
+                for keyword in template.keywords:
+                    normalized_keyword = _normalize_for_match(keyword)
+                    if normalized_keyword in normalized_text:
+                        score += 2
+                        break
+            if score > 0:
+                scored.append((score, item))
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        if scored:
+            return scored[0]
+        template_score, matched_template = self.find_best_match(request_text=request_text, country=country)
+        if matched_template is None:
+            return 0, None
+        linked_case = self._find_case_type_by_template_id(template_id=matched_template.template_id)
+        if linked_case is None:
+            return 0, None
+        return template_score, linked_case
+
     def find_best_match(
         self,
         *,
@@ -336,6 +588,53 @@ class DocumentTemplateStore:
                 )
             )
 
+    def _seed_case_types_if_empty(self) -> None:
+        with self._connect() as conn:
+            row = conn.execute(self._sql("SELECT COUNT(1) AS count FROM case_types")).fetchone()
+        if row is not None and int(row["count"]) > 0:
+            return
+        templates = self.list(include_deleted=False)
+        for item in build_default_case_types(templates):
+            self.create_case_type(item)
+
+    def _refresh_seeded_case_type_descriptions(self) -> None:
+        default_items = build_default_case_types(self.list(include_deleted=False))
+        if not default_items:
+            return
+        updates: list[tuple[str, str, str, str]] = []
+        for item in default_items:
+            try:
+                current = self.get_case_type(
+                    case_type_key=item.case_type_key,
+                    jurisdiction=item.jurisdiction,
+                )
+            except CaseTypeNotFoundError:
+                continue
+            if current.description.strip() == item.description.strip():
+                continue
+            updates.append(
+                (
+                    item.description.strip(),
+                    _utc_now_iso(),
+                    current.case_type_key,
+                    current.jurisdiction,
+                )
+            )
+        if not updates:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                self._sql(
+                    """
+                    UPDATE case_types
+                    SET description = ?, updated_at = ?
+                    WHERE case_type_key = ? AND jurisdiction = ?
+                    """
+                ),
+                [self._params(*values) for values in updates],
+            )
+            conn.commit()
+
     def _initialize(self) -> None:
         with self._connect() as conn:
             if self._is_postgres:
@@ -365,6 +664,7 @@ class DocumentTemplateStore:
             return
         conn = sqlite3.connect(self._config.sqlite_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
         finally:
@@ -375,6 +675,14 @@ class DocumentTemplateStore:
             row = conn.execute(
                 self._sql("SELECT 1 FROM document_templates WHERE template_key = ? AND jurisdiction = ? LIMIT 1"),
                 self._params(template_key.strip(), jurisdiction.strip().upper()),
+            ).fetchone()
+        return row is not None
+
+    def _case_type_exists(self, *, case_type_key: str, jurisdiction: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                self._sql("SELECT 1 FROM case_types WHERE case_type_key = ? AND jurisdiction = ? LIMIT 1"),
+                self._params(case_type_key.strip().lower(), jurisdiction.strip().upper()),
             ).fetchone()
         return row is not None
 
@@ -404,6 +712,27 @@ class DocumentTemplateStore:
             disclaimer_footer=str(row.get("disclaimer_footer") or ""),
             is_enabled=bool(row["is_enabled"]),
             is_deleted=bool(row["is_deleted"]),
+            created_at=_parse_timestamp(row.get("created_at")),
+            updated_at=_parse_timestamp(row.get("updated_at")),
+            deleted_at=_parse_timestamp(row.get("deleted_at")),
+        )
+
+    def _case_row_to_definition(self, row: dict[str, Any]) -> CaseTypeDefinition:
+        case_type_id = str(row["case_type_id"])
+        prompt = self._get_case_prompt(case_type_id=case_type_id)
+        templates = self._get_case_templates(case_type_id=case_type_id)
+        return CaseTypeDefinition(
+            case_type_id=case_type_id,
+            case_type_key=str(row["case_type_key"]),
+            jurisdiction=str(row["jurisdiction"]),
+            language=str(row["language"]).strip() or None if row.get("language") is not None else None,
+            name=str(row["name"]),
+            description=str(row["description"]),
+            keywords=tuple(_parse_json_array(row.get("keywords_json"))),
+            is_enabled=bool(row["is_enabled"]),
+            is_deleted=bool(row["is_deleted"]),
+            prompt=prompt,
+            templates=tuple(DocumentTemplateResponse.from_definition(item) for item in templates),
             created_at=_parse_timestamp(row.get("created_at")),
             updated_at=_parse_timestamp(row.get("updated_at")),
             deleted_at=_parse_timestamp(row.get("deleted_at")),
@@ -446,6 +775,117 @@ class DocumentTemplateStore:
             return {str(row["column_name"]) for row in rows}
         rows = conn.execute(self._sql("PRAGMA table_info(document_templates)")).fetchall()
         return {str(row["name"]) for row in rows}
+
+    def _get_case_prompt(self, *, case_type_id: str) -> CasePromptDefinition | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                self._sql("SELECT * FROM case_prompts WHERE case_type_id = ?"),
+                self._params(case_type_id),
+            ).fetchone()
+        if row is None:
+            return None
+        mapped = _row_to_mapping(row)
+        return CasePromptDefinition(
+            case_prompt_id=str(mapped["case_prompt_id"]),
+            case_type_id=str(mapped["case_type_id"]),
+            prompt_text=str(mapped["prompt_text"]),
+            created_at=_parse_timestamp(mapped.get("created_at")),
+            updated_at=_parse_timestamp(mapped.get("updated_at")),
+        )
+
+    def _get_case_templates(self, *, case_type_id: str) -> builtins.list[DocumentTemplateDefinition]:
+        query = """
+            SELECT dt.*
+            FROM case_type_templates AS ctt
+            INNER JOIN document_templates AS dt ON dt.template_id = ctt.template_id
+            WHERE ctt.case_type_id = ? AND dt.is_deleted = 0
+            ORDER BY ctt.suitability_score DESC, dt.title ASC
+        """
+        with self._connect() as conn:
+            rows = conn.execute(self._sql(query), self._params(case_type_id)).fetchall()
+        return [self._row_to_definition(_row_to_mapping(row)) for row in rows]
+
+    def _find_case_type_by_template_id(self, *, template_id: str) -> CaseTypeDefinition | None:
+        query = """
+            SELECT ct.*
+            FROM case_types AS ct
+            INNER JOIN case_type_templates AS ctt ON ctt.case_type_id = ct.case_type_id
+            WHERE ctt.template_id = ? AND ct.is_deleted = 0 AND ct.is_enabled = 1
+            ORDER BY ctt.suitability_score DESC, ct.name ASC
+            LIMIT 1
+        """
+        with self._connect() as conn:
+            row = conn.execute(self._sql(query), self._params(template_id)).fetchone()
+        if row is None:
+            return None
+        return self._case_row_to_definition(_row_to_mapping(row))
+
+    def _upsert_case_prompt(self, *, case_type_id: str, prompt_text: str) -> None:
+        current = self._get_case_prompt(case_type_id=case_type_id)
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            if current is None:
+                conn.execute(
+                    self._sql(
+                        """
+                        INSERT INTO case_prompts (
+                            case_prompt_id, case_type_id, prompt_text, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        """
+                    ),
+                    self._params(str(uuid4()), case_type_id, prompt_text.strip(), now, now),
+                )
+            else:
+                conn.execute(
+                    self._sql(
+                        """
+                        UPDATE case_prompts
+                        SET prompt_text = ?, updated_at = ?
+                        WHERE case_type_id = ?
+                        """
+                    ),
+                    self._params(prompt_text.strip(), now, case_type_id),
+                )
+            conn.commit()
+
+    def _replace_case_type_templates(
+        self,
+        *,
+        case_type_id: str,
+        template_keys: builtins.list[str],
+        jurisdiction: str,
+    ) -> None:
+        normalized_keys = _dedupe_preserve_order(template_keys)
+        now = _utc_now_iso()
+        templates: list[DocumentTemplateDefinition] = []
+        for key in normalized_keys:
+            templates.append(self.get(template_key=key, jurisdiction=jurisdiction))
+        with self._connect() as conn:
+            conn.execute(
+                self._sql("DELETE FROM case_type_templates WHERE case_type_id = ?"),
+                self._params(case_type_id),
+            )
+            for template in templates:
+                conn.execute(
+                    self._sql(
+                        """
+                        INSERT INTO case_type_templates (
+                            case_type_template_id, case_type_id, template_id, suitability_score, notes,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """
+                    ),
+                    self._params(
+                        str(uuid4()),
+                        case_type_id,
+                        template.template_id,
+                        100,
+                        "",
+                        now,
+                        now,
+                    ),
+                )
+            conn.commit()
 
 
 def _utc_now_iso() -> str:
@@ -502,6 +942,27 @@ def _token_roots(value: str) -> set[str]:
         if cleaned:
             roots.add(cleaned[:4])
     return roots
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    items: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized = raw.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        items.append(normalized)
+    return items
+
+
+def _default_case_prompt_text(name: str) -> str:
+    return (
+        f"Pomoz pouzivatelovi vyriesit pripad alebo pripravit dokument typu '{name}'. "
+        "Najprv zisti iba nevyhnutne skutkove udaje, over ci existuje vhodna sablona "
+        "v katalogu, vysvetli co este chyba a pripomen potrebu ludskej pravnej kontroly "
+        "pred podanim, podpisom alebo odoslanim dokumentu."
+    )
 
 
 _store: DocumentTemplateStore | None = None
