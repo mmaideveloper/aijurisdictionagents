@@ -698,6 +698,7 @@ That means:
 - `web_build_deploy` uses the same two boolean inputs with safe `false` defaults and preserves its full lint/unit/E2E/build gate before image publication.
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
+- `Self-Managed Prod Deploy` configures Python 3.10 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist
@@ -717,6 +718,7 @@ After setup, verify:
 - self-managed prod document processor settings are set or accepted at defaults: `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON`, `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION`, and `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT`
 - self-managed prod Ollama is installed as a separate localhost-only service and `curl -fsS http://127.0.0.1:11434/api/tags` succeeds
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
+- the focused generated-PDF E2E example succeeds locally with `npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts` after installing the pinned PDF dependencies
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`
 - `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, web, email scheduler, and document processor pass
