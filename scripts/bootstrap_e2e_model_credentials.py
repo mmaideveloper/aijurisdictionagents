@@ -133,17 +133,21 @@ def _bootstrap(store: ApiDatabaseStore, config: E2EModelConfig) -> None:
     )
 
 
-def _verify_model(config: E2EModelConfig) -> None:
+def _verify_model(store: ApiDatabaseStore, config: E2EModelConfig) -> None:
+    stored_secret = store.get_ai_model_provider_secret(
+        provider_id=PROVIDER_ID,
+        secret_type=config.secret_type,
+    )
+    if not stored_secret:
+        raise RuntimeError("The encrypted database credential could not be decrypted.")
     client = AzureFoundryClient(
         AzureFoundryConfig(
             endpoint=config.endpoint,
             deployment=config.deployment,
             api_version=config.api_version,
             temperature=0.0,
-            api_key=config.secret_value if config.secret_type == "api_key" else None,
-            azure_ad_token=(
-                config.secret_value if config.secret_type == "azure_ad_token" else None
-            ),
+            api_key=stored_secret if config.secret_type == "api_key" else None,
+            azure_ad_token=stored_secret if config.secret_type == "azure_ad_token" else None,
         )
     )
     response = client.complete(
@@ -170,7 +174,7 @@ def main() -> int:
     store = ApiDatabaseStore.from_env()
     _bootstrap(store, config)
     if args.verify_model:
-        _verify_model(config)
+        _verify_model(store, config)
     print(
         "Real-model E2E credential ready: "
         f"provider={PROVIDER_ID} profile={PROFILE_ID} model={config.deployment} "

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import sys
+from typing import Any
 
 import pytest
 
@@ -47,3 +48,41 @@ def test_bootstrap_encrypts_e2e_credential_without_revealing_it(tmp_path: Path) 
     assert len(credentials) == 1
     assert credentials[0].secret_value is None
     assert store.get_ai_model_provider_secret(provider_id="azure_foundry") == config.secret_value
+
+
+def test_verify_model_uses_secret_reloaded_from_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = ApiDatabaseStore(
+        db_path=tmp_path / "api.sqlite3",
+        blob_root=tmp_path / "files",
+    )
+    config = _MODULE.E2EModelConfig(
+        endpoint="https://synthetic-foundry.example.test",
+        api_version="2024-10-21",
+        deployment="gpt-4o-mini",
+        secret_type="api_key",
+        secret_value="synthetic-secret-never-production",
+    )
+    _MODULE._bootstrap(store, config)
+    captured: dict[str, str | None] = {}
+
+    class FakeClient:
+        def __init__(self, client_config: Any) -> None:
+            captured["api_key"] = client_config.api_key
+
+        def complete(self, *args: object, **kwargs: object) -> str:
+            return "ready"
+
+    monkeypatch.setattr(_MODULE, "AzureFoundryClient", FakeClient)
+
+    different_memory_config = _MODULE.E2EModelConfig(
+        endpoint=config.endpoint,
+        api_version=config.api_version,
+        deployment=config.deployment,
+        secret_type=config.secret_type,
+        secret_value="must-not-be-used-directly",
+    )
+    _MODULE._verify_model(store, different_memory_config)
+
+    assert captured["api_key"] == config.secret_value
