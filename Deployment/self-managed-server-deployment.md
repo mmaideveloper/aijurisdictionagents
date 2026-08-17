@@ -218,7 +218,41 @@ curl -fsS http://<private-host-or-docker-gateway-ip>:11434/api/tags
 curl -fsS http://<private-host-or-docker-gateway-ip>:11434/v1/models
 ```
 
-Security rule: do not expose port `11434` through Cloudflare Tunnel, nginx, router NAT, or public firewall rules. Only the API/model-router should call Ollama on localhost or the private Docker server network.
+Security rule: do not expose port `11434` through Cloudflare Tunnel, router NAT,
+or a public firewall rule. The API/model-router normally calls Ollama on the
+private Docker server network. A LAN-only nginx proxy is permitted only when it
+binds the server's fixed LAN address (not `0.0.0.0`), has an explicit trusted
+subnet allowlist, and the router does not forward that port.
+
+### Optional LAN-only Ollama access
+
+`Deployment/server/nginx-ollama-lan.conf` provides the approved configuration
+for trusted laptops on `192.168.1.0/24`. It listens only on
+`192.168.1.25:11434` and proxies to the private Ollama listener at
+`172.18.0.1:11434`, preserving the production API route. Install and validate it:
+
+```bash
+sudo install -m 0644 Deployment/server/nginx-ollama-lan.conf \
+  /etc/nginx/sites-available/jurisdigta-ollama-lan.conf
+sudo ln -sfn /etc/nginx/sites-available/jurisdigta-ollama-lan.conf \
+  /etc/nginx/sites-enabled/jurisdigta-ollama-lan.conf
+sudo nginx -t
+sudo systemctl reload nginx
+curl -fsS http://192.168.1.25:11434/api/tags
+```
+
+Minimal Windows client example:
+
+```powershell
+$env:OLLAMA_HOST = "http://192.168.1.25:11434"
+Invoke-RestMethod "$env:OLLAMA_HOST/api/tags"
+ollama run qwen3:1.7b
+```
+
+This endpoint has no application authentication. Treat the entire allowlisted
+LAN as trusted, do not use it from untrusted Wi-Fi, and do not send case data
+unless the device and network satisfy the applicable access controls. Nginx
+access logs contain request metadata but not prompt bodies by default.
 
 ## 5. Prepare Deployment Directories
 
