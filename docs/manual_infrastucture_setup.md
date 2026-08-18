@@ -209,6 +209,28 @@ Purpose: prepare the Ubuntu server `jurisdigta-server` at `192.168.1.25` for SSH
 - Remove or update `C:\Users\maton\.ssh\config` if the host alias changes.
 - Remove local private/public key files only after confirming they are not reused by any other host.
 
+### LAN-only Ollama proxy
+
+Purpose: allow trusted laptops on `192.168.1.0/24` to reach the server-local
+Ollama service without changing its private Docker binding.
+
+- Required owner: the `jurisdigta-server` infrastructure operator.
+- Configuration source: `Deployment/server/nginx-ollama-lan.conf`.
+- Listener: `192.168.1.25:11434`; upstream: `172.18.0.1:11434`.
+- Keep TCP `11434` absent from router/NAT forwarding and Cloudflare Tunnel
+  configuration. The nginx subnet allowlist is the access boundary.
+- Validate on a trusted laptop with
+  `Invoke-RestMethod http://192.168.1.25:11434/api/tags`.
+- Validate on the server with `sudo nginx -t`, `systemctl is-active nginx`, and
+  `curl -fsS http://192.168.1.25:11434/api/tags`.
+- Roll back with
+  `sudo rm /etc/nginx/sites-enabled/jurisdigta-ollama-lan.conf && sudo systemctl reload nginx`.
+
+Because Ollama does not authenticate these LAN requests, every device on the
+allowlisted subnet can invoke installed models. Use a narrower allowlist or an
+SSH tunnel on networks that are not fully trusted. Avoid placing personal data
+or confidential case content in prompts from unmanaged devices.
+
 ### Privacy And Compliance Notes
 
 - Use public-key authentication and least-privilege server accounts.
