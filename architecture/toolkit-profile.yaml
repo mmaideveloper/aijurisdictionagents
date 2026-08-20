@@ -1,0 +1,25 @@
+schema_version: 1
+project:
+  name: JurisDigta
+  domain: legal-ai
+artifacts:
+  root: architecture
+  business_decisions: business-decisions
+  use_cases: use-cases
+  design: design
+  diagrams: diagrams
+  decisions: decisions
+  reviews: reviews
+governance:
+  privacy: GDPR
+  ai_regulation: EU AI Act
+  safety: human oversight for legal-risk outputs
+  approval_authorities: []
+task_management:
+  provider: github
+  backend_project: https://github.com/users/mmaideveloper/projects/5
+  frontend_project: https://github.com/users/mmaideveloper/projects/6
+  ready_status: Ready
+notes:
+  - Confirm lawful basis, minimization, retention, deletion, transparency, traceability, and human oversight for each change.
+  - AGENTS.md remains authoritative for branches, worktrees, validation, versioning, deployment, and release rules.

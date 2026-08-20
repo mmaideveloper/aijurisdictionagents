@@ -2,6 +2,8 @@
 
 This repository vendors the Codex skills needed for local development so they are available after cloning on another computer.
 
+Generic architecture skills are maintained separately in [AI Architect Toolkit](https://github.com/mmaideveloper/aiarchitecttoolkit) and installed from the commit pinned in `architecture/toolkit.lock.json`. See `docs/AI_ARCHITECT_TOOLKIT.md`.
+
 ## Repo-local skills
 
 - `api`: alias for starting the local API with the same skill name used in the local Codex profile
@@ -11,6 +13,8 @@ This repository vendors the Codex skills needed for local development so they ar
 - `start-mobile-app`: project-native Flutter mobile launcher
 - `laws-collector`: starts and verifies the local laws collector worker loop
 - `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
+
+The repository-local `idea-task` and `prepare-task` are JurisDigta adapters. The external toolkit provides `architecture-change`, `generate-bdr`, `generate-use-case`, `generate-add`, `generate-c4`, `generate-adr`, and `review-architecture-conformance`.
 
 ## Repository plugin
 
@@ -37,6 +41,12 @@ After cloning the repository on a different machine, install or refresh the proj
 
 ```bash
 python scripts/sync_codex_skills.py --force
+```
+
+Install the pinned architecture toolkit separately:
+
+```bash
+python scripts/sync_aiarchitect_toolkit.py --force
 ```
 
 Dry-run preview:

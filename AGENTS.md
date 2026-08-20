@@ -127,6 +127,8 @@ If the user asks to close a task:
 
 Custom project skills:
 
+- Generic AI architecture skills are maintained in `https://github.com/mmaideveloper/aiarchitecttoolkit` and pinned by `architecture/toolkit.lock.json`. Install them with `python scripts/sync_aiarchitect_toolkit.py --force`. Keep JurisDigta artifacts under `architecture/` and JurisDigta-specific governance in this repository.
+
 - `idea-task` at `skills/idea-task/SKILL.md`
   - Purpose: shape rough ideas into a validated draft, ask focused clarification questions, and hand off to `prepare-task` once ready.
   - Script: chat skill (no launcher script required)

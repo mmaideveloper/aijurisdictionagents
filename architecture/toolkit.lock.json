@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/mmaideveloper/aiarchitecttoolkit.git",
+  "resolved_commit": "56592c28f0172da0fa28f6fb67bb1968effc316c",
+  "skills": [
+    "architecture-change",
+    "generate-add",
+    "generate-adr",
+    "generate-bdr",
+    "generate-c4",
+    "generate-use-case",
+    "review-architecture-conformance"
+  ]
+}
