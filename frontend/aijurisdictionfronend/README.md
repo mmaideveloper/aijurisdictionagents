@@ -421,6 +421,10 @@ npm run build
 npm run preview
 ```
 
+`npm run build` runs TypeScript validation before Vite creates the production bundle. Run it
+after changes that pass localized strings to shared helpers so translation-key type mismatches
+are caught before deployment.
+
 ## Self-managed server container
 
 The production container serves the Vite build through nginx with SPA route

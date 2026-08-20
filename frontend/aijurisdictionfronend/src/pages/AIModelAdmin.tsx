@@ -1288,7 +1288,7 @@ const AIModelAdmin: React.FC = () => {
                           <div><small>{item.case_type_key}</small></div>
                         </div>,
                         [item.jurisdiction, item.language].filter(Boolean).join(" / "),
-                        renderLinkedTemplatesCell(item.templates, t),
+                        renderLinkedTemplatesCell(item.templates, t("adminCaseCatalogNoLinkedTemplates")),
                         item.prompt ? t("adminCaseCatalogPromptAvailable") : t("adminCaseCatalogPromptMissing"),
                         item.is_enabled ? t("adminEnabled") : t("adminDisabled")
                       ])}
@@ -1336,7 +1336,7 @@ const AIModelAdmin: React.FC = () => {
                           <strong>{item.case_type_name}</strong>
                           <div><small>{item.case_type_key}</small></div>
                         </div>,
-                        renderLinkedTemplatesCell(item.linked_templates, t),
+                        renderLinkedTemplatesCell(item.linked_templates, t("adminCaseCatalogNoLinkedTemplates")),
                         <details>
                           <summary>{t("adminCaseCatalogViewPrompt")}</summary>
                           <div style={{ whiteSpace: "pre-wrap" }}>{item.prompt?.prompt_text ?? ""}</div>
@@ -1804,10 +1804,10 @@ const AdminRecordsTable: React.FC<{
 
 const renderLinkedTemplatesCell = (
   templates: DocumentTemplateCatalogItem[],
-  t: (key: string, values?: Record<string, string | number>) => string
+  emptyLabel: string
 ): React.ReactNode => {
   if (!templates.length) {
-    return t("adminCaseCatalogNoLinkedTemplates");
+    return emptyLabel;
   }
   return (
     <ul className="admin-compact-list">
