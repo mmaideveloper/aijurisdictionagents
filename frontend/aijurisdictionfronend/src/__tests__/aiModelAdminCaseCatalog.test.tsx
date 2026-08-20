@@ -192,7 +192,7 @@ describe("AIModelAdmin case catalog", () => {
       );
     });
 
-    expect(await screen.findByText("Employment dispute")).toBeDefined();
+    expect(await screen.findAllByText("Employment dispute")).toHaveLength(2);
     expect(screen.getByText("General consultation")).toBeDefined();
     expect(screen.getAllByText("Employment claim").length).toBeGreaterThan(0);
     expect(screen.getByText("adminCaseCatalogNoLinkedTemplates")).toBeDefined();
