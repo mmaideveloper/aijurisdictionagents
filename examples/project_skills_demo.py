@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 from pathlib import Path
 
 
@@ -29,7 +30,17 @@ def main() -> int:
         print(result.stdout, end="")
     if result.stderr:
         print(result.stderr, file=sys.stderr, end="")
-    return result.returncode
+    if result.returncode:
+        return result.returncode
+
+    lock_path = repo_root / "architecture" / "toolkit.lock.json"
+    lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    print("\nPinned AI Architect Toolkit:")
+    print(f"- repository: {lock['repository']}")
+    print(f"- commit: {lock['resolved_commit']}")
+    for skill in lock["skills"]:
+        print(f"- skill: {skill}")
+    return 0
 
 
 if __name__ == "__main__":
