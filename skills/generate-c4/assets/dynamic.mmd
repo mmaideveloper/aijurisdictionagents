@@ -1,0 +1,12 @@
+sequenceDiagram
+  autonumber
+  actor User
+  participant A as Application
+  participant B as Service
+  participant C as Dependency
+  User->>A: <trigger>
+  A->>B: <request/data>
+  B->>C: <operation/interface>
+  C-->>B: <result/error>
+  B-->>A: <response>
+  A-->>User: <observable outcome>

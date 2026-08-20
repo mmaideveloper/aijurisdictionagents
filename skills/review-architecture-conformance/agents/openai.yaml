@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Architecture Conformance"
+  short_description: "Compare implementation with architecture"
+  default_prompt: "Use $review-architecture-conformance to review code against linked use cases, ADDs, C4 views, and ADRs."

@@ -1,0 +1,10 @@
+flowchart LR
+  user["User<br/><role>"]
+  subgraph system["System boundary"]
+    ui["Application<br/><technology if confirmed>"]
+    api["Service<br/><technology if confirmed>"]
+    store[("Data store<br/><technology if confirmed>")]
+  end
+  user -->|"<action>"| ui
+  ui -->|"<request/data>"| api
+  api -->|"<read/write>"| store

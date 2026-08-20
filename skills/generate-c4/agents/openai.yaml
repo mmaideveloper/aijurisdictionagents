@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate C4"
+  short_description: "Create source-backed C4 architecture views"
+  default_prompt: "Use $generate-c4 to create or update the appropriate source-backed C4 view for this architecture change."

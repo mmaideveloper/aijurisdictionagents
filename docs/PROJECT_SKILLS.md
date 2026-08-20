@@ -11,6 +11,14 @@ This repository vendors the Codex skills needed for local development so they ar
 - `start-mobile-app`: project-native Flutter mobile launcher
 - `laws-collector`: starts and verifies the local laws collector worker loop
 - `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
+- `architecture-change`: coordinates Use Case -> ADD -> C4 -> ADR -> implementation readiness -> conformance review
+- `generate-use-case`: drafts and refines source-backed stakeholder use cases
+- `generate-add`: creates Architecture Design Documents from reviewed use cases and evidence
+- `generate-c4`: creates context, container, component, dynamic, deployment, and supporting data-flow views
+- `generate-adr`: creates and governs source-backed architecture decisions
+- `review-architecture-conformance`: reviews implementation against authoritative architecture artifacts
+
+See `docs/ARCHITECTURE_CHANGE_WORKFLOW.md` for artifact paths, lifecycle rules, compliance gates, and training prompts.
 
 ## Repository plugin
 

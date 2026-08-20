@@ -127,6 +127,19 @@ If the user asks to close a task:
 
 Custom project skills:
 
+- `architecture-change` at `skills/architecture-change/SKILL.md`
+  - Purpose: coordinate the architecture lifecycle from use case through implementation readiness and conformance review.
+- `generate-use-case` at `skills/generate-use-case/SKILL.md`
+  - Purpose: create and refine traceable, stakeholder-reviewed use cases.
+- `generate-add` at `skills/generate-add/SKILL.md`
+  - Purpose: create Architecture Design Documents from reviewed use cases and repository evidence.
+- `generate-c4` at `skills/generate-c4/SKILL.md`
+  - Purpose: create source-backed C4 context, container, component, dynamic, deployment, and supporting views.
+- `generate-adr` at `skills/generate-adr/SKILL.md`
+  - Purpose: create, update, review, and supersede Architecture Decision Records.
+- `review-architecture-conformance` at `skills/review-architecture-conformance/SKILL.md`
+  - Purpose: review implementations against authoritative use cases, ADDs, C4 views, and ADRs.
+
 - `idea-task` at `skills/idea-task/SKILL.md`
   - Purpose: shape rough ideas into a validated draft, ask focused clarification questions, and hand off to `prepare-task` once ready.
   - Script: chat skill (no launcher script required)

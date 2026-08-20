@@ -9,6 +9,12 @@ from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
 
 print(
+    "architecture_change_skills => Use Case -> ADD draft -> C4 views -> ADRs -> "
+    "reconcile ADD/C4 -> Implementation -> Conformance review; artifacts remain "
+    "source-backed and GDPR/EU AI Act gated."
+)
+
+print(
     "local_model_timeout => "
     f"deadline={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_TIMEOUT_SECONDS', 600)}s, "
     f"visible_progress={read_positive_finite_env_seconds('LOCAL_LLM_REQUEST_VISIBLE_PROGRESS', 15)}s; "

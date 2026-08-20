@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate Use Case"
+  short_description: "Draft and refine traceable use cases"
+  default_prompt: "Use $generate-use-case to draft a source-backed use case and refine it with stakeholder feedback."
