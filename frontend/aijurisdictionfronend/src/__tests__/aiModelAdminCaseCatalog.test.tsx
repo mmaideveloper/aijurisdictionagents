@@ -12,6 +12,8 @@ import {
   fetchOllamaModels
 } from "../api/adminModelClient";
 
+const translate = vi.hoisted(() => (key: string) => key);
+
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     user: { userId: "admin-1", deviceId: "device-1", deviceAuthToken: "token-1" }
@@ -20,7 +22,7 @@ vi.mock("../auth/webAuth", () => ({
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
-    t: (key: string) => key
+    t: translate
   })
 }));
 
@@ -190,7 +192,7 @@ describe("AIModelAdmin case catalog", () => {
       );
     });
 
-    expect(await screen.findByText("Employment dispute")).toBeDefined();
+    expect(await screen.findAllByText("Employment dispute")).toHaveLength(2);
     expect(screen.getByText("General consultation")).toBeDefined();
     expect(screen.getAllByText("Employment claim").length).toBeGreaterThan(0);
     expect(screen.getByText("adminCaseCatalogNoLinkedTemplates")).toBeDefined();

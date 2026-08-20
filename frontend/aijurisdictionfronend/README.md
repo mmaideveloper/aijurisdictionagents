@@ -414,12 +414,19 @@ npm run lint
 npm run test
 ```
 
+When mocking `useLanguage` in component tests, provide a stable `t` function reference. Components
+that correctly depend on `t` in callbacks can otherwise enter a repeated effect cycle in a test.
+
 ## Build
 
 ```bash
 npm run build
 npm run preview
 ```
+
+`npm run build` runs TypeScript validation before Vite creates the production bundle. Run it
+after changes that pass localized strings to shared helpers so translation-key type mismatches
+are caught before deployment.
 
 ## Self-managed server container
 
