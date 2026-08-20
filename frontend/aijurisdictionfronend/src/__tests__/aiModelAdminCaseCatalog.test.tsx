@@ -12,6 +12,8 @@ import {
   fetchOllamaModels
 } from "../api/adminModelClient";
 
+const translate = vi.hoisted(() => (key: string) => key);
+
 vi.mock("../auth/webAuth", () => ({
   useAuth: () => ({
     user: { userId: "admin-1", deviceId: "device-1", deviceAuthToken: "token-1" }
@@ -20,7 +22,7 @@ vi.mock("../auth/webAuth", () => ({
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
-    t: (key: string) => key
+    t: translate
   })
 }));
 

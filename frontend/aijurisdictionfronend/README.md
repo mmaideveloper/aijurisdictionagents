@@ -414,6 +414,9 @@ npm run lint
 npm run test
 ```
 
+When mocking `useLanguage` in component tests, provide a stable `t` function reference. Components
+that correctly depend on `t` in callbacks can otherwise enter a repeated effect cycle in a test.
+
 ## Build
 
 ```bash
