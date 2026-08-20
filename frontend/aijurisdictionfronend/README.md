@@ -414,6 +414,9 @@ npm run lint
 npm run test
 ```
 
+The GitHub Actions frontend gate runs Vitest with `--pool=forks` to ensure its worker and
+ESBuild processes are released after the suite completes.
+
 ## Build
 
 ```bash

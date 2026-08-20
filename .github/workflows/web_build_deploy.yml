@@ -55,7 +55,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm run test
+        run: npm run test -- --pool=forks
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
