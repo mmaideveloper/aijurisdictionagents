@@ -370,10 +370,11 @@ class DocumentTemplateStore:
                 ),
             )
             conn.commit()
-        self._upsert_case_prompt(
-            case_type_id=case_type_id,
-            prompt_text=payload.prompt_text or _default_case_prompt_text(payload.name),
-        )
+        if payload.prompt_text is not None and payload.prompt_text.strip():
+            self._upsert_case_prompt(
+                case_type_id=case_type_id,
+                prompt_text=payload.prompt_text,
+            )
         self._replace_case_type_templates(
             case_type_id=case_type_id,
             template_keys=payload.template_keys,
@@ -432,11 +433,6 @@ class DocumentTemplateStore:
             conn.commit()
         if payload.prompt_text is not None:
             self._upsert_case_prompt(case_type_id=current.case_type_id, prompt_text=payload.prompt_text)
-        elif current.prompt is None:
-            self._upsert_case_prompt(
-                case_type_id=current.case_type_id,
-                prompt_text=_default_case_prompt_text(str(updated["name"])),
-            )
         if payload.template_keys is not None:
             self._replace_case_type_templates(
                 case_type_id=current.case_type_id,
@@ -473,9 +469,21 @@ class DocumentTemplateStore:
         request_text: str,
         country: str,
     ) -> tuple[int, CaseTypeDefinition | None]:
+        ranked = self.rank_case_types(request_text=request_text, country=country, limit=1)
+        if ranked:
+            return ranked[0]
+        return 0, None
+
+    def rank_case_types(
+        self,
+        *,
+        request_text: str,
+        country: str,
+        limit: int | None = None,
+    ) -> builtins.list[tuple[int, CaseTypeDefinition]]:
         normalized_text = _normalize_for_match(request_text)
         if not normalized_text:
-            return 0, None
+            return []
         text_roots = _token_roots(normalized_text)
         candidates = [
             item
@@ -513,14 +521,14 @@ class DocumentTemplateStore:
                 scored.append((score, item))
         scored.sort(key=lambda pair: pair[0], reverse=True)
         if scored:
-            return scored[0]
+            return scored[:limit] if limit is not None else scored
         template_score, matched_template = self.find_best_match(request_text=request_text, country=country)
         if matched_template is None:
-            return 0, None
+            return []
         linked_case = self._find_case_type_by_template_id(template_id=matched_template.template_id)
         if linked_case is None:
-            return 0, None
-        return template_score, linked_case
+            return []
+        return [(template_score, linked_case)]
 
     def find_best_match(
         self,
@@ -954,15 +962,6 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
         seen.add(normalized)
         items.append(normalized)
     return items
-
-
-def _default_case_prompt_text(name: str) -> str:
-    return (
-        f"Pomoz pouzivatelovi vyriesit pripad alebo pripravit dokument typu '{name}'. "
-        "Najprv zisti iba nevyhnutne skutkove udaje, over ci existuje vhodna sablona "
-        "v katalogu, vysvetli co este chyba a pripomen potrebu ludskej pravnej kontroly "
-        "pred podanim, podpisom alebo odoslanim dokumentu."
-    )
 
 
 _store: DocumentTemplateStore | None = None

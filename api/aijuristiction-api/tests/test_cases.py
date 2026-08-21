@@ -840,6 +840,34 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
             ]
         },
     )
+    store.upsert_case_catalog_selection(
+        selection_scope="case",
+        entity_id=case_id,
+        case_id=case_id,
+        session_id="session-1",
+        case_type_id="case-type-1",
+        case_type_key="sk.real_estate.lease_agreement",
+        case_type_name="Najomna zmluva",
+        prompt_ids=["prompt-1"],
+        template_ids=["template-1"],
+        template_keys=["sk.real_estate.lease_agreement"],
+        status="matched",
+        confidence_score=0.93,
+        confidence_gap=0.41,
+        source="chat.case_type_detection_agent",
+        first_message_preview="Priprav potvrdenie.",
+        first_message_sha256="abc123",
+        clarification_question="",
+    )
+    store.record_case_catalog_event(
+        case_id=case_id,
+        session_id="session-1",
+        event_type="case_type_detection.matched",
+        status="matched",
+        severity="info",
+        summary="Automatic case-type detection selected the lease workflow.",
+        details={"case_type_key": "sk.real_estate.lease_agreement"},
+    )
 
     response = client.get(
         f"/v1/cases/{case_id}/export?user_id={user_id}",
@@ -857,6 +885,7 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
             "case.json",
             "messages.jsonl",
             "ai-model-audit.json",
+            "case-catalog-detection.json",
             "citations.json",
             "warnings.json",
             "sha256sums.txt",
@@ -870,6 +899,8 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
         assert manifest["message_count"] == 2
         assert manifest["document_count"] == 2
         assert manifest["ai_model_audit_count"] == 1
+        assert manifest["case_catalog_selection_count"] == 1
+        assert manifest["case_catalog_event_count"] == 1
         assert manifest["models_used"] == [
             {
                 "provider": "azurefoundry",
@@ -886,6 +917,10 @@ def test_paid_user_can_export_case_zip_with_documents_model_audit_and_checksums(
         assert audit["entries"][0]["route_type"] == "external"
         citations = json.loads(archive.read("citations.json"))
         assert citations["items"]
+        case_catalog_detection = json.loads(archive.read("case-catalog-detection.json"))
+        assert case_catalog_detection["selections"][0]["case_type_key"] == "sk.real_estate.lease_agreement"
+        assert case_catalog_detection["selections"][0]["clarification_question"] == ""
+        assert case_catalog_detection["events"][0]["event_type"] == "case_type_detection.matched"
         checksums = archive.read("sha256sums.txt").decode("utf-8")
         assert "manifest.json" in checksums
         assert "sha256sums.txt" not in checksums

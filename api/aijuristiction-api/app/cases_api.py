@@ -16,6 +16,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import secrets
 from urllib.parse import quote
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
@@ -821,6 +822,14 @@ def _build_case_export_zip(
         _case_export_ai_model_audit_dict(item)
         for item in store.list_ai_model_usage_audit(case_id=case.case_id, limit=500, offset=0)
     ]
+    case_catalog_selections = [
+        _case_export_case_catalog_selection_dict(item)
+        for item in store.list_case_catalog_selections(case_id=case.case_id)
+    ]
+    case_catalog_events = [
+        _case_export_case_catalog_event_dict(item)
+        for item in store.list_case_catalog_events(case_id=case.case_id, limit=500, offset=0)
+    ]
     citations = _collect_case_export_citations(messages=messages, audit_entries=audit_entries)
 
     case_payload = {
@@ -849,6 +858,14 @@ def _build_case_export_zip(
             "schema": "jurisdigta.case-export.citations.v1",
             "case_id": case.case_id,
             "items": citations,
+        }
+    )
+    files["case-catalog-detection.json"] = _json_bytes(
+        {
+            "schema": "jurisdigta.case-export.case-catalog-detection.v1",
+            "case_id": case.case_id,
+            "selections": case_catalog_selections,
+            "events": case_catalog_events,
         }
     )
 
@@ -926,6 +943,8 @@ def _build_case_export_zip(
         "message_count": len(messages),
         "document_count": len(documents),
         "ai_model_audit_count": len(audit_entries),
+        "case_catalog_selection_count": len(case_catalog_selections),
+        "case_catalog_event_count": len(case_catalog_events),
         "models_used": _case_export_models_used(audit_entries),
         "citation_count": len(citations),
         "documents": document_manifest,
@@ -1056,6 +1075,45 @@ def _case_export_ai_model_audit_dict(item: AIModelUsageAuditEntry) -> dict[str, 
         "question_sha256": item.question_sha256,
         "answer_id": item.answer_id,
         "audit_metadata": item.audit_metadata,
+        "created_at": item.created_at,
+    }
+
+
+def _case_export_case_catalog_selection_dict(item: Any) -> dict[str, object]:
+    return {
+        "selection_id": item.selection_id,
+        "selection_scope": item.selection_scope,
+        "entity_id": item.entity_id,
+        "case_id": item.case_id,
+        "session_id": item.session_id,
+        "case_type_id": item.case_type_id,
+        "case_type_key": item.case_type_key,
+        "case_type_name": item.case_type_name,
+        "prompt_ids": list(item.prompt_ids),
+        "template_ids": list(item.template_ids),
+        "template_keys": list(item.template_keys),
+        "status": item.status,
+        "confidence_score": item.confidence_score,
+        "confidence_gap": item.confidence_gap,
+        "source": item.source,
+        "first_message_preview": item.first_message_preview,
+        "first_message_sha256": item.first_message_sha256,
+        "clarification_question": item.clarification_question,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+    }
+
+
+def _case_export_case_catalog_event_dict(item: Any) -> dict[str, object]:
+    return {
+        "event_id": item.event_id,
+        "case_id": item.case_id,
+        "session_id": item.session_id,
+        "event_type": item.event_type,
+        "status": item.status,
+        "severity": item.severity,
+        "summary": item.summary,
+        "details": item.details,
         "created_at": item.created_at,
     }
 

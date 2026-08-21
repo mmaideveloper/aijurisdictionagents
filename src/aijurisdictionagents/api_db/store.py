@@ -153,6 +153,43 @@ class Case:
 
 
 @dataclass(frozen=True)
+class CaseCatalogSelection:
+    selection_id: str
+    selection_scope: str
+    entity_id: str
+    case_id: str
+    session_id: str
+    case_type_id: str
+    case_type_key: str
+    case_type_name: str
+    prompt_ids: tuple[str, ...]
+    template_ids: tuple[str, ...]
+    template_keys: tuple[str, ...]
+    status: str
+    confidence_score: float
+    confidence_gap: float
+    source: str
+    first_message_preview: str
+    first_message_sha256: str
+    clarification_question: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class CaseCatalogEvent:
+    event_id: str
+    case_id: str
+    session_id: str
+    event_type: str
+    status: str
+    severity: str
+    summary: str
+    details: dict[str, Any]
+    created_at: str
+
+
+@dataclass(frozen=True)
 class CaseDocument:
     doc_id: str
     case_id: str
@@ -652,6 +689,44 @@ class ApiDatabaseStore:
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id),
                     FOREIGN KEY(company_id) REFERENCES companies(company_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS case_catalog_selections (
+                    selection_id TEXT PRIMARY KEY,
+                    selection_scope TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL DEFAULT '',
+                    session_id TEXT NOT NULL DEFAULT '',
+                    case_type_id TEXT NOT NULL DEFAULT '',
+                    case_type_key TEXT NOT NULL DEFAULT '',
+                    case_type_name TEXT NOT NULL DEFAULT '',
+                    prompt_ids_json TEXT NOT NULL DEFAULT '[]',
+                    template_ids_json TEXT NOT NULL DEFAULT '[]',
+                    template_keys_json TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'unclassified',
+                    confidence_score REAL NOT NULL DEFAULT 0,
+                    confidence_gap REAL NOT NULL DEFAULT 0,
+                    source TEXT NOT NULL DEFAULT '',
+                    first_message_preview TEXT NOT NULL DEFAULT '',
+                    first_message_sha256 TEXT NOT NULL DEFAULT '',
+                    clarification_question TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(selection_scope, entity_id),
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS case_catalog_events (
+                    event_id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL DEFAULT '',
+                    session_id TEXT NOT NULL DEFAULT '',
+                    event_type TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT '',
+                    severity TEXT NOT NULL DEFAULT 'info',
+                    summary TEXT NOT NULL DEFAULT '',
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS case_documents (
@@ -3761,6 +3836,227 @@ class ApiDatabaseStore:
             raise KeyError(f"Case {case_id} not found")
         return _row_to_case(row)
 
+    def upsert_case_catalog_selection(
+        self,
+        *,
+        selection_scope: str,
+        entity_id: str,
+        case_id: str = "",
+        session_id: str = "",
+        case_type_id: str = "",
+        case_type_key: str = "",
+        case_type_name: str = "",
+        prompt_ids: list[str] | tuple[str, ...] = (),
+        template_ids: list[str] | tuple[str, ...] = (),
+        template_keys: list[str] | tuple[str, ...] = (),
+        status: str,
+        confidence_score: float = 0.0,
+        confidence_gap: float = 0.0,
+        source: str = "",
+        first_message_preview: str = "",
+        first_message_sha256: str = "",
+        clarification_question: str = "",
+    ) -> CaseCatalogSelection:
+        normalized_scope = selection_scope.strip().lower()
+        normalized_entity_id = entity_id.strip()
+        if normalized_scope not in {"case", "session"}:
+            raise ValueError("selection_scope must be 'case' or 'session'")
+        if not normalized_entity_id:
+            raise ValueError("entity_id is required")
+        now = _now_iso()
+        selection_id = str(uuid.uuid4())
+        with self._connect() as conn:
+            existing = self._fetchone(
+                conn,
+                """
+                SELECT selection_id, created_at
+                FROM case_catalog_selections
+                WHERE selection_scope = ? AND entity_id = ?
+                """,
+                (normalized_scope, normalized_entity_id),
+            )
+            if existing is not None:
+                selection_id = str(existing[0])
+                created_at = str(existing[1])
+            else:
+                created_at = now
+            self._execute(
+                conn,
+                """
+                INSERT INTO case_catalog_selections(
+                    selection_id, selection_scope, entity_id, case_id, session_id,
+                    case_type_id, case_type_key, case_type_name, prompt_ids_json, template_ids_json,
+                    template_keys_json, status, confidence_score, confidence_gap, source,
+                    first_message_preview, first_message_sha256, clarification_question, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(selection_scope, entity_id) DO UPDATE SET
+                    case_id = excluded.case_id,
+                    session_id = excluded.session_id,
+                    case_type_id = excluded.case_type_id,
+                    case_type_key = excluded.case_type_key,
+                    case_type_name = excluded.case_type_name,
+                    prompt_ids_json = excluded.prompt_ids_json,
+                    template_ids_json = excluded.template_ids_json,
+                    template_keys_json = excluded.template_keys_json,
+                    status = excluded.status,
+                    confidence_score = excluded.confidence_score,
+                    confidence_gap = excluded.confidence_gap,
+                    source = excluded.source,
+                    first_message_preview = excluded.first_message_preview,
+                    first_message_sha256 = excluded.first_message_sha256,
+                    clarification_question = excluded.clarification_question,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    selection_id,
+                    normalized_scope,
+                    normalized_entity_id,
+                    case_id.strip(),
+                    session_id.strip(),
+                    case_type_id.strip(),
+                    case_type_key.strip(),
+                    case_type_name.strip(),
+                    json.dumps(list(prompt_ids), ensure_ascii=True),
+                    json.dumps(list(template_ids), ensure_ascii=True),
+                    json.dumps(list(template_keys), ensure_ascii=True),
+                    status.strip(),
+                    float(confidence_score),
+                    float(confidence_gap),
+                    source.strip(),
+                    _ai_audit_question_preview(
+                        question_preview=first_message_preview,
+                        question_text=first_message_preview,
+                        max_chars=500,
+                    ),
+                    first_message_sha256.strip(),
+                    clarification_question.strip(),
+                    created_at,
+                    now,
+                ),
+            )
+        return self.get_case_catalog_selection(
+            selection_scope=normalized_scope,
+            entity_id=normalized_entity_id,
+        )
+
+    def get_case_catalog_selection(
+        self,
+        *,
+        selection_scope: str,
+        entity_id: str,
+    ) -> CaseCatalogSelection | None:
+        with self._connect() as conn:
+            row = self._fetchone(
+                conn,
+                """
+                SELECT selection_id, selection_scope, entity_id, case_id, session_id,
+                       case_type_id, case_type_key, case_type_name, prompt_ids_json, template_ids_json,
+                       template_keys_json, status, confidence_score, confidence_gap, source,
+                       first_message_preview, first_message_sha256, clarification_question, created_at, updated_at
+                FROM case_catalog_selections
+                WHERE selection_scope = ? AND entity_id = ?
+                """,
+                (selection_scope.strip().lower(), entity_id.strip()),
+            )
+        return _row_to_case_catalog_selection(row) if row is not None else None
+
+    def list_case_catalog_selections(
+        self,
+        *,
+        case_id: str = "",
+        session_id: str = "",
+    ) -> list[CaseCatalogSelection]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if case_id.strip():
+            clauses.append("case_id = ?")
+            params.append(case_id.strip())
+        if session_id.strip():
+            clauses.append("session_id = ?")
+            params.append(session_id.strip())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"""
+            SELECT selection_id, selection_scope, entity_id, case_id, session_id,
+                   case_type_id, case_type_key, case_type_name, prompt_ids_json, template_ids_json,
+                   template_keys_json, status, confidence_score, confidence_gap, source,
+                   first_message_preview, first_message_sha256, clarification_question, created_at, updated_at
+            FROM case_catalog_selections
+            {where_sql}
+            ORDER BY updated_at DESC
+        """
+        with self._connect() as conn:
+            rows = self._execute(conn, query, tuple(params)).fetchall()
+        return [_row_to_case_catalog_selection(row) for row in rows]
+
+    def record_case_catalog_event(
+        self,
+        *,
+        case_id: str = "",
+        session_id: str = "",
+        event_type: str,
+        status: str,
+        severity: str,
+        summary: str,
+        details: dict[str, Any] | None = None,
+    ) -> CaseCatalogEvent:
+        now = _now_iso()
+        event_id = str(uuid.uuid4())
+        with self._connect() as conn:
+            self._execute(
+                conn,
+                """
+                INSERT INTO case_catalog_events(
+                    event_id, case_id, session_id, event_type, status, severity, summary, details_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    case_id.strip(),
+                    session_id.strip(),
+                    event_type.strip(),
+                    status.strip(),
+                    severity.strip(),
+                    summary.strip(),
+                    _to_json(details or {}),
+                    now,
+                ),
+            )
+        return self.list_case_catalog_events(
+            case_id=case_id,
+            session_id=session_id,
+            limit=1,
+            offset=0,
+        )[0]
+
+    def list_case_catalog_events(
+        self,
+        *,
+        case_id: str = "",
+        session_id: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[CaseCatalogEvent]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if case_id.strip():
+            clauses.append("case_id = ?")
+            params.append(case_id.strip())
+        if session_id.strip():
+            clauses.append("session_id = ?")
+            params.append(session_id.strip())
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"""
+            SELECT event_id, case_id, session_id, event_type, status, severity, summary, details_json, created_at
+            FROM case_catalog_events
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        params.extend((max(limit, 0), max(offset, 0)))
+        with self._connect() as conn:
+            rows = self._execute(conn, query, tuple(params)).fetchall()
+        return [_row_to_case_catalog_event(row) for row in rows]
+
     def list_cases(self, *, user_id: str, include_deleted: bool = False) -> list[Case]:
         query = """
             SELECT case_id, user_id, company_id, title, status, created_at, updated_at
@@ -5286,6 +5582,34 @@ class ApiDatabaseStore:
         self._ensure_ai_model_parameter_columns(conn)
         self._ensure_ai_model_soft_delete_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
+        self._ensure_case_catalog_selection_columns(conn)
+
+    def _ensure_case_catalog_selection_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            existing_columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = ?
+                    """,
+                    ("case_catalog_selections",),
+                ).fetchall()
+            }
+        else:
+            existing_columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(case_catalog_selections)").fetchall()
+            }
+        if "clarification_question" not in existing_columns:
+            self._execute(
+                conn,
+                "ALTER TABLE case_catalog_selections ADD COLUMN clarification_question TEXT NOT NULL DEFAULT ''",
+            )
 
     def _ensure_ai_model_soft_delete_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -6261,6 +6585,16 @@ def _json_loads_dict(value: str) -> dict[str, Any]:
     return {}
 
 
+def _json_loads_list_strings(value: str) -> list[str]:
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(item).strip() for item in loaded if str(item).strip()]
+
+
 def _route_selection(
     *,
     policy: AITaskRoutePolicy,
@@ -6604,6 +6938,45 @@ def _row_to_case(row: tuple[object, ...]) -> Case:
         status=str(values[4]),
         created_at=str(values[5]),
         updated_at=str(values[6]),
+    )
+
+
+def _row_to_case_catalog_selection(row: tuple[object, ...]) -> CaseCatalogSelection:
+    return CaseCatalogSelection(
+        selection_id=str(row[0]),
+        selection_scope=str(row[1]),
+        entity_id=str(row[2]),
+        case_id=str(row[3]),
+        session_id=str(row[4]),
+        case_type_id=str(row[5]),
+        case_type_key=str(row[6]),
+        case_type_name=str(row[7]),
+        prompt_ids=tuple(_json_loads_list_strings(str(row[8] or "[]"))),
+        template_ids=tuple(_json_loads_list_strings(str(row[9] or "[]"))),
+        template_keys=tuple(_json_loads_list_strings(str(row[10] or "[]"))),
+        status=str(row[11]),
+        confidence_score=float(row[12] or 0),
+        confidence_gap=float(row[13] or 0),
+        source=str(row[14]),
+        first_message_preview=str(row[15]),
+        first_message_sha256=str(row[16]),
+        clarification_question=str(row[17]),
+        created_at=str(row[18]),
+        updated_at=str(row[19]),
+    )
+
+
+def _row_to_case_catalog_event(row: tuple[object, ...]) -> CaseCatalogEvent:
+    return CaseCatalogEvent(
+        event_id=str(row[0]),
+        case_id=str(row[1]),
+        session_id=str(row[2]),
+        event_type=str(row[3]),
+        status=str(row[4]),
+        severity=str(row[5]),
+        summary=str(row[6]),
+        details=_json_loads_dict(str(row[7] or "{}")),
+        created_at=str(row[8]),
     )
 
 

@@ -1636,6 +1636,224 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     assert "Client full name: Marek Matonok" in captured_prompts[-1]
 
 
+def test_reply_endpoint_injects_case_catalog_detection_context_and_persists_selection(
+    monkeypatch, tmp_path
+) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.agents.case_type_detector import CaseTypeDetectionResult
+    from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+    import app.document_templates.store as template_store_module
+
+    captured_prompts: list[str] = []
+    captured_documents: list[list[str]] = []
+
+    class _SpyLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            captured_prompts.append(system_prompt_override)
+            captured_documents.append([document.path for document in documents])
+            return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
+
+    class _FakeLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "{}"
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv(
+        "API_DOCUMENT_TEMPLATES_SQLITE_PATH",
+        str(tmp_path / "document_templates.sqlite3"),
+    )
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(template_store_module, "_store", None)
+    monkeypatch.setattr(
+        "app.chat.case_type_detection.AICaseTypeDetectionAgent.detect",
+        lambda self, **kwargs: CaseTypeDetectionResult(
+            status="matched",
+            selected_case_type_key="sk.real_estate.lease_agreement",
+            confidence=0.94,
+            second_case_type_key="sk.real_estate.sale_purchase_agreement",
+            second_confidence=0.21,
+            clarification_question="",
+            rationale="Lease-agreement terminology dominates the first request.",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _SpyLawyer(),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **kwargs: RoutedLLMClient(
+            client=_FakeLLM(),
+            route=SimpleNamespace(model_profile=None, provider=None, reason="test-route"),
+            plan=SubscriptionPlan(
+                plan_code="case",
+                display_name="Case",
+                subscription_type="paid",
+                price_eur=10,
+                max_cases=10,
+                max_documents_per_case=10,
+                case_ttl_days=30,
+            ),
+            subscription=None,
+            provider="mock",
+            model="mock-model",
+            route_type="mock",
+            fallback_reason="",
+        ),
+    )
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(email="catalog@example.com", password="Password123!")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Lease drafting")
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+            "user_id": user.user_id,
+            "case_id": case.case_id,
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Priprav najomnu zmluvu k bytu."},
+        headers=AUTH_HEADERS,
+    )
+
+    assert reply_response.status_code == 200
+    assert captured_prompts
+    assert "AUTOMATIC CASE-TYPE DETECTION" in captured_prompts[-1]
+    assert "sk.real_estate.lease_agreement" in captured_prompts[-1]
+    assert any(path.startswith("case-templates/") for path in captured_documents[-1])
+
+    selections = store.list_case_catalog_selections(case_id=case.case_id)
+    assert any(item.selection_scope == "case" for item in selections)
+    assert any(item.selection_scope == "session" for item in selections)
+    assert any(item.case_type_key == "sk.real_estate.lease_agreement" for item in selections)
+    events = store.list_case_catalog_events(case_id=case.case_id, limit=10, offset=0)
+    assert any(item.event_type == "case_type_detection.matched" for item in events)
+
+
+def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambiguous(
+    monkeypatch, tmp_path
+) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+    from aijurisdictionagents.agents.case_type_detector import CaseTypeDetectionResult
+    from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan
+    from aijurisdictionagents.llm.routing import RoutedLLMClient
+    import app.document_templates.store as template_store_module
+
+    class _FailingLawyer:
+        system_prompt = "should-not-run"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            raise AssertionError("Lawyer agent should not run for ambiguous case-type detection.")
+
+    class _FakeLLM:
+        def complete(self, agent_name, system_prompt, conversation, documents):
+            return "{}"
+
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    monkeypatch.setenv(
+        "API_DOCUMENT_TEMPLATES_SQLITE_PATH",
+        str(tmp_path / "document_templates.sqlite3"),
+    )
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(template_store_module, "_store", None)
+    monkeypatch.setattr(
+        "app.chat.case_type_detection.AICaseTypeDetectionAgent.detect",
+        lambda self, **kwargs: CaseTypeDetectionResult(
+            status="ambiguous",
+            selected_case_type_key="sk.real_estate.lease_agreement",
+            confidence=0.55,
+            second_case_type_key="sk.real_estate.sale_purchase_agreement",
+            second_confidence=0.49,
+            clarification_question="Ide o najom, alebo o kupu nehnutelnosti?",
+            rationale="The first message mixes leasing and sale terms.",
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _FailingLawyer(),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **kwargs: RoutedLLMClient(
+            client=_FakeLLM(),
+            route=SimpleNamespace(model_profile=None, provider=None, reason="test-route"),
+            plan=SubscriptionPlan(
+                plan_code="case",
+                display_name="Case",
+                subscription_type="paid",
+                price_eur=10,
+                max_cases=10,
+                max_documents_per_case=10,
+                case_ttl_days=30,
+            ),
+            subscription=None,
+            provider="mock",
+            model="mock-model",
+            route_type="mock",
+            fallback_reason="",
+        ),
+    )
+
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    user = store.create_user(email="ambiguous@example.com", password="Password123!")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Ambiguous drafting")
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "language": "SK",
+            "user_id": user.user_id,
+            "case_id": case.case_id,
+        },
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+
+    reply_response = client.post(
+        f"/v1/chat/sessions/{session_id}/reply",
+        json={"content": "Chcem pripravit zmluvu k bytu aj kupu bytu."},
+        headers=AUTH_HEADERS,
+    )
+
+    assert reply_response.status_code == 200
+    normalized_reply = unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
+    assert "automaticke urcenie" in normalized_reply
+    assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
+    selections = store.list_case_catalog_selections(case_id=case.case_id)
+    assert any(item.status == "ambiguous" for item in selections)
+    assert any(item.clarification_question == "Ide o najom, alebo o kupu nehnutelnosti?" for item in selections)
+    events = store.list_case_catalog_events(case_id=case.case_id, limit=10, offset=0)
+    assert any(item.event_type == "case_type_detection.ambiguous" for item in events)
+
+
 def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_path) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api

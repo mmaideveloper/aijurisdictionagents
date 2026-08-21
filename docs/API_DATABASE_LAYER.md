@@ -71,8 +71,12 @@ This guarantees every case has an isolated storage namespace.
   filenames, document text, embeddings, prompts, and legal content are intentionally excluded.
 - `case_communications`: chat/audio transcript references and summaries.
 - `case_citations`: privacy-minimized legal source metadata linked to case questions and assistant answers.
+- `case_catalog_selections`: persisted automatic case-type selections for both `scope=case` and `scope=session`, including selected catalog ids, bounded first-message preview/hash, confidence score, confidence gap, and status such as `matched`, `ambiguous`, `prompt_missing`, `template_missing`, or `insufficient_sources`.
+- `case_catalog_events`: privacy-minimized event trail for automatic case-type detection, ambiguity handling, and catalog-gap conditions. It stores metadata-only summaries and details JSON; it must not contain full prompts, provider secrets, or unnecessary case text.
 
 `case_citations` stores source type, stable source id or safe URL, display label, law/court metadata where available, a short snippet, retrieval tool, optional relevance score, and creation time. It intentionally does not store full retrieved law bodies, raw court-decision text, prompts, or sensitive case/user content. Case history returns citations attached to each answer, and `/v1/cases/{case_id}/citations` returns the authorized aggregate list for the case citation panel.
+
+Automatic case-type detection runs on the first message of a new chat/case before the main lawyer prompt is built. When the confidence rule passes, the API persists the selected `case_type` plus matched prompt/template ids on both the case and the session. When the detector is ambiguous, it records the attempt and asks the user one clarifying question instead of forcing a workflow. When prompt/template coverage is incomplete, the API records an admin-visible catalog-gap event and either continues with the available catalog guidance or fails closed for drafting if no safe source exists.
 
 ## User document and case deletion
 
@@ -219,6 +223,8 @@ The API database now includes a policy-driven model routing foundation:
 - `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
 - `ai_model_admin_audit_events`: admin-only model/provider/group/policy and operational case-reset change trail with actor email, entity, old/new summaries, reason, correlation id, and timestamp. It stores metadata summaries only and must not contain legal case text or provider secrets.
 - `users.role` and `users.is_enabled`: global user/admin role and account status used by `/app/admin` and admin APIs.
+
+Case export includes `case-catalog-detection.json` alongside `case.json`, `messages.jsonl`, `ai-model-audit.json`, `citations.json`, and `warnings.json`. The detection artifact exposes the persisted selection records and event trail so users and admins can trace why a document workflow was chosen, degraded, blocked, or sent back for clarification during the session.
 
 Admin management is exposed through `GET/POST /v1/admin/ai-models...`, `GET/PATCH /v1/admin/users...`, `GET/DELETE /v1/admin/cases...`, and the React route `/app/admin`.
 Production admin access is server-authorized from `cf-access-authenticated-user-email` with either database `role=admin` or `JURISDIGTA_ADMIN_EMAILS`; local development may send `x-jurisdigta-admin-user-id` from loopback only.
