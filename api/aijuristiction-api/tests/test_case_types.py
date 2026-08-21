@@ -91,8 +91,7 @@ def test_case_type_store_supports_case_without_template_then_linking_one(tmp_pat
         )
     )
     assert created.templates == ()
-    assert created.prompt is not None
-    assert "Vseobecna pravna konzultacia" in created.prompt.prompt_text
+    assert created.prompt is None
 
     updated = store.update_case_type(
         case_type_key="sk.custom.general_legal_consultation",
@@ -120,6 +119,20 @@ def test_case_type_store_resolve_matches_seeded_case(tmp_path: Path) -> None:
     assert matched is not None
     assert matched.case_type_key == "sk.justice.payment_order.objection_banska_bystrica"
     assert matched.templates
+
+
+def test_case_type_store_can_rank_multiple_candidates(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+
+    ranked = store.rank_case_types(
+        request_text="Chcem pripravit najomnu zmluvu k bytu a odovzdavaci protokol.",
+        country="SK",
+        limit=3,
+    )
+
+    assert ranked
+    assert ranked[0][0] > 0
+    assert ranked[0][1].case_type_key == "sk.real_estate.lease_agreement"
 
 
 def test_case_type_api_crud_and_resolve_endpoints(tmp_path: Path) -> None:

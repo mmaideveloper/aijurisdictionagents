@@ -307,6 +307,38 @@ with tempfile.TemporaryDirectory(prefix="jurisdigta-minimal-", ignore_cleanup_er
         "case_citations => "
         f"{len(demo_store.list_case_citations(case_id=demo_case.case_id))} persisted citation"
     )
+    demo_store.upsert_case_catalog_selection(
+        selection_scope="case",
+        entity_id=demo_case.case_id,
+        case_id=demo_case.case_id,
+        session_id="demo-session-1",
+        case_type_id="demo-case-type",
+        case_type_key="sk.real_estate.lease_agreement",
+        case_type_name="Najomna zmluva",
+        prompt_ids=["demo-prompt-1"],
+        template_ids=["demo-template-1"],
+        template_keys=["sk.real_estate.lease_agreement"],
+        status="matched",
+        confidence_score=0.91,
+        confidence_gap=0.36,
+        source="chat.case_type_detection_agent",
+        first_message_preview="Priprav najomnu zmluvu k bytu.",
+        first_message_sha256="demo-sha256",
+    )
+    demo_store.record_case_catalog_event(
+        case_id=demo_case.case_id,
+        session_id="demo-session-1",
+        event_type="case_type_detection.matched",
+        status="matched",
+        severity="info",
+        summary="Automatic case-type detection selected the lease-agreement workflow.",
+        details={"case_type_key": "sk.real_estate.lease_agreement"},
+    )
+    print(
+        "case_catalog_detection => "
+        f"selections={len(demo_store.list_case_catalog_selections(case_id=demo_case.case_id))} "
+        f"events={len(demo_store.list_case_catalog_events(case_id=demo_case.case_id, limit=10, offset=0))}"
+    )
     free_route = demo_store.resolve_ai_model_route(
         user_id=demo_user.user_id,
         plan_code="free",

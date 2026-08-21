@@ -9,6 +9,11 @@ from .slovakia import create_lawyer_slovakia
 from .user_simulator import AIUserSimulatorAgent
 from .validator import AIAgentsValidator, ValidationReport, ValidatorInputs
 from .audio_action_tools import AIAudioToolRecognizerAgent, AIActionToolRecognizerAgent
+from .case_type_detector import (
+    AICaseTypeDetectionAgent,
+    CaseTypeCandidate,
+    CaseTypeDetectionResult,
+)
 from ..jurisdiction import is_slovakia
 from ..llm import LLMClient
 
@@ -30,10 +35,13 @@ __all__ = [
     "PersonSearchAgent",
     "AIUserSimulatorAgent",
     "AIAgentsValidator",
+    "AICaseTypeDetectionAgent",
     "ValidationReport",
     "ValidatorInputs",
     "AIAudioToolRecognizerAgent",
     "AIActionToolRecognizerAgent",
+    "CaseTypeCandidate",
+    "CaseTypeDetectionResult",
     "create_judge",
     "create_lawyer",
     "create_lawyer_agent",

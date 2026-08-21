@@ -37,6 +37,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
 from app.chat.core_runtime import core_message_role, run_orchestration
+from app.chat.case_type_detection import resolve_case_catalog_context
 from app.chat.country_services import prepare_country_direct_reply
 from app.flow_packs.api import get_flow_pack_store
 from app.chat.intent_policy_service import (
@@ -1449,6 +1450,7 @@ def _run_direct_lawyer_turn(
 
     history = _repository.list_messages(session_id)
     prior_messages = history[:-1]
+    processing_events: list[dict[str, object]] = []
     conversation = [
         CoreMessage(
             role=msg.role.value,
@@ -1490,6 +1492,51 @@ def _run_direct_lawyer_turn(
             _user_visible_text(persisted_lawyer.content),
             [],
             None,
+        )
+
+    document_generation_requested = _user_requested_document_generation(
+        content=content,
+        previous_messages=prior_messages,
+    )
+    routed_llm = _resolve_session_llm_route(
+        session=session,
+        task_type="chat_reply",
+        request_user_id=request_user_id,
+        request_user_email=request_user_email,
+    )
+    case_catalog_context = resolve_case_catalog_context(
+        session_id=session_id,
+        session=session,
+        current_content=content,
+        prior_messages=prior_messages,
+        route=routed_llm,
+        store=_get_store(),
+        template_store=get_document_template_store(),
+        document_generation_requested=document_generation_requested,
+    )
+    if case_catalog_context.direct_reply is not None:
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=case_catalog_context.direct_reply,
+            agent_name="CaseTypeDetectionAgent",
+            allow_document_generation=False,
+        )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="case_type_detection",
+            source="chat.case_type_detection",
+            model_used=False,
+            route=routed_llm,
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            processing_events,
+            routed_llm,
         )
 
     preparation = prepare_country_direct_reply(
@@ -1549,12 +1596,6 @@ def _run_direct_lawyer_turn(
 
     from aijurisdictionagents.agents import create_lawyer_agent
 
-    routed_llm = _resolve_session_llm_route(
-        session=session,
-        task_type="chat_reply",
-        request_user_id=request_user_id,
-        request_user_email=request_user_email,
-    )
     runtime_reply = _runtime_question_reply(
         content=content,
         route=routed_llm,
@@ -1587,7 +1628,6 @@ def _run_direct_lawyer_turn(
     lawyer = create_lawyer_agent(routed_llm.client, session.country)
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
-    document_generation_requested = _user_requested_document_generation(content=content, previous_messages=prior_messages)
     _LOGGER.info(
         "Chat route selected",
         extra={
@@ -1639,6 +1679,8 @@ def _run_direct_lawyer_turn(
             )
         if preparation.prompt_note:
             prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
+    if case_catalog_context.prompt_note:
+        prompt_override = f"{prompt_override}\n\n{case_catalog_context.prompt_note}"
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
@@ -1667,6 +1709,7 @@ def _run_direct_lawyer_turn(
 
     all_documents = list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
+    all_documents.extend(case_catalog_context.template_documents)
     all_documents.extend(case_documents)
     uploaded_contract_note = _build_uploaded_document_contract_confirmation_note(
         content=content,
