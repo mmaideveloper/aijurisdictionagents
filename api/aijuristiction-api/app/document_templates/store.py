@@ -504,6 +504,8 @@ class DocumentTemplateStore:
             name_roots = _token_roots(_normalize_for_match(item.name))
             if name_roots and name_roots.issubset(text_roots):
                 score += 2
+            else:
+                score += _partial_root_overlap_score(candidate_roots=name_roots, text_roots=text_roots)
             if item.description:
                 description_roots = _token_roots(_normalize_for_match(item.description))
                 if description_roots and description_roots.issubset(text_roots):
@@ -512,6 +514,11 @@ class DocumentTemplateStore:
                 template_title_roots = _token_roots(_normalize_for_match(template.title))
                 if template_title_roots and template_title_roots.issubset(text_roots):
                     score += 1
+                else:
+                    score += _partial_root_overlap_score(
+                        candidate_roots=template_title_roots,
+                        text_roots=text_roots,
+                    )
                 for keyword in template.keywords:
                     normalized_keyword = _normalize_for_match(keyword)
                     if normalized_keyword in normalized_text:
@@ -950,6 +957,15 @@ def _token_roots(value: str) -> set[str]:
         if cleaned:
             roots.add(cleaned[:4])
     return roots
+
+
+def _partial_root_overlap_score(*, candidate_roots: set[str], text_roots: set[str]) -> int:
+    if not candidate_roots or not text_roots:
+        return 0
+    overlap = len(candidate_roots & text_roots)
+    if overlap <= 0:
+        return 0
+    return min(overlap, 2)
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
