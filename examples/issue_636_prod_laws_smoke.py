@@ -127,6 +127,7 @@ def _result_summary(result: dict[str, Any]) -> dict[str, object]:
         "title": result.get("title"),
         "effective_from": result.get("effective_from"),
         "relevant_sections": result.get("relevant_sections", []),
+        "relevant_section_ranges": result.get("relevant_section_ranges", []),
         "confidence": result.get("confidence"),
         "source_url": result.get("source_url"),
     }
