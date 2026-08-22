@@ -204,14 +204,18 @@ def build_postgres_legal_tsqueries(profile: LegalQueryProfile) -> tuple[str, ...
             f" | ({_tsquery_variant_group('predav')} & {_tsquery_variant_group('kupuj')})"
         )
     if "real_estate" in profile.concepts:
-        queries.append(
-            f"({_tsquery_variant_group('prevod')} <-> {_tsquery_variant_group('nehnutel')})"
-            f" | ({_tsquery_variant_group('vklad')} & {_tsquery_variant_group('zmluv')}"
-            f" & {_tsquery_variant_group('katastr')})"
-            f" | ({_tsquery_variant_group('navrh')} & {_tsquery_variant_group('vklad')}"
-            f" & {_tsquery_variant_group('zmluv')})"
-            f" | ({_tsquery_variant_group('parcel')} & {_tsquery_variant_group('podpis')}"
-            f" & {_tsquery_variant_group('zmluv')})"
+        queries.extend(
+            (
+                f"({_tsquery_variant_group('prevod')} <-> "
+                f"{_tsquery_variant_group('nehnutel')})"
+                f" | ({_tsquery_variant_group('vklad')} & "
+                f"{_tsquery_variant_group('zmluv')} & {_tsquery_variant_group('katastr')})",
+                f"({_tsquery_variant_group('zapis')} & {_tsquery_variant_group('katastr')}"
+                f" & {_tsquery_variant_group('vklad')})",
+                f"({_tsquery_variant_group('navrh')} <-> {_tsquery_variant_group('vklad')})",
+                f"({_tsquery_variant_group('parcel')} & {_tsquery_variant_group('zmluv')})"
+                f" | ({_tsquery_variant_group('podpis')} & {_tsquery_variant_group('zmluv')})",
+            )
         )
     if queries:
         return tuple(queries)

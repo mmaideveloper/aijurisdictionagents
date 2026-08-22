@@ -71,7 +71,7 @@ def test_purchase_of_garden_tsquery_uses_selective_contract_and_property_pairs()
     assert "navrh:*" in tsquery
     assert "parcel:*" in tsquery
     assert "podpis:*" in tsquery
-    assert len(build_postgres_legal_tsqueries(profile)) == 2
+    assert len(build_postgres_legal_tsqueries(profile)) == 5
 
 
 def test_parse_provision_anchor_returns_section_and_paragraph() -> None:
@@ -131,3 +131,4 @@ def test_compact_section_ranges_bridges_repealed_or_unmatched_neighbor() -> None
         (588, 600),
     )
     assert compact_section_ranges({28, 30, 31, 42}) == ((28, 31), (42, 42))
+    assert compact_section_ranges({28, 31, 42}, maximum_gap=3) == ((28, 31), (42, 42))

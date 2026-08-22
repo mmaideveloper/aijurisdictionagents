@@ -110,7 +110,7 @@ def test_postgres_provision_search_uses_parameterized_full_text_query() -> None:
     assert len(captured) == 2
     assert captured[0] == ("SELECT set_config('enable_seqscan', 'off', true)", ())
     query, params = captured[1]
-    assert query.count("to_tsquery('simple', %s)") == 4
+    assert query.count("to_tsquery('simple', %s)") == 10
     assert "fts_candidates AS MATERIALIZED" in query
     assert "FROM law_provisions AS p" in query
     assert "CROSS JOIN search_query" not in query
@@ -120,12 +120,12 @@ def test_postgres_provision_search_uses_parameterized_full_text_query() -> None:
     assert "AND NOT EXISTS" in query
     assert "ROW_NUMBER() OVER" not in query
     assert params[0] == params[1]
-    assert params[2] == 300
+    assert params[2] == 120
     assert params[3] == params[4]
-    assert params[5] == 300
+    assert params[5] == 120
     assert params[-1] == "SK"
-    assert query.count("LIMIT %s") == 2
-    assert query.count("effective_from <= CURRENT_DATE") == 4
+    assert query.count("LIMIT %s") == 5
+    assert query.count("effective_from <= CURRENT_DATE") == 10
     assert "JOIN law_versions AS candidate_version" in query
     assert "kúp:*" in str(params[0])
     assert "zmluv:*" in str(params[0])

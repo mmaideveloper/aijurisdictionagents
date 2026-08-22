@@ -2421,7 +2421,7 @@ def _rank_provision_candidates(
         record["relevant_sections"] = sorted(sections)
         record["relevant_section_ranges"] = [
             {"section_start": start, "section_end": end}
-            for start, end in compact_section_ranges(sections)
+            for start, end in compact_section_ranges(sections, maximum_gap=3)
         ]
         record["retrieval_basis"] = "law_provisions"
         record["matched_relation_count"] = len(relations)
