@@ -145,9 +145,21 @@ def normalize_legal_text(value: str) -> str:
 def build_legal_query_profile(query: str) -> LegalQueryProfile:
     normalized_query = normalize_legal_text(query)
     query_roots = _query_roots(normalized_query)
-    selected_concepts = tuple(
+    selected_concepts = list(
         concept for concept in _CONCEPTS if concept.triggers.intersection(query_roots)
     )
+    selected_names = {concept.name for concept in selected_concepts}
+    # A qualified purchase-agreement request needs both the substantive contract rules and
+    # property-transfer formalities. Keep a bare ``predaj`` query ambiguous: only expand when
+    # the user has actually asked for a purchase/sale agreement.
+    if (
+        "purchase_contract" in selected_names
+        and any(token.startswith("zmluv") for token in _TOKEN_PATTERN.findall(normalized_query))
+        and "real_estate" not in selected_names
+    ):
+        selected_concepts.append(
+            next(concept for concept in _CONCEPTS if concept.name == "real_estate")
+        )
     expanded_roots = tuple(
         sorted({root for concept in selected_concepts for root in concept.expansions}.difference(query_roots))
     )
@@ -168,6 +180,43 @@ def build_legal_query_profile(query: str) -> LegalQueryProfile:
         search_terms=search_terms,
         concepts=tuple(concept.name for concept in selected_concepts),
     )
+
+
+def build_postgres_legal_tsquery(profile: LegalQueryProfile) -> str:
+    """Build a selective prefix query suitable for the provision GIN index.
+
+    Supported concepts use paired legal terms instead of one large OR expression. A large OR
+    matched too much of the production corpus and made PostgreSQL prefer a sequential scan even
+    though the expression GIN index was present.
+    """
+
+    return " | ".join(f"({query})" for query in build_postgres_legal_tsqueries(profile))
+
+
+def build_postgres_legal_tsqueries(profile: LegalQueryProfile) -> tuple[str, ...]:
+    """Return selective per-concept queries so one concept cannot consume every candidate."""
+
+    queries: list[str] = []
+    if "purchase_contract" in profile.concepts:
+        queries.append(
+            f"({_tsquery_variant_group('kup')} <-> {_tsquery_variant_group('zmluv')})"
+            f" | ({_tsquery_variant_group('predaj')} <-> {_tsquery_variant_group('zmluv')})"
+            f" | ({_tsquery_variant_group('predav')} & {_tsquery_variant_group('kupuj')})"
+        )
+    if "real_estate" in profile.concepts:
+        queries.append(
+            f"({_tsquery_variant_group('prevod')} <-> {_tsquery_variant_group('nehnutel')})"
+            f" | ({_tsquery_variant_group('vklad')} & {_tsquery_variant_group('zmluv')}"
+            f" & {_tsquery_variant_group('katastr')})"
+            f" | ({_tsquery_variant_group('navrh')} & {_tsquery_variant_group('vklad')}"
+            f" & {_tsquery_variant_group('zmluv')})"
+            f" | ({_tsquery_variant_group('parcel')} & {_tsquery_variant_group('podpis')}"
+            f" & {_tsquery_variant_group('zmluv')})"
+        )
+    if queries:
+        return tuple(queries)
+    fallback = " | ".join(f"{term}:*" for term in profile.search_terms)
+    return (fallback,) if fallback else ()
 
 
 def parse_provision_anchor(anchor: str) -> ParsedProvisionAnchor | None:
@@ -208,9 +257,9 @@ def score_provision_text(
     score = (
         len(direct_matches) * 3.0
         + len(expanded_matches) * 1.5
-        + title_direct * 2.0
-        + title_expanded
-        + matched_concepts * 2.0
+        + title_direct * 6.0
+        + title_expanded * 4.0
+        + matched_concepts * 3.0
         + max(database_rank, 0.0) * 10.0
     )
     return ProvisionRelevance(
@@ -259,3 +308,8 @@ def _query_roots(normalized_query: str) -> tuple[str, ...]:
 
 def _contains_root(normalized_title: str, normalized_provision: str, root: str) -> bool:
     return any(token.startswith(root) for token in _TOKEN_PATTERN.findall(f"{normalized_title} {normalized_provision}"))
+
+
+def _tsquery_variant_group(root: str) -> str:
+    variants = _SEARCH_VARIANTS.get(root, (root,))
+    return "(" + " | ".join(f"{variant}:*" for variant in variants) + ")"

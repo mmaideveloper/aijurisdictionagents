@@ -107,13 +107,54 @@ def test_postgres_provision_search_uses_parameterized_full_text_query() -> None:
     )
 
     assert rows == []
-    assert len(captured) == 1
-    query, params = captured[0]
-    assert "to_tsquery('simple', %s)" in query
-    assert "to_tsvector('simple', LOWER(p.body_text)) @@ q.value" in query
-    assert params[1:] == ("SK", 300)
+    assert len(captured) == 2
+    assert captured[0] == ("SELECT set_config('enable_seqscan', 'off', true)", ())
+    query, params = captured[1]
+    assert query.count("to_tsquery('simple', %s)") == 4
+    assert "fts_candidates AS MATERIALIZED" in query
+    assert "FROM law_provisions AS p" in query
+    assert "CROSS JOIN search_query" not in query
+    assert "to_tsvector('simple', LOWER(p.body_text))" in query
+    assert "@@ to_tsquery('simple', %s)" in query
+    assert "JOIN law_versions AS v ON v.version_id = p.version_id" in query
+    assert "AND NOT EXISTS" in query
+    assert "ROW_NUMBER() OVER" not in query
+    assert params[0] == params[1]
+    assert params[2] == 300
+    assert params[3] == params[4]
+    assert params[5] == 300
+    assert params[-1] == "SK"
+    assert query.count("LIMIT %s") == 2
+    assert query.count("effective_from <= CURRENT_DATE") == 4
+    assert "JOIN law_versions AS candidate_version" in query
     assert "kúp:*" in str(params[0])
-    assert "záhrad:*" in str(params[0])
+    assert "zmluv:*" in str(params[0])
+    assert any("nehnuteľ:*" in str(value) for value in params)
+    assert any("navrh:*" in str(value) for value in params)
+    assert any("podpis:*" in str(value) for value in params)
+
+
+def test_law_ranking_prefers_primary_cadastral_act_over_derivative_sources() -> None:
+    profile = mcp_api.build_legal_query_profile("kupno predajna zmluva")
+
+    cadastral_act = mcp_api._law_candidate_ranking_adjustment(
+        profile=profile,
+        law_type="Zákon",
+        title="Zákon o katastri nehnuteľností (katastrálny zákon)",
+    )
+    implementing_regulation = mcp_api._law_candidate_ranking_adjustment(
+        profile=profile,
+        law_type="Vyhláška",
+        title="Vyhláška, ktorou sa vykonáva katastrálny zákon",
+    )
+    amendment = mcp_api._law_candidate_ranking_adjustment(
+        profile=profile,
+        law_type="Zákon",
+        title="Zákon, ktorým sa mení a dopĺňa katastrálny zákon",
+    )
+
+    assert cadastral_act > implementing_regulation
+    assert cadastral_act > amendment
 
 
 def test_mcp_initialize_instructs_assistants_to_use_jurisdigta_for_slovak_law(monkeypatch, tmp_path: Path) -> None:

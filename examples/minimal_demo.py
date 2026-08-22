@@ -83,6 +83,13 @@ print(
     "court-decision text requires getCourtDecision(full_version=True)."
 )
 print(
+    "mcp_provision_fts_planner => PostgreSQL materializes a bounded GIN-backed provision "
+    "candidate set before joining current law versions; run `python "
+    "examples/mcp_laws_server_demo.py legal-basis pripare kupno predoajnu zmluvu` against an "
+    "authenticated local MCP service, or `python examples/issue_636_prod_laws_smoke.py` for a "
+    "credential-redacted local-code/production-database smoke test."
+)
+print(
     "mcp_async_legal_search => broad newest-result queries can call "
     "startLegalSearch(tool_name='searchCourtDecisions', arguments={'query':'podnajom', "
     "'sort':'latest', 'limit':10}), then poll getLegalSearchStatus and fetch "

@@ -1,5 +1,7 @@
 from app.mcp_law_retrieval import (
     build_legal_query_profile,
+    build_postgres_legal_tsquery,
+    build_postgres_legal_tsqueries,
     compact_section_ranges,
     parse_provision_anchor,
     relevance_confidence,
@@ -24,6 +26,52 @@ def test_query_normalization_supports_slovak_diacritics() -> None:
 
     assert accented.query_roots == unaccented.query_roots
     assert accented.concepts == unaccented.concepts
+
+
+def test_misspelled_prepare_purchase_agreement_still_selects_purchase_contract() -> None:
+    profile = build_legal_query_profile("pripare kupno predoajnu zmluvu")
+
+    assert profile.concepts == ("purchase_contract", "real_estate")
+    assert "kup" in profile.query_roots
+    assert {
+        "predaj",
+        "zmluv",
+        "cena",
+        "predav",
+        "kupuj",
+        "nehnutel",
+        "katastr",
+        "vklad",
+    }.issubset(profile.expanded_roots)
+
+    tsquery = build_postgres_legal_tsquery(profile)
+    assert "kup:*" in tsquery
+    assert "zmluv:*" in tsquery
+    assert "kup:* | zmluv:*" not in tsquery
+
+
+def test_ambiguous_sale_does_not_infer_property_transfer_formalities() -> None:
+    profile = build_legal_query_profile("predaj")
+
+    assert profile.concepts == ("purchase_contract",)
+    assert "katastr" not in profile.expanded_roots
+    assert len(build_postgres_legal_tsqueries(profile)) == 1
+
+
+def test_purchase_of_garden_tsquery_uses_selective_contract_and_property_pairs() -> None:
+    profile = build_legal_query_profile("kúpna zmluva na záhradu")
+
+    tsquery = build_postgres_legal_tsquery(profile)
+
+    assert "kup:*" in tsquery
+    assert "zmluv:*" in tsquery
+    assert "prevod:*" in tsquery
+    assert "nehnutel:*" in tsquery
+    assert "vklad:*" in tsquery
+    assert "navrh:*" in tsquery
+    assert "parcel:*" in tsquery
+    assert "podpis:*" in tsquery
+    assert len(build_postgres_legal_tsqueries(profile)) == 2
 
 
 def test_parse_provision_anchor_returns_section_and_paragraph() -> None:
@@ -56,6 +104,24 @@ def test_provision_scoring_prefers_grounded_purchase_and_property_text() -> None
     assert relevant.score > unrelated.score
     assert relevance_confidence(relevant.score) in {"medium", "high"}
     assert relevance_confidence(unrelated.score) == "low"
+
+
+def test_provision_scoring_rewards_concept_terms_in_authoritative_title() -> None:
+    profile = build_legal_query_profile("kúpna zmluva na záhradu")
+    cadastral = score_provision_text(
+        profile=profile,
+        title="Zákon o katastri nehnuteľností (katastrálny zákon)",
+        heading="Konanie o návrhu na vklad",
+        body_text="Okresný úrad preskúma zmluvu o prevode nehnuteľnosti.",
+    )
+    incidental = score_provision_text(
+        profile=profile,
+        title="Všeobecný zákon",
+        heading="Iné ustanovenie",
+        body_text="Okresný úrad preskúma zmluvu o prevode nehnuteľnosti.",
+    )
+
+    assert cadastral.score > incidental.score
 
 
 def test_compact_section_ranges_bridges_repealed_or_unmatched_neighbor() -> None:
