@@ -19,6 +19,9 @@ class CourtDecisionCollectorConfig:
     poll_hours: int
     embedding_dimensions: int
     default_limit: int
+    daily_new_limit: int
+    discovery_overlap_pages: int
+    backfill_pages_per_cycle: int
     max_pdf_bytes: int
 
     @classmethod
@@ -42,6 +45,9 @@ class CourtDecisionCollectorConfig:
             poll_hours=int(os.getenv("COURT_DECISIONS_WORKER_POLL_HOURS", "1")),
             embedding_dimensions=int(os.getenv("COURT_DECISIONS_EMBEDDING_DIMENSIONS", "32")),
             default_limit=int(os.getenv("COURT_DECISIONS_IMPORT_LIMIT", "25")),
+            daily_new_limit=_env_int("COURT_DECISIONS_DAILY_NEW_LIMIT", 10000),
+            discovery_overlap_pages=_env_int("COURT_DECISIONS_DISCOVERY_OVERLAP_PAGES", 2),
+            backfill_pages_per_cycle=_env_int("COURT_DECISIONS_BACKFILL_PAGES_PER_CYCLE", 10),
             max_pdf_bytes=_env_int("COURT_DECISIONS_MAX_PDF_BYTES", 26214400),
         )
 
@@ -62,6 +68,12 @@ class CourtDecisionCollectorConfig:
             raise ValueError("COURT_DECISIONS_EMBEDDING_DIMENSIONS must be >= 8")
         if self.default_limit < 1:
             raise ValueError("COURT_DECISIONS_IMPORT_LIMIT must be >= 1")
+        if self.daily_new_limit < 1:
+            raise ValueError("COURT_DECISIONS_DAILY_NEW_LIMIT must be >= 1")
+        if self.discovery_overlap_pages < 1:
+            raise ValueError("COURT_DECISIONS_DISCOVERY_OVERLAP_PAGES must be >= 1")
+        if self.backfill_pages_per_cycle < 1:
+            raise ValueError("COURT_DECISIONS_BACKFILL_PAGES_PER_CYCLE must be >= 1")
         if self.max_pdf_bytes < 1024:
             raise ValueError("COURT_DECISIONS_MAX_PDF_BYTES must be >= 1024")
 

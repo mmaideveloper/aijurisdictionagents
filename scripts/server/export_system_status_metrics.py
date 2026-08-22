@@ -311,11 +311,11 @@ def _append_laws_metrics(lines: list[str], laws: dict[str, Any]) -> None:
             for index, error in enumerate(recent_errors[-20:], start=1):
                 if not isinstance(error, dict):
                     continue
-                timestamp = str(error.get("timestamp") or "")
+                error_timestamp = str(error.get("timestamp") or "")
                 message = str(error.get("message") or "")
                 lines.append(
                     "jurisdigta_laws_recent_error_info"
-                    f'{{index="{index}",timestamp="{_label(timestamp)}",message="{_label(message)}"}} 1'
+                    f'{{index="{index}",timestamp="{_label(error_timestamp)}",message="{_label(message)}"}} 1'
                 )
 
     totals = laws.get("totals")
@@ -522,19 +522,51 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
 
     _append_help(
         lines,
-        "jurisdigta_court_decision_collector_events_total",
-        "Court decision collector operational event counts parsed from sanitized logs.",
+        "jurisdigta_court_decision_imports_total",
+        "Durable successful court decision creates or updates by scheduler work class.",
+        "counter",
+    )
+    for work_class, field in (("new", "new_imports_total"), ("backfill", "backfill_imports_total")):
+        lines.append(
+            "jurisdigta_court_decision_imports_total"
+            f'{{work_class="{work_class}"}} {_number(collector.get(field), 0)}'
+        )
+    _append_help(
+        lines,
+        "jurisdigta_court_decision_imports_window",
+        "Successful court decision creates or updates in a database-derived window.",
         "gauge",
     )
-    for event_name, field in (
-        ("processing", "processing_events"),
-        ("processed", "processed_events"),
-        ("idle", "idle_events"),
-    ):
+    for work_class, field in (("new", "new_imports_24h"), ("backfill", "backfill_imports_24h")):
         lines.append(
-            "jurisdigta_court_decision_collector_events_total"
-            f'{{event="{event_name}"}} {_number(collector.get(field), 0)}'
+            "jurisdigta_court_decision_imports_window"
+            f'{{work_class="{work_class}",window="24h"}} {_number(collector.get(field), 0)}'
         )
+    _append_help(lines, "jurisdigta_court_decision_queue", "Durable pending work by class.", "gauge")
+    for work_class, field in (("new", "pending_new"), ("backfill", "pending_backfill")):
+        lines.append(
+            f'jurisdigta_court_decision_queue{{work_class="{work_class}"}} '
+            f'{_number(collector.get(field), 0)}'
+        )
+    _append_help(lines, "jurisdigta_court_decision_daily_new_quota", "UTC daily new-work quota.", "gauge")
+    quota_used = _number(collector.get("quota_used"), 0)
+    quota_limit = _number(collector.get("daily_new_limit"), 10000)
+    lines.append(f'jurisdigta_court_decision_daily_new_quota{{state="used"}} {quota_used}')
+    lines.append(f'jurisdigta_court_decision_daily_new_quota{{state="limit"}} {quota_limit}')
+    lines.append(
+        'jurisdigta_court_decision_daily_new_quota{state="remaining"} '
+        f'{max(0.0, quota_limit - quota_used)}'
+    )
+    for field, metric_name, help_text, metric_type in (
+        ("checkpoint_failures", "jurisdigta_court_decision_checkpoint_failures_total", "Durable scheduler checkpoint failures.", "counter"),
+        ("retry_count", "jurisdigta_court_decision_retries_total", "Durable retryable court decision work failures.", "counter"),
+        ("pages_scanned_without_write", "jurisdigta_court_decision_pages_without_write", "Consecutive backfill pages without creates or updates.", "gauge"),
+    ):
+        _append_help(lines, metric_name, help_text, metric_type)
+        lines.append(f"{metric_name} {_number(collector.get(field), 0)}")
+    scheduler_status = str(collector.get("scheduler_status") or "not_started")
+    _append_help(lines, "jurisdigta_court_decision_scheduler_info", "Current privacy-safe scheduler state.", "gauge")
+    lines.append(f'jurisdigta_court_decision_scheduler_info{{status="{_label(scheduler_status)}"}} 1')
 
     for key, metric_name, help_text in (
         (
@@ -557,6 +589,16 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
             "jurisdigta_court_decision_latest_update_event_timestamp_seconds",
             "Unix timestamp for latest court decision update event.",
         ),
+        (
+            "last_new_success_at",
+            "jurisdigta_court_decision_last_new_success_timestamp_seconds",
+            "Unix timestamp for the last completed new-priority decision.",
+        ),
+        (
+            "last_backfill_success_at",
+            "jurisdigta_court_decision_last_backfill_success_timestamp_seconds",
+            "Unix timestamp for the last completed backfill decision.",
+        ),
     ):
         timestamp = _timestamp(collector.get(key))
         if timestamp is not None:
@@ -574,11 +616,11 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
         for index, error in enumerate(recent_errors[-20:], start=1):
             if not isinstance(error, dict):
                 continue
-            timestamp = str(error.get("timestamp") or "")
+            error_timestamp = str(error.get("timestamp") or "")
             message = str(error.get("message") or "")
             lines.append(
                 "jurisdigta_court_decision_recent_error_info"
-                f'{{index="{index}",timestamp="{_label(timestamp)}",'
+                f'{{index="{index}",timestamp="{_label(error_timestamp)}",'
                 f'message="{_label(message)}"}} 1'
             )
 
@@ -741,6 +783,8 @@ def _timestamp(value: object) -> int | None:
 
 def _number(value: object, default: float) -> float:
     if value in (None, ""):
+        return default
+    if not isinstance(value, (str, int, float)):
         return default
     try:
         return float(value)

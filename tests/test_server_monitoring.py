@@ -162,6 +162,9 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
     assert "Imported Decisions" in panel_titles
     assert "Latest Imported Decision" in panel_titles
     assert "Versions With Embeddings" in panel_titles
+    assert "Daily Import Throughput" in panel_titles
+    assert "Queue, Quota, and Reconciliation" in panel_titles
+    assert "Collector Events" not in panel_titles
     assert "Recent Sanitized Error List" in panel_titles
     assert "Najnovší uložený dátum rozhodnutia" not in panel_titles
     assert (
@@ -169,6 +172,18 @@ def test_monitoring_dashboards_include_court_decision_service_dashboard() -> Non
         in target_queries
     )
     assert "jurisdigta_court_decision_latest_imported_info" in target_queries
+    assert (
+        'increase(jurisdigta_court_decision_imports_total{work_class="new"}[1d])'
+        in target_queries
+    )
+    assert 'jurisdigta_court_decision_queue{work_class="new"}' in target_queries
+
+    rules_path = MONITORING_DIR / "prometheus-rules" / "jurisdigta-court-decisions.yml"
+    rules_text = rules_path.read_text(encoding="utf-8")
+    assert "JurisDigtaCourtDecisionNewBacklogStalled" in rules_text
+    assert "JurisDigtaCourtDecisionCheckpointFailure" in rules_text
+    assert 'jurisdigta_court_decision_queue{work_class="new"}' in rules_text
+    assert "jurisdigta_court_decision_pages_without_write" in rules_text
 
     latest_imported_panel = next(
         panel for panel in dashboard["panels"] if panel.get("title") == "Latest Imported Decision"
@@ -520,7 +535,8 @@ def test_court_decision_log_status_is_aggregate_and_sanitized(tmp_path: Path) ->
                 ),
                 (
                     "[2026-06-20T01:06:00Z] court_decision_collector failed "
-                    "url=postgresql://user:secret@db/court_decisions_sk token=abc123"
+                    "url=postgresql://user:secret@db/court_decisions_sk token=abc123 "
+                    "source_guid=private-guid ecli=private-ecli"
                 ),
             ]
         ),
@@ -538,7 +554,8 @@ def test_court_decision_log_status_is_aggregate_and_sanitized(tmp_path: Path) ->
             "timestamp": "2026-06-20T01:06:00Z",
             "message": (
                 "[2026-06-20T01:06:00Z] court_decision_collector failed "
-                "url=postgresql://user:***@db/court_decisions_sk token=***"
+                "url=postgresql://user:***@db/court_decisions_sk token=*** "
+                "source_guid=[redacted] ecli=[redacted]"
             ),
         }
     ]
@@ -575,6 +592,20 @@ def test_exporter_renders_court_decision_metrics() -> None:
                         "processing_events": 8,
                         "processed_events": 7,
                         "idle_events": 2,
+                        "new_imports_total": 101,
+                        "backfill_imports_total": 202,
+                        "new_imports_24h": 11,
+                        "backfill_imports_24h": 22,
+                        "pending_new": 3,
+                        "pending_backfill": 4,
+                        "quota_used": 99,
+                        "daily_new_limit": 10000,
+                        "checkpoint_failures": 1,
+                        "retry_count": 2,
+                        "pages_scanned_without_write": 5,
+                        "scheduler_status": "processing_new",
+                        "last_new_success_at": "2026-06-20T01:00:01Z",
+                        "last_backfill_success_at": "2026-06-20T00:00:01Z",
                         "last_activity_at": "2026-06-20T01:06:00Z",
                         "latest_imported_at": "2026-06-20T01:00:01Z",
                         "latest_imported_decision": {
@@ -604,10 +635,19 @@ def test_exporter_renders_court_decision_metrics() -> None:
     assert 'jurisdigta_court_decisions_total{status="published"} 10.0' in metrics
     assert "jurisdigta_court_decision_versions_total 14.0" in metrics
     assert "jurisdigta_court_decision_versions_with_embeddings_total 13.0" in metrics
+    assert 'jurisdigta_court_decision_imports_total{work_class="new"} 101.0' in metrics
+    assert 'jurisdigta_court_decision_imports_total{work_class="backfill"} 202.0' in metrics
     assert (
-        'jurisdigta_court_decision_collector_events_total{event="processed"} 7.0'
+        'jurisdigta_court_decision_imports_window{work_class="new",window="24h"} 11.0'
         in metrics
     )
+    assert 'jurisdigta_court_decision_queue{work_class="new"} 3.0' in metrics
+    assert 'jurisdigta_court_decision_daily_new_quota{state="remaining"} 9901.0' in metrics
+    assert "jurisdigta_court_decision_checkpoint_failures_total 1.0" in metrics
+    assert "jurisdigta_court_decision_retries_total 2.0" in metrics
+    assert "jurisdigta_court_decision_pages_without_write 5.0" in metrics
+    assert 'jurisdigta_court_decision_scheduler_info{status="processing_new"} 1' in metrics
+    assert "jurisdigta_court_decision_collector_events_total" not in metrics
     assert "jurisdigta_court_decision_collector_last_activity_timestamp_seconds" in metrics
     assert "jurisdigta_court_decision_latest_stored_issue_date_timestamp_seconds" in metrics
     assert (

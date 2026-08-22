@@ -312,6 +312,9 @@ Court-decision collector settings are required before enabling court-decision MC
 | `COURT_DECISIONS_WORKER_POLL_HOURS` | Future scheduled worker cadence, default `1` |
 | `COURT_DECISIONS_EMBEDDING_DIMENSIONS` | Stored vector dimensions, default `32` |
 | `COURT_DECISIONS_IMPORT_LIMIT` | Bounded import page size for smoke runs, default `25` |
+| `COURT_DECISIONS_DAILY_NEW_LIMIT` | Maximum newly discovered decisions committed per UTC day, default `10000`; overflow remains new-priority work before backfill |
+| `COURT_DECISIONS_DISCOVERY_OVERLAP_PAGES` | Source pages re-read before a growth watermark to tolerate page-boundary movement, default `2` |
+| `COURT_DECISIONS_BACKFILL_PAGES_PER_CYCLE` | Historical reconciliation pages per hourly cycle after the new queue is empty, default `10` |
 | `COURT_DECISIONS_MAX_PDF_BYTES` | Maximum accepted on-demand InfoSud PDF size, default `26214400` (25 MiB) |
 | `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS` | Scoped PostgreSQL statement timeout for MCP court-decision search, default `600000`; do not replace the global legal-search timeout with this value |
 | `COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP` | Keep `false` for external MCP users; set `true` only for a controlled internal runtime approved to retrieve raw court-decision text |

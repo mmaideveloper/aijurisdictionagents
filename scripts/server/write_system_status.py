@@ -40,6 +40,15 @@ KEY_VALUE_PATTERN = re.compile(r"(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>\S*)"
 SECRET_PATTERN = re.compile(
     r"(?i)(password|passwd|pwd|secret|token|api[_-]?key|authorization|connection[_-]?string)"
 )
+SENSITIVE_COURT_DECISION_KEYS = {
+    "source_guid",
+    "last_source_guid",
+    "resume_until",
+    "ecli",
+    "file_number",
+    "case_number",
+    "source_url",
+}
 URL_CREDENTIALS_PATTERN = re.compile(r"([a-z][a-z0-9+.-]*://[^:/\s]+:)([^@\s]+)(@)", re.IGNORECASE)
 
 
@@ -409,6 +418,57 @@ def _court_decision_db_status(postgres_container: str) -> dict[str, Any]:
       'latest_update_event_at', (
         SELECT MAX(created_at) FROM court_decision_update_events
       ),
+      'new_imports_total', (
+        SELECT COUNT(*) FROM court_decision_update_events
+        WHERE work_class = 'new' AND event_type IN ('created', 'updated')
+      ),
+      'backfill_imports_total', (
+        SELECT COUNT(*) FROM court_decision_update_events
+        WHERE work_class = 'backfill' AND event_type IN ('created', 'updated')
+      ),
+      'new_imports_24h', (
+        SELECT COUNT(*) FROM court_decision_update_events
+        WHERE work_class = 'new' AND event_type IN ('created', 'updated')
+          AND created_at::timestamptz >= now() - interval '24 hours'
+      ),
+      'backfill_imports_24h', (
+        SELECT COUNT(*) FROM court_decision_update_events
+        WHERE work_class = 'backfill' AND event_type IN ('created', 'updated')
+          AND created_at::timestamptz >= now() - interval '24 hours'
+      ),
+      'pending_new', (
+        SELECT COUNT(*) FROM court_decision_import_queue
+        WHERE work_class = 'new' AND status IN ('pending', 'retryable')
+      ),
+      'pending_backfill', (
+        SELECT COUNT(*) FROM court_decision_import_queue
+        WHERE work_class = 'backfill' AND status IN ('pending', 'retryable')
+      ),
+      'scheduler_status', COALESCE((
+        SELECT status FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 'not_started'),
+      'quota_used', COALESCE((
+        SELECT CASE WHEN quota_day = (now() AT TIME ZONE 'UTC')::date THEN quota_used ELSE 0 END
+        FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 0),
+      'daily_new_limit', COALESCE((
+        SELECT daily_new_limit FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 10000),
+      'last_new_success_at', COALESCE((
+        SELECT last_new_success_at FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), ''),
+      'last_backfill_success_at', COALESCE((
+        SELECT last_backfill_success_at FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), ''),
+      'checkpoint_failures', COALESCE((
+        SELECT checkpoint_failures FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 0),
+      'retry_count', COALESCE((
+        SELECT retry_count FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 0),
+      'pages_scanned_without_write', COALESCE((
+        SELECT pages_scanned_without_write FROM court_decision_scheduler_state WHERE source_system = 'infosud'
+      ), 0),
       'cursor_status', COALESCE((
         SELECT status FROM court_decision_import_state
         ORDER BY updated_at DESC
@@ -735,6 +795,8 @@ def _sanitize_log_line(line: str) -> str:
         key, separator, _value = token.partition("=")
         if separator and SECRET_PATTERN.search(key):
             parts.append(f"{key}=***")
+        elif separator and key.lower() in SENSITIVE_COURT_DECISION_KEYS:
+            parts.append(f"{key}=[redacted]")
         else:
             parts.append(token)
     return " ".join(parts)[:240]

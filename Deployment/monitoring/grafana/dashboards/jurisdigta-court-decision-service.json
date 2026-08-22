@@ -457,13 +457,20 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decision_collector_events_total",
-          "legendFormat": "{{event}}",
+          "expr": "increase(jurisdigta_court_decision_imports_total{work_class=\"new\"}[1d])",
+          "legendFormat": "new (rolling 24h)",
           "range": true,
           "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "increase(jurisdigta_court_decision_imports_total{work_class=\"backfill\"}[1d])",
+          "legendFormat": "backfill (rolling 24h)",
+          "range": true,
+          "refId": "B"
         }
       ],
-      "title": "Collector Events",
+      "title": "Daily Import Throughput",
       "type": "timeseries"
     },
     {
@@ -546,27 +553,34 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decisions_total",
-          "legendFormat": "{{status}} decisions",
+          "expr": "jurisdigta_court_decision_queue{work_class=\"new\"}",
+          "legendFormat": "pending new",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decision_versions_total",
-          "legendFormat": "versions",
+          "expr": "jurisdigta_court_decision_queue{work_class=\"backfill\"}",
+          "legendFormat": "pending backfill",
           "range": true,
           "refId": "B"
         },
         {
           "editorMode": "code",
-          "expr": "jurisdigta_court_decision_versions_with_embeddings_total",
-          "legendFormat": "versions with embeddings",
+          "expr": "jurisdigta_court_decision_daily_new_quota{state=\"remaining\"}",
+          "legendFormat": "UTC new quota remaining",
           "range": true,
           "refId": "C"
+        },
+        {
+          "editorMode": "code",
+          "expr": "jurisdigta_court_decision_pages_without_write",
+          "legendFormat": "backfill pages without writes",
+          "range": true,
+          "refId": "D"
         }
       ],
-      "title": "Storage Totals",
+      "title": "Queue, Quota, and Reconciliation",
       "type": "timeseries"
     },
     {

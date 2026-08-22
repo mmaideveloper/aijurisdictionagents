@@ -21,6 +21,9 @@ The first schema stores:
 - `court_decision_versions`: raw text, pseudonymized public text, checksums, metadata, and embedding vectors
 - `court_decision_import_state`: restart cursor and latest processed decision
 - `court_decision_update_events`: audit trail for created, updated, and unchanged imports
+- `court_decision_scheduler_state`: durable UTC quota, source-count watermark, discovery checkpoint,
+  and historical reconciliation cursor
+- `court_decision_import_queue`: durable new-data and backfill work, retries, and completion state
 - `court_decision_enrichments`: PDF provenance, processing state, complete source metadata,
   pseudonymized summary/topics, and summary embedding metadata
 - `court_decision_content_chunks`: pseudonymized chunks and local embedding vectors
@@ -61,10 +64,10 @@ $env:COURT_DECISIONS_DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5432/cou
 .\conda\python.exe -m services.court_decision_collector --fixture
 ```
 
-The console prints progress lines such as:
+The console prints privacy-safe progress lines such as:
 
 ```text
-court_decision_collector processing_judicial_decision source_guid=fixture-sk-decision-1 number=12C/34/2024 year=2024 status=processing court=Okresny sud Bratislava I label=ECLI:SK:OSBA1:2024:1234567890.1
+court_decision_collector processing_judicial_decision reference_hash=0d64... work_class=new status=processing
 ```
 
 The same progress lines are appended to `logs/court-decision-collector.log` by default.
@@ -81,7 +84,13 @@ The dashboard uses aggregate Prometheus metrics from
 - `jurisdigta_court_decisions_total`
 - `jurisdigta_court_decision_versions_total`
 - `jurisdigta_court_decision_versions_with_embeddings_total`
-- `jurisdigta_court_decision_collector_events_total`
+- `jurisdigta_court_decision_imports_total{work_class="new|backfill"}`
+- `jurisdigta_court_decision_imports_window{work_class="new|backfill",window="24h"}`
+- `jurisdigta_court_decision_queue{work_class="new|backfill"}`
+- `jurisdigta_court_decision_daily_new_quota{state="used|limit|remaining"}`
+- `jurisdigta_court_decision_checkpoint_failures_total`
+- `jurisdigta_court_decision_retries_total`
+- `jurisdigta_court_decision_pages_without_write`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_info`
@@ -95,9 +104,19 @@ content in Grafana labels or tables. The latest imported decision panel may
 show only a safe short name from decision form plus court type and the published
 date.
 
-## Service loop and restart test
+## Priority scheduler and restart test
 
-The production-style service polls decision pages, saves a `live_loop` cursor after each processed decision, and waits for the next poll when the source returns no more decisions. It does not exit on `status=up_to_date`.
+Each service cycle checks the current InfoSud source count before doing historical work. Growth beyond
+the durable source-count watermark is queued as `new`, including a small overlap window for source
+changes. The worker drains this queue first and commits at most 10,000 new decisions per UTC day.
+Overflow remains queued with the same priority after the UTC quota rolls over. Historical reconciliation
+(`backfill`) runs only while the new queue is empty and resumes from a durable page checkpoint after a
+restart.
+
+Quota usage is recorded only after the decision transaction succeeds. A retry therefore cannot consume
+quota twice, and a process crash cannot silently lose queued work. A lower source count or a missing
+expected page sets a degraded checkpoint status and emits an alertable counter; it is never reported as
+up to date.
 
 Run against the live source:
 
@@ -107,6 +126,14 @@ Run against the live source:
 
 For local testing, `--poll-seconds` can shorten the wait interval. Production uses `COURT_DECISIONS_WORKER_POLL_HOURS`.
 
+Relevant configuration defaults:
+
+```text
+COURT_DECISIONS_DAILY_NEW_LIMIT=10000
+COURT_DECISIONS_DISCOVERY_OVERLAP_PAGES=2
+COURT_DECISIONS_BACKFILL_PAGES_PER_CYCLE=10
+```
+
 Local restart-safe fixture test:
 
 ```powershell
@@ -114,7 +141,9 @@ Local restart-safe fixture test:
 .\conda\python.exe -m services.court_decision_collector --run-once --fixture-source --limit 1
 ```
 
-The first command stops after one judicial decision with `status=stopped_mid_run`. The second command resumes from the saved `live_loop` cursor, processes the remaining fixture decisions, and then stops with `status=up_to_date`.
+The first command stops after one committed decision. The second command resumes the durable queue and
+checkpoint without rescanning from page zero. Automated tests also cover daily overflow, UTC rollover,
+new-work priority over backfill, source-count regression, missing pages, and retry-safe quota accounting.
 
 ## Live source
 
@@ -123,6 +152,11 @@ The default source is the InfoSud API:
 ```text
 https://obcan.justice.sk/pilot/api/ress-isu-service/v1/rozhodnutie
 ```
+
+InfoSud requests use one-based page numbers even though its response metadata reports zero-based page
+indexes. The client translates this boundary explicitly. The scheduler does not rely on unsupported sort
+parameters or a single exact-GUID cursor: it combines a source-size watermark, overlap discovery, a
+durable queue, and resumable full reconciliation.
 
 Run a small live page:
 
