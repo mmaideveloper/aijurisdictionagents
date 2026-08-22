@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .domain import CourtDecisionRecord
-from .infosud_source import InfoSudDecisionRef
+from .infosud_source import InfoSudDecisionPage, InfoSudDecisionRef
 from .pseudonymization import pseudonymize_court_decision_text
 
 
@@ -80,6 +80,15 @@ class FixtureCourtDecisionSource:
             )
             for record in self.records[start:end]
         ]
+
+    def list_decision_page(self, *, page: int = 0, size: int = 25) -> InfoSudDecisionPage:
+        return InfoSudDecisionPage(
+            refs=tuple(self.list_decisions(page=page, size=size)),
+            page=page,
+            size=size,
+            total=len(self.records),
+            source_updated_at="fixture",
+        )
 
     def get_decision(self, guid: str) -> CourtDecisionRecord:
         return self._by_guid[guid]

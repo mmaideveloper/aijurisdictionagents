@@ -32,6 +32,33 @@ class CourtDecisionCollectorStatus:
 
 
 @dataclass(frozen=True)
+class CourtDecisionSchedulerState:
+    source_system: str
+    discovered_source_total: int
+    source_updated_at: str
+    backfill_next_page: int
+    backfill_generation: int
+    quota_day: date
+    quota_used: int
+    daily_new_limit: int
+    status: str
+
+    @property
+    def quota_remaining(self) -> int:
+        return max(0, self.daily_new_limit - self.quota_used)
+
+
+@dataclass(frozen=True)
+class CourtDecisionWorkItem:
+    source_system: str
+    source_guid: str
+    work_class: str
+    source_page: int
+    source_ordinal: int
+    counts_toward_quota: bool
+
+
+@dataclass(frozen=True)
 class CourtDecisionStatistics:
     total_decisions: int
     published_decisions: int
@@ -74,7 +101,12 @@ class PostgresCourtDecisionStore:
                 conn.execute(statement)
             conn.commit()
 
-    def upsert_decision(self, record: CourtDecisionRecord) -> StoredCourtDecision:
+    def upsert_decision(
+        self,
+        record: CourtDecisionRecord,
+        *,
+        work_class: str = "manual",
+    ) -> StoredCourtDecision:
         now = _now_iso()
         checksum = record.version_checksum()
         raw_checksum = sha256(record.raw_text.encode("utf-8")).hexdigest()
@@ -196,7 +228,8 @@ class PostgresCourtDecisionStore:
                 decision_id=decision_id,
                 version_id=version_id,
                 event_type=state,
-                event_metadata={"source_guid": record.source_guid},
+                event_metadata={"source_guid_hash": _source_guid_hash(record.source_guid)},
+                work_class=work_class,
                 now=now,
             )
             self.save_import_state(
@@ -482,6 +515,247 @@ class PostgresCourtDecisionStore:
                 )
             conn.commit()
 
+    def ensure_scheduler_state(
+        self,
+        *,
+        source_system: str,
+        source_total: int,
+        source_updated_at: str,
+        page_size: int,
+        daily_new_limit: int,
+        utc_day: date,
+        overlap_pages: int,
+    ) -> CourtDecisionSchedulerState:
+        """Create or roll forward durable scheduler state under a row lock."""
+        now = _now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM court_decision_scheduler_state WHERE source_system = %s FOR UPDATE",
+                (source_system,),
+            ).fetchone()
+            if row is None:
+                existing = conn.execute(
+                    "SELECT COUNT(*) AS total FROM court_decision_documents WHERE source_system = %s",
+                    (source_system,),
+                ).fetchone()
+                existing_total = int(str(existing["total"] if existing else 0))
+                backfill_next_page = max(0, existing_total // page_size - overlap_pages)
+                conn.execute(
+                    """
+                    INSERT INTO court_decision_scheduler_state(
+                        source_system, discovered_source_total, source_updated_at,
+                        backfill_next_page, backfill_generation, quota_day, quota_used,
+                        daily_new_limit, status, created_at, updated_at
+                    ) VALUES (%s,%s,%s,%s,0,%s,0,%s,'initialized',%s,%s)
+                    """,
+                    (source_system, source_total, source_updated_at, backfill_next_page,
+                     utc_day, daily_new_limit, now, now),
+                )
+            else:
+                quota_used = 0 if _as_date(row["quota_day"]) != utc_day else int(str(row["quota_used"]))
+                conn.execute(
+                    """UPDATE court_decision_scheduler_state
+                       SET quota_day=%s, quota_used=%s, daily_new_limit=%s, updated_at=%s
+                       WHERE source_system=%s""",
+                    (utc_day, quota_used, daily_new_limit, now, source_system),
+                )
+            conn.commit()
+        return self.get_scheduler_state(source_system=source_system)
+
+    def get_scheduler_state(self, *, source_system: str) -> CourtDecisionSchedulerState:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM court_decision_scheduler_state WHERE source_system = %s",
+                (source_system,),
+            ).fetchone()
+        if row is None:
+            raise LookupError(f"scheduler state is not initialized for {source_system}")
+        return _scheduler_state_from_row(row)
+
+    def enqueue_work_page(
+        self,
+        *,
+        source_system: str,
+        work_class: str,
+        source_page: int,
+        entries: list[tuple[str, int, bool]],
+    ) -> int:
+        if work_class not in {"new", "backfill"}:
+            raise ValueError("work_class must be new or backfill")
+        now = _now_iso()
+        with self._connect() as conn:
+            for source_guid, source_ordinal, counts_toward_quota in entries:
+                conn.execute(
+                    """
+                    INSERT INTO court_decision_import_queue(
+                        source_system, source_guid, work_class, source_page,
+                        source_ordinal, counts_toward_quota, status,
+                        discovered_at, created_at, updated_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s)
+                    ON CONFLICT (source_system, source_guid) DO UPDATE SET
+                        work_class = CASE WHEN EXCLUDED.work_class='new' THEN 'new'
+                                          ELSE court_decision_import_queue.work_class END,
+                        source_page=EXCLUDED.source_page,
+                        source_ordinal=EXCLUDED.source_ordinal,
+                        counts_toward_quota=CASE WHEN EXCLUDED.work_class='new'
+                                                 THEN EXCLUDED.counts_toward_quota
+                                                 ELSE court_decision_import_queue.counts_toward_quota END,
+                        status=CASE
+                            WHEN court_decision_import_queue.work_class='new'
+                                 AND EXCLUDED.work_class='backfill'
+                            THEN court_decision_import_queue.status
+                            ELSE 'pending'
+                        END,
+                        last_error_type=CASE
+                            WHEN court_decision_import_queue.work_class='new'
+                                 AND EXCLUDED.work_class='backfill'
+                            THEN court_decision_import_queue.last_error_type
+                            ELSE ''
+                        END,
+                        completed_at=CASE
+                            WHEN court_decision_import_queue.work_class='new'
+                                 AND EXCLUDED.work_class='backfill'
+                            THEN court_decision_import_queue.completed_at
+                            ELSE ''
+                        END,
+                        updated_at=EXCLUDED.updated_at
+                    """,
+                    (source_system, source_guid, work_class, source_page, source_ordinal,
+                     counts_toward_quota, now, now, now),
+                )
+            conn.commit()
+        return len(entries)
+
+    def next_work_item(
+        self, *, source_system: str, work_class: str,
+    ) -> CourtDecisionWorkItem | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT source_system,source_guid,work_class,source_page,source_ordinal,
+                          counts_toward_quota
+                   FROM court_decision_import_queue
+                   WHERE source_system=%s AND work_class=%s
+                     AND status IN ('pending','retryable')
+                   ORDER BY source_ordinal,discovered_at,source_guid LIMIT 1""",
+                (source_system, work_class),
+            ).fetchone()
+        if row is None:
+            return None
+        return CourtDecisionWorkItem(
+            source_system=str(row["source_system"]), source_guid=str(row["source_guid"]),
+            work_class=str(row["work_class"]), source_page=int(str(row["source_page"])),
+            source_ordinal=int(str(row["source_ordinal"])),
+            counts_toward_quota=bool(row["counts_toward_quota"]),
+        )
+
+    def complete_work_item(
+        self,
+        item: CourtDecisionWorkItem,
+        *,
+        utc_day: date,
+        count_quota: bool,
+    ) -> bool:
+        """Complete an item and account its UTC quota once, after the document commit."""
+        now = _now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                """UPDATE court_decision_import_queue
+                   SET status='completed',completed_at=%s,updated_at=%s
+                   WHERE source_system=%s AND source_guid=%s AND status<>'completed'
+                   RETURNING work_class,counts_toward_quota""",
+                (now, now, item.source_system, item.source_guid),
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return False
+            is_new = str(row["work_class"]) == "new"
+            increment = 1 if is_new and bool(row["counts_toward_quota"]) and count_quota else 0
+            conn.execute(
+                """UPDATE court_decision_scheduler_state
+                   SET quota_day=%s,
+                       quota_used=CASE WHEN quota_day=%s THEN quota_used+%s ELSE %s END,
+                       last_new_success_at=CASE WHEN %s THEN %s ELSE last_new_success_at END,
+                       last_backfill_success_at=CASE WHEN %s THEN last_backfill_success_at ELSE %s END,
+                       status=%s,updated_at=%s
+                   WHERE source_system=%s""",
+                (utc_day, utc_day, increment, increment, is_new, now, is_new, now,
+                 "processing_new" if is_new else "processing_backfill", now, item.source_system),
+            )
+            conn.commit()
+        return True
+
+    def mark_work_retry(self, item: CourtDecisionWorkItem, *, error_type: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_import_queue
+                   SET status='retryable',attempt_count=attempt_count+1,
+                       last_error_type=%s,updated_at=%s
+                   WHERE source_system=%s AND source_guid=%s""",
+                (error_type[:120], now, item.source_system, item.source_guid),
+            )
+            conn.execute(
+                """UPDATE court_decision_scheduler_state
+                   SET retry_count=retry_count+1,status='retryable_error',updated_at=%s
+                   WHERE source_system=%s""",
+                (now, item.source_system),
+            )
+            conn.commit()
+
+    def pending_work_count(self, *, source_system: str, work_class: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT COUNT(*) AS total FROM court_decision_import_queue
+                   WHERE source_system=%s AND work_class=%s
+                     AND status IN ('pending','retryable')""",
+                (source_system, work_class),
+            ).fetchone()
+        return int(str(row["total"] if row else 0))
+
+    def save_discovery_checkpoint(
+        self, *, source_system: str, source_total: int, source_updated_at: str,
+    ) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_scheduler_state
+                   SET discovered_source_total=%s,source_updated_at=%s,last_discovery_at=%s,
+                       status='discovered',updated_at=%s WHERE source_system=%s""",
+                (source_total, source_updated_at, now, now, source_system),
+            )
+            conn.commit()
+
+    def advance_backfill_checkpoint(
+        self, *, source_system: str, source_total: int, page_size: int,
+        page: int, wrote_data: bool,
+    ) -> None:
+        page_count = max(1, (source_total + page_size - 1) // page_size)
+        wrapped = page + 1 >= page_count
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_scheduler_state
+                   SET backfill_next_page=%s,
+                       backfill_generation=backfill_generation+%s,
+                       pages_scanned_without_write=CASE WHEN %s THEN 0
+                                                        ELSE pages_scanned_without_write+1 END,
+                       status=%s,updated_at=%s WHERE source_system=%s""",
+                (0 if wrapped else page + 1, 1 if wrapped else 0, wrote_data,
+                 "backfill_cycle_complete" if wrapped else "processing_backfill", now, source_system),
+            )
+            conn.commit()
+
+    def record_checkpoint_failure(self, *, source_system: str, status: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_scheduler_state
+                   SET checkpoint_failures=checkpoint_failures+1,status=%s,updated_at=%s
+                   WHERE source_system=%s""",
+                (status, now, source_system),
+            )
+            conn.commit()
+
     def save_import_state(
         self,
         *,
@@ -594,13 +868,18 @@ class PostgresCourtDecisionStore:
         version_id: str,
         event_type: str,
         event_metadata: dict[str, object],
+        work_class: str,
         now: str,
     ) -> None:
         conn.execute(
             """
             INSERT INTO court_decision_update_events(
-                event_id, decision_id, version_id, event_type, event_metadata_json, created_at
-            ) VALUES (%(event_id)s, %(decision_id)s, %(version_id)s, %(event_type)s, %(metadata)s, %(now)s)
+                event_id, decision_id, version_id, event_type, work_class,
+                event_metadata_json, created_at
+            ) VALUES (
+                %(event_id)s, %(decision_id)s, %(version_id)s, %(event_type)s,
+                %(work_class)s, %(metadata)s, %(now)s
+            )
             """,
             {
                 "event_id": str(uuid.uuid4()),
@@ -608,6 +887,7 @@ class PostgresCourtDecisionStore:
                 "version_id": version_id,
                 "event_type": event_type,
                 "metadata": json.dumps(event_metadata, ensure_ascii=True, sort_keys=True),
+                "work_class": work_class,
                 "now": now,
             },
         )
@@ -691,6 +971,30 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _source_guid_hash(source_guid: str) -> str:
+    return sha256(source_guid.encode("utf-8")).hexdigest()[:16]
+
+
+def _as_date(value: object) -> date:
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
+
+
+def _scheduler_state_from_row(row: dict[str, object]) -> CourtDecisionSchedulerState:
+    return CourtDecisionSchedulerState(
+        source_system=str(row["source_system"]),
+        discovered_source_total=int(str(row["discovered_source_total"])),
+        source_updated_at=str(row["source_updated_at"] or ""),
+        backfill_next_page=int(str(row["backfill_next_page"])),
+        backfill_generation=int(str(row["backfill_generation"])),
+        quota_day=_as_date(row["quota_day"]),
+        quota_used=int(str(row["quota_used"])),
+        daily_new_limit=int(str(row["daily_new_limit"])),
+        status=str(row["status"]),
+    )
+
+
 _SCHEMA_SQL = (
     "CREATE EXTENSION IF NOT EXISTS vector",
     """
@@ -760,10 +1064,61 @@ _SCHEMA_SQL = (
         decision_id TEXT NOT NULL REFERENCES court_decision_documents(decision_id) ON DELETE CASCADE,
         version_id TEXT NOT NULL REFERENCES court_decision_versions(version_id) ON DELETE CASCADE,
         event_type TEXT NOT NULL,
+        work_class TEXT NOT NULL DEFAULT 'legacy',
         event_metadata_json JSONB NOT NULL,
         created_at TEXT NOT NULL
     )
     """,
+    "ALTER TABLE court_decision_update_events ADD COLUMN IF NOT EXISTS work_class TEXT NOT NULL DEFAULT 'legacy'",
+    """
+    CREATE TABLE IF NOT EXISTS court_decision_scheduler_state (
+        source_system TEXT PRIMARY KEY,
+        discovered_source_total BIGINT NOT NULL DEFAULT 0,
+        source_updated_at TEXT NOT NULL DEFAULT '',
+        backfill_next_page BIGINT NOT NULL DEFAULT 0,
+        backfill_generation BIGINT NOT NULL DEFAULT 0,
+        quota_day DATE NOT NULL,
+        quota_used INTEGER NOT NULL DEFAULT 0,
+        daily_new_limit INTEGER NOT NULL DEFAULT 10000,
+        last_discovery_at TEXT NOT NULL DEFAULT '',
+        last_new_success_at TEXT NOT NULL DEFAULT '',
+        last_backfill_success_at TEXT NOT NULL DEFAULT '',
+        checkpoint_failures BIGINT NOT NULL DEFAULT 0,
+        retry_count BIGINT NOT NULL DEFAULT 0,
+        pages_scanned_without_write BIGINT NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'not_started',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (discovered_source_total >= 0),
+        CHECK (backfill_next_page >= 0),
+        CHECK (quota_used >= 0),
+        CHECK (daily_new_limit >= 1)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS court_decision_import_queue (
+        source_system TEXT NOT NULL,
+        source_guid TEXT NOT NULL,
+        work_class TEXT NOT NULL,
+        source_page BIGINT NOT NULL,
+        source_ordinal BIGINT NOT NULL,
+        counts_toward_quota BOOLEAN NOT NULL DEFAULT FALSE,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_error_type TEXT NOT NULL DEFAULT '',
+        discovered_at TEXT NOT NULL,
+        completed_at TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(source_system, source_guid),
+        CHECK (work_class IN ('new', 'backfill')),
+        CHECK (status IN ('pending', 'retryable', 'completed')),
+        CHECK (source_page >= 0),
+        CHECK (source_ordinal >= 0)
+    )
+    """,
+    """CREATE INDEX IF NOT EXISTS idx_court_decision_import_queue_pending
+    ON court_decision_import_queue(source_system, work_class, status, source_ordinal)""",
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_source
     ON court_decision_documents(source_system, source_guid)

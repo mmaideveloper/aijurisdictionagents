@@ -1,0 +1,38 @@
+groups:
+  - name: jurisdigta-court-decisions
+    rules:
+      - alert: JurisDigtaCourtDecisionNewBacklogStalled
+        expr: |
+          jurisdigta_court_decision_queue{work_class="new"} > 0
+          and on()
+          (
+            (time() - jurisdigta_court_decision_last_new_success_timestamp_seconds > 7200)
+            or absent(jurisdigta_court_decision_last_new_success_timestamp_seconds)
+          )
+        for: 15m
+        labels:
+          severity: warning
+          service: court-decision-collector
+        annotations:
+          summary: Court decision new-data backlog has no successful writes
+          description: New-priority work is pending and no successful new decision has completed for two hours.
+
+      - alert: JurisDigtaCourtDecisionCheckpointFailure
+        expr: increase(jurisdigta_court_decision_checkpoint_failures_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: court-decision-collector
+        annotations:
+          summary: Court decision scheduler checkpoint recovery failed
+          description: The source total regressed or an expected backfill page was missing. The worker must not report up to date.
+
+      - alert: JurisDigtaCourtDecisionBackfillNoWrites
+        expr: jurisdigta_court_decision_pages_without_write > 1000
+        for: 30m
+        labels:
+          severity: warning
+          service: court-decision-collector
+        annotations:
+          summary: Court decision backfill is scanning without database changes
+          description: Reconciliation scanned more than 1000 consecutive pages without creating or updating a decision.

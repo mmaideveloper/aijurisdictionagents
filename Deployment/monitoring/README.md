@@ -19,7 +19,7 @@ GET /v1/system/status?minutes=60
 - Privacy-safe local versus external AI model processing-timeout counts, with exact selected-range totals in the provisioned Errors dashboard and one-hour exporter gauges for alerting.
 - Email sent counts, email queue counts, and aggregate email send duration from the outbox.
 - Document processor queue counts, processed document counts, latest run duration, and aggregate processing duration.
-- Court-decision collector status, imported decision/version counts, latest imported decision safe short name and published date, newest stored decision issue date, embedding-vector coverage, worker activity counts, activity timestamps, and sanitized recent errors.
+- Court-decision collector status, durable new/backfill throughput, pending queues, UTC new-data quota, reconciliation progress, imported decision/version counts, embedding-vector coverage, activity timestamps, and sanitized recent errors.
 - AI model token and cost telemetry: input tokens, cached input tokens, output tokens, total tokens, estimated EUR cost, request count, and fallback count by provider, model, task type, plan, route type, route class, and 1h/24h/7d/30d window.
 - Host CPU, memory, disk, filesystem, and kernel metrics through Node Exporter.
 - Docker container CPU, memory, filesystem, and restart behavior through cAdvisor.
@@ -522,7 +522,7 @@ Grafana loads JurisDigta dashboards from `grafana/dashboards` into the
 - `JurisDigta Ollama And AI Models`: Ollama API health, configured model presence, installed/running model counts, model size, loaded model VRAM, probe latency, local/Ollama tokens, paid-model tokens, requests, estimated cost, and masked top cases by token volume. Its usage-window selector is populated from available Prometheus token windows so it does not default to an empty status window.
 - `JurisDigta AI Model Token Usage`: total tokens over time by provider/model/window, current total-token rows per model, 30-day total-token bar gauges per model, and input/output/cached token breakdowns.
 - `JurisDigta Laws Collector`: total imported laws over time, latest imported law identifier such as `179/2026`, execution time, imported laws per latest run, processed entries/documents, and recent sanitized collector errors.
-- `JurisDigta Court Decision Service`: current collector status, imported decisions, latest imported decision safe short name and published date, latest imported decision timestamp, stored versions, versions with embeddings, processing/processed/idle activity, storage totals, and recent sanitized collector errors.
+- `JurisDigta Court Decision Service`: current collector status, durable daily new/backfill throughput, pending queues, UTC quota remaining, reconciliation pages without writes, storage totals, and recent sanitized collector errors.
 - `JurisDigta Errors`: total errors, error telemetry status, error counts by source, HTTP probe status codes, and scrape target health.
 - `JurisDigta System Logs`: Loki log stream with source, severity, stream, and regex search filters for Docker container logs and server job log files.
 
@@ -572,7 +572,13 @@ Useful starter queries:
 - `jurisdigta_court_decisions_total{status="published"}`
 - `jurisdigta_court_decision_versions_total`
 - `jurisdigta_court_decision_versions_with_embeddings_total`
-- `jurisdigta_court_decision_collector_events_total{event="processed"}`
+- `jurisdigta_court_decision_imports_total{work_class="new|backfill"}`
+- `jurisdigta_court_decision_imports_window{work_class="new|backfill",window="24h"}`
+- `jurisdigta_court_decision_queue{work_class="new|backfill"}`
+- `jurisdigta_court_decision_daily_new_quota{state="used|limit|remaining"}`
+- `jurisdigta_court_decision_checkpoint_failures_total`
+- `jurisdigta_court_decision_retries_total`
+- `jurisdigta_court_decision_pages_without_write`
 - `jurisdigta_court_decision_collector_last_activity_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_timestamp_seconds`
 - `jurisdigta_court_decision_latest_imported_info`

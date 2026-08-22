@@ -108,30 +108,33 @@ def main() -> None:
         summary = service.run_worker_loop(
             page_size=limit,
             poll_seconds=poll_seconds,
+            daily_new_limit=config.daily_new_limit,
+            discovery_overlap_pages=config.discovery_overlap_pages,
+            backfill_pages_per_cycle=config.backfill_pages_per_cycle,
             max_idle_cycles=args.max_idle_cycles,
         )
-        status = store.get_import_state(source_system=source.source_system, cursor_kind="live_loop")
+        scheduler_status = store.get_scheduler_state(source_system=source.source_system).status
     elif args.run_once:
-        summary = service.run_until_current(
+        summary = service.run_priority_cycle(
             page_size=limit,
-            max_pages=args.max_pages,
-            stop_after_decisions=args.stop_after_decisions,
+            daily_new_limit=config.daily_new_limit,
+            discovery_overlap_pages=config.discovery_overlap_pages,
+            backfill_pages_per_cycle=args.max_pages or config.backfill_pages_per_cycle,
+            max_decisions=args.stop_after_decisions,
         )
-        status = store.get_import_state(source_system=source.source_system, cursor_kind="live_loop")
+        scheduler_status = store.get_scheduler_state(source_system=source.source_system).status
     elif args.live:
         summary = service.sync_live_page(page=args.page, size=limit)
-        status = store.status()
+        scheduler_status = store.status().status
     else:
         summary = service.sync_records(sample_court_decision_records())
-        status = store.status()
+        scheduler_status = store.status().status
     print("processed:", summary.processed)
     print("created:", summary.created)
     print("updated:", summary.updated)
     print("unchanged:", summary.unchanged)
     print("last_processed_decision:", summary.last_label)
-    print("last_source_guid:", summary.last_source_guid)
-    print("collector_status:", status.status)
-    print("collector_last_processed_at:", status.last_processed_at)
+    print("collector_status:", scheduler_status)
 
 
 class TeeProgressLogger:

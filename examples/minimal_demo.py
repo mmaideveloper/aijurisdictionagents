@@ -499,13 +499,14 @@ print(
 )
 print(
     "court_decision_collector => imports Slovak court decisions into a separate "
-    "PostgreSQL store with vectors, retry-hardened InfoSud requests, and "
+    "PostgreSQL store with a durable daily-new-data-first queue, resumable backfill, "
+    "vectors, retry-hardened InfoSud requests, and "
     "pseudonymized MCP search output; run "
     "`python examples/court_decision_collector_minimal_demo.py` for the focused fixture demo."
 )
 print(
-    "court_decision_grafana => JurisDigta Court Decision Service shows the aggregate "
-    "latest imported court decision short name and published date without exposing "
+    "court_decision_grafana => JurisDigta Court Decision Service shows durable new/backfill "
+    "throughput, queue depth, UTC quota, and reconciliation health without exposing "
     "court decision text, parties, file numbers, ECLI values, or source identifiers."
 )
 print(

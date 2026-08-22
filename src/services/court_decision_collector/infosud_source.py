@@ -21,6 +21,15 @@ class InfoSudDecisionRef:
     label: str
 
 
+@dataclass(frozen=True)
+class InfoSudDecisionPage:
+    refs: tuple[InfoSudDecisionRef, ...]
+    page: int
+    size: int
+    total: int
+    source_updated_at: str = ""
+
+
 class InfoSudSourceClient:
     source_system = "infosud"
 
@@ -44,19 +53,29 @@ class InfoSudSourceClient:
         self.sleep_fn = sleep_fn
 
     def list_decisions(self, *, page: int = 0, size: int = 25) -> list[InfoSudDecisionRef]:
+        return list(self.list_decision_page(page=page, size=size).refs)
+
+    def list_decision_page(self, *, page: int = 0, size: int = 25) -> InfoSudDecisionPage:
+        """Return a zero-based page plus the source corpus size.
+
+        InfoSud's public API is one-based even though its response reports a
+        zero-based page.  Keeping that translation here prevents the worker
+        from requesting the first page twice.
+        """
+        if page < 0:
+            raise ValueError("page must be >= 0")
         payload = self._get_json(
             path="/rozhodnutie",
-            params={"page": page, "size": size},
-            context=f"stage=list_decisions page={page} size={size}",
+            params={"page": page + 1, "size": size},
+            context=f"stage=list_decision_page page={page} size={size}",
         )
-        items = _extract_items(payload)
-        refs: list[InfoSudDecisionRef] = []
-        for item in items:
-            guid = _first_text(item, "guid", "id", "uuid")
-            if guid:
-                label = _first_text(item, "spisovaZnacka", "cisloSpisu", "ecli", default=guid)
-                refs.append(InfoSudDecisionRef(guid=guid, label=label))
-        return refs
+        return InfoSudDecisionPage(
+            refs=_refs_from_payload(payload),
+            page=page,
+            size=size,
+            total=_non_negative_int(payload.get("numFound")),
+            source_updated_at=_first_text(payload, "updateDate"),
+        )
 
     def get_decision(self, guid: str) -> CourtDecisionRecord:
         payload = self._get_json(
@@ -107,6 +126,23 @@ class InfoSudSourceClient:
                     self.sleep_fn(self.retry_backoff_seconds)
 
         raise RuntimeError("unreachable InfoSud retry state")
+
+
+def _refs_from_payload(payload: dict[str, Any]) -> tuple[InfoSudDecisionRef, ...]:
+    refs: list[InfoSudDecisionRef] = []
+    for item in _extract_items(payload):
+        guid = _first_text(item, "guid", "id", "uuid")
+        if guid:
+            label = _first_text(item, "spisovaZnacka", "cisloSpisu", "ecli", default=guid)
+            refs.append(InfoSudDecisionRef(guid=guid, label=label))
+    return tuple(refs)
+
+
+def _non_negative_int(value: object) -> int:
+    try:
+        return max(0, int(str(value)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def record_from_infosud_payload(
