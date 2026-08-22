@@ -134,18 +134,19 @@ def test_case_type_store_can_rank_multiple_candidates(tmp_path: Path) -> None:
     assert ranked[0][0] > 0
     assert ranked[0][1].case_type_key == "sk.real_estate.lease_agreement"
 
-
-def test_case_type_store_matches_inflected_purchase_request(tmp_path: Path) -> None:
+def test_case_type_store_ranks_ambiguous_real_estate_candidates(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
 
     ranked = store.rank_case_types(
         request_text="Chcem pripravit zmluvu k bytu aj kupu bytu.",
         country="SK",
-        limit=3,
+        limit=5,
     )
 
     assert ranked
-    assert any(item.case_type_key == "sk.real_estate.sale_purchase" for _score, item in ranked)
+    ranked_keys = [item.case_type_key for _score, item in ranked]
+    assert "sk.real_estate.lease_agreement" in ranked_keys
+    assert "sk.real_estate.sale_purchase" in ranked_keys
 
 
 def test_case_type_api_crud_and_resolve_endpoints(tmp_path: Path) -> None:

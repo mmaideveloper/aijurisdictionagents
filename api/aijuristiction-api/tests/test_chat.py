@@ -1876,6 +1876,13 @@ def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambig
     )
     assert "automaticke urcenie" in normalized_reply
     assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
+    normalized_reply = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
+        if not unicodedata.combining(char)
+    )
+    assert "automaticke urcenie" in normalized_reply
+    assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
     selections = store.list_case_catalog_selections(case_id=case.case_id)
     assert any(item.status == "ambiguous" for item in selections)
     assert any(item.clarification_question == "Ide o najom, alebo o kupu nehnutelnosti?" for item in selections)

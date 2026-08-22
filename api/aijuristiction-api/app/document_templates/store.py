@@ -575,6 +575,10 @@ class DocumentTemplateStore:
                 name_stems = _token_stems(name_normalized)
                 if name_stems and name_stems.issubset(text_stems):
                     score += 1
+                else:
+                    score += _partial_root_overlap_score(candidate_roots=name_roots, text_roots=text_roots)
+            else:
+                score += _partial_root_overlap_score(candidate_roots=name_roots, text_roots=text_roots)
             if item.description:
                 description_roots = _token_roots(_normalize_for_match(item.description))
                 if description_roots and description_roots.issubset(text_roots):
@@ -588,6 +592,16 @@ class DocumentTemplateStore:
                     template_title_stems = _token_stems(title_normalized)
                     if template_title_stems and template_title_stems.issubset(text_stems):
                         score += 1
+                    else:
+                        score += _partial_root_overlap_score(
+                            candidate_roots=template_title_roots,
+                            text_roots=text_roots,
+                        )
+                else:
+                    score += _partial_root_overlap_score(
+                        candidate_roots=template_title_roots,
+                        text_roots=text_roots,
+                    )
                 for keyword in template.keywords:
                     normalized_keyword = _normalize_for_match(keyword)
                     if normalized_keyword in normalized_text:
@@ -1034,6 +1048,15 @@ def _token_stems(value: str) -> set[str]:
         if len(cleaned) >= 3:
             stems.add(cleaned[:3])
     return stems
+
+
+def _partial_root_overlap_score(*, candidate_roots: set[str], text_roots: set[str]) -> int:
+    if not candidate_roots or not text_roots:
+        return 0
+    overlap = len(candidate_roots & text_roots)
+    if overlap <= 0:
+        return 0
+    return min(overlap, 2)
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
