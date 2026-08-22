@@ -30,7 +30,9 @@ from app.laws_api import _laws_db_config, _read_laws_statistics
 from app.mcp_law_retrieval import (
     LegalQueryProfile,
     build_legal_query_profile,
+    build_postgres_legal_tsqueries,
     compact_section_ranges,
+    normalize_legal_text,
     parse_provision_anchor,
     relevance_confidence,
     score_provision_text,
@@ -106,6 +108,9 @@ _DEFAULT_LAW_TEXT_MAX_CHARS = 20_000
 _MAX_LAW_TEXT_CHARS = 100_000
 _LEGAL_SEARCH_TIMEOUT_SECONDS = _bounded_env_int("MCP_LEGAL_SEARCH_TIMEOUT_SECONDS", default=30, minimum=1, maximum=300)
 _LEGAL_SEARCH_TIMEOUT_MS = _LEGAL_SEARCH_TIMEOUT_SECONDS * 1000
+_PROVISION_FTS_SCAN_MULTIPLIER = 1
+_PROVISION_FTS_SCAN_MINIMUM = 600
+_PROVISION_FTS_SCAN_MAXIMUM = 20_000
 _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS = _bounded_env_int(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS",
     default=600_000,
@@ -2044,7 +2049,8 @@ def _search_laws(
                                 PARTITION BY v.document_id
                                 ORDER BY v.effective_from DESC, v.version_token DESC
                             ) AS row_number
-                        FROM law_versions AS v
+                    FROM law_versions AS v
+                    WHERE v.effective_from <= CURRENT_DATE
                     ) AS ranked_versions
                     WHERE row_number = 1
                 )
@@ -2178,26 +2184,66 @@ def _query_provision_candidates(
         filter_params.append(published_year)
     extra_filter = "" if not filters else " AND " + " AND ".join(filters)
     if laws.backend == "postgres":
-        tsquery = " | ".join(f"{term}:*" for term in profile.search_terms)
+        tsqueries = build_postgres_legal_tsqueries(profile)
+        fts_scan_limit = max(
+            _PROVISION_FTS_SCAN_MINIMUM,
+            min(_PROVISION_FTS_SCAN_MAXIMUM, candidate_limit * _PROVISION_FTS_SCAN_MULTIPLIER),
+        )
+        per_query_limit = max(
+            100,
+            (fts_scan_limit + max(len(tsqueries), 1) - 1) // max(len(tsqueries), 1),
+        )
+        candidate_queries = []
+        candidate_params: list[Any] = []
+        for relation_index, tsquery in enumerate(tsqueries, start=1):
+            candidate_queries.append(
+                f"""
+                (
+                    SELECT
+                        p.provision_id,
+                        p.version_id,
+                        p.anchor,
+                        p.heading,
+                        p.body_text,
+                        p.ordinal,
+                        {relation_index} AS relation_index,
+                        ts_rank_cd(
+                            to_tsvector('simple', LOWER(p.body_text)),
+                            to_tsquery('simple', {laws.param})
+                    ) AS database_rank
+                    FROM law_provisions AS p
+                    JOIN law_versions AS candidate_version
+                        ON candidate_version.version_id = p.version_id
+                    WHERE to_tsvector('simple', LOWER(p.body_text))
+                        @@ to_tsquery('simple', {laws.param})
+                      AND candidate_version.effective_from <= CURRENT_DATE
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM law_versions AS candidate_newer
+                          WHERE candidate_newer.document_id = candidate_version.document_id
+                            AND candidate_newer.effective_from <= CURRENT_DATE
+                            AND (
+                                candidate_newer.effective_from
+                                    > candidate_version.effective_from
+                                OR (
+                                    candidate_newer.effective_from
+                                        = candidate_version.effective_from
+                                    AND candidate_newer.version_token
+                                        > candidate_version.version_token
+                                )
+                            )
+                      )
+                    ORDER BY database_rank DESC, p.provision_id
+                    LIMIT {laws.param}
+                )
+                """
+            )
+            candidate_params.extend((tsquery, tsquery, per_query_limit))
+        laws.query_all("SELECT set_config('enable_seqscan', 'off', true)", ())
         return laws.query_all(
             f"""
-            WITH search_query AS (
-                SELECT to_tsquery('simple', {laws.param}) AS value
-            ), latest_versions AS (
-                SELECT version_id, document_id, version_token, effective_from
-                FROM (
-                    SELECT
-                        v.version_id,
-                        v.document_id,
-                        v.version_token,
-                        v.effective_from,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY v.document_id
-                            ORDER BY v.effective_from DESC, v.version_token DESC
-                        ) AS row_number
-                    FROM law_versions AS v
-                ) AS ranked_versions
-                WHERE row_number = 1
+            WITH fts_candidates AS MATERIALIZED (
+                {' UNION ALL '.join(candidate_queries)}
             )
             SELECT
                 d.document_id,
@@ -2218,19 +2264,23 @@ def _query_provision_candidates(
                 p.heading,
                 p.body_text,
                 p.ordinal,
-                ts_rank_cd(to_tsvector('simple', LOWER(p.body_text)), q.value) AS database_rank
-            FROM law_documents AS d
-            JOIN latest_versions AS v ON v.document_id = d.document_id
-            JOIN law_provisions AS p ON p.version_id = v.version_id
+                p.database_rank,
+                p.relation_index
+            FROM fts_candidates AS p
+            JOIN law_versions AS v ON v.version_id = p.version_id
+            JOIN law_documents AS d ON d.document_id = v.document_id
             LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
-            CROSS JOIN search_query AS q
             WHERE UPPER(d.country_code) = {laws.param}
-              AND to_tsvector('simple', LOWER(p.body_text)) @@ q.value
               {extra_filter}
             ORDER BY database_rank DESC, d.law_year DESC, p.ordinal
-            LIMIT {laws.param}
             """,
-            tuple([tsquery, country_code, *filter_params, candidate_limit]),
+            tuple(
+                [
+                    *candidate_params,
+                    country_code,
+                    *filter_params,
+                ]
+            ),
         )
 
     term_clauses = [
@@ -2251,7 +2301,8 @@ def _query_provision_candidates(
                         PARTITION BY v.document_id
                         ORDER BY v.effective_from DESC, v.version_token DESC
                     ) AS row_number
-                FROM law_versions AS v
+            FROM law_versions AS v
+            WHERE v.effective_from <= CURRENT_DATE
             ) AS ranked_versions
             WHERE row_number = 1
         )
@@ -2323,6 +2374,7 @@ def _rank_provision_candidates(
                 "matched_provisions": [],
                 "_score": 0.0,
                 "_sections": set(),
+                "_relations": set(),
             },
         )
         provisions = cast(list[dict[str, Any]], record["matched_provisions"])
@@ -2336,16 +2388,28 @@ def _rank_provision_candidates(
                 "heading": str(row[15]),
                 "snippet": _bounded_law_snippet(str(row[16])),
                 "matched_terms": list(relevance.matched_terms),
-                "relevance_score": round(min(relevance.score / 40.0, 1.0), 4),
+                "relevance_score": _normalized_law_relevance_score(relevance.score),
             }
         )
         record["_score"] = max(float(record["_score"]), relevance.score)
         cast(set[int], record["_sections"]).add(parsed_anchor.section_number)
+        if len(row) > 19:
+            cast(set[int], record["_relations"]).add(int(row[19]))
 
     results: list[dict[str, Any]] = []
     for record in grouped.values():
         sections = cast(set[int], record.pop("_sections"))
-        aggregate_score = float(record.pop("_score")) + min(len(sections), 8) * 0.75
+        relations = cast(set[int], record.pop("_relations"))
+        aggregate_score = (
+            float(record.pop("_score"))
+            + min(len(sections), 8) * 0.75
+            + min(len(relations), 6) * 4.0
+            + _law_candidate_ranking_adjustment(
+                profile=profile,
+                law_type=str(record["law_type"]),
+                title=f"{record['official_name']} {record['lawyer_title']} {record['title']}",
+            )
+        )
         provisions = cast(list[dict[str, Any]], record["matched_provisions"])
         provisions.sort(
             key=lambda provision: (
@@ -2357,20 +2421,42 @@ def _rank_provision_candidates(
         record["relevant_sections"] = sorted(sections)
         record["relevant_section_ranges"] = [
             {"section_start": start, "section_end": end}
-            for start, end in compact_section_ranges(sections)
+            for start, end in compact_section_ranges(sections, maximum_gap=3)
         ]
         record["retrieval_basis"] = "law_provisions"
-        record["relevance_score"] = round(min(aggregate_score / 40.0, 1.0), 4)
+        record["matched_relation_count"] = len(relations)
+        record["_sort_score"] = aggregate_score
+        record["relevance_score"] = _normalized_law_relevance_score(aggregate_score)
         record["confidence"] = relevance_confidence(aggregate_score)
         results.append(record)
     results.sort(
         key=lambda record: (
-            -float(record["relevance_score"]),
+            -float(record["_sort_score"]),
             -int(record["law_year"]),
             -int(record["law_number"]),
         )
     )
+    for record in results:
+        record.pop("_sort_score", None)
     return results
+
+
+def _normalized_law_relevance_score(score: float) -> float:
+    bounded_score = max(score, 0.0)
+    return round(bounded_score / (bounded_score + 40.0), 4)
+
+
+def _law_candidate_ranking_adjustment(
+    *, profile: LegalQueryProfile, law_type: str, title: str
+) -> float:
+    normalized_type = normalize_legal_text(law_type)
+    normalized_title = normalize_legal_text(title)
+    adjustment = 10.0 if normalized_type == "zakon" else 0.0
+    if "real_estate" in profile.concepts and "katastr" in normalized_title:
+        adjustment += 16.0
+    if "ktorym sa meni" in normalized_title or "uplne znenie" in normalized_title:
+        adjustment -= 12.0
+    return adjustment
 
 
 def _merge_law_search_results(

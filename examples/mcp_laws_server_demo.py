@@ -60,11 +60,13 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "instructions":
         print(fetch_instructions_page())
     elif len(sys.argv) > 1 and sys.argv[1] == "legal-basis":
+        query = " ".join(sys.argv[2:]).strip() or "chcem kupno predajnu zmluvu na zahradu"
         response = mcp_call(
             "searchLaws",
             {
-                "query": "chcem kupno predajnu zmluvu na zahradu",
+                "query": query,
                 "country_code": "SK",
+                "sort": "relevance",
                 "limit": 5,
             },
         )
