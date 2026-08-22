@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
+import re
 from typing import TYPE_CHECKING, Any, Protocol
+import unicodedata
 from uuid import UUID
 
 from app.chat.models import Message, MessageRole, Session
@@ -61,6 +63,8 @@ def resolve_case_catalog_context(
         "record_case_catalog_event",
     )
     if any(not callable(getattr(store, method_name, None)) for method_name in required_methods):
+        return CaseCatalogContext()
+    if not document_generation_requested and _is_legal_research_request(current_content):
         return CaseCatalogContext()
     session_key = str(session_id)
     has_processed_case_documents = _has_processed_case_documents(
@@ -148,6 +152,24 @@ def resolve_case_catalog_context(
         selection=active_selection,
         prompt_note=prompt_note,
         template_documents=template_documents,
+    )
+
+
+def _is_legal_research_request(value: str) -> bool:
+    normalized = unicodedata.normalize("NFKD", value.casefold())
+    canonical = "".join(char for char in normalized if not unicodedata.combining(char))
+    canonical = re.sub(r"\s+", " ", canonical).strip()
+    return any(
+        marker in canonical
+        for marker in (
+            "sudne rozhodnut",
+            "sudnych rozhodnut",
+            "rozhodnutia sud",
+            "judikat",
+            "judikatur",
+            "case law",
+            "court decision",
+        )
     )
 
 
