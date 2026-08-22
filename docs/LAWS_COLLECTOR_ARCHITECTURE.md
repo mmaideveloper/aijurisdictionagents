@@ -6,8 +6,17 @@ The MCP law search reads the latest consolidated `law_versions` and searches the
 `law_provisions`. Provision anchors such as `paragraf-588.odsek-1.text` preserve section and
 paragraph identity even though `source_artifacts.content_text` is flattened during collection.
 Migration `0008_add_provision_search_indexes.sql` adds version/anchor lookup indexes and a
-PostgreSQL `simple` full-text GIN index over provision bodies. This keeps scenario retrieval
-grounded in collected public-law text while `getLawText` can reconstruct a focused section range.
+PostgreSQL `simple` full-text GIN index over provision bodies. MCP retrieval converts supported
+concepts into selective paired prefix clauses with a bounded quota per concept, then materializes a candidate set directly
+from that GIN index before joining law versions, documents, and metadata;
+the current/effective-version check is applied to those candidates. This keeps production-scale
+scenario retrieval grounded in collected public-law text while avoiding a per-version provision
+scan, and `getLawText` can reconstruct a focused section range.
+
+The provision candidate query uses transaction-local `set_config('enable_seqscan', 'off', true)`.
+The setting is scoped to the read-only MCP database transaction and prevents production statistics
+from selecting a full provision-table scan for the expression-indexed predicate; it is not a global
+PostgreSQL setting.
 
 Search logs contain query length and timing only, not raw prompts or returned legal text. Results
 include source URLs, matched anchors, limitations, and a human-review flag for transparency and
