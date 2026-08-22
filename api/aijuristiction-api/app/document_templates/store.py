@@ -484,41 +484,22 @@ class DocumentTemplateStore:
         normalized_text = _normalize_for_match(request_text)
         if not normalized_text:
             return []
-        text_roots = _token_roots(normalized_text)
         candidates = [
             item
             for item in self.list_case_types(include_deleted=False, jurisdiction=country)
             if item.is_enabled
         ]
-        scored: list[tuple[int, CaseTypeDefinition]] = []
-        for item in candidates:
-            score = 0
-            for keyword in item.keywords:
-                normalized_keyword = _normalize_for_match(keyword)
-                if normalized_keyword in normalized_text:
-                    score += 3
-                    continue
-                keyword_roots = _token_roots(normalized_keyword)
-                if keyword_roots and keyword_roots.issubset(text_roots):
-                    score += 1
-            name_roots = _token_roots(_normalize_for_match(item.name))
-            if name_roots and name_roots.issubset(text_roots):
-                score += 2
-            if item.description:
-                description_roots = _token_roots(_normalize_for_match(item.description))
-                if description_roots and description_roots.issubset(text_roots):
-                    score += 1
-            for template in item.templates:
-                template_title_roots = _token_roots(_normalize_for_match(template.title))
-                if template_title_roots and template_title_roots.issubset(text_roots):
-                    score += 1
-                for keyword in template.keywords:
-                    normalized_keyword = _normalize_for_match(keyword)
-                    if normalized_keyword in normalized_text:
-                        score += 2
-                        break
-            if score > 0:
-                scored.append((score, item))
+        scored = self._score_case_types(
+            normalized_text=normalized_text,
+            candidates=candidates,
+            allow_stem_fallback=False,
+        )
+        if not scored:
+            scored = self._score_case_types(
+                normalized_text=normalized_text,
+                candidates=candidates,
+                allow_stem_fallback=True,
+            )
         scored.sort(key=lambda pair: pair[0], reverse=True)
         if scored:
             return scored[:limit] if limit is not None else scored
@@ -545,8 +526,93 @@ class DocumentTemplateStore:
             for item in self.list(include_deleted=False, jurisdiction=country, template_kind=template_kind)
             if item.is_enabled
         ]
+        scored = self._score_templates(
+            normalized_text=normalized_text,
+            candidates=candidates,
+            template_kind=template_kind,
+            allow_stem_fallback=False,
+        )
+        if not scored:
+            scored = self._score_templates(
+                normalized_text=normalized_text,
+                candidates=candidates,
+                template_kind=template_kind,
+                allow_stem_fallback=True,
+            )
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        return scored[0] if scored else (0, None)
+
+    def _score_case_types(
+        self,
+        *,
+        normalized_text: str,
+        candidates: builtins.list[CaseTypeDefinition],
+        allow_stem_fallback: bool,
+    ) -> builtins.list[tuple[int, CaseTypeDefinition]]:
         text_roots = _token_roots(normalized_text)
-        scored: list[tuple[int, DocumentTemplateDefinition]] = []
+        text_stems = _token_stems(normalized_text) if allow_stem_fallback else set()
+        scored: builtins.list[tuple[int, CaseTypeDefinition]] = []
+        for item in candidates:
+            score = 0
+            for keyword in item.keywords:
+                normalized_keyword = _normalize_for_match(keyword)
+                if normalized_keyword in normalized_text:
+                    score += 3
+                    continue
+                keyword_roots = _token_roots(normalized_keyword)
+                if keyword_roots and keyword_roots.issubset(text_roots):
+                    score += 1
+                    continue
+                if allow_stem_fallback:
+                    keyword_stems = _token_stems(normalized_keyword)
+                    if keyword_stems and keyword_stems.issubset(text_stems):
+                        score += 1
+            name_normalized = _normalize_for_match(item.name)
+            name_roots = _token_roots(name_normalized)
+            if name_roots and name_roots.issubset(text_roots):
+                score += 2
+            elif allow_stem_fallback:
+                name_stems = _token_stems(name_normalized)
+                if name_stems and name_stems.issubset(text_stems):
+                    score += 1
+            if item.description:
+                description_roots = _token_roots(_normalize_for_match(item.description))
+                if description_roots and description_roots.issubset(text_roots):
+                    score += 1
+            for template in item.templates:
+                title_normalized = _normalize_for_match(template.title)
+                template_title_roots = _token_roots(title_normalized)
+                if template_title_roots and template_title_roots.issubset(text_roots):
+                    score += 1
+                elif allow_stem_fallback:
+                    template_title_stems = _token_stems(title_normalized)
+                    if template_title_stems and template_title_stems.issubset(text_stems):
+                        score += 1
+                for keyword in template.keywords:
+                    normalized_keyword = _normalize_for_match(keyword)
+                    if normalized_keyword in normalized_text:
+                        score += 2
+                        break
+                    if allow_stem_fallback:
+                        keyword_stems = _token_stems(normalized_keyword)
+                        if keyword_stems and keyword_stems.issubset(text_stems):
+                            score += 1
+                            break
+            if score > 0:
+                scored.append((score, item))
+        return scored
+
+    def _score_templates(
+        self,
+        *,
+        normalized_text: str,
+        candidates: builtins.list[DocumentTemplateDefinition],
+        template_kind: str | None,
+        allow_stem_fallback: bool,
+    ) -> builtins.list[tuple[int, DocumentTemplateDefinition]]:
+        text_roots = _token_roots(normalized_text)
+        text_stems = _token_stems(normalized_text) if allow_stem_fallback else set()
+        scored: builtins.list[tuple[int, DocumentTemplateDefinition]] = []
         for item in candidates:
             score = 0
             if template_kind and item.template_kind.strip().lower() == template_kind.strip().lower():
@@ -559,13 +625,22 @@ class DocumentTemplateStore:
                 keyword_roots = _token_roots(normalized_keyword)
                 if keyword_roots and keyword_roots.issubset(text_roots):
                     score += 1
-            title_roots = _token_roots(_normalize_for_match(item.title))
+                    continue
+                if allow_stem_fallback:
+                    keyword_stems = _token_stems(normalized_keyword)
+                    if keyword_stems and keyword_stems.issubset(text_stems):
+                        score += 1
+            title_normalized = _normalize_for_match(item.title)
+            title_roots = _token_roots(title_normalized)
             if title_roots and title_roots.issubset(text_roots):
                 score += 2
+            elif allow_stem_fallback:
+                title_stems = _token_stems(title_normalized)
+                if title_stems and title_stems.issubset(text_stems):
+                    score += 1
             if score > 0:
                 scored.append((score, item))
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        return scored[0] if scored else (0, None)
+        return scored
 
     def _seed_defaults_if_empty(self) -> None:
         with self._connect() as conn:
@@ -950,6 +1025,15 @@ def _token_roots(value: str) -> set[str]:
         if cleaned:
             roots.add(cleaned[:4])
     return roots
+
+
+def _token_stems(value: str) -> set[str]:
+    stems: set[str] = set()
+    for token in value.split():
+        cleaned = "".join(char for char in token if char.isalnum())
+        if len(cleaned) >= 3:
+            stems.add(cleaned[:3])
+    return stems
 
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:

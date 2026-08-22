@@ -53,14 +53,42 @@ def resolve_case_catalog_context(
     template_store: DocumentTemplateStore,
     document_generation_requested: bool,
 ) -> CaseCatalogContext:
+    if not (session.case_id or session.user_id):
+        return CaseCatalogContext()
+    required_methods = (
+        "get_case_catalog_selection",
+        "upsert_case_catalog_selection",
+        "record_case_catalog_event",
+    )
+    if any(not callable(getattr(store, method_name, None)) for method_name in required_methods):
+        return CaseCatalogContext()
     session_key = str(session_id)
+    has_processed_case_documents = _has_processed_case_documents(
+        store=store,
+        case_id=(session.case_id or "").strip(),
+    )
+    should_skip_retry_only_selection = has_processed_case_documents and _is_processed_document_followup(
+        current_content
+    )
     session_selection = store.get_case_catalog_selection(
         selection_scope="session",
         entity_id=session_key,
     )
     case_selection = _case_selection(store=store, case_id=(session.case_id or "").strip())
+    if (
+        session_selection is None
+        and prior_messages
+        and _selection_needs_retry(case_selection)
+    ):
+        case_selection = None
     active_selection = session_selection or case_selection
-    should_detect = not prior_messages or _selection_needs_retry(active_selection)
+    if should_skip_retry_only_selection and _selection_needs_retry(active_selection):
+        active_selection = None
+    should_defer_detection = has_processed_case_documents and document_generation_requested
+    should_retry_session_detection = _selection_needs_retry(session_selection)
+    should_detect = (
+        (not prior_messages and active_selection is None) or should_retry_session_detection
+    ) and not should_defer_detection and not should_skip_retry_only_selection
     if should_detect:
         trace = _detection_trace(
             prior_messages=prior_messages,
@@ -87,6 +115,8 @@ def resolve_case_catalog_context(
             direct_reply=_insufficient_sources_reply(session=session, case_type_name=active_selection.case_type_name),
         )
     if active_selection.status == "ambiguous":
+        if has_processed_case_documents and document_generation_requested:
+            return CaseCatalogContext(selection=active_selection)
         return CaseCatalogContext(
             selection=active_selection,
             direct_reply=_clarification_reply(
@@ -410,6 +440,48 @@ def _case_selection(*, store: ApiDatabaseStore, case_id: str) -> CaseCatalogSele
     if not case_id:
         return None
     return store.get_case_catalog_selection(selection_scope="case", entity_id=case_id)
+
+
+def _has_processed_case_documents(*, store: ApiDatabaseStore, case_id: str) -> bool:
+    if not case_id:
+        return False
+    list_case_document_contents = getattr(store, "list_case_document_contents", None)
+    if not callable(list_case_document_contents):
+        return False
+    return bool(list_case_document_contents(case_id=case_id))
+
+
+def _is_processed_document_followup(content: str) -> bool:
+    normalized = " ".join(content.lower().split())
+    document_markers = (
+        "uploaded document",
+        "uploaded documents",
+        "all uploaded documents",
+        "document",
+        "documents",
+        "doklad",
+        "doklady",
+        "dokument",
+        "dokumenty",
+        "prior discussions",
+        "predchadzajuce diskusie",
+    )
+    followup_markers = (
+        "summarize",
+        "summary",
+        "review",
+        "analyze",
+        "analyse",
+        "recap",
+        "zhrn",
+        "sumar",
+        "preskum",
+        "analyz",
+        "vyhodnot",
+    )
+    return any(marker in normalized for marker in document_markers) and any(
+        marker in normalized for marker in followup_markers
+    )
 
 
 def _selection_needs_retry(selection: CaseCatalogSelection | None) -> bool:

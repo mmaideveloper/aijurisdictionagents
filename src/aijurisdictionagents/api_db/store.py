@@ -695,7 +695,7 @@ class ApiDatabaseStore:
                     selection_id TEXT PRIMARY KEY,
                     selection_scope TEXT NOT NULL,
                     entity_id TEXT NOT NULL,
-                    case_id TEXT NOT NULL DEFAULT '',
+                    case_id TEXT DEFAULT NULL,
                     session_id TEXT NOT NULL DEFAULT '',
                     case_type_id TEXT NOT NULL DEFAULT '',
                     case_type_key TEXT NOT NULL DEFAULT '',
@@ -718,7 +718,7 @@ class ApiDatabaseStore:
 
                 CREATE TABLE IF NOT EXISTS case_catalog_events (
                     event_id TEXT PRIMARY KEY,
-                    case_id TEXT NOT NULL DEFAULT '',
+                    case_id TEXT DEFAULT NULL,
                     session_id TEXT NOT NULL DEFAULT '',
                     event_type TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT '',
@@ -3859,6 +3859,7 @@ class ApiDatabaseStore:
     ) -> CaseCatalogSelection:
         normalized_scope = selection_scope.strip().lower()
         normalized_entity_id = entity_id.strip()
+        normalized_case_id = case_id.strip()
         if normalized_scope not in {"case", "session"}:
             raise ValueError("selection_scope must be 'case' or 'session'")
         if not normalized_entity_id:
@@ -3911,7 +3912,7 @@ class ApiDatabaseStore:
                     selection_id,
                     normalized_scope,
                     normalized_entity_id,
-                    case_id.strip(),
+                    normalized_case_id or None,
                     session_id.strip(),
                     case_type_id.strip(),
                     case_type_key.strip(),
@@ -4011,7 +4012,7 @@ class ApiDatabaseStore:
                 """,
                 (
                     event_id,
-                    case_id.strip(),
+                    case_id.strip() or None,
                     session_id.strip(),
                     event_type.strip(),
                     status.strip(),
@@ -5583,6 +5584,7 @@ class ApiDatabaseStore:
         self._ensure_ai_model_soft_delete_columns(conn)
         self._ensure_ai_model_usage_audit_columns(conn)
         self._ensure_case_catalog_selection_columns(conn)
+        self._ensure_case_catalog_reference_columns(conn)
 
     def _ensure_case_catalog_selection_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -5610,6 +5612,112 @@ class ApiDatabaseStore:
                 conn,
                 "ALTER TABLE case_catalog_selections ADD COLUMN clarification_question TEXT NOT NULL DEFAULT ''",
             )
+
+    def _ensure_case_catalog_reference_columns(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            self._execute(conn, "UPDATE case_catalog_selections SET case_id = NULL WHERE case_id = ''")
+            self._execute(conn, "UPDATE case_catalog_events SET case_id = NULL WHERE case_id = ''")
+            self._execute(conn, "ALTER TABLE case_catalog_selections ALTER COLUMN case_id DROP NOT NULL")
+            self._execute(conn, "ALTER TABLE case_catalog_selections ALTER COLUMN case_id DROP DEFAULT")
+            self._execute(conn, "ALTER TABLE case_catalog_events ALTER COLUMN case_id DROP NOT NULL")
+            self._execute(conn, "ALTER TABLE case_catalog_events ALTER COLUMN case_id DROP DEFAULT")
+            return
+
+        selection_columns = {
+            str(row[1]): {"notnull": int(row[3]), "default": row[4]}
+            for row in self._execute(conn, "PRAGMA table_info(case_catalog_selections)").fetchall()
+        }
+        event_columns = {
+            str(row[1]): {"notnull": int(row[3]), "default": row[4]}
+            for row in self._execute(conn, "PRAGMA table_info(case_catalog_events)").fetchall()
+        }
+        selection_case_id = selection_columns.get("case_id")
+        event_case_id = event_columns.get("case_id")
+        if not selection_case_id or not event_case_id:
+            return
+        needs_selection_migration = selection_case_id["notnull"] == 1
+        needs_event_migration = event_case_id["notnull"] == 1
+        if not needs_selection_migration and not needs_event_migration:
+            return
+
+        self._execute(conn, "PRAGMA foreign_keys = OFF")
+        self._execute(conn, "ALTER TABLE case_catalog_selections RENAME TO case_catalog_selections_legacy")
+        self._execute(conn, "ALTER TABLE case_catalog_events RENAME TO case_catalog_events_legacy")
+        self._execute_script(
+            conn,
+            """
+            CREATE TABLE case_catalog_selections (
+                selection_id TEXT PRIMARY KEY,
+                selection_scope TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                case_id TEXT DEFAULT NULL,
+                session_id TEXT NOT NULL DEFAULT '',
+                case_type_id TEXT NOT NULL DEFAULT '',
+                case_type_key TEXT NOT NULL DEFAULT '',
+                case_type_name TEXT NOT NULL DEFAULT '',
+                prompt_ids_json TEXT NOT NULL DEFAULT '[]',
+                template_ids_json TEXT NOT NULL DEFAULT '[]',
+                template_keys_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'unclassified',
+                confidence_score REAL NOT NULL DEFAULT 0,
+                confidence_gap REAL NOT NULL DEFAULT 0,
+                source TEXT NOT NULL DEFAULT '',
+                first_message_preview TEXT NOT NULL DEFAULT '',
+                first_message_sha256 TEXT NOT NULL DEFAULT '',
+                clarification_question TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(selection_scope, entity_id),
+                FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE case_catalog_events (
+                event_id TEXT PRIMARY KEY,
+                case_id TEXT DEFAULT NULL,
+                session_id TEXT NOT NULL DEFAULT '',
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT '',
+                severity TEXT NOT NULL DEFAULT 'info',
+                summary TEXT NOT NULL DEFAULT '',
+                details_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+            );
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            INSERT INTO case_catalog_selections(
+                selection_id, selection_scope, entity_id, case_id, session_id,
+                case_type_id, case_type_key, case_type_name, prompt_ids_json, template_ids_json,
+                template_keys_json, status, confidence_score, confidence_gap, source,
+                first_message_preview, first_message_sha256, clarification_question, created_at, updated_at
+            )
+            SELECT
+                selection_id, selection_scope, entity_id, NULLIF(case_id, ''), session_id,
+                case_type_id, case_type_key, case_type_name, prompt_ids_json, template_ids_json,
+                template_keys_json, status, confidence_score, confidence_gap, source,
+                first_message_preview, first_message_sha256, clarification_question, created_at, updated_at
+            FROM case_catalog_selections_legacy
+            """,
+        )
+        self._execute(
+            conn,
+            """
+            INSERT INTO case_catalog_events(
+                event_id, case_id, session_id, event_type, status, severity, summary, details_json, created_at
+            )
+            SELECT
+                event_id, NULLIF(case_id, ''), session_id, event_type, status, severity, summary, details_json, created_at
+            FROM case_catalog_events_legacy
+            """,
+        )
+        self._execute(conn, "DROP TABLE case_catalog_selections_legacy")
+        self._execute(conn, "DROP TABLE case_catalog_events_legacy")
+        self._execute(conn, "PRAGMA foreign_keys = ON")
 
     def _ensure_ai_model_soft_delete_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -6946,7 +7054,7 @@ def _row_to_case_catalog_selection(row: tuple[object, ...]) -> CaseCatalogSelect
         selection_id=str(row[0]),
         selection_scope=str(row[1]),
         entity_id=str(row[2]),
-        case_id=str(row[3]),
+        case_id=str(row[3] or ""),
         session_id=str(row[4]),
         case_type_id=str(row[5]),
         case_type_key=str(row[6]),
@@ -6969,7 +7077,7 @@ def _row_to_case_catalog_selection(row: tuple[object, ...]) -> CaseCatalogSelect
 def _row_to_case_catalog_event(row: tuple[object, ...]) -> CaseCatalogEvent:
     return CaseCatalogEvent(
         event_id=str(row[0]),
-        case_id=str(row[1]),
+        case_id=str(row[1] or ""),
         session_id=str(row[2]),
         event_type=str(row[3]),
         status=str(row[4]),

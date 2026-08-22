@@ -584,7 +584,7 @@ def _select_relevant_case_document_chunks(
     if not chunk_entries:
         return []
     if _requests_all_processed_documents(query):
-        return _limit_chunks_per_document(
+        return _select_all_case_document_chunks(
             chunk_entries,
             limit=max(limit, 8),
             per_document_limit=per_document_limit,
@@ -648,6 +648,38 @@ def _limit_chunks_per_document(
     for chunk in chunk_entries:
         count = counts_by_doc_id.get(chunk.doc_id, 0)
         if count >= per_document_limit:
+            continue
+        selected.append(chunk)
+        counts_by_doc_id[chunk.doc_id] = count + 1
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _select_all_case_document_chunks(
+    chunk_entries: list[Any],
+    *,
+    limit: int,
+    per_document_limit: int,
+) -> list[Any]:
+    if not chunk_entries:
+        return []
+    selected: list[Any] = []
+    counts_by_doc_id: dict[str, int] = {}
+    for chunk in chunk_entries:
+        if chunk.doc_id in counts_by_doc_id:
+            continue
+        selected.append(chunk)
+        counts_by_doc_id[chunk.doc_id] = 1
+        if len(selected) >= limit:
+            return selected
+    if len(selected) == len(chunk_entries):
+        return selected
+    for chunk in chunk_entries:
+        count = counts_by_doc_id.get(chunk.doc_id, 0)
+        if count >= per_document_limit:
+            continue
+        if count == 0:
             continue
         selected.append(chunk)
         counts_by_doc_id[chunk.doc_id] = count + 1
@@ -1498,47 +1530,6 @@ def _run_direct_lawyer_turn(
         content=content,
         previous_messages=prior_messages,
     )
-    routed_llm = _resolve_session_llm_route(
-        session=session,
-        task_type="chat_reply",
-        request_user_id=request_user_id,
-        request_user_email=request_user_email,
-    )
-    case_catalog_context = resolve_case_catalog_context(
-        session_id=session_id,
-        session=session,
-        current_content=content,
-        prior_messages=prior_messages,
-        route=routed_llm,
-        store=_get_store(),
-        template_store=get_document_template_store(),
-        document_generation_requested=document_generation_requested,
-    )
-    if case_catalog_context.direct_reply is not None:
-        persisted_lawyer = _persist_direct_assistant_message(
-            session_id=session_id,
-            session=session,
-            content=case_catalog_context.direct_reply,
-            agent_name="CaseTypeDetectionAgent",
-            allow_document_generation=False,
-        )
-        _record_case_ai_model_audit(
-            session=session,
-            question=persisted_user,
-            answer=persisted_lawyer,
-            task_type="case_type_detection",
-            source="chat.case_type_detection",
-            model_used=False,
-            route=routed_llm,
-        )
-        return (
-            persisted_user,
-            persisted_lawyer,
-            _user_visible_text(persisted_lawyer.content),
-            processing_events,
-            routed_llm,
-        )
-
     preparation = prepare_country_direct_reply(
         session=session,
         messages=history,
@@ -1594,6 +1585,13 @@ def _run_direct_lawyer_turn(
             None,
         )
 
+    routed_llm = _resolve_session_llm_route(
+        session=session,
+        task_type="chat_reply",
+        request_user_id=request_user_id,
+        request_user_email=request_user_email,
+    )
+
     from aijurisdictionagents.agents import create_lawyer_agent
 
     runtime_reply = _runtime_question_reply(
@@ -1615,6 +1613,41 @@ def _run_direct_lawyer_turn(
             answer=persisted_lawyer,
             task_type="chat_status",
             source="chat.direct_reply",
+            model_used=False,
+            route=routed_llm,
+        )
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            processing_events,
+            routed_llm,
+        )
+
+    case_catalog_context = resolve_case_catalog_context(
+        session_id=session_id,
+        session=session,
+        current_content=content,
+        prior_messages=prior_messages,
+        route=routed_llm,
+        store=_get_store(),
+        template_store=get_document_template_store(),
+        document_generation_requested=document_generation_requested,
+    )
+    if case_catalog_context.direct_reply is not None:
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=case_catalog_context.direct_reply,
+            agent_name="CaseTypeDetectionAgent",
+            allow_document_generation=False,
+        )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="case_type_detection",
+            source="chat.case_type_detection",
             model_used=False,
             route=routed_llm,
         )
@@ -4743,12 +4776,13 @@ def _model_timeout_error_payload(
 
 
 def _stream_visible_progress_seconds() -> float:
-    return float(
+    configured = float(
         read_positive_finite_env_seconds(
             "LOCAL_LLM_REQUEST_VISIBLE_PROGRESS",
             _STREAM_STATUS_SECONDS,
         )
     )
+    return min(configured, _STREAM_STATUS_SECONDS)
 
 
 def _stream_event_queue(

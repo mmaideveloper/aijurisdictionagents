@@ -3541,7 +3541,7 @@ def _accepts_any_local_auth_code() -> bool:
 
 
 def _mcp_otp_reuse_window_hours() -> int:
-    raw_value = os.getenv("MFA_REUSE_WINDOW_HOURS", os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", "24")).strip()
+    raw_value = os.getenv("MCP_OTP_REUSE_WINDOW_HOURS", os.getenv("MFA_REUSE_WINDOW_HOURS", "24")).strip()
     try:
         value = int(raw_value)
     except ValueError:

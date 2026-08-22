@@ -79,6 +79,31 @@ def test_document_task_plan_note_describes_multi_task_execution_order() -> None:
     assert "summarize the updated result" in note
 
 
+def test_select_relevant_case_document_chunks_keeps_all_documents_when_user_requests_all() -> None:
+    from app.chat.api import _select_relevant_case_document_chunks
+
+    chunk_entries = [
+        SimpleNamespace(doc_id="doc-a", chunk_index=0, chunk_text="A1", embedding_dimensions=0, embedding_vector=""),
+        SimpleNamespace(doc_id="doc-a", chunk_index=1, chunk_text="A2", embedding_dimensions=0, embedding_vector=""),
+        SimpleNamespace(doc_id="doc-b", chunk_index=0, chunk_text="B1", embedding_dimensions=0, embedding_vector=""),
+        SimpleNamespace(doc_id="doc-b", chunk_index=1, chunk_text="B2", embedding_dimensions=0, embedding_vector=""),
+        SimpleNamespace(doc_id="doc-c", chunk_index=0, chunk_text="C1", embedding_dimensions=0, embedding_vector=""),
+        SimpleNamespace(doc_id="doc-c", chunk_index=1, chunk_text="C2", embedding_dimensions=0, embedding_vector=""),
+    ]
+
+    selected_chunks = _select_relevant_case_document_chunks(
+        query="Summarize all uploaded documents and prior discussions.",
+        chunk_entries=chunk_entries,
+        limit=4,
+        per_document_limit=2,
+    )
+
+    selected_doc_ids = [chunk.doc_id for chunk in selected_chunks]
+    assert "doc-a" in selected_doc_ids
+    assert "doc-b" in selected_doc_ids
+    assert "doc-c" in selected_doc_ids
+
+
 def test_document_task_plan_note_defers_summary_output_until_documents_are_processed() -> None:
     from app.chat.intent_policy_service import build_document_task_plan_note
 
@@ -1844,7 +1869,11 @@ def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambig
     )
 
     assert reply_response.status_code == 200
-    normalized_reply = unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
+    normalized_reply = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
+        if not unicodedata.combining(char)
+    )
     assert "automaticke urcenie" in normalized_reply
     assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
     selections = store.list_case_catalog_selections(case_id=case.case_id)

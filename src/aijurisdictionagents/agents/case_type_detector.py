@@ -51,6 +51,17 @@ class AICaseTypeDetectionAgent:
                 clarification_question="",
                 rationale="No case-type candidates were available.",
             )
+        llm_complete = getattr(self._llm, "complete", None)
+        if not callable(llm_complete):
+            return CaseTypeDetectionResult(
+                status="no_match",
+                selected_case_type_key=None,
+                confidence=0.0,
+                second_case_type_key=None,
+                second_confidence=0.0,
+                clarification_question="",
+                rationale="LLM client does not support case-type detection completion.",
+            )
         payload = [
             {
                 "case_type_id": item.case_type_id,
@@ -80,7 +91,7 @@ class AICaseTypeDetectionAgent:
                 content=json.dumps(payload, ensure_ascii=False, indent=2),
             )
         ]
-        raw_response = self._llm.complete(
+        raw_response = llm_complete(
             "AICaseTypeDetectionAgent",
             _CASE_TYPE_DETECTION_PROMPT,
             conversation,
