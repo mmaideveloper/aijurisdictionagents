@@ -498,7 +498,8 @@ If the repository is not cloned yet, run the same script from a temporary copy o
 24. Add systemd units or timers only after the exact smoke deployment commands are validated.
 25. Configure the GitHub `prod` Environment values documented in `docs/GITHUB_ENVIRONMENTS.md`.
 26. Register a repository self-hosted GitHub Actions runner on the trusted server or private network with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`.
-27. Run `Self-Managed Prod Deploy` from GitHub Actions after the server-local environment file is complete. The workflow first runs the frontend Playwright E2E gate on GitHub-hosted Ubuntu; if any E2E test fails, the SSH deployment job does not start.
+27. Before production deployment, resolve the exact deployment commit SHA and verify that every applicable build, lint, type-check, unit/integration test, E2E gate, image build, and required check is successful for that SHA. A failed, cancelled, pending, or missing applicable check blocks deployment until the underlying issue is fixed and all affected checks are rerun successfully. Record the SHA and successful run links in sanitized deployment evidence.
+28. Run `Self-Managed Prod Deploy` from GitHub Actions only after the repository-wide production build gate passes and the server-local environment file is complete. The workflow first runs the frontend Playwright E2E gate on GitHub-hosted Ubuntu; if any E2E test fails, the SSH deployment job does not start. Do not use manual deployment or another workflow entry point to bypass a failed check.
 
 ### Ollama Local Model Service Setup
 
