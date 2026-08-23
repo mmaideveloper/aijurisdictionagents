@@ -8,7 +8,7 @@ screens.
 
 - Node.js 18+
 - npm 9+
-- Python 3.10 with `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` for
+- Python 3.13 with `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` for
   generated-document E2E evidence; both the frontend CI workflow and the self-managed production
   deployment gate install these pinned packages before Playwright runs.
 

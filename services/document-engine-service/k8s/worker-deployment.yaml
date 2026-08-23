@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: document-engine-service:0.1.0
+          image: document-engine-service:0.1.1
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "document_engine.worker"]
           envFrom:

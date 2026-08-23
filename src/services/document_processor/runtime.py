@@ -228,7 +228,7 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
         from PIL import Image
 
         np = importlib.import_module("numpy")
-        rapidocr_module = importlib.import_module("rapidocr_onnxruntime")
+        rapidocr_module = importlib.import_module("rapidocr")
         rapidocr_factory = getattr(rapidocr_module, "RapidOCR")
     except Exception:
         return ""
@@ -245,10 +245,11 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
         try:
             image = Image.open(io.BytesIO(page_png))
             image_array = np.array(image)
-            result, _elapsed = ocr_engine(image_array)
-            if not result:
+            result = ocr_engine(image_array)
+            recognized_text = getattr(result, "txts", None)
+            if not recognized_text:
                 continue
-            page_lines = [str(line[1]).strip() for line in result if len(line) > 1]
+            page_lines = [str(line).strip() for line in recognized_text]
             page_text = "\n".join(line for line in page_lines if line)
             if page_text.strip():
                 text_parts.append(page_text)

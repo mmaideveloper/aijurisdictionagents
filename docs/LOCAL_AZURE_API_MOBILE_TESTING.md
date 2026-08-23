@@ -26,7 +26,7 @@ The script verifies required tools, local ports, API health, and required Azure 
 - PowerShell (`pwsh`) for bundled project skills
 - Azure CLI (`az`) with active login
 - Flutter SDK
-- Python 3.11+
+- Python 3.13+
 - API dependencies installed (`pip install -e "api/aijuristiction-api[dev]"` from repo root or inside env)
 
 ## 1) Validate local PostgreSQL + API

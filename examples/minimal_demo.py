@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 
@@ -7,6 +8,20 @@ from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPI
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
+
+MINIMUM_PYTHON = (3, 13)
+if sys.version_info < MINIMUM_PYTHON:
+    detected = ".".join(str(part) for part in sys.version_info[:3])
+    raise RuntimeError(
+        f"Python 3.13 or newer is required; detected Python {detected}. "
+        "Create the repository environment from environment.yml."
+    )
+
+print(
+    "python_runtime => "
+    f"supported=3.13+, active={sys.version_info.major}.{sys.version_info.minor}."
+    f"{sys.version_info.micro}; local, CI, and service runtimes share the same baseline."
+)
 
 print(
     "local_model_timeout => "

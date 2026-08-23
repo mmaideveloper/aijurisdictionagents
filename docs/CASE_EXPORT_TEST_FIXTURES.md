@@ -62,7 +62,7 @@ Regression issue `#518` keeps the Slovak private loan-confirmation prompt determ
 The `prepare-golden-test` regression suite generates its synthetic PDF with PyMuPDF, which is a
 declared core dependency. Keep fixture construction within the dependencies installed by
 `python -m pip install -e ".[dev]"`; the `core_build` workflow runs the complete root test suite on
-Python 3.10 and 3.11 with that installation only. Tests for real-model E2E bootstrap safeguards
+Python 3.13 with that installation only. Tests for real-model E2E bootstrap safeguards
 must explicitly select `azurefoundry` when the workflow-level deterministic mock setting would
 otherwise mask the database safety condition under test.
 

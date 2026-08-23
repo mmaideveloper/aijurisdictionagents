@@ -31,7 +31,7 @@ services:
       - blackbox-exporter
 
   ollama-exporter:
-    image: python:3.11-slim
+    image: python:3.13-slim
     container_name: jurisdigta-ollama-exporter
     restart: unless-stopped
     logging: *jurisdigta-logging
@@ -55,7 +55,7 @@ services:
       - ../../scripts/server/export_ollama_metrics.py:/app/export_ollama_metrics.py:ro
 
   status-exporter:
-    image: python:3.11-slim
+    image: python:3.13-slim
     container_name: jurisdigta-status-exporter
     restart: unless-stopped
     logging: *jurisdigta-logging

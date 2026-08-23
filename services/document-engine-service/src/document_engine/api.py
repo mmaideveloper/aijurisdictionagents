@@ -15,7 +15,7 @@ from document_engine.schemas import (
 )
 
 
-app = FastAPI(title="Document Engine Service", version="0.1.0")
+app = FastAPI(title="Document Engine Service", version="0.1.1")
 logger = logging.getLogger("document-engine-service.http")
 
 

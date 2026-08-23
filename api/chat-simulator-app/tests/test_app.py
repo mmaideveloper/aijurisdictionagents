@@ -20,16 +20,16 @@ def test_version() -> None:
     assert response.status_code == 200
     assert response.json() == {
         'service': 'chat-simulator-app',
-        'version': '0.1.26',
-        'simulator_version': '0.1.26',
+        'version': '0.1.27',
+        'simulator_version': '0.1.27',
     }
 
 
 def test_simulator_page_and_assets() -> None:
     page = client.get('/chat-simulator')
     assert page.status_code == 200
-    assert '/static/simulator.js?v=0.1.26' in page.text
-    assert '/static/simulator.css?v=0.1.26' in page.text
+    assert '/static/simulator.js?v=0.1.27' in page.text
+    assert '/static/simulator.css?v=0.1.27' in page.text
     assert '/email-tests' in page.text
     assert 'Email Validation Tests' in page.text
     assert '/speech-to-text' in page.text
@@ -135,7 +135,7 @@ def test_simulator_page_and_assets() -> None:
 def test_email_tests_page_and_assets() -> None:
     page = client.get('/email-tests')
     assert page.status_code == 200
-    assert '/static/email-tests.js?v=0.1.26' in page.text
+    assert '/static/email-tests.js?v=0.1.27' in page.text
     assert 'Email Validation Tests' in page.text
     assert 'id="emailTransport"' in page.text
     assert '<option value="log" selected>log</option>' in page.text
