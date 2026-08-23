@@ -71,6 +71,20 @@ Recommended protection rules:
 - `test`: optional reviewers, optional wait timer
 - `prod`: required reviewers, optional branch restriction to `main`, optional wait timer
 
+### Production build gate
+
+Production deployment is fail-closed. Before approving or manually dispatching any workflow that
+targets `prod` or `Prod`, identify the exact commit SHA that will be deployed and confirm that every
+applicable build, lint, type-check, unit/integration test, E2E gate, image build, and other required
+check has completed successfully for that SHA.
+
+A failed, cancelled, pending, or missing applicable check blocks production deployment. Fix the
+underlying problem on a dedicated task branch, rerun the affected checks, and wait until all
+applicable checks are green. Do not bypass the gate by rerunning only a deploy job, choosing another
+manual workflow, or deploying an unverified local checkout. If the target SHA changes, validate the
+new SHA again. The deployment record must retain the exact SHA and links to the successful GitHub
+Actions runs without copying secrets or personal data into the evidence.
+
 ## 2. Decide the Azure Resource Layout
 
 For each environment, decide whether it will use:

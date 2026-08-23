@@ -63,6 +63,13 @@ GitHub workflow / infra environment rule:
 - Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
 - Whenever a task requires manual infrastructure setup outside the repository, update `docs/manual_infrastucture_setup.md` in the same change with the exact future installation/configuration steps, required owners/accounts, secrets, environments, validation steps, and rollback notes.
 
+Production deployment build-gate rule:
+
+- Never deploy to the `prod` or `Prod` GitHub Environment while any build, lint, type-check, unit/integration test, E2E gate, image build, or other required check applicable to the exact deployment commit has failed, been cancelled, is still pending, or is missing.
+- Treat every applicable required check as fail-closed: fix the underlying failure in a separate task branch/worktree, rerun the affected checks, and confirm all applicable checks succeed for the exact commit SHA before starting or approving production deployment.
+- Do not bypass a failed build by manually dispatching a deployment, rerunning only the deploy job, selecting another workflow entry point, or deploying the same unverified files from a local checkout.
+- Record the deployed commit SHA and links to the successful build/check runs in the production deployment evidence. If the commit changes after validation, repeat the build gate for the new SHA.
+
 Production health endpoint rule:
 
 - Whenever you add, expose, rename, or make public a production `/health` endpoint, update `.codex/automations/jurisdigta-monitoring-task/automation.toml` in the same change so the hourly `Jurisdigta Monitoring task` checks it and defines its healthy response contract.
