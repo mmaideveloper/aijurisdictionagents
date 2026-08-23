@@ -22,6 +22,7 @@ from services.document_processor.runtime import (
 
 from .config import CourtDecisionCollectorConfig
 from .domain import CourtDecisionRecord, CourtDecisionSearchResult, StoredCourtDecision
+from .query import parse_court_decision_query
 
 
 @dataclass(frozen=True)
@@ -258,14 +259,15 @@ class PostgresCourtDecisionStore:
             raise ValueError("Only year_filter_mode=published_in is supported.")
         if sort not in {"relevance", "latest"}:
             raise ValueError("sort must be relevance or latest.")
+        query_profile = parse_court_decision_query(query)
         query_vector = parse_embedding_vector(
-            build_embedding_vector(query, dimensions=self.embedding_dimensions)
+            build_embedding_vector(query_profile.topic_query, dimensions=self.embedding_dimensions)
         )
         candidate_limit = max((limit + offset) * 10, 100)
-        pattern = f"%{query.lower()}%"
+        pattern = f"%{query_profile.topic_query.lower()}%"
         filters = ""
         params: dict[str, object] = {
-            "query": query,
+            "tsquery": query_profile.tsquery,
             "pattern": pattern,
             "candidate_limit": candidate_limit,
         }
@@ -287,15 +289,48 @@ class PostgresCourtDecisionStore:
             rows = conn.execute(
                 f"""
                 WITH search_query AS (
-                    SELECT websearch_to_tsquery('simple', %(query)s) AS tsq
+                    SELECT to_tsquery('simple', %(tsquery)s) AS tsq
                 ),
                 text_candidates AS (
                     SELECT
                         v.decision_id,
                         MAX(ts_rank_cd(to_tsvector('simple', v.pseudonymized_text), search_query.tsq)) AS lexical_rank
                     FROM court_decision_versions AS v
+                    JOIN court_decision_documents AS d ON d.decision_id = v.decision_id
                     CROSS JOIN search_query
-                    WHERE to_tsvector('simple', v.pseudonymized_text) @@ search_query.tsq
+                    WHERE d.current_status = 'published'
+                      AND to_tsvector('simple', v.pseudonymized_text) @@ search_query.tsq
+                      {filters}
+                    GROUP BY v.decision_id
+                ),
+                enrichment_candidates AS (
+                    SELECT
+                        v.decision_id,
+                        MAX(ts_rank_cd(
+                            to_tsvector('simple', e.pseudonymized_summary || ' ' || e.pseudonymized_text || ' ' || e.legal_topics::text),
+                            search_query.tsq
+                        )) AS lexical_rank
+                    FROM court_decision_enrichments AS e
+                    JOIN court_decision_versions AS v ON v.version_id = e.version_id
+                    JOIN court_decision_documents AS d ON d.decision_id = v.decision_id
+                    CROSS JOIN search_query
+                    WHERE d.current_status = 'published'
+                      AND e.status = 'ready'
+                      AND to_tsvector('simple', e.pseudonymized_summary || ' ' || e.pseudonymized_text || ' ' || e.legal_topics::text) @@ search_query.tsq
+                      {filters}
+                    GROUP BY v.decision_id
+                ),
+                chunk_candidates AS (
+                    SELECT
+                        v.decision_id,
+                        MAX(ts_rank_cd(to_tsvector('simple', c.pseudonymized_text), search_query.tsq)) AS lexical_rank
+                    FROM court_decision_content_chunks AS c
+                    JOIN court_decision_versions AS v ON v.version_id = c.version_id
+                    JOIN court_decision_documents AS d ON d.decision_id = v.decision_id
+                    CROSS JOIN search_query
+                    WHERE d.current_status = 'published'
+                      AND to_tsvector('simple', c.pseudonymized_text) @@ search_query.tsq
+                      {filters}
                     GROUP BY v.decision_id
                 ),
                 metadata_candidates AS (
@@ -337,6 +372,10 @@ class PostgresCourtDecisionStore:
                     FROM (
                         SELECT decision_id, lexical_rank FROM text_candidates
                         UNION ALL
+                        SELECT decision_id, lexical_rank FROM enrichment_candidates
+                        UNION ALL
+                        SELECT decision_id, lexical_rank FROM chunk_candidates
+                        UNION ALL
                         SELECT decision_id, lexical_rank FROM metadata_candidates
                     ) AS candidates
                     GROUP BY decision_id
@@ -345,6 +384,10 @@ class PostgresCourtDecisionStore:
                        d.file_number, d.case_number, d.ecli, d.issue_date,
                        d.issue_date_normalized, d.source_url,
                        v.version_id, v.pseudonymized_text, v.embedding_vector_json,
+                       COALESCE(e.pseudonymized_summary, '') AS pseudonymized_summary,
+                       COALESCE(e.pseudonymized_text, '') AS enriched_text,
+                       COALESCE(e.status, 'not_started') AS enrichment_status,
+                       COALESCE(mc.pseudonymized_text, '') AS matched_chunk,
                        candidate_ids.lexical_rank
                 FROM candidate_ids
                 JOIN court_decision_documents AS d ON d.decision_id = candidate_ids.decision_id
@@ -355,6 +398,16 @@ class PostgresCourtDecisionStore:
                     ORDER BY stored_at DESC
                     LIMIT 1
                 ) AS v ON true
+                LEFT JOIN court_decision_enrichments AS e ON e.version_id = v.version_id
+                LEFT JOIN LATERAL (
+                    SELECT c.pseudonymized_text
+                    FROM court_decision_content_chunks AS c
+                    CROSS JOIN search_query
+                    WHERE c.version_id = v.version_id
+                      AND to_tsvector('simple', c.pseudonymized_text) @@ search_query.tsq
+                    ORDER BY ts_rank_cd(to_tsvector('simple', c.pseudonymized_text), search_query.tsq) DESC
+                    LIMIT 1
+                ) AS mc ON true
                 WHERE d.current_status = 'published'
                   {filters}
                 ORDER BY {order_by}
@@ -364,12 +417,18 @@ class PostgresCourtDecisionStore:
             ).fetchall()
         scored: list[CourtDecisionSearchResult] = []
         for row in rows:
-            public_text = str(row["pseudonymized_text"] or "")
+            summary = str(row["pseudonymized_summary"] or "")
+            matched_chunk = str(row["matched_chunk"] or "")
+            enriched_text = str(row["enriched_text"] or "")
+            base_text = str(row["pseudonymized_text"] or "")
+            public_text = matched_chunk or enriched_text or base_text
+            content_source = "chunk" if matched_chunk else "enrichment" if enriched_text else "metadata_snapshot"
             vector_score = cosine_similarity(query_vector, parse_embedding_vector(str(row["embedding_vector_json"])))
-            lexical_score = lexical_overlap_score(query, public_text)
-            score = vector_score + (lexical_score * 0.1)
-            if score <= 0:
-                continue
+            lexical_score = lexical_overlap_score(query_profile.topic_query, f"{summary} {public_text}")
+            database_rank = float(row["lexical_rank"] or 0.0)
+            # A PostgreSQL full-text match is already a valid candidate. Hash-bootstrap
+            # vectors may have a negative cosine and must never discard that lexical match.
+            score = max(vector_score + (lexical_score * 0.1) + database_rank, database_rank, 0.000001)
             scored.append(
                 CourtDecisionSearchResult(
                     decision_id=str(row["decision_id"]),
@@ -382,7 +441,10 @@ class PostgresCourtDecisionStore:
                     ecli=str(row["ecli"] or ""),
                     issue_date=str(row["issue_date"] or ""),
                     source_url=str(row["source_url"] or ""),
-                    snippet=_snippet(public_text, query=query),
+                    snippet=_snippet(public_text, query=query_profile.topic_query),
+                    summary=summary,
+                    enrichment_status=str(row["enrichment_status"] or "not_started"),
+                    content_source=content_source,
                     score=round(score, 6),
                 )
             )
@@ -393,6 +455,26 @@ class PostgresCourtDecisionStore:
                 reverse=True,
             )[offset : offset + limit]
         return sorted(scored, key=lambda item: item.score, reverse=True)[offset : offset + limit]
+
+    def search_coverage(self) -> dict[str, object]:
+        """Return non-sensitive corpus coverage needed to qualify 'latest' claims."""
+
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) FILTER (WHERE d.current_status = 'published') AS published_decisions,
+                       MAX(d.issue_date_normalized) FILTER (WHERE d.current_status = 'published') AS latest_issue_date,
+                       COUNT(DISTINCT e.version_id) FILTER (WHERE e.status = 'ready') AS enriched_versions
+                FROM court_decision_documents AS d
+                LEFT JOIN court_decision_versions AS v ON v.decision_id = d.decision_id
+                LEFT JOIN court_decision_enrichments AS e ON e.version_id = v.version_id
+                """
+            ).fetchone()
+        return {
+            "published_decisions": int(row["published_decisions"] or 0),
+            "latest_issue_date": str(row["latest_issue_date"] or ""),
+            "enriched_versions": int(row["enriched_versions"] or 0),
+        }
 
     def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:
         with self._connect() as conn:
@@ -1180,4 +1262,12 @@ _SCHEMA_SQL = (
         embedding_model TEXT NOT NULL, embedding_dimensions INTEGER NOT NULL,
         embedding_vector_json JSONB NOT NULL, created_at TEXT NOT NULL,
         UNIQUE(version_id, chunk_index))""",
+    """CREATE INDEX IF NOT EXISTS idx_court_decision_enrichments_search
+        ON court_decision_enrichments USING GIN (
+            to_tsvector('simple'::regconfig,
+                pseudonymized_summary || ' ' || pseudonymized_text || ' ' || legal_topics::text))
+        WHERE status = 'ready'""",
+    """CREATE INDEX IF NOT EXISTS idx_court_decision_content_chunks_search
+        ON court_decision_content_chunks USING GIN (
+            to_tsvector('simple'::regconfig, pseudonymized_text))""",
 )

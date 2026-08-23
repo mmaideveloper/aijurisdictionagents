@@ -681,6 +681,9 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
                     source_url="https://example.test/decision/1",
                     snippet="Pseudonymizovane rozhodnutie o rozdeleni pozemku podla podielu.",
                     score=0.91,
+                    summary="Sud posudzoval sposob rozdelenia pozemku medzi spoluvlastnikov.",
+                    enrichment_status="ready",
+                    content_source="enrichment",
                 )
             ]
 
@@ -728,6 +731,21 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     snippet_payload = _tool_payload(snippet_response)
     assert snippet_payload["metadata_only"] is False
     assert "Pseudonymizovane rozhodnutie" in snippet_payload["results"][0]["snippet"]
+    summary_response = _mcp_call(
+        "searchCourtDecisions",
+        {
+            "query": secret_query,
+            "limit": 1,
+            "published_year": 2026,
+            "court_type": "Okresny sud",
+            "include_summaries": True,
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+    summary_payload = _tool_payload(summary_response)
+    assert summary_payload["metadata_only"] is False
+    assert summary_payload["results"][0]["summary_status"] == "available"
+    assert "spoluvlastnikov" in summary_payload["results"][0]["summary"]
     mcp_log_messages = [
         record.getMessage() for record in caplog.records if record.name == "aijuristiction-api.mcp"
     ]

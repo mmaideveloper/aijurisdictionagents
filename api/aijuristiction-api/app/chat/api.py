@@ -2548,6 +2548,12 @@ def _stream_read_user_session(
                 )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
+                _persist_case_citations_for_answer(
+                    session=session,
+                    question=_persisted_user,
+                    answer=persisted_lawyer,
+                    result=session_result,
+                )
                 for document_event in _document_completion_processing_events(
                     session=session,
                     messages=current_messages,

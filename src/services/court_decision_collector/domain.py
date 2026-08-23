@@ -95,6 +95,9 @@ class CourtDecisionSearchResult:
     source_url: str
     snippet: str
     score: float
+    summary: str = ""
+    enrichment_status: str = "not_started"
+    content_source: str = "metadata_snapshot"
 
     @property
     def issue_date_status(self) -> str:

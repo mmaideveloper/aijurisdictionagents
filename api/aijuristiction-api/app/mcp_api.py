@@ -59,6 +59,7 @@ from app.versioning import (
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore, User, generate_one_time_code
 from aijurisdictionagents.api_db.e2e_test_users import E2E_TEST_USER_EMAILS
+from services.court_decision_collector.query import parse_court_decision_query
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 compat_router = APIRouter(prefix="/MC", tags=["mcp"])
@@ -1869,6 +1870,7 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
             court_type=str(arguments.get("court_type", "")).strip(),
             court_name=str(arguments.get("court_name", "")).strip(),
             include_snippets=False,
+            include_summaries=False,
             sort=sort,
         )
     result: dict[str, Any] = {
@@ -2697,13 +2699,20 @@ def _extract_structured_provision_range(
 
 def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
     query = _required_search_query(arguments)
-    limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
+    query_profile = parse_court_decision_query(query)
+    limit = _bounded_int(
+        arguments.get("limit"),
+        default=query_profile.requested_limit or 10,
+        minimum=1,
+        maximum=50,
+    )
     offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000)
     published_year = _optional_positive_int(arguments.get("published_year"))
     year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
     court_type = str(arguments.get("court_type", "")).strip()
     court_name = str(arguments.get("court_name", "")).strip()
     include_snippets = _bool_argument(arguments.get("include_snippets"), default=False)
+    include_summaries = _bool_argument(arguments.get("include_summaries"), default=False)
     sort = _search_sort(arguments.get("sort"))
     return _search_court_decisions(
         query=query,
@@ -2714,6 +2723,7 @@ def _tool_search_court_decisions(arguments: dict[str, Any]) -> dict[str, Any]:
         court_type=court_type,
         court_name=court_name,
         include_snippets=include_snippets,
+        include_summaries=include_summaries,
         sort=sort,
     )
 
@@ -2728,6 +2738,7 @@ def _search_court_decisions(
     court_type: str,
     court_name: str,
     include_snippets: bool,
+    include_summaries: bool,
     sort: str,
 ) -> dict[str, Any]:
     if year_filter_mode != "published_in":
@@ -2737,7 +2748,7 @@ def _search_court_decisions(
         (
             "mcp_tool_search_court_decisions_query query_length=%d limit=%d offset=%d "
             "published_year=%s year_filter_mode=%s court_type_supplied=%s court_name_supplied=%s "
-            "include_snippets=%s sort=%s timeout_ms=%d"
+            "include_snippets=%s include_summaries=%s sort=%s timeout_ms=%d"
         ),
         len(query),
         limit,
@@ -2747,6 +2758,7 @@ def _search_court_decisions(
         bool(court_type),
         bool(court_name),
         include_snippets,
+        include_summaries,
         sort,
         _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
     )
@@ -2773,6 +2785,12 @@ def _search_court_decisions(
                 "output_mode": "public",
             }
             | ({"snippet": item.snippet} if include_snippets else {})
+            | ({
+                "summary": item.summary,
+                "summary_status": "available" if item.summary else "not_enriched",
+                "enrichment_status": item.enrichment_status,
+                "content_source": item.content_source,
+            } if include_summaries else {})
             for item in store.search(
                 query=query,
                 limit=limit,
@@ -2784,6 +2802,8 @@ def _search_court_decisions(
                 sort=sort,
             )
         ]
+        coverage_method = getattr(store, "search_coverage", None)
+        coverage = coverage_method() if callable(coverage_method) else {}
     except Exception as exc:
         duration_ms = int((time.perf_counter() - started_at) * 1000)
         error_kind = _court_decision_search_error_kind(exc)
@@ -2810,6 +2830,7 @@ def _search_court_decisions(
             court_type=court_type,
             court_name=court_name,
             include_snippets=include_snippets,
+            include_summaries=include_summaries,
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
@@ -2823,8 +2844,9 @@ def _search_court_decisions(
         "query": query,
         "results": results,
         "output_mode": "public",
-        "metadata_only": not include_snippets,
+        "metadata_only": not include_snippets and not include_summaries,
         "include_snippets": include_snippets,
+        "include_summaries": include_summaries,
         "year_filter_mode": year_filter_mode,
         "published_year": published_year,
         "court_name": court_name or None,
@@ -2832,6 +2854,11 @@ def _search_court_decisions(
         "limit": limit,
         "offset": offset,
         "status": "ok",
+        "coverage": coverage,
+        "coverage_notice": (
+            "Results are the latest matching decisions available in the JurisDigta corpus, "
+            "not a guarantee of complete national case-law coverage."
+        ),
         "data_quality": {
             "issue_date_ordering": "calendar",
             "invalid_or_missing_issue_date_results": sum(
@@ -3100,6 +3127,7 @@ def _court_decision_search_degraded_result(
     court_type: str,
     court_name: str,
     include_snippets: bool,
+    include_summaries: bool,
     duration_ms: int,
     error_kind: str,
 ) -> dict[str, Any]:
@@ -3107,19 +3135,22 @@ def _court_decision_search_degraded_result(
         "Court-decision search is temporarily unavailable or exceeded the server search budget. "
         "Retry metadata for an authenticated async search is available in async_fallback."
     )
+    fallback_arguments: dict[str, Any] = {
+        "query": query,
+        "limit": limit,
+        "offset": offset,
+        "published_year": published_year,
+        "year_filter_mode": year_filter_mode,
+        "court_type": court_type,
+        "court_name": court_name,
+        "include_snippets": include_snippets,
+        "sort": sort,
+    }
+    if include_summaries:
+        fallback_arguments["include_summaries"] = True
     async_fallback = _async_search_fallback(
         tool_name="searchCourtDecisions",
-        arguments={
-            "query": query,
-            "limit": limit,
-            "offset": offset,
-            "published_year": published_year,
-            "year_filter_mode": year_filter_mode,
-            "court_type": court_type,
-            "court_name": court_name,
-            "include_snippets": include_snippets,
-            "sort": sort,
-        },
+        arguments=fallback_arguments,
     )
     return {
         "query": query,
@@ -3144,6 +3175,7 @@ def _court_decision_search_degraded_result(
         "court_type": court_type,
         "court_name": court_name or None,
         "include_snippets": include_snippets,
+        "include_summaries": include_summaries,
         "sort": sort,
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,
@@ -3413,8 +3445,10 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "and metadata relevance. For a named court such as Okresny sud Poprad, pass the full "
                 "name in court_name; court_type is only for a generic category such as Okresny sud. "
                 "Use sort=latest to order by the normalized calendar issue date. "
-                "Returns metadata only by default; set include_snippets=true "
-                "to include pseudonymized public snippets. Use this to cite court, date, ECLI, "
+                "Returns metadata only by default; set include_snippets=true for pseudonymized "
+                "public snippets or include_summaries=true for available pseudonymized summaries. "
+                "Conversational Slovak requests are reduced to legal topic terms and a count such as "
+                "'poslednych 5' is honored when limit is omitted. Use this to cite court, date, ECLI, "
                 "file number, and source URL while distinguishing case-law support from binding "
                 "statutory law. If this sync tool returns status=degraded or retryable=true, ask the "
                 "user for approval to continue asynchronously, then call startLegalSearch with "
@@ -3441,6 +3475,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "include_snippets": {"type": "boolean", "default": False},
+                    "include_summaries": {"type": "boolean", "default": False},
                 },
                 "additionalProperties": False,
             },

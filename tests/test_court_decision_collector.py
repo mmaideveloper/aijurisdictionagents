@@ -19,6 +19,7 @@ from services.court_decision_collector.postgres_store import (
     normalize_court_name,
 )
 from services.court_decision_collector.pseudonymization import pseudonymize_court_decision_text
+from services.court_decision_collector.query import parse_court_decision_query
 from services.court_decision_collector.service import CourtDecisionCollectorService
 
 
@@ -175,6 +176,18 @@ def test_court_name_normalization_is_diacritic_insensitive_and_exact() -> None:
     assert normalize_court_name("Okresny sud Poprad") == "okresny sud poprad"
     assert normalize_court_name("Okresný súd Poprad") == "okresny sud poprad"
     assert normalize_court_name("Okresný súd Kežmarok") != "okresny sud poprad"
+
+def test_conversational_purchase_contract_query_extracts_topic_count_and_latest() -> None:
+    profile = parse_court_decision_query(
+        "Ukáž mi posledných 5 súdnych rozhodnutí o kupón predajnej zmluve"
+    )
+
+    assert profile.topic_query == "kupna predajna zmluva"
+    assert profile.requested_limit == 5
+    assert profile.latest_requested is True
+    assert profile.concepts == ("purchase_contract",)
+    assert "predaj:* & zmluv:*" in profile.tsquery
+
 
 class FakeResponse:
     def __init__(self, payload):

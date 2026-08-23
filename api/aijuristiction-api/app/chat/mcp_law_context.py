@@ -11,6 +11,7 @@ import httpx
 
 from aijurisdictionagents.agents import AIWebSearchAgent
 from aijurisdictionagents.schemas import Document as CoreDocument
+from services.court_decision_collector.query import parse_court_decision_query
 
 _LOGGER = logging.getLogger(__name__)
 _LAW_IDENTIFIER_RE = re.compile(r"\b(?P<number>\d{1,4})\s*/\s*(?P<year>\d{4})\b")
@@ -109,6 +110,13 @@ def build_mcp_law_context(
         return None
 
     if _should_search_court_decisions(query):
+        if _is_latest_court_query(query):
+            return _build_latest_court_context(
+                query=query,
+                search_limit=search_limit,
+                language=language,
+                web_search_approved=web_search_approved,
+            )
         return _build_combined_legal_context(
             query=query,
             search_limit=max(search_limit, 5),
@@ -124,6 +132,73 @@ def build_mcp_law_context(
         max_chars_per_law=max_chars_per_law,
         language=language,
         web_search_approved=web_search_approved,
+    )
+
+
+def _build_latest_court_context(
+    *, query: str, search_limit: int, language: str | None, web_search_approved: bool
+) -> McpLawContext:
+    profile = parse_court_decision_query(query)
+    limit = profile.requested_limit or max(search_limit, 5)
+    arguments: dict[str, Any] = {
+        "query": profile.topic_query,
+        "limit": limit,
+        "sort": "latest",
+        "include_snippets": True,
+        "include_summaries": True,
+    }
+    court_name = _court_name_filter(query)
+    if court_name:
+        arguments["court_name"] = court_name
+    try:
+        payload = _call_mcp_tool("searchCourtDecisions", arguments)
+        decisions = _tool_results(payload)[:limit]
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Internal MCP latest court-decision lookup failed", exc_info=True)
+        return _unavailable_context(tool_calls=["searchCourtDecisions"], language=language)
+    if not decisions:
+        fallback = _official_web_fallback_context(
+            query=query,
+            reason="mcp_court_decisions_empty",
+            language=language,
+            web_search_approved=web_search_approved,
+        )
+        return fallback or _empty_context(query=query, tool_calls=["searchCourtDecisions"], language=language)
+    coverage_notice = str(payload.get("coverage_notice") or "").strip()
+    prompt_note = _prompt_note(
+        query=query,
+        search_arguments=arguments,
+        laws=[],
+        law_texts=[],
+        court_decisions=decisions,
+        fallback_records=[],
+    )
+    if coverage_notice:
+        prompt_note += f"\n\nCORPUS COVERAGE NOTICE: {coverage_notice} Tell the user this limitation."
+    return McpLawContext(
+        prompt_note=prompt_note,
+        document=CoreDocument(
+            doc_id="internal-mcp-court-decision-context",
+            path="internal-mcp-court-decision-context.txt",
+            content=_document_content(laws=[], law_texts=[], court_decisions=decisions, fallback_records=[]),
+        ),
+        processing_event={
+            "stage": "mcp_law_context",
+            "message": _mcp_contact_notice(language),
+            "details": {
+                "tool_calls": ["searchCourtDecisions"],
+                "result_count": len(decisions),
+                "court_decision_count": len(decisions),
+                "source_origin": "system_vector_db",
+                "coverage": payload.get("coverage", {}),
+                "coverage_notice": coverage_notice,
+                "human_review_required": True,
+                "citations": _court_decision_citations(decisions),
+                "source_notice_i18n": _mcp_contact_notice_messages(),
+                "user_visible": True,
+                "web_search_status": "not_requested",
+            },
+        },
     )
 
 
@@ -477,7 +552,8 @@ def _prompt_note(
     if court_decisions:
         lines.extend(["", "MCP court-decision results:"])
     for index, decision in enumerate(court_decisions, start=1):
-        lines.append(f"{index}. {_court_decision_label(decision)}")
+        summary = str(decision.get("summary") or decision.get("snippet") or "").strip()
+        lines.append(f"{index}. {_court_decision_label(decision)}; summary={summary}")
     if law_texts:
         lines.extend(["", "MCP getLawText excerpts:"])
     for index, text_payload in enumerate(law_texts, start=1):
@@ -517,7 +593,8 @@ def _document_content(
     if court_decisions:
         lines.extend(["", "Court-decision search results:"])
     for decision in court_decisions:
-        lines.append(f"- {_court_decision_label(decision)}")
+        summary = str(decision.get("summary") or decision.get("snippet") or "").strip()
+        lines.append(f"- {_court_decision_label(decision)}\n  Summary: {summary}")
     if law_texts:
         lines.extend(["", "Law text excerpts:"])
     for payload in law_texts:

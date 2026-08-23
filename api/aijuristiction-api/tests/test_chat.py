@@ -2485,8 +2485,7 @@ def test_mcp_law_context_extracts_poprad_and_latest_from_typo_question(monkeypat
     def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         calls.append((name, arguments))
         return {
-            "laws": [],
-            "court_decisions": [
+            "results": [
                 {
                     "decision_id": "poprad-1",
                     "court_name": "Okresny sud Poprad",
@@ -2505,9 +2504,62 @@ def test_mcp_law_context_extracts_poprad_and_latest_from_typo_question(monkeypat
     )
 
     assert context is not None
-    assert calls[0][0] == "searchLegalSources"
+    assert calls[0][0] == "searchCourtDecisions"
     assert calls[0][1]["court_name"] == "Okresny sud Poprad"
     assert calls[0][1]["sort"] == "latest"
+    assert calls[0][1]["include_summaries"] is True
+
+
+def test_mcp_law_context_returns_latest_five_purchase_contract_summaries(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {
+            "results": [
+                {
+                    "decision_id": f"purchase-{index}",
+                    "court_name": "Najvyšší súd SR",
+                    "file_number": f"{index}Cdo/2025",
+                    "issue_date": f"2025-0{6 - index}-01",
+                    "source_url": f"https://www.nsud.sk/decision-{index}.pdf",
+                    "summary": f"Pseudonymizované zhrnutie sporu z kúpnej zmluvy {index}.",
+                }
+                for index in range(1, 6)
+            ],
+            "coverage": {"published_decisions": 5, "enriched_versions": 5},
+            "coverage_notice": "Latest matching decisions available in the JurisDigta corpus.",
+        }
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    context = build_mcp_law_context(
+        query="Ukáž mi posledných 5 súdnych rozhodnutí o kupón predajnej zmluve",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    assert calls == [("searchCourtDecisions", {
+        "query": "kupna predajna zmluva",
+        "limit": 5,
+        "sort": "latest",
+        "include_snippets": True,
+        "include_summaries": True,
+    })]
+    assert context.prompt_note.count("Pseudonymizované zhrnutie") == 5
+    assert "CORPUS COVERAGE NOTICE" in context.prompt_note
+    assert context.processing_event["details"]["human_review_required"] is True
+
+
+def test_court_decision_research_bypasses_document_case_type_detection() -> None:
+    from app.chat.case_type_detection import _is_legal_research_request
+
+    assert _is_legal_research_request(
+        "Ukáž mi posledných 5 súdnych rozhodnutí o kupón predajnej zmluve"
+    )
+    assert not _is_legal_research_request("Priprav mi kúpno-predajnú zmluvu na byt")
 
 
 def test_mcp_law_context_blocks_web_fallback_without_user_approval(monkeypatch) -> None:

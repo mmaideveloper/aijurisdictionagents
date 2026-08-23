@@ -103,6 +103,12 @@ print(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
 )
 print(
+    "mcp_purchase_contract_summaries => searchCourtDecisions(query='Ukáž mi posledných 5 "
+    "súdnych rozhodnutí o kupón predajnej zmluve', sort='latest', include_summaries=True) "
+    "normalizes the topic, searches pseudonymized enrichments/chunks, and returns the latest "
+    "five matches available in the JurisDigta corpus with a coverage warning and human review."
+)
+print(
     "mcp_named_court_latest_search => searchCourtDecisions(query='sudne rozhodnutia', "
     "court_name='Okresny sud Poprad', sort='latest', limit=5) applies an exact normalized "
     "court filter and calendar-date ordering; check data_quality.latest_label_safe before "
