@@ -170,6 +170,19 @@ The live-provider check must retain the configured provider gate. Missing Ollama
 Azure Foundry credentials must not be replaced with `mock`; deterministic route fixtures are
 used only for browser/UI regression coverage.
 
+The production post-deployment MCP law matrix is listed in
+`docs/POST_DEPLOYMENT_TESTS.md`. It directly compares authenticated MCP `searchLaws` and
+bounded `getLawText` output with the persisted citation shown after the same fixed question is sent
+through Qwen 4B and Azure Foundry `gpt-5-mini`. Run it with:
+
+```powershell
+.\scripts\run_issue_646_prod_mcp_laws_e2e.ps1 `
+  -DeployedCommitSha <40-character-production-commit-sha>
+```
+
+The test deliberately validates stable source/fact invariants instead of byte-identical generative
+prose and rejects `AIWebSearchAgent` or generic web fallback as proof of MCP grounding.
+
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.
 
 ## Minimal runnable example
