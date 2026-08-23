@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from hashlib import sha256
-import io
 import json
 from pathlib import Path
 import subprocess
 import sys
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from reportlab.pdfgen import canvas
+import fitz
 
 
 SCRIPT = (
@@ -25,8 +24,8 @@ def _json_bytes(payload: object) -> bytes:
 
 
 def _pdf_bytes() -> bytes:
-    output = io.BytesIO()
-    pdf = canvas.Canvas(output)
+    pdf = fitz.open()
+    page = pdf.new_page()
     lines = [
         "Potvrdenie o splateni pozicky",
         "Peter Vzorovy a Jan Testovaci",
@@ -36,9 +35,10 @@ def _pdf_bytes() -> bytes:
         "Pred podpisom skontrolujte clovekom.",
     ]
     for index, line in enumerate(lines):
-        pdf.drawString(72, 760 - index * 24, line)
-    pdf.save()
-    return output.getvalue()
+        page.insert_text((72, 82 + index * 24), line)
+    output = pdf.tobytes()
+    pdf.close()
+    return output
 
 
 def _write_export(path: Path, *, audit: bool = True, exported_by: str = "case-owner") -> None:

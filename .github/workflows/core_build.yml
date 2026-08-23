@@ -5,10 +5,20 @@ on:
     branches:
       - main
     paths:
+      - ".github/workflows/core_build.yml"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "skills/**"
       - "src/**"
+      - "tests/**"
   pull_request:
     paths:
+      - ".github/workflows/core_build.yml"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "skills/**"
       - "src/**"
+      - "tests/**"
   workflow_dispatch:
 
 permissions:

@@ -19,6 +19,7 @@ _SPEC.loader.exec_module(_MODULE)
 
 
 def test_safe_runtime_rejects_non_loopback_postgres(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "azurefoundry")
     monkeypatch.setenv("DB_OPTION", "postgres")
     monkeypatch.setenv("DB_CLOUD", "postgresql://user:secret@production.example.test/api")
     monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "synthetic-encryption-key-for-tests")
