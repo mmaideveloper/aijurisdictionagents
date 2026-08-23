@@ -1,8 +1,9 @@
 # Post-deployment tests
 
-Run these opt-in tests only after all required build, lint, type-check, unit/integration, E2E,
+Run these tests only after all required build, lint, type-check, unit/integration, E2E,
 and image checks have passed for the exact production commit. A post-deployment result never
-overrides the production build gate.
+overrides the production build gate. The self-managed production workflow runs the required
+issue #646 matrix automatically after deployment and fails closed when either real-model cell fails.
 
 ## Required production checks
 
@@ -24,10 +25,23 @@ printing it. It refuses `unknown-variable` and never falls back to a mock. Produ
 controlled MCP OAuth MFA bypass enabled only for the two approved synthetic accounts during the
 explicit test window. Disable the bypass after testing according to `docs/MCP_SERVER.md`.
 
+In `.github/workflows/self_managed_prod_deploy.yml`, the production self-hosted runner reads the
+same password only from `/srv/jurisdigta/secrets/jurisdigta.env`, provisions the two synthetic
+accounts, pins the paid account to the enabled EU `gpt-5-mini` profile, and opens a 45-minute MCP
+OAuth bypass window. An exit trap closes the window and recreates a healthy MCP container whether
+the test passes, fails, is interrupted, or times out. Evidence is uploaded for seven days. A failed
+post-deployment test marks the deployment workflow failed; it does not perform an automatic rollback.
+
 The same question is sent through both required routes:
 
 - free synthetic account -> `local_ollama / qwen3:4b`;
 - paid synthetic account -> Azure Foundry EU / `gpt-5-mini`.
+
+The Qwen assertion waits for the final assistant message and MCP citation for the full configured
+660-second cell timeout. It must not match the law identifier echoed in the user's own question.
+The current production GT 630 is unsupported by the installed NVIDIA 610 driver, so Ollama runs
+Qwen on CPU; the observed production baseline was about 126 seconds for a 689-token legal prompt.
+The longer timeout is deliberate but remains fail-closed.
 
 The test does not require byte-identical prose. Real generative models can choose different wording.
 The deterministic pass contract is instead:

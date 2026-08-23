@@ -57,6 +57,10 @@ $env:MCP_PUBLIC_BASE_URL = $McpBaseUrl.TrimEnd('/')
 $env:ISSUE_646_DEPLOYED_COMMIT_SHA = $DeployedCommitSha.ToLowerInvariant()
 $env:ISSUE_646_TIMEOUT_MS = [string]$TimeoutMs
 $env:PW_START_API = "0"
+$previousNodeOptions = $env:NODE_OPTIONS
+if ($env:NODE_OPTIONS -notmatch "(?:^|\s)--use-system-ca(?:\s|$)") {
+    $env:NODE_OPTIONS = ("$($env:NODE_OPTIONS) --use-system-ca").Trim()
+}
 
 Push-Location $e2eRoot
 try {
@@ -75,6 +79,11 @@ try {
     }
 } finally {
     Pop-Location
+    if ($null -eq $previousNodeOptions) {
+        Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+    } else {
+        $env:NODE_OPTIONS = $previousNodeOptions
+    }
     Remove-Item Env:JURISDIGTA_E2E_TEST_USER_PASSWORD -ErrorAction SilentlyContinue
 }
 

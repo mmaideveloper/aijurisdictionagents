@@ -200,6 +200,7 @@ These are used by infrastructure deployment and API deployment workflows:
 | `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
 | `INTERNAL_MCP_SHARED_SECRET` | Optional service-to-service secret for API-originated internal MCP tool calls. If unset, the API and MCP service use the existing `MCP_API_JWT_SECRET`; set this only when you want a separate internal shared secret in both containers |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
+| `JURISDIGTA_WEB_PUBLIC_BASE_URL` | Public production frontend used by required post-deployment browser tests; default `https://web.jurisdigta.eu` |
 | `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED` | Optional, default `false`; enables password-only MFA bypass only for hardcoded synthetic MCP OAuth E2E emails when the allowlist and expiry are also set |
 | `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS` | Optional synthetic E2E allowlist; use `mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu` only for controlled connector validation |
 | `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT` | Optional ISO timestamp for the synthetic MCP OAuth E2E bypass, for example `2030-01-01T00:00:00Z` |
@@ -457,6 +458,7 @@ Optional `prod` GitHub Environment variables:
 | `JURISDIGTA_DEPLOY_ROOT` | `/srv/jurisdigta` | Server deployment root |
 | `JURISDIGTA_ENV_FILE` | `/srv/jurisdigta/secrets/jurisdigta.env` | Server-local runtime env file |
 | `JURISDIGTA_WEB_API_BASE_URL` | `https://api.jurisdigta.eu` | API URL embedded into the frontend build |
+| `JURISDIGTA_WEB_PUBLIC_BASE_URL` | `https://web.jurisdigta.eu` | Public frontend URL exercised by the required production post-deployment browser test |
 | `JURISDIGTA_API_PORT` | `8080` | Server-local API bind port |
 | `JURISDIGTA_MCP_PORT` | `8070` | Server-local MCP bind port |
 | `JURISDIGTA_WEB_PORT` | `8090` | Server-local web bind port |
@@ -504,6 +506,7 @@ Server-local `jurisdigta.env` must include at least:
 - `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` except during explicit Claude/MCP connector validation
 - `MCP_OAUTH_TEST_MFA_BYPASS_EMAILS=mcp-claude-test-free@jurisdigta.eu,mcp-claude-test-paid@jurisdigta.eu` only when the bypass is intentionally enabled
 - `MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT=2030-01-01T00:00:00Z` for the approved synthetic-account validation window
+- `JURISDIGTA_E2E_TEST_USER_PASSWORD=<secret>` for the two approved synthetic accounts. The post-deployment job reads it only on the trusted self-hosted runner and never stores it in a GitHub artifact or log.
 - `JURISDIGTA_UNLIMITED_ACCESS_EMAILS=mmaideveloper@gmail.com`
 - `JURISDIGTA_ADMIN_EMAILS=mmaideveloper@gmail.com`
 - `DOCUMENT_PROCESSOR_OPTION=azure`
@@ -534,7 +537,9 @@ Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
 2. Confirm the workflow summary lists the expected host, ref, and local ports.
-3. Confirm the document processor image and cron wrapper exist on the server:
+3. Confirm the required `issue-646-prod-mcp-laws-<run_id>` artifact contains two final-state screenshots and a sanitized result manifest. The workflow must fail if Qwen 4B or Azure Foundry `gpt-5-mini` fails, falls back, or lacks the matching MCP citation.
+4. Confirm `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` in `/srv/jurisdigta/secrets/jurisdigta.env` after the job and that `jurisdigta-mcp` is healthy. The cleanup trap must run on success, failure, timeout, and cancellation.
+5. Confirm the document processor image and cron wrapper exist on the server:
 
 ```bash
 docker image inspect jurisdigta-document-processor:local >/dev/null
@@ -545,7 +550,7 @@ curl -fsS http://127.0.0.1:11434/api/tags || curl -fsS "http://$(docker network 
 curl -fsS http://127.0.0.1:11434/v1/models || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/v1/models"
 ```
 
-4. From outside the server, validate the Cloudflare Tunnel routes:
+6. From outside the server, validate the Cloudflare Tunnel routes:
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
@@ -716,6 +721,7 @@ That means:
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
 - `Self-Managed Prod Deploy` configures Python 3.13 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
+- `Self-Managed Prod Deploy` runs the issue #646 Qwen 4B plus Azure Foundry `gpt-5-mini` matrix after the server deploy, uploads seven-day evidence, and fails the workflow when either real-model route fails. There is no equivalent automatic test-environment step because this workflow targets only the protected self-managed `prod` Environment.
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist
@@ -739,3 +745,4 @@ After setup, verify:
 - `workflow_dispatch` works with `github_environment=test`
 - `workflow_dispatch` works with `github_environment=prod`
 - `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, web, email scheduler, and document processor pass
+- `Self-Managed Prod Deploy` leaves the synthetic MCP OAuth MFA bypass disabled after its required post-deployment E2E, including when the E2E fails

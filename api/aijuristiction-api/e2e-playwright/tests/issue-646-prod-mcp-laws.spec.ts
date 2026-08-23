@@ -22,6 +22,7 @@ type ModelCell = {
   expectedPlan: string;
   expectedProvider: string;
   expectedModel: string;
+  expectedModelProfileId: string;
 };
 
 type McpSource = {
@@ -55,7 +56,7 @@ type MatrixResult = {
   id: string;
   status: 'passed' | 'failed';
   expectedRoute: { plan: string; provider: string; model: string };
-  actualRoute?: { plan: string; provider: string; model: string; routeType: string };
+  actualRoute?: { plan: string; provider: string; model: string; modelProfileId: string; routeType: string };
   directMcp?: McpSource;
   observedCitation?: {
     sourceId: string;
@@ -132,11 +133,13 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
         plan: String(route.plan_code ?? ''),
         provider: String(route.provider ?? ''),
         model: String(route.model ?? ''),
+        modelProfileId: String(route.model_profile_id ?? ''),
         routeType: String(route.route_type ?? ''),
       };
       expect(result.actualRoute.plan).toBe(cell.expectedPlan);
       expect(normalizeProvider(result.actualRoute.provider)).toBe(normalizeProvider(cell.expectedProvider));
       expect(result.actualRoute.model).toBe(cell.expectedModel);
+      expect(result.actualRoute.modelProfileId).toBe(cell.expectedModelProfileId);
       expect(result.actualRoute.routeType).not.toMatch(/fallback/i);
 
       await removePriorSyntheticCases(request, userId);
@@ -158,11 +161,12 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
       });
       await page.locator('.assistant-composer__input').fill(scenario.law.question);
       await page.locator('.assistant-composer__send').click();
-      await expect(page.locator('.assistant-main')).toContainText(scenario.law.identifier, {
+      const completedAssistantMessage = page.locator('.assistant-message').last();
+      await expect(completedAssistantMessage).toContainText(scenario.law.identifier, {
         timeout: timeoutMs,
       });
       await expect(page.locator('.assistant-tool-panel')).toContainText(/JurisDigta MCP/i, {
-        timeout: 60_000,
+        timeout: timeoutMs,
       });
 
       const historyResponse = await request.get(

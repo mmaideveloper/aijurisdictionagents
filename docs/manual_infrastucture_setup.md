@@ -16,6 +16,45 @@ Whenever a task adds or changes manual infrastructure requirements, update this 
 
 Do not commit real secrets, private keys, certificates, Firebase config files containing sensitive project data, or Apple credentials.
 
+## Production Qwen Hardware Acceleration
+
+Purpose: remove the CPU-only latency currently observed for the required Qwen 4B post-deployment test.
+
+### Provider And Owner
+
+- Provider: self-managed `jurisdigta-server` hardware and Ubuntu NVIDIA driver packages.
+- Required owner: JurisDigta infrastructure operator with physical server and non-interactive sudo access.
+- Environments: validate on a non-production host first, then schedule a production maintenance window.
+
+### Current Confirmed State
+
+- Installed GPU: NVIDIA GeForce GT 630 (`GF108`, PCI ID `10de:0f00`).
+- Installed driver: NVIDIA `610.43.02`.
+- Kernel log states that the GT 630 is supported only by the legacy `390.xx` driver and is ignored by 610.
+- `nvidia-smi` cannot communicate with the driver, no NVIDIA device is available to Ollama, and the Qwen 4B Q4 model is loaded into CPU memory.
+- A synthetic 689-token production legal prompt took approximately 126 seconds; prompt evaluation alone took approximately 53 seconds.
+
+### Required Remediation
+
+1. Do not downgrade production blindly to the legacy 390 driver. First verify kernel compatibility and security support on an isolated host; the current kernel is `7.0.0-30-generic`.
+2. Prefer replacing the GT 630 with a currently supported NVIDIA GPU with enough VRAM for the 2.3 GiB Qwen 4B weights, KV cache, runtime buffers, and operational headroom. Use at least 8 GiB VRAM for this workload.
+3. Install the vendor-supported production driver for the replacement GPU and reboot during the approved maintenance window.
+4. Confirm `nvidia-smi` reports the replacement GPU without NVRM errors.
+5. Restart Ollama and confirm `/api/ps` reports non-zero `size_vram` for `qwen3:4b` during a synthetic request.
+6. Run the fixed issue #646 question through the production post-deployment E2E and record prompt-evaluation, generation, and total latency without logging the prompt or model reasoning.
+
+### Validation And Rollback
+
+- The MCP result identity and citation must remain unchanged after hardware acceleration.
+- Qwen must remain `qwen3:4b`; never treat a fallback to another model as acceptance.
+- If the replacement driver or GPU is unstable, stop Ollama, restore the previous hardware/boot configuration, verify CPU inference remains functional, and keep the 660-second fail-closed timeout until a supported accelerator is available.
+
+### Privacy And Compliance
+
+- Use only synthetic prompts for performance validation.
+- Do not log production customer prompts, legal documents, model reasoning, credentials, or tokens.
+- Hardware acceleration changes latency only; it must not weaken source attribution, human-review notices, traceable model routing, or MCP citation checks.
+
 ## Azure PostgreSQL Laws Collector Migration
 
 Related runbook: `docs/AZURE_POSTGRES_MIGRATION.md`
