@@ -429,7 +429,7 @@ publishes both files as a GitHub prerelease.
 
 These are used by `.github/workflows/self_managed_prod_deploy.yml` to deploy API, MCP, frontend web, the document processor, laws collector, and system status monitoring to the Ubuntu `jurisdigta-server`.
 
-Before the SSH deployment job starts, the workflow runs a GitHub-hosted `e2e_gate` job with `npm ci`, Chromium installation, and `npm run test:e2e` from `frontend/aijurisdictionfronend`. The E2E tests use local Vite plus mocked API responses, so the `prod` environment does not need extra secrets for this gate. If any E2E test fails, the deploy job is skipped and production is not updated.
+Before the SSH deployment job starts, the workflow runs a GitHub-hosted `e2e_gate` job with `npm ci`, Chromium installation, and `npm run test:e2e` from `frontend/aijurisdictionfronend`. The E2E tests use local Vite plus mocked API responses, so the `prod` environment does not need extra secrets for this gate. If any E2E test fails, the deploy job is skipped and production is not updated. The self-hosted runner must also be able to pull and run `mcr.microsoft.com/playwright:v1.58.2-noble`; the required production MCP browser gate uses that pinned container instead of host-installed Chromium so Ubuntu 26.04 does not exceed Playwright's supported host matrix.
 
 The workflow must run on a repository self-hosted runner with labels `self-hosted`, `Linux`, `X64`, and `jurisdigta-prod`. Keep this runner on the trusted server or trusted private network that can reach `jurisdigta-server` over SSH. Do not run the production deployment from a GitHub-hosted runner when `JURISDIGTA_SSH_HOST` is a private LAN address such as `192.168.1.25`.
 

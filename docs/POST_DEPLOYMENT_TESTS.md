@@ -31,6 +31,9 @@ accounts, pins the paid account to the enabled EU `gpt-5-mini` profile, and open
 OAuth bypass window. An exit trap closes the window and recreates a healthy MCP container whether
 the test passes, fails, is interrupted, or times out. Evidence is uploaded for seven days. A failed
 post-deployment test marks the deployment workflow failed; it does not perform an automatic rollback.
+Chromium runs in the pinned official `mcr.microsoft.com/playwright:v1.58.2-noble` container, so the
+browser runtime stays deterministic even when the self-hosted runner OS is newer than Playwright's
+directly supported host distributions.
 
 The same question is sent through both required routes:
 

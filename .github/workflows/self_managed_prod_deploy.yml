@@ -90,7 +90,7 @@ jobs:
         working-directory: api/aijuristiction-api/e2e-playwright
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          docker pull mcr.microsoft.com/playwright:v1.58.2-noble
 
       - name: Validate GitHub Environment settings
         run: |
@@ -215,6 +215,13 @@ jobs:
             else
               cleanup_status=0
             fi
+            if [ -d "$evidence_root" ]; then
+              sudo -n chown -R "$(id -u):$(id -g)" "$evidence_root"
+              ownership_status=$?
+              if [ "$ownership_status" -ne 0 ] && [ "$cleanup_status" -eq 0 ]; then
+                cleanup_status=$ownership_status
+              fi
+            fi
             unset JURISDIGTA_E2E_TEST_USER_PASSWORD
             if [ "$cleanup_status" -ne 0 ]; then
               echo "Failed to close the synthetic MCP OAuth E2E window"
@@ -251,12 +258,23 @@ jobs:
 
           ISSUE_646_DEPLOYED_COMMIT_SHA="$(git -C "$JURISDIGTA_DEPLOY_ROOT/app" rev-parse HEAD)"
           export ISSUE_646_DEPLOYED_COMMIT_SHA
-          cd api/aijuristiction-api/e2e-playwright
-          node node_modules/@playwright/test/cli.js test \
+          docker run --rm --init --ipc=host \
+            --env API_BASE_URL \
+            --env FRONTEND_BASE_URL \
+            --env MCP_PUBLIC_BASE_URL \
+            --env ISSUE_646_TIMEOUT_MS \
+            --env ISSUE_646_DEPLOYED_COMMIT_SHA \
+            --env JURISDIGTA_E2E_TEST_USER_PASSWORD \
+            --env PW_START_API \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$evidence_root:/evidence" \
+            --workdir /workspace/api/aijuristiction-api/e2e-playwright \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            node node_modules/@playwright/test/cli.js test \
             tests/issue-646-prod-mcp-laws.spec.ts \
             --config=playwright.config.ts \
             --reporter=list \
-            --output="$evidence_root"
+            --output=/evidence
 
       - name: Upload MCP law post-deployment evidence
         if: always()
