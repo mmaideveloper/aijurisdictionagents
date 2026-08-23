@@ -57,6 +57,20 @@ This fixture database supports the broader frontend/browser test solution in Git
 
 Regression issue `#518` keeps the Slovak private loan-confirmation prompt deterministic: a first-turn request such as "Chcem pozicat peniaze na 1 rok..." must route to a legal-document draft with a `CASE_UPDATE_JSON.case.documents[*].content` body, so generated-document storage and PDF export do not depend on local model wording.
 
+## Core CI regression coverage
+
+The `prepare-golden-test` regression suite generates its synthetic PDF with PyMuPDF, which is a
+declared core dependency. Keep fixture construction within the dependencies installed by
+`python -m pip install -e ".[dev]"`; the `core_build` workflow runs the complete root test suite on
+Python 3.10 and 3.11 with that installation only. Tests for real-model E2E bootstrap safeguards
+must explicitly select `azurefoundry` when the workflow-level deterministic mock setting would
+otherwise mask the database safety condition under test.
+
+`core_build` runs for changes to the root package manifest, core source, root tests, scripts,
+skills, and its own workflow definition. This ensures a test or skill dependency regression is
+checked on the pull request that introduces it instead of being discovered by a later `src/**`
+change on `main`.
+
 ## Compliance Notes
 
 - Export only the minimum fixture set required for validation.
