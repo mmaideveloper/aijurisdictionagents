@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aijurisdictionagents"
-version = "1.0.260435"
+version = "1.0.260436"
 description = "Multi-agent legal discussion scaffold."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
   "azure-identity>=1.23.0",
   "azure-storage-blob>=12.26.0",
@@ -20,7 +20,8 @@ dependencies = [
   "PyMuPDF>=1.26.0",
   "python-dotenv>=1.0",
   "psycopg[binary]>=3.2",
-  "rapidocr-onnxruntime>=1.4.4",
+  "rapidocr>=3.9,<4",
+  "onnxruntime>=1.27,<2",
   "sentence-transformers>=3.0",
   "truststore>=0.10.0",
 ]
@@ -28,8 +29,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=7.4",
-  "ruff>=0.3",
-  "mypy>=1.7",
+  "ruff>=0.8",
+  "mypy>=1.11",
 ]
 
 
@@ -47,10 +48,10 @@ pythonpath = [".", "src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py313"
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_ignores = true
 strict_optional = true

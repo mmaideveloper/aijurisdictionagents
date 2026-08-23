@@ -8,7 +8,7 @@ Current extraction behavior:
 - PDFs first use embedded text extraction (`pypdf`).
 - If a PDF appears scanned/image-only, the service falls back to OCR using `RapidOCR` over rendered PDF pages.
 - PDF visual rendering uses Poppler's `pdftoppm` first. If Poppler is unavailable, the service falls back to PyMuPDF rendering for local compatibility.
-- Optional OCR libraries are loaded dynamically at runtime so API `mypy` checks do not require third-party type stubs for `fitz`, `numpy`, or `rapidocr_onnxruntime`.
+- Optional OCR libraries are loaded dynamically at runtime so API `mypy` checks do not require third-party type stubs for `fitz`, `numpy`, or `rapidocr`.
 
 Current runtime modes:
 

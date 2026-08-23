@@ -1,9 +1,9 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260542"
+version = "1.0.260543"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
   "azure-identity>=1.23.0",
   "azure-monitor-opentelemetry>=1.8.6",
@@ -45,7 +45,7 @@ testpaths = ["tests"]
 pythonpath = [".", "../../src"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 strict = true
 mypy_path = ["../../src"]
 

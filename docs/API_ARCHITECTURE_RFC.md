@@ -12,7 +12,7 @@ Accepted (initial implementation baseline)
 - authentication and API keys.
 
 ## Decision
-- **Framework:** FastAPI (Python 3.11+) for API runtime.
+- **Framework:** FastAPI (Python 3.13+) for API runtime.
 - **Streaming transport (phase 1):** Server-Sent Events (SSE).
 - **Optional extension (phase 2):** WebSocket for advanced bi-directional scenarios.
 - **Service location:** `api/aijuristiction-api` as dedicated API project.

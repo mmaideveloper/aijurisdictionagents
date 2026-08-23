@@ -38,7 +38,7 @@ def test_pdf_ocr_renders_pages_with_poppler_before_rapidocr(monkeypatch) -> None
 
     class FakeRapidOCR:
         def __call__(self, _image_array):
-            return [[None, "Text recovered from a rendered scanned page."]], 0.01
+            return SimpleNamespace(txts=("Text recovered from a rendered scanned page.",))
 
     class FakeNumpy:
         @staticmethod
@@ -52,7 +52,7 @@ def test_pdf_ocr_renders_pages_with_poppler_before_rapidocr(monkeypatch) -> None
     def fake_import_module(name: str):
         if name == "numpy":
             return FakeNumpy
-        if name == "rapidocr_onnxruntime":
+        if name == "rapidocr":
             return type("RapidOCRModule", (), {"RapidOCR": FakeRapidOCR})
         return __import__(name)
 

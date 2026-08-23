@@ -1,8 +1,8 @@
 [project]
 name = "document-engine-service"
-version = "0.1.0"
+version = "0.1.1"
 description = "Standalone document request processing microservice."
-requires-python = ">=3.10"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.115.0,<1.0.0",
     "uvicorn[standard]>=0.30.0,<1.0.0",

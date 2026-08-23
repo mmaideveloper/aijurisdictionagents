@@ -715,7 +715,7 @@ That means:
 - `web_build_deploy` uses the same two boolean inputs with safe `false` defaults and preserves its full lint/unit/E2E/build gate before image publication.
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
-- `Self-Managed Prod Deploy` configures Python 3.10 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
+- `Self-Managed Prod Deploy` configures Python 3.13 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist

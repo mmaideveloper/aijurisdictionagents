@@ -236,12 +236,14 @@ pytest e2etests/test_contract_end_to_end.py root_contract_end_to_end_test.py
 
 ## Setup
 
-Python 3.10+ is required.
+Python 3.13+ is required. Python 3.13 is the canonical interpreter for local development,
+CI, and deployed Python services; see `docs/PYTHON_RUNTIME.md` for the compatibility and
+upgrade policy.
 
 Using conda:
 
 ```bash
-conda create -n aijurisdictionagents python=3.10 -y
+conda create -n aijurisdictionagents python=3.13 -y
 conda activate aijurisdictionagents
 pip install -e ".[dev]"
 ```
