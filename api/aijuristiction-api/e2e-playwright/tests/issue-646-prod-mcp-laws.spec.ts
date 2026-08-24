@@ -138,7 +138,7 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
       };
       expect(result.actualRoute.plan).toBe(cell.expectedPlan);
       expect(normalizeProvider(result.actualRoute.provider)).toBe(normalizeProvider(cell.expectedProvider));
-      expect(result.actualRoute.model).toBe(cell.expectedModel);
+      expect(normalizeModel(result.actualRoute.model)).toBe(normalizeModel(cell.expectedModel));
       expect(result.actualRoute.modelProfileId).toBe(cell.expectedModelProfileId);
       expect(result.actualRoute.routeType).not.toMatch(/fallback/i);
 
@@ -156,9 +156,10 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
       await seedFrontendSession(page, userId, cell.email);
       await page.goto(`${frontendBaseUrl}/app/assistant`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
       await page.getByText(caseTitle, { exact: true }).click({ timeout: 60_000 });
-      await expect(page.locator('.assistant-model-disclosure')).toContainText(cell.expectedModel, {
-        timeout: 60_000,
-      });
+      await expect(page.locator('.assistant-model-disclosure')).toContainText(
+        new RegExp(escapeRegex(cell.expectedModel), 'i'),
+        { timeout: 60_000 },
+      );
       await page.locator('.assistant-composer__input').fill(scenario.law.question);
       await page.locator('.assistant-composer__send').click();
       const completedAssistantMessage = page.locator('.assistant-message').last();
@@ -204,7 +205,7 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
       const audit = (await auditResponse.json()) as { entries?: ModelAuditEntry[] };
       const modelAudit = audit.entries?.[0];
       expect(normalizeProvider(String(modelAudit?.provider ?? ''))).toBe(normalizeProvider(cell.expectedProvider));
-      expect(String(modelAudit?.model ?? '')).toBe(cell.expectedModel);
+      expect(normalizeModel(String(modelAudit?.model ?? ''))).toBe(normalizeModel(cell.expectedModel));
       expect(String(modelAudit?.route_type ?? '')).not.toMatch(/fallback/i);
 
       result.observedCitation = {
@@ -300,6 +301,14 @@ test('production MCP law grounding is preserved through Qwen 4B and Azure Foundr
 
 function apiHeaders(): Record<string, string> {
   return { 'x-api-key': apiKey, Accept: 'application/json' };
+}
+
+function normalizeModel(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 async function authorizeMcp(

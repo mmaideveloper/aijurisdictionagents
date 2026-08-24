@@ -43,6 +43,8 @@ The same question is sent through both required routes:
 Questions that explicitly request the content of a legal act or statute are treated as legal
 research and bypass document case-type detection. This prevents a law lookup from being diverted
 into a document-template clarification workflow before the MCP law tools can run.
+MCP citations are persisted before a streamed answer pauses for an optional follow-up reply, so a
+model ending an otherwise complete legal answer with a question cannot discard source provenance.
 
 The Qwen assertion waits for the final assistant message and MCP citation for the full configured
 660-second cell timeout. It must not match the law identifier echoed in the user's own question.
