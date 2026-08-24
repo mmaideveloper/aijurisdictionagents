@@ -134,7 +134,7 @@
     "file": "tests/issue-647-prod-mcp-court-decisions.spec.ts",
     "title": "production MCP court-decision grounding is preserved through Azure Foundry gpt-5-mini",
     "name": "Post-deployment production MCP court decisions Azure route",
-    "description": "Authenticates the paid synthetic MCP user, proves metadata-only searchCourtDecisions and getCourtDecision directly, rejects internal_raw, asks for the five latest purchase-contract decisions through the production frontend/API with Azure Foundry gpt-5-mini, and requires all five persisted citations to match the direct MCP sources without AIWebSearchAgent fallback.",
+    "description": "Authenticates the paid synthetic MCP user, proves metadata-only searchCourtDecisions and getCourtDecision directly, rejects internal_raw, asks for the five latest court decisions through the production frontend/API with Azure Foundry gpt-5-mini, and requires all five persisted citations to match the direct MCP sources without AIWebSearchAgent fallback.",
     "area": "Post-deployment legal grounding",
     "scheduled": false,
     "postDeployment": true,

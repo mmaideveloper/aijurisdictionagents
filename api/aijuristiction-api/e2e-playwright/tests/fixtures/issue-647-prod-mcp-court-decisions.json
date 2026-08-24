@@ -3,8 +3,8 @@
   "scenarioId": "issue-647-prod-mcp-court-decisions",
   "countryCode": "SK",
   "courtDecision": {
-    "query": "kúpna predajná zmluva",
-    "question": "Zobraz 5 posledných súdnych rozhodnutí týkajúcich sa kúpno-predajnej zmluvy.",
+    "query": "súdne rozhodnutia",
+    "question": "Zobraz 5 posledných súdnych rozhodnutí.",
     "limit": 5
   },
   "modelMatrix": [

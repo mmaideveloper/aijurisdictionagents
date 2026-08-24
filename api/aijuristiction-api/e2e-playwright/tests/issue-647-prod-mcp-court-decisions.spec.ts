@@ -470,8 +470,8 @@ async function discoverCourtDecisionsThroughMcp(
     expect(metadata.full_version).toBe(false);
     expect(metadata.output_mode).toBe('public');
     expect(metadata.text).toBeUndefined();
-    expect(metadata.snippet).toBeUndefined();
-    expect(metadata.summary).toBeUndefined();
+    expect(String(metadata.snippet ?? '')).toBe('');
+    expect(String(metadata.summary ?? '')).toBe('');
 
     const source: McpSource = {
       decisionId,

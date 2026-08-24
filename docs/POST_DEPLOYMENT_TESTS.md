@@ -84,7 +84,7 @@ connection strings, real customer data, or raw full law text.
 
 The fixed Slovak question is:
 
-> Zobraz 5 posledných súdnych rozhodnutí týkajúcich sa kúpno-predajnej zmluvy.
+> Zobraz 5 posledných súdnych rozhodnutí.
 
 Run the opt-in check against the exact successfully deployed production SHA:
 
@@ -99,14 +99,20 @@ acceptance from the image alone.
 
 The tracked pre-acceptance evidence
 [`issue-647-gpt-5-mini-production-failed.png`](screenshots/issue-647/issue-647-gpt-5-mini-production-failed.png)
-shows the 2026-08-24 production run selecting `azureFoundryEU / gpt-5-mini` but returning no MCP
-citations and asking for clarification. It documents the current blocker and must not be presented
-as a passing result; replace it with a successful screenshot after the production corpus returns
-five matching metadata records.
+shows the superseded 2026-08-24 purchase-contract run selecting `azureFoundryEU / gpt-5-mini` but
+returning no MCP citations and asking for clarification. It remains a failure artifact and must not
+be presented as passing evidence for the simplified latest-five scenario.
+
+The simplified run is captured in
+[`issue-647-gpt-5-mini-latest-five-failed.png`](screenshots/issue-647/issue-647-gpt-5-mini-latest-five-failed.png).
+Its direct OAuth MCP check returned exactly five metadata records, while the production chat route
+reported that its internal MCP lookup was unavailable and rendered no citations. This screenshot is
+also failure evidence, not final acceptance evidence. Keep the pull request in draft until the
+frontend -> API -> MCP path renders the same five sources and the manifest records `status=passed`.
 
 This scenario uses only the paid synthetic account pinned to Azure Foundry EU `gpt-5-mini`.
 Qwen and mock routes are excluded, and any fallback fails the test. Direct authenticated MCP calls
-must return exactly five `sort=latest` purchase-contract results with explicit date-quality metadata. For every
+must return exactly five `sort=latest` results with explicit date-quality metadata. For every
 result, metadata-only `getCourtDecision` must return court, date, source link, and ECLI or file number
 without text, snippet, or summary. The external route must reject `outputMode=internal_raw`.
 

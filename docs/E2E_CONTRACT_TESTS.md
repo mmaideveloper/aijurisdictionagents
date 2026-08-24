@@ -192,7 +192,7 @@ and only the Azure Foundry EU `gpt-5-mini` route:
   -DeployedCommitSha <40-character-production-commit-sha>
 ```
 
-It compares five metadata-only MCP results for the fixed purchase-contract question with the five
+It compares five metadata-only MCP results for the fixed latest-court-decisions question with the five
 citations persisted and rendered by the real frontend/API path. It also proves that external
 `internal_raw` decision output remains blocked and records a privacy-minimized screenshot and
 manifest under ignored `runs/e2e/issue-647-prod-mcp-court-decisions/` for at most seven days.
