@@ -40,6 +40,10 @@ The same question is sent through both required routes:
 - free synthetic account -> `local_ollama / qwen3:4b`;
 - paid synthetic account -> Azure Foundry EU / `gpt-5-mini`.
 
+Questions that explicitly request the content of a legal act or statute are treated as legal
+research and bypass document case-type detection. This prevents a law lookup from being diverted
+into a document-template clarification workflow before the MCP law tools can run.
+
 The Qwen assertion waits for the final assistant message and MCP citation for the full configured
 660-second cell timeout. It must not match the law identifier echoed in the user's own question.
 The current production GT 630 is unsupported by the installed NVIDIA 610 driver, so Ollama runs

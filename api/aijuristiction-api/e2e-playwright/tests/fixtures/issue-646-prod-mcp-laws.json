@@ -21,7 +21,7 @@
       "id": "azure-gpt-5-mini",
       "email": "mcp-claude-test-paid@jurisdigta.eu",
       "expectedPlan": "case",
-      "expectedProvider": "azure_foundry",
+      "expectedProvider": "azurefoundryeu",
       "expectedModel": "gpt-5-mini",
       "expectedModelProfileId": "azurefoundryeu:gpt-5-mini"
     }

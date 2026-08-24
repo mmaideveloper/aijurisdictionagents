@@ -162,6 +162,14 @@ def _is_legal_research_request(value: str) -> bool:
     return any(
         marker in canonical
         for marker in (
+            "pravny predpis",
+            "pravneho predpis",
+            "pravnych predpis",
+            "zakon c.",
+            "zakona c.",
+            "law no.",
+            "legal act",
+            "statute",
             "sudne rozhodnut",
             "sudnych rozhodnut",
             "rozhodnutia sud",
