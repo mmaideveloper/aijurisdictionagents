@@ -184,6 +184,19 @@ post-deployment gate. Run it with:
 The test deliberately validates stable source/fact invariants instead of byte-identical generative
 prose and rejects `AIWebSearchAgent` or generic web fallback as proof of MCP grounding.
 
+The companion production court-decision check for issue #647 uses the same paid synthetic account
+and only the Azure Foundry EU `gpt-5-mini` route:
+
+```powershell
+.\scripts\run_issue_647_prod_mcp_court_decisions_e2e.ps1 `
+  -DeployedCommitSha <40-character-production-commit-sha>
+```
+
+It compares five metadata-only MCP results for the fixed purchase-contract question with the five
+citations persisted and rendered by the real frontend/API path. It also proves that external
+`internal_raw` decision output remains blocked and records a privacy-minimized screenshot and
+manifest under ignored `runs/e2e/issue-647-prod-mcp-court-decisions/` for at most seven days.
+
 The payment-process E2E is GDPR/privacy-by-design safe for local and scheduled runs: it uses generated identities, local test storage, log-only email transport in CI, and the API sandbox checkout contract instead of a real payment-provider charge.
 
 ## Minimal runnable example

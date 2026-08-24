@@ -3,7 +3,8 @@
 Run these tests only after all required build, lint, type-check, unit/integration, E2E,
 and image checks have passed for the exact production commit. A post-deployment result never
 overrides the production build gate. The self-managed production workflow runs the required
-issue #646 Azure Foundry check automatically after deployment and fails closed when it fails.
+issue #646 and #647 Azure Foundry checks automatically after deployment and fails closed when
+either one fails.
 
 ## Required production checks
 
@@ -78,6 +79,50 @@ Evidence is stored under ignored `runs/e2e/issue-646-prod-mcp-laws/<UTC timestam
 
 Delete the evidence within seven days. It must not contain credentials, tokens, OTP values,
 connection strings, real customer data, or raw full law text.
+
+### MCP court decisions through Azure Foundry gpt-5-mini (#647)
+
+The fixed Slovak question is:
+
+> Zobraz 5 posledných súdnych rozhodnutí týkajúcich sa kúpno-predajnej zmluvy.
+
+Run the opt-in check against the exact successfully deployed production SHA:
+
+```powershell
+.\scripts\run_issue_647_prod_mcp_court_decisions_e2e.ps1 `
+  -DeployedCommitSha <40-character-production-commit-sha>
+```
+
+For PR evidence, add `-FinalScreenshotPath docs/screenshots/issue-647/issue-647-gpt-5-mini.png`.
+The screenshot is still a failure artifact unless the manifest records `status=passed`; never infer
+acceptance from the image alone.
+
+The tracked pre-acceptance evidence
+[`issue-647-gpt-5-mini-production-failed.png`](screenshots/issue-647/issue-647-gpt-5-mini-production-failed.png)
+shows the 2026-08-24 production run selecting `azureFoundryEU / gpt-5-mini` but returning no MCP
+citations and asking for clarification. It documents the current blocker and must not be presented
+as a passing result; replace it with a successful screenshot after the production corpus returns
+five matching metadata records.
+
+This scenario uses only the paid synthetic account pinned to Azure Foundry EU `gpt-5-mini`.
+Qwen and mock routes are excluded, and any fallback fails the test. Direct authenticated MCP calls
+must return exactly five `sort=latest` purchase-contract results with explicit date-quality metadata. For every
+result, metadata-only `getCourtDecision` must return court, date, source link, and ECLI or file number
+without text, snippet, or summary. The external route must reject `outputMode=internal_raw`.
+
+The frontend answer must expose the same five MCP decision identities and citation metadata, treat
+case law as supporting rather than binding statutory authority, disclose corpus coverage limits,
+and retain the human-review safeguard. Generic web/`AIWebSearchAgent` fallback cannot satisfy the
+contract. The test uses a disposable synthetic case and deletes it after the run where supported.
+When any returned source date is invalid or missing, the answer must avoid an unqualified “latest”
+claim and visibly disclose the date-ordering limitation.
+
+Evidence is stored under ignored
+`runs/e2e/issue-647-prod-mcp-court-decisions/<UTC timestamp>/` and retained for no more than seven
+days. It includes one stable final-state screenshot and a sanitized manifest containing the deployed
+SHA, requested/observed real-model route, direct MCP decision identifiers, observed citation
+identifiers, latency, and pass/fail outcome. Decision bodies, credentials, prompts with personal
+data, tokens, passwords, OTPs, connection strings, and customer records are prohibited.
 
 ## Minimal runnable example
 
