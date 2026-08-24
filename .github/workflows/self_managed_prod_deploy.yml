@@ -193,7 +193,7 @@ jobs:
           API_BASE_URL: ${{ env.JURISDIGTA_WEB_API_BASE_URL }}
           FRONTEND_BASE_URL: ${{ env.JURISDIGTA_WEB_PUBLIC_BASE_URL }}
           MCP_PUBLIC_BASE_URL: ${{ env.JURISDIGTA_MCP_PUBLIC_BASE_URL }}
-          ISSUE_646_TIMEOUT_MS: "660000"
+          ISSUE_646_TIMEOUT_MS: "300000"
           NODE_OPTIONS: "--use-system-ca"
           PW_START_API: "0"
         run: |
@@ -253,7 +253,8 @@ jobs:
           sudo -n python3 "$GITHUB_WORKSPACE/scripts/server/configure_mcp_oauth_e2e_window.py" \
             enable \
             --env-file "$JURISDIGTA_ENV_FILE" \
-            --window-minutes 45
+            --window-minutes 45 \
+            --approved-email mcp-claude-test-paid@jurisdigta.eu
           window_enabled=1
 
           ISSUE_646_DEPLOYED_COMMIT_SHA="$(git -C "$JURISDIGTA_DEPLOY_ROOT/app" rev-parse HEAD)"

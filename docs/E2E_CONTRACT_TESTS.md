@@ -170,10 +170,11 @@ The live-provider check must retain the configured provider gate. Missing Ollama
 Azure Foundry credentials must not be replaced with `mock`; deterministic route fixtures are
 used only for browser/UI regression coverage.
 
-The production post-deployment MCP law matrix is listed in
+The production post-deployment MCP law test is listed in
 `docs/POST_DEPLOYMENT_TESTS.md`. It directly compares authenticated MCP `searchLaws` and
 bounded `getLawText` output with the persisted citation shown after the same fixed question is sent
-through Qwen 4B and Azure Foundry `gpt-5-mini`. Run it with:
+through Azure Foundry `gpt-5-mini`. Qwen is intentionally excluded from the automatic
+post-deployment gate. Run it with:
 
 ```powershell
 .\scripts\run_issue_646_prod_mcp_laws_e2e.ps1 `

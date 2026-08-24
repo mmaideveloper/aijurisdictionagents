@@ -18,7 +18,9 @@ Do not commit real secrets, private keys, certificates, Firebase config files co
 
 ## Production Qwen Hardware Acceleration
 
-Purpose: remove the CPU-only latency currently observed for the required Qwen 4B post-deployment test.
+Purpose: remove the CPU-only latency observed when Qwen 4B is explicitly tested or used. Qwen is
+not part of the automatic production post-deployment gate; that gate uses Azure Foundry
+`gpt-5-mini` only.
 
 ### Provider And Owner
 
@@ -41,13 +43,17 @@ Purpose: remove the CPU-only latency currently observed for the required Qwen 4B
 3. Install the vendor-supported production driver for the replacement GPU and reboot during the approved maintenance window.
 4. Confirm `nvidia-smi` reports the replacement GPU without NVRM errors.
 5. Restart Ollama and confirm `/api/ps` reports non-zero `size_vram` for `qwen3:4b` during a synthetic request.
-6. Run the fixed issue #646 question through the production post-deployment E2E and record prompt-evaluation, generation, and total latency without logging the prompt or model reasoning.
+6. Run an explicitly approved manual synthetic Qwen performance probe and record prompt-evaluation,
+   generation, and total latency without logging the prompt or model reasoning. Do not add Qwen
+   back to the automatic issue #646 post-deployment gate.
 
 ### Validation And Rollback
 
 - The MCP result identity and citation must remain unchanged after hardware acceleration.
 - Qwen must remain `qwen3:4b`; never treat a fallback to another model as acceptance.
-- If the replacement driver or GPU is unstable, stop Ollama, restore the previous hardware/boot configuration, verify CPU inference remains functional, and keep the 660-second fail-closed timeout until a supported accelerator is available.
+- If the replacement driver or GPU is unstable, stop Ollama, restore the previous hardware/boot
+  configuration, and verify CPU inference remains functional. This does not affect the automatic
+  Azure-only post-deployment gate.
 
 ### Privacy And Compliance
 

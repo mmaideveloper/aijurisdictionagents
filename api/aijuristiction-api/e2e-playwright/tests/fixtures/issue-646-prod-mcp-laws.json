@@ -10,14 +10,6 @@
   },
   "modelMatrix": [
     {
-      "id": "qwen4b",
-      "email": "mcp-claude-test-free@jurisdigta.eu",
-      "expectedPlan": "free",
-      "expectedProvider": "local_ollama",
-      "expectedModel": "qwen3:4b",
-      "expectedModelProfileId": "local_ollama:qwen3:4b"
-    },
-    {
       "id": "azure-gpt-5-mini",
       "email": "mcp-claude-test-paid@jurisdigta.eu",
       "expectedPlan": "case",

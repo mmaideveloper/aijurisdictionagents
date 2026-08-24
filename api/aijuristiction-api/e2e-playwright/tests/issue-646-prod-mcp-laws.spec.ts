@@ -86,7 +86,7 @@ const authSessionKey = 'jurisdigta.web.auth.user.v1';
 
 test.describe.configure({ mode: 'serial' });
 
-test('production MCP law grounding is preserved through Qwen 4B and Azure Foundry gpt-5-mini', async ({
+test('production MCP law grounding is preserved through Azure Foundry gpt-5-mini', async ({
   browser,
   request,
 }, testInfo) => {

@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern("^[0-9a-fA-F]{40}$")]
     [string]$DeployedCommitSha,
-    [int]$TimeoutMs = 660000,
+    [int]$TimeoutMs = 300000,
     [string]$EnvFilePath = ".env"
 )
 

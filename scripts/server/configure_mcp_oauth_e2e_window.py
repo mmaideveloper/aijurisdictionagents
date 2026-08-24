@@ -40,6 +40,16 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--container", default="jurisdigta-mcp")
     parser.add_argument("--window-minutes", type=int, default=45)
     parser.add_argument("--health-timeout-seconds", type=int, default=120)
+    parser.add_argument(
+        "--approved-email",
+        action="append",
+        choices=APPROVED_EMAILS,
+        dest="approved_emails",
+        help=(
+            "Approved synthetic email to authorize during this window. Repeat for multiple users; "
+            "defaults to all approved synthetic users for backwards compatibility."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -238,12 +248,13 @@ def main() -> int:
         raise RuntimeError("JURISDIGTA_E2E_TEST_USER_PASSWORD is unresolved; mock fallback is forbidden.")
 
     if args.mode == "enable":
+        approved_emails = tuple(dict.fromkeys(args.approved_emails or APPROVED_EMAILS))
         expires_at = (
             datetime.now(timezone.utc) + timedelta(minutes=args.window_minutes)
         ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         updates = {
             "MCP_OAUTH_TEST_MFA_BYPASS_ENABLED": "true",
-            "MCP_OAUTH_TEST_MFA_BYPASS_EMAILS": ",".join(APPROVED_EMAILS),
+            "MCP_OAUTH_TEST_MFA_BYPASS_EMAILS": ",".join(approved_emails),
             "MCP_OAUTH_TEST_MFA_BYPASS_EXPIRES_AT": expires_at,
         }
     else:

@@ -537,7 +537,7 @@ Minimal workflow validation after setup:
 
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
 2. Confirm the workflow summary lists the expected host, ref, and local ports.
-3. Confirm the required `issue-646-prod-mcp-laws-<run_id>` artifact contains two final-state screenshots and a sanitized result manifest. The workflow must fail if Qwen 4B or Azure Foundry `gpt-5-mini` fails, falls back, or lacks the matching MCP citation.
+3. Confirm the required `issue-646-prod-mcp-laws-<run_id>` artifact contains one Azure Foundry `gpt-5-mini` final-state screenshot and a sanitized result manifest. The workflow must fail if Azure Foundry `gpt-5-mini` fails, falls back, or lacks the matching MCP citation. Qwen is intentionally not invoked by this automatic gate.
 4. Confirm `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` in `/srv/jurisdigta/secrets/jurisdigta.env` after the job and that `jurisdigta-mcp` is healthy. The cleanup trap must run on success, failure, timeout, and cancellation.
 5. Confirm the document processor image and cron wrapper exist on the server:
 
@@ -721,7 +721,7 @@ That means:
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
 - `Self-Managed Prod Deploy` configures Python 3.13 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
-- `Self-Managed Prod Deploy` runs the issue #646 Qwen 4B plus Azure Foundry `gpt-5-mini` matrix after the server deploy, uploads seven-day evidence, and fails the workflow when either real-model route fails. There is no equivalent automatic test-environment step because this workflow targets only the protected self-managed `prod` Environment.
+- `Self-Managed Prod Deploy` runs the issue #646 Azure Foundry `gpt-5-mini` MCP law check after the server deploy, uploads seven-day evidence, and fails the workflow when that real-model route fails. Qwen is excluded from this automatic gate. There is no equivalent automatic test-environment step because this workflow targets only the protected self-managed `prod` Environment.
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist
