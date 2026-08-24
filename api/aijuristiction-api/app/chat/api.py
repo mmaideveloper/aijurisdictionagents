@@ -2514,6 +2514,20 @@ def _stream_read_user_session(
             current_messages = _repository.list_messages(session_id)
             if not current_messages:
                 current_messages = [message for message in (_persisted_user, persisted_lawyer) if message is not None]
+            session_result = _build_direct_reply_result(
+                session_id=session_id,
+                session=session,
+                messages=current_messages,
+                lawyer_message=visible_lawyer_content,
+                route=routed_llm,
+                legal_source_citations=_legal_source_citations_from_processing_events(processing_events),
+            )
+            _persist_case_citations_for_answer(
+                session=session,
+                question=_persisted_user,
+                answer=persisted_lawyer,
+                result=session_result,
+            )
             for document_event in _document_generation_progress_events(
                 session=session,
                 messages=current_messages,
@@ -2538,22 +2552,8 @@ def _stream_read_user_session(
                 )
                 event_queue.put(("done", {"session_id": str(session_id), "status": "waiting_for_reply"}))
             else:
-                session_result = _build_direct_reply_result(
-                    session_id=session_id,
-                    session=session,
-                    messages=current_messages,
-                    lawyer_message=visible_lawyer_content,
-                    route=routed_llm,
-                    legal_source_citations=_legal_source_citations_from_processing_events(processing_events),
-                )
                 _persist_session_history_document_if_needed(session=session, session_id=session_id)
                 _repository.set_result(session_id, session_result)
-                _persist_case_citations_for_answer(
-                    session=session,
-                    question=_persisted_user,
-                    answer=persisted_lawyer,
-                    result=session_result,
-                )
                 for document_event in _document_completion_processing_events(
                     session=session,
                     messages=current_messages,

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "issue-646-prod-mcp-laws",
+  "countryCode": "SK",
+  "law": {
+    "number": 192,
+    "year": 2026,
+    "identifier": "192/2026",
+    "question": "Podľa aktuálnych údajov z JurisDigta MCP stručne vysvetli, čo je obsahom právneho predpisu č. 192/2026 Z. z. Uveď jeho presný názov a odkaz na oficiálny zdroj. Výsledok je podklad na ľudskú právnu kontrolu."
+  },
+  "modelMatrix": [
+    {
+      "id": "azure-gpt-5-mini",
+      "email": "mcp-claude-test-paid@jurisdigta.eu",
+      "expectedPlan": "case",
+      "expectedProvider": "azurefoundryeu",
+      "expectedModel": "gpt-5-mini",
+      "expectedModelProfileId": "azurefoundryeu:gpt-5-mini"
+    }
+  ]
+}

@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_SCRIPT = REPO_ROOT / "Deployment" / "server" / "deploy_jurisdigta_prod.sh"
 DOCUMENT_ENGINE_DOCKERFILE = REPO_ROOT / "services" / "document-engine-service" / "Dockerfile"
+PROD_DEPLOY_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "self_managed_prod_deploy.yml"
+ISSUE_646_FIXTURE = (
+    REPO_ROOT
+    / "api"
+    / "aijuristiction-api"
+    / "e2e-playwright"
+    / "tests"
+    / "fixtures"
+    / "issue-646-prod-mcp-laws.json"
+)
 
 
 def test_api_and_mcp_containers_override_email_outbox_database() -> None:
@@ -78,6 +89,24 @@ def test_document_engine_image_defaults_to_writable_sqlite_path() -> None:
 
     assert "DATABASE_URL=sqlite:////tmp/document_engine.db" in dockerfile
     assert "GENERATED_DOCUMENTS_DIR=/tmp/generated-documents" in dockerfile
+
+
+def test_prod_mcp_law_post_deployment_gate_is_azure_only() -> None:
+    fixture = json.loads(ISSUE_646_FIXTURE.read_text(encoding="utf-8"))
+    workflow = PROD_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+
+    assert fixture["modelMatrix"] == [
+        {
+            "id": "azure-gpt-5-mini",
+            "email": "mcp-claude-test-paid@jurisdigta.eu",
+            "expectedPlan": "case",
+            "expectedProvider": "azurefoundryeu",
+            "expectedModel": "gpt-5-mini",
+            "expectedModelProfileId": "azurefoundryeu:gpt-5-mini",
+        }
+    ]
+    assert "ISSUE_646_TIMEOUT_MS: \"300000\"" in workflow
+    assert "--approved-email mcp-claude-test-paid@jurisdigta.eu" in workflow
 
 
 def _docker_run_block(script: str, container_name_marker: str) -> str:

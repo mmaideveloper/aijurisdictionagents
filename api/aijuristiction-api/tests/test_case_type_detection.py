@@ -3,10 +3,22 @@ from __future__ import annotations
 import os
 from uuid import uuid4
 
-from app.chat.case_type_detection import _clarification_reply, _detection_trace
+from app.chat.case_type_detection import _clarification_reply, _detection_trace, _is_legal_research_request
 from app.chat.models import Message, MessageRole, Session
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseCatalogSelection
+
+
+def test_law_lookup_is_legal_research_not_document_case_detection() -> None:
+    assert _is_legal_research_request(
+        "Podľa aktuálnych údajov vysvetli obsah právneho predpisu č. 192/2026 Z. z."
+    )
+    assert _is_legal_research_request("Čo ustanovuje zákon č. 40/1964 Zb.?")
+    assert _is_legal_research_request("Summarize legal act 192/2026 from the official source.")
+
+
+def test_document_drafting_request_is_not_misclassified_as_legal_research() -> None:
+    assert not _is_legal_research_request("Priprav návrh na platenie výživného.")
 
 
 def test_detection_trace_preserves_first_message_identity_across_retry() -> None:

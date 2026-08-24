@@ -5773,6 +5773,74 @@ def test_stream_read_user_pauses_and_waits_for_manual_reply() -> None:
     assert "pravne posudenie" in reply_content or "dalsi krok" in reply_content
 
 
+def test_stream_waiting_reply_persists_mcp_citations_before_pause(monkeypatch) -> None:
+    from app.chat.models import Message, MessageRole, SessionResult
+    import app.chat.api as chat_api
+
+    persisted_results: list[SessionResult] = []
+
+    def fake_direct_turn(*, session_id, session, content, **_kwargs):
+        user = Message(session_id=session_id, role=MessageRole.USER, content=content)
+        assistant = Message(
+            session_id=session_id,
+            role=MessageRole.ASSISTANT,
+            content="Zákon č. 192/2026 Z. z. upravuje cezhraničnú spoluprácu. Chcete podrobnú analýzu?",
+        )
+        return (
+            user,
+            assistant,
+            assistant.content,
+            [
+                {
+                    "stage": "mcp_law_context",
+                    "details": {
+                        "citations": [
+                            {
+                                "source_type": "law",
+                                "source_id": "law-192-2026",
+                                "source_url": "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2026/192/",
+                                "title": "Oznámenie 192/2026 Z. z.",
+                                "law_number": "192/2026 Z. z.",
+                                "retrieval_tool": "JurisDigta MCP searchLaws",
+                            }
+                        ]
+                    },
+                }
+            ],
+            SimpleNamespace(provider="azurefoundryeu", model="gpt-5-mini", route_type="user_override_external"),
+        )
+
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", fake_direct_turn)
+    monkeypatch.setattr(chat_api, "_document_generation_progress_events", lambda **_kwargs: [])
+    monkeypatch.setattr(chat_api, "_persist_session_history_document_if_needed", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "_persist_case_citations_for_answer",
+        lambda *, result, **_kwargs: persisted_results.append(result) or [],
+    )
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "SK"},
+        headers=AUTH_HEADERS,
+    )
+    session_id = session_response.json()["id"]
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={"instruction": "Čo je obsahom právneho predpisu č. 192/2026 Z. z.?"},
+    ) as response:
+        events = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert "event: waiting_for_reply" in events
+    assert len(persisted_results) == 1
+    result = persisted_results[0]
+    assert result.metadata["legal_source_citations"][0]["source_id"] == "law-192-2026"
+
+
 def test_stream_read_user_emits_document_name_progress_before_final_message(monkeypatch) -> None:
     from app.chat import api as chat_api
     from app.chat.models import Message, MessageRole, SessionResult

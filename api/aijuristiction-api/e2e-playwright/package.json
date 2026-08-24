@@ -7,6 +7,7 @@
     "test:frontend-admin-local-model": "playwright test tests/frontend-admin-local-model-selection.spec.ts",
     "test:free-plan-api": "playwright test tests/free-plan-api-connectivity.spec.ts",
     "test:prod-local-routing": "playwright test tests/free-plan-api-connectivity.spec.ts --grep \"free plan user can connect\"",
+    "test:post-deploy-mcp-laws": "playwright test tests/issue-646-prod-mcp-laws.spec.ts",
     "test:free-plan-document": "playwright test tests/free-plan-ollama-document-pdf.spec.ts",
     "test:outdated-rental": "playwright test tests/outdated-rental-agreement.spec.ts",
     "test:payment": "playwright test tests/payment-process.spec.ts",

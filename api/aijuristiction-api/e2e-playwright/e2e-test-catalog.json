@@ -119,6 +119,17 @@
     "prerequisite": "Requires a live API with local_ollama/qwen3:1.7b reachable and JurisDigta MCP law tools available."
   },
   {
+    "id": "post-deploy-prod-mcp-laws-model-matrix",
+    "file": "tests/issue-646-prod-mcp-laws.spec.ts",
+    "title": "production MCP law grounding is preserved through Azure Foundry gpt-5-mini",
+    "name": "Post-deployment production MCP laws Azure route",
+    "description": "Authenticates the paid synthetic MCP user, proves searchLaws and bounded getLawText directly, asks the fixed 192/2026 question through the production frontend/API with Azure Foundry gpt-5-mini, and requires the persisted citation to match the direct MCP source without AIWebSearchAgent fallback. Qwen is intentionally excluded from the automatic post-deployment gate.",
+    "area": "Post-deployment legal grounding",
+    "scheduled": false,
+    "postDeployment": true,
+    "prerequisite": "Requires the exact deployed commit SHA, production MCP OAuth E2E MFA bypass for the approved paid synthetic account, its secret password, the real Azure Foundry gpt-5-mini route, and healthy production frontend/API/MCP services."
+  },
+  {
     "id": "frontend-auth-case-document",
     "file": "tests/frontend-auth-case-document.spec.ts",
     "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",
