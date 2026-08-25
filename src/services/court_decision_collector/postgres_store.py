@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 import json
 import re
@@ -57,6 +57,25 @@ class CourtDecisionWorkItem:
     source_page: int
     source_ordinal: int
     counts_toward_quota: bool
+
+
+@dataclass(frozen=True)
+class CourtDecisionEnrichmentWorkItem:
+    version_id: str
+    decision_id: str
+    source_url: str
+    priority_class: str
+    lease_token: str
+    attempt_count: int
+    max_attempts: int
+
+
+@dataclass(frozen=True)
+class ExpiredEnrichmentArtifact:
+    version_id: str
+    pdf_path: str
+    raw_expired: bool
+    pdf_expired: bool
 
 
 @dataclass(frozen=True)
@@ -425,7 +444,7 @@ class PostgresCourtDecisionStore:
             content_source = "chunk" if matched_chunk else "enrichment" if enriched_text else "metadata_snapshot"
             vector_score = cosine_similarity(query_vector, parse_embedding_vector(str(row["embedding_vector_json"])))
             lexical_score = lexical_overlap_score(query_profile.topic_query, f"{summary} {public_text}")
-            database_rank = float(row["lexical_rank"] or 0.0)
+            database_rank = float(str(row["lexical_rank"] or 0.0))
             # A PostgreSQL full-text match is already a valid candidate. Hash-bootstrap
             # vectors may have a negative cosine and must never discard that lexical match.
             score = max(vector_score + (lexical_score * 0.1) + database_rank, database_rank, 0.000001)
@@ -470,10 +489,14 @@ class PostgresCourtDecisionStore:
                 LEFT JOIN court_decision_enrichments AS e ON e.version_id = v.version_id
                 """
             ).fetchone()
+        if row is None:
+            raise RuntimeError("Court-decision coverage query returned no row")
+        enrichment = self.enrichment_coverage()
         return {
-            "published_decisions": int(row["published_decisions"] or 0),
+            "published_decisions": int(str(row["published_decisions"] or 0)),
             "latest_issue_date": str(row["latest_issue_date"] or ""),
-            "enriched_versions": int(row["enriched_versions"] or 0),
+            "enriched_versions": int(str(row["enriched_versions"] or 0)),
+            "enrichment": enrichment,
         }
 
     def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:
@@ -559,6 +582,24 @@ class PostgresCourtDecisionStore:
             conn.execute("UPDATE court_decision_enrichments SET status='retryable_failure',last_error_type=%s,updated_at=%s WHERE version_id=%s", (error_type, _now_iso(), version_id))
             conn.commit()
 
+    def mark_enrichment_quarantined(self, *, version_id: str, error_type: str) -> None:
+        now = _now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichments
+                   SET status='quarantined',raw_text='',pseudonymized_text='',
+                       pseudonymized_summary='',legal_topics='[]'::jsonb,
+                       last_error_type=%s,updated_at=%s WHERE version_id=%s""",
+                (error_type[:120], now, version_id),
+            )
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='quarantined',lease_token='',lease_expires_at='',
+                       last_error_type=%s,updated_at=%s WHERE version_id=%s""",
+                (error_type[:120], now, version_id),
+            )
+            conn.commit()
+
     def save_enrichment(
         self, *, decision_id: str, version_id: str, pdf_path: str, pdf_sha256: str,
         actual_size: int, extraction_method: str, raw_text: str, pseudonymized_text: str,
@@ -593,8 +634,314 @@ class PostgresCourtDecisionStore:
                            embedding_model,embedding_dimensions,embedding_vector_json,created_at)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (str(uuid.uuid4()), decision_id, version_id, chunk.chunk_index, chunk.text,
-                     embedding_model, len(vector), json.dumps(vector), now),
+                    embedding_model, len(vector), json.dumps(vector), now),
                 )
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='completed',lease_token='',lease_expires_at='',
+                       completed_at=%s,updated_at=%s WHERE version_id=%s""",
+                (now, now, version_id),
+            )
+            conn.commit()
+
+    def enqueue_enrichment(
+        self,
+        *,
+        decision_id: str,
+        version_id: str,
+        priority_class: str,
+        max_attempts: int = 3,
+    ) -> bool:
+        priority_rank = _enrichment_priority_rank(priority_class)
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
+        now = _now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM court_decision_enrichments WHERE version_id=%s",
+                (version_id,),
+            ).fetchone()
+            if row is not None and str(row["status"]) == "ready":
+                conn.commit()
+                return False
+            queued = conn.execute(
+                """
+                INSERT INTO court_decision_enrichment_queue(
+                    version_id,decision_id,priority_class,priority_rank,status,
+                    attempt_count,max_attempts,available_at,requested_at,created_at,updated_at
+                ) VALUES (%s,%s,%s,%s,'pending',0,%s,%s,%s,%s,%s)
+                ON CONFLICT(version_id) DO UPDATE SET
+                    priority_class=CASE
+                        WHEN EXCLUDED.priority_rank < court_decision_enrichment_queue.priority_rank
+                        THEN EXCLUDED.priority_class ELSE court_decision_enrichment_queue.priority_class END,
+                    priority_rank=LEAST(
+                        EXCLUDED.priority_rank,
+                        court_decision_enrichment_queue.priority_rank
+                    ),
+                    max_attempts=GREATEST(
+                        EXCLUDED.max_attempts,
+                        court_decision_enrichment_queue.max_attempts
+                    ),
+                    status=CASE
+                        WHEN court_decision_enrichment_queue.status IN ('completed','processing')
+                        THEN court_decision_enrichment_queue.status ELSE 'pending' END,
+                    available_at=CASE
+                        WHEN court_decision_enrichment_queue.status IN ('completed','processing')
+                        THEN court_decision_enrichment_queue.available_at ELSE EXCLUDED.available_at END,
+                    last_error_type=CASE
+                        WHEN court_decision_enrichment_queue.status IN ('completed','processing')
+                        THEN court_decision_enrichment_queue.last_error_type ELSE '' END,
+                    updated_at=EXCLUDED.updated_at
+                RETURNING status
+                """,
+                (version_id, decision_id, priority_class, priority_rank, max_attempts,
+                 now, now, now, now),
+            ).fetchone()
+            conn.commit()
+        return queued is not None and str(queued["status"]) != "completed"
+
+    def enqueue_recent_enrichment_candidates(
+        self,
+        *,
+        limit: int,
+        max_attempts: int,
+        priority_class: str = "background",
+    ) -> int:
+        if limit < 1:
+            return 0
+        priority_rank = _enrichment_priority_rank(priority_class)
+        now = _now_iso()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                WITH candidates AS (
+                    SELECT d.decision_id,v.version_id
+                    FROM court_decision_documents AS d
+                    JOIN LATERAL (
+                        SELECT version_id FROM court_decision_versions
+                        WHERE decision_id=d.decision_id
+                        ORDER BY stored_at DESC,version_id DESC LIMIT 1
+                    ) AS v ON TRUE
+                    LEFT JOIN court_decision_enrichments AS e ON e.version_id=v.version_id
+                    LEFT JOIN court_decision_enrichment_queue AS q ON q.version_id=v.version_id
+                    WHERE d.current_status='published'
+                      AND COALESCE(e.status,'') <> 'ready'
+                      AND q.version_id IS NULL
+                    ORDER BY d.issue_date_normalized DESC NULLS LAST,d.updated_at DESC,d.decision_id
+                    LIMIT %s
+                )
+                INSERT INTO court_decision_enrichment_queue(
+                    version_id,decision_id,priority_class,priority_rank,status,
+                    attempt_count,max_attempts,available_at,requested_at,created_at,updated_at
+                )
+                SELECT version_id,decision_id,%s,%s,'pending',0,%s,%s,%s,%s,%s
+                FROM candidates
+                ON CONFLICT(version_id) DO NOTHING
+                RETURNING version_id
+                """,
+                (limit, priority_class, priority_rank, max_attempts, now, now, now, now),
+            ).fetchall()
+            conn.commit()
+        return len(rows)
+
+    def claim_next_enrichment(self, *, lease_seconds: int) -> CourtDecisionEnrichmentWorkItem | None:
+        if lease_seconds < 30:
+            raise ValueError("lease_seconds must be >= 30")
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now = _datetime_iso(now_dt)
+        lease_expires_at = _datetime_iso(now_dt + timedelta(seconds=lease_seconds))
+        lease_token = str(uuid.uuid4())
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='retryable',lease_token='',lease_expires_at='',
+                       last_error_type='LeaseExpired',available_at=%s,updated_at=%s
+                   WHERE status='processing' AND lease_expires_at<>'' AND lease_expires_at<%s""",
+                (now, now, now),
+            )
+            row = conn.execute(
+                """
+                SELECT q.version_id,q.decision_id,q.priority_class,q.attempt_count,
+                       q.max_attempts,d.source_url
+                FROM court_decision_enrichment_queue AS q
+                JOIN court_decision_documents AS d ON d.decision_id=q.decision_id
+                WHERE q.status IN ('pending','retryable') AND q.available_at<=%s
+                ORDER BY q.priority_rank,q.available_at,q.requested_at,q.version_id
+                FOR UPDATE OF q SKIP LOCKED
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone()
+            if row is None:
+                conn.commit()
+                return None
+            attempt_count = int(str(row["attempt_count"])) + 1
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='processing',attempt_count=%s,lease_token=%s,
+                       lease_expires_at=%s,started_at=%s,last_error_type='',updated_at=%s
+                   WHERE version_id=%s""",
+                (attempt_count, lease_token, lease_expires_at, now, now, row["version_id"]),
+            )
+            conn.commit()
+        return CourtDecisionEnrichmentWorkItem(
+            version_id=str(row["version_id"]),
+            decision_id=str(row["decision_id"]),
+            source_url=str(row["source_url"]),
+            priority_class=str(row["priority_class"]),
+            lease_token=lease_token,
+            attempt_count=attempt_count,
+            max_attempts=int(str(row["max_attempts"])),
+        )
+
+    def complete_enrichment_work(self, item: CourtDecisionEnrichmentWorkItem) -> bool:
+        now = _now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='completed',lease_token='',lease_expires_at='',
+                       completed_at=%s,updated_at=%s
+                   WHERE version_id=%s AND status='processing' AND lease_token=%s
+                   RETURNING version_id""",
+                (now, now, item.version_id, item.lease_token),
+            ).fetchone()
+            conn.commit()
+        if row is not None:
+            return True
+        with self._connect() as conn:
+            current = conn.execute(
+                "SELECT status FROM court_decision_enrichment_queue WHERE version_id=%s",
+                (item.version_id,),
+            ).fetchone()
+        return current is not None and str(current["status"]) == "completed"
+
+    def retry_enrichment_work(
+        self,
+        item: CourtDecisionEnrichmentWorkItem,
+        *,
+        error_type: str,
+        backoff_seconds: int,
+    ) -> str:
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now = _datetime_iso(now_dt)
+        status = "dead_letter" if item.attempt_count >= item.max_attempts else "retryable"
+        available_at = _datetime_iso(now_dt + timedelta(seconds=max(0, backoff_seconds)))
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status=%s,available_at=%s,lease_token='',lease_expires_at='',
+                       last_error_type=%s,updated_at=%s
+                   WHERE version_id=%s AND status='processing' AND lease_token=%s""",
+                (status, available_at, error_type[:120], now, item.version_id, item.lease_token),
+            )
+            conn.commit()
+        return status
+
+    def quarantine_enrichment_work(
+        self, item: CourtDecisionEnrichmentWorkItem, *, error_type: str
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichment_queue
+                   SET status='quarantined',lease_token='',lease_expires_at='',
+                       last_error_type=%s,updated_at=%s
+                   WHERE version_id=%s AND lease_token=%s""",
+                (error_type[:120], _now_iso(), item.version_id, item.lease_token),
+            )
+            conn.commit()
+
+    def set_enrichment_paused(self, *, source_system: str, paused: bool, reason: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO court_decision_enrichment_control(
+                       source_system,paused,pause_reason,updated_at)
+                   VALUES (%s,%s,%s,%s)
+                   ON CONFLICT(source_system) DO UPDATE SET paused=EXCLUDED.paused,
+                       pause_reason=EXCLUDED.pause_reason,updated_at=EXCLUDED.updated_at""",
+                (source_system, paused, reason[:120] if paused else "", _now_iso()),
+            )
+            conn.commit()
+
+    def enrichment_is_paused(self, *, source_system: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT paused FROM court_decision_enrichment_control WHERE source_system=%s",
+                (source_system,),
+            ).fetchone()
+        return bool(row and row["paused"])
+
+    def enrichment_coverage(self) -> dict[str, object]:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(DISTINCT d.decision_id) FILTER (
+                           WHERE d.current_status='published') AS published,
+                       COUNT(DISTINCT e.version_id) FILTER (WHERE e.status='ready') AS ready,
+                       COUNT(DISTINCT q.version_id) FILTER (
+                           WHERE q.status IN ('pending','retryable')) AS queued,
+                       COUNT(DISTINCT q.version_id) FILTER (WHERE q.status='processing') AS processing,
+                       COUNT(DISTINCT q.version_id) FILTER (
+                           WHERE q.status IN ('dead_letter','quarantined')) AS failed,
+                       COUNT(DISTINCT c.chunk_id) AS chunks,
+                       MAX(d.issue_date_normalized) FILTER (WHERE e.status='ready') AS latest_enriched_date
+                FROM court_decision_documents AS d
+                LEFT JOIN court_decision_versions AS v ON v.decision_id=d.decision_id
+                LEFT JOIN court_decision_enrichments AS e ON e.version_id=v.version_id
+                LEFT JOIN court_decision_enrichment_queue AS q ON q.version_id=v.version_id
+                LEFT JOIN court_decision_content_chunks AS c ON c.version_id=e.version_id
+                """
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Court-decision enrichment coverage query returned no row")
+        published = int(str(row["published"] or 0))
+        ready = int(str(row["ready"] or 0))
+        return {
+            "published": published,
+            "ready": ready,
+            "queued": int(str(row["queued"] or 0)),
+            "processing": int(str(row["processing"] or 0)),
+            "failed": int(str(row["failed"] or 0)),
+            "chunks": int(str(row["chunks"] or 0)),
+            "latest_enriched_date": str(row["latest_enriched_date"] or ""),
+            "enriched_coverage_ratio": round(ready / published, 6) if published else 0.0,
+        }
+
+    def expired_enrichment_artifacts(
+        self, *, raw_before: str, pdf_before: str
+    ) -> list[ExpiredEnrichmentArtifact]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT version_id,pdf_path,
+                          (completed_at<>'' AND completed_at<%s AND raw_text<>'') AS raw_expired,
+                          (completed_at<>'' AND completed_at<%s AND pdf_path<>'') AS pdf_expired
+                   FROM court_decision_enrichments
+                   WHERE status='ready' AND completed_at<>''
+                     AND ((completed_at<%s AND raw_text<>'') OR (completed_at<%s AND pdf_path<>''))
+                   ORDER BY completed_at,version_id""",
+                (raw_before, pdf_before, raw_before, pdf_before),
+            ).fetchall()
+        return [
+            ExpiredEnrichmentArtifact(
+                version_id=str(row["version_id"]),
+                pdf_path=str(row["pdf_path"] or ""),
+                raw_expired=bool(row["raw_expired"]),
+                pdf_expired=bool(row["pdf_expired"]),
+            )
+            for row in rows
+        ]
+
+    def clear_expired_enrichment_artifact(
+        self, *, version_id: str, clear_raw: bool, clear_pdf: bool
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """UPDATE court_decision_enrichments
+                   SET raw_text=CASE WHEN %s THEN '' ELSE raw_text END,
+                       pdf_path=CASE WHEN %s THEN '' ELSE pdf_path END,
+                       updated_at=%s
+                   WHERE version_id=%s AND status='ready'""",
+                (clear_raw, clear_pdf, _now_iso(), version_id),
+            )
             conn.commit()
 
     def ensure_scheduler_state(
@@ -1053,6 +1400,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _datetime_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _enrichment_priority_rank(priority_class: str) -> int:
+    priorities = {"user_requested": 0, "recent": 10, "background": 20}
+    try:
+        return priorities[priority_class]
+    except KeyError as exc:
+        raise ValueError("priority_class must be user_requested, recent, or background") from exc
+
+
 def _source_guid_hash(source_guid: str) -> str:
     return sha256(source_guid.encode("utf-8")).hexdigest()[:16]
 
@@ -1262,6 +1621,26 @@ _SCHEMA_SQL = (
         embedding_model TEXT NOT NULL, embedding_dimensions INTEGER NOT NULL,
         embedding_vector_json JSONB NOT NULL, created_at TEXT NOT NULL,
         UNIQUE(version_id, chunk_index))""",
+    """CREATE TABLE IF NOT EXISTS court_decision_enrichment_control (
+        source_system TEXT PRIMARY KEY, paused BOOLEAN NOT NULL DEFAULT FALSE,
+        pause_reason TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS court_decision_enrichment_queue (
+        version_id TEXT PRIMARY KEY REFERENCES court_decision_versions(version_id) ON DELETE CASCADE,
+        decision_id TEXT NOT NULL REFERENCES court_decision_documents(decision_id) ON DELETE CASCADE,
+        priority_class TEXT NOT NULL CHECK (priority_class IN ('user_requested','recent','background')),
+        priority_rank INTEGER NOT NULL CHECK (priority_rank IN (0,10,20)),
+        status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending','processing','retryable','completed','dead_letter','quarantined')),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
+        available_at TEXT NOT NULL, lease_token TEXT NOT NULL DEFAULT '',
+        lease_expires_at TEXT NOT NULL DEFAULT '', last_error_type TEXT NOT NULL DEFAULT '',
+        requested_at TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT '',
+        completed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
+    """CREATE INDEX IF NOT EXISTS idx_court_decision_enrichment_queue_claim
+        ON court_decision_enrichment_queue(status,available_at,priority_rank,requested_at)""",
+    """CREATE INDEX IF NOT EXISTS idx_court_decision_enrichment_queue_decision
+        ON court_decision_enrichment_queue(decision_id,status)""",
     """CREATE INDEX IF NOT EXISTS idx_court_decision_enrichments_search
         ON court_decision_enrichments USING GIN (
             to_tsvector('simple'::regconfig,

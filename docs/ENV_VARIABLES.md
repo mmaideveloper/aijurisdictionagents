@@ -60,6 +60,15 @@ bootstrap refuses SQLite, Azure/remote PostgreSQL, placeholder values, non-HTTPS
 `LLM_PROVIDER=mock`. This prevents an E2E preparation command from writing the imported credential
 to production or claiming a mock call as real-model evidence.
 
+## Court-decision background enrichment
+
+`COURT_DECISIONS_ENRICHMENT_ENABLED=false` is fail-closed: metadata collection continues, but no
+background PDF download or content processing starts until an operator explicitly enables it.
+The cycle/candidate limits, delay, lease, retry count/backoff, minimum free disk, and raw/PDF
+retention settings in `.env.example` bound resource use and data lifetime. Raw extracted text and
+PDF files stay in controlled local storage; only text that passes local pseudonymization validation
+may be summarized, embedded, chunked, or returned through public MCP output.
+
 ## USB layout
 
 The encrypted USB mount provides:

@@ -2835,6 +2835,17 @@ def _search_court_decisions(
             error_kind=error_kind,
         )
     duration_ms = int((time.perf_counter() - started_at) * 1000)
+    enrichment_coverage = coverage.get("enrichment", {}) if isinstance(coverage, dict) else {}
+    if not isinstance(enrichment_coverage, dict):
+        enrichment_coverage = {}
+    published_count = int(enrichment_coverage.get("published", 0) or 0)
+    ready_count = int(enrichment_coverage.get("ready", 0) or 0)
+    if ready_count == 0:
+        content_coverage_status = "content_unavailable"
+    elif published_count and ready_count < published_count:
+        content_coverage_status = "partial"
+    else:
+        content_coverage_status = "complete"
     logger.info(
         "mcp_tool_search_court_decisions_result result_count=%d duration_ms=%d",
         len(results),
@@ -2855,9 +2866,12 @@ def _search_court_decisions(
         "offset": offset,
         "status": "ok",
         "coverage": coverage,
+        "content_coverage_status": content_coverage_status,
+        "content_unavailable": content_coverage_status == "content_unavailable",
         "coverage_notice": (
-            "Results are the latest matching decisions available in the JurisDigta corpus, "
-            "not a guarantee of complete national case-law coverage."
+            "Topical results search only the pseudonymized enriched subset reported in coverage; "
+            "unenriched decisions may contain additional matches. Results never establish that no "
+            "relevant Slovak decisions exist and are not a guarantee of complete national coverage."
         ),
         "data_quality": {
             "issue_date_ordering": "calendar",

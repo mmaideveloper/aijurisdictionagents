@@ -583,6 +583,13 @@ def test_mcp_search_legal_sources_returns_grouped_metadata_only(monkeypatch, tmp
     )
 
     class FakeCourtDecisionStore:
+        def search_coverage(self) -> dict[str, object]:
+            return {
+                "published_decisions": 2,
+                "enriched_versions": 1,
+                "enrichment": {"published": 2, "ready": 1, "queued": 1},
+            }
+
         def search(
             self,
             *,
@@ -648,6 +655,13 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     mcp_key = _create_mcp_key(tmp_path)
 
     class FakeCourtDecisionStore:
+        def search_coverage(self) -> dict[str, object]:
+            return {
+                "published_decisions": 2,
+                "enriched_versions": 1,
+                "enrichment": {"published": 2, "ready": 1, "queued": 1},
+            }
+
         def search(
             self,
             *,
@@ -714,6 +728,10 @@ def test_mcp_search_court_decisions_returns_bounded_results_and_privacy_safe_log
     assert payload["output_mode"] == "public"
     assert payload["metadata_only"] is True
     assert payload["timeout_ms"] == 600000
+    assert payload["content_coverage_status"] == "partial"
+    assert payload["content_unavailable"] is False
+    assert "unenriched decisions may contain additional matches" in payload["coverage_notice"]
+    assert payload["coverage"]["enrichment"]["ready"] == 1
     assert payload["results"][0]["decision_id"] == "decision-1"
     assert payload["results"][0]["issue_date"] == "2026-06-29"
     assert "snippet" not in payload["results"][0]

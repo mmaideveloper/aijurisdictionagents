@@ -16,7 +16,11 @@ from services.document_processor.runtime import chunk_document_text, extract_doc
 
 from .infosud_source import InfoSudSourceClient
 from .postgres_store import PostgresCourtDecisionStore
-from .pseudonymization import pseudonymize_court_decision_text
+from .pseudonymization import (
+    UnsafePseudonymizationError,
+    pseudonymize_court_decision_text,
+    validate_pseudonymized_court_decision_text,
+)
 
 _ALLOWED_HOST = "obcan.justice.sk"
 _TOPIC_STOPWORDS = {
@@ -63,10 +67,19 @@ class OnDemandCourtDecisionEnricher:
         self.max_pdf_bytes = max_pdf_bytes
         self.downloader = downloader or self._download_pdf
 
-    def enrich_source_url(self, source_url: str) -> EnrichmentResult:
+    def enrich_source_url(
+        self, source_url: str, *, priority_class: str = "user_requested"
+    ) -> EnrichmentResult:
         guid = _guid_from_source_url(source_url, expected_base_url=self.source.base_url)
         record = self.source.get_decision(guid)
         stored = self.store.upsert_decision(record)
+        enqueue = getattr(self.store, "enqueue_enrichment", None)
+        if callable(enqueue):
+            enqueue(
+                decision_id=stored.decision_id,
+                version_id=stored.version_id,
+                priority_class=priority_class,
+            )
         cached = self.store.get_enrichment(version_id=stored.version_id)
         if cached and cached.get("status") == "ready" and Path(str(cached["pdf_path"])).is_file():
             return _result_from_row(cached, metadata=record.metadata, cache_hit=True)
@@ -93,13 +106,9 @@ class OnDemandCourtDecisionEnricher:
             _validate_pdf(payload, expected_size=expected_size, max_bytes=self.max_pdf_bytes)
             digest = sha256(payload).hexdigest()
             target = self.storage_root / stored.decision_id / stored.version_id / filename
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_suffix(target.suffix + ".part")
-            temporary.write_bytes(payload)
-            temporary.replace(target)
-
             extracted = extract_document_text(filename=filename, payload=payload)
             public_text = pseudonymize_court_decision_text(extracted.text)
+            validate_pseudonymized_court_decision_text(public_text)
             summary = build_local_extract_summary(public_text)
             topics = extract_legal_topics(public_text)
             chunks = chunk_document_text(public_text)
@@ -107,6 +116,10 @@ class OnDemandCourtDecisionEnricher:
             embedding_client = self.embedding_client or get_embedding_client()
             batch = embedding_client.embed_texts(inputs)
             dimensions = len(batch.vectors[0]) if batch.vectors else 0
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_suffix(target.suffix + ".part")
+            temporary.write_bytes(payload)
+            temporary.replace(target)
             self.store.save_enrichment(
                 decision_id=stored.decision_id,
                 version_id=stored.version_id,
@@ -137,6 +150,11 @@ class OnDemandCourtDecisionEnricher:
                 embedding_dimensions=dimensions,
                 chunk_count=len(chunks),
             )
+        except UnsafePseudonymizationError as exc:
+            quarantine = getattr(self.store, "mark_enrichment_quarantined", None)
+            if callable(quarantine):
+                quarantine(version_id=stored.version_id, error_type=type(exc).__name__)
+            raise
         except Exception as exc:
             self.store.mark_enrichment_failed(version_id=stored.version_id, error_type=type(exc).__name__)
             raise

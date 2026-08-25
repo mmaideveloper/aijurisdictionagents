@@ -527,7 +527,7 @@ print(
 )
 print(
     "court_decision_grafana => JurisDigta Court Decision Service shows durable new/backfill "
-    "throughput, queue depth, UTC quota, and reconciliation health without exposing "
+    "throughput, enrichment coverage/queue state, UTC quota, and reconciliation health without exposing "
     "court decision text, parties, file numbers, ECLI values, or source identifiers."
 )
 print(

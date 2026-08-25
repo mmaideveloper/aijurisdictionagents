@@ -503,6 +503,35 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
         f"{_number(collector.get('versions_with_embeddings'), 0)}"
     )
 
+    _append_help(lines, "jurisdigta_court_decision_enrichment_queue", "Aggregate durable court-decision enrichment queue depth by state.", "gauge")
+    for state, field in (("pending", "enrichment_pending"), ("processing", "enrichment_processing"), ("failed", "enrichment_failed")):
+        lines.append(
+            "jurisdigta_court_decision_enrichment_queue"
+            f'{{status="{state}"}} {_number(collector.get(field), 0)}'
+        )
+    _append_help(lines, "jurisdigta_court_decision_enrichments_total", "Aggregate ready court-decision enrichments.", "gauge")
+    lines.append(
+        "jurisdigta_court_decision_enrichments_total"
+        f'{{status="ready"}} {_number(collector.get("enrichment_ready"), 0)}'
+    )
+    _append_help(lines, "jurisdigta_court_decision_enrichment_chunks_total", "Aggregate pseudonymized court-decision search chunks.", "gauge")
+    lines.append(
+        "jurisdigta_court_decision_enrichment_chunks_total "
+        f"{_number(collector.get('enrichment_chunks'), 0)}"
+    )
+    published = _number(collector.get("published_decisions"), 0)
+    ready = _number(collector.get("enrichment_ready"), 0)
+    _append_help(lines, "jurisdigta_court_decision_enrichment_coverage_ratio", "Ready enrichments divided by published decisions.", "gauge")
+    lines.append(
+        "jurisdigta_court_decision_enrichment_coverage_ratio "
+        f"{min(1.0, ready / published) if published > 0 else 0.0}"
+    )
+    _append_help(lines, "jurisdigta_court_decision_enrichment_paused", "Whether durable background enrichment is paused.", "gauge")
+    lines.append(
+        "jurisdigta_court_decision_enrichment_paused "
+        f"{1.0 if collector.get('enrichment_paused') else 0.0}"
+    )
+
     latest_imported_decision = collector.get("latest_imported_decision")
     if isinstance(latest_imported_decision, dict):
         short_name = str(latest_imported_decision.get("short_name") or "Court decision")
@@ -598,6 +627,11 @@ def _append_court_decision_collector_metrics(lines: list[str], system: dict[str,
             "last_backfill_success_at",
             "jurisdigta_court_decision_last_backfill_success_timestamp_seconds",
             "Unix timestamp for the last completed backfill decision.",
+        ),
+        (
+            "enrichment_latest_completed_at",
+            "jurisdigta_court_decision_enrichment_latest_completed_timestamp_seconds",
+            "Unix timestamp for latest completed court-decision enrichment.",
         ),
     ):
         timestamp = _timestamp(collector.get(key))
