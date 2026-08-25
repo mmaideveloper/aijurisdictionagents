@@ -91,6 +91,7 @@ class DocumentTemplateStore:
         jurisdiction: str | None = None,
         category: str | None = None,
         template_kind: str | None = None,
+        latest_only: bool = False,
     ) -> builtins.list[DocumentTemplateDefinition]:
         clauses: list[str] = []
         params: list[object] = []
@@ -105,35 +106,76 @@ class DocumentTemplateStore:
         if template_kind:
             clauses.append("template_kind = ?")
             params.append(template_kind.strip().lower())
+        if latest_only:
+            clauses.append(
+                "version = (SELECT MAX(version) FROM document_templates AS latest "
+                "WHERE latest.lineage_key = document_templates.lineage_key)"
+            )
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM document_templates {where_sql} ORDER BY category ASC, title ASC"
+        query = f"SELECT * FROM document_templates {where_sql} ORDER BY category ASC, title ASC, version DESC"
         with self._connect() as conn:
             rows = conn.execute(self._sql(query), self._params(*params)).fetchall()
-        return [self._row_to_definition(_row_to_mapping(row)) for row in rows]
+            latest_versions = self._latest_versions_by_lineage(
+                conn,
+                [str(_row_to_mapping(row).get("lineage_key") or "") for row in rows],
+            )
+        return [self._row_to_definition(_row_to_mapping(row), latest_versions) for row in rows]
 
-    def get(self, *, template_key: str, jurisdiction: str | None = None) -> DocumentTemplateDefinition:
+    def get(
+        self,
+        *,
+        template_key: str,
+        jurisdiction: str | None = None,
+        version: int | None = None,
+    ) -> DocumentTemplateDefinition:
         with self._connect() as conn:
             if jurisdiction:
-                row = conn.execute(
-                    self._sql("SELECT * FROM document_templates WHERE template_key = ? AND jurisdiction = ?"),
-                    self._params(template_key.strip(), jurisdiction.strip().upper()),
-                ).fetchone()
+                if version is not None:
+                    row = conn.execute(
+                        self._sql(
+                            "SELECT * FROM document_templates WHERE template_key = ? AND jurisdiction = ? AND version = ?"
+                        ),
+                        self._params(template_key.strip(), jurisdiction.strip().upper(), version),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        self._sql(
+                            """
+                            SELECT *
+                            FROM document_templates
+                            WHERE template_key = ? AND jurisdiction = ?
+                            ORDER BY version DESC
+                            LIMIT 1
+                            """
+                        ),
+                        self._params(template_key.strip(), jurisdiction.strip().upper()),
+                    ).fetchone()
                 if row is None:
                     raise DocumentTemplateNotFoundError(
                         f"Document template '{template_key}' for jurisdiction '{jurisdiction}' was not found"
                     )
-                return self._row_to_definition(_row_to_mapping(row))
+                latest_versions = self._latest_versions_by_lineage(
+                    conn,
+                    [str(_row_to_mapping(row).get("lineage_key") or "")],
+                )
+                return self._row_to_definition(_row_to_mapping(row), latest_versions)
             rows = conn.execute(
-                self._sql("SELECT * FROM document_templates WHERE template_key = ?"),
+                self._sql("SELECT * FROM document_templates WHERE template_key = ? ORDER BY jurisdiction ASC, version DESC"),
                 self._params(template_key.strip()),
             ).fetchall()
         if not rows:
             raise DocumentTemplateNotFoundError(f"Document template '{template_key}' was not found")
-        if len(rows) > 1:
+        jurisdictions = {str(_row_to_mapping(row)["jurisdiction"]) for row in rows}
+        if len(jurisdictions) > 1:
             raise DocumentTemplateAmbiguousError(
                 f"Document template '{template_key}' exists in multiple jurisdictions; specify jurisdiction."
             )
-        return self._row_to_definition(_row_to_mapping(rows[0]))
+        with self._connect() as conn:
+            latest_versions = self._latest_versions_by_lineage(
+                conn,
+                [str(_row_to_mapping(rows[0]).get("lineage_key") or "")],
+            )
+        return self._row_to_definition(_row_to_mapping(rows[0]), latest_versions)
 
     def create(self, payload: DocumentTemplateCreateRequest) -> DocumentTemplateDefinition:
         template_key = payload.template_key.strip()
@@ -144,21 +186,28 @@ class DocumentTemplateStore:
             )
         now = _utc_now_iso()
         template_id = str(uuid4())
+        lineage_key = _build_template_lineage_key(
+            title=payload.title,
+            template_kind=payload.template_kind,
+            jurisdiction=jurisdiction,
+            language=payload.language,
+        )
         with self._connect() as conn:
             conn.execute(
                 self._sql(
                     """
                     INSERT INTO document_templates (
-                        template_id, template_key, jurisdiction, language, category, title, template_kind,
+                        template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, body, keywords_json, flow_keys_json,
                         placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
-                        is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                        version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
                     template_id,
                     template_key,
+                    lineage_key,
                     jurisdiction,
                     (payload.language or "").strip() or None,
                     payload.category.strip(),
@@ -175,13 +224,15 @@ class DocumentTemplateStore:
                     payload.disclaimer_title.strip(),
                     payload.disclaimer_text.strip(),
                     payload.disclaimer_footer.strip(),
+                    1,
+                    now,
                     1 if payload.is_enabled else 0,
                     now,
                     now,
                 ),
             )
             conn.commit()
-        return self.get(template_key=template_key, jurisdiction=jurisdiction)
+        return self.get(template_key=template_key, jurisdiction=jurisdiction, version=1)
 
     def update(
         self,
@@ -189,10 +240,15 @@ class DocumentTemplateStore:
         template_key: str,
         payload: DocumentTemplateUpdateRequest,
         jurisdiction: str | None = None,
+        version: int | None = None,
     ) -> DocumentTemplateDefinition:
-        current = self.get(template_key=template_key, jurisdiction=jurisdiction)
+        current = self.get(template_key=template_key, jurisdiction=jurisdiction, version=version)
         if current.is_deleted:
             raise DocumentTemplateNotFoundError(f"Document template '{template_key}' is deleted")
+        if not current.is_latest_version:
+            raise DocumentTemplateConflictError(
+                f"Document template '{template_key}' version {current.version} is read-only because a newer version exists"
+            )
         updated = {
             "jurisdiction": (payload.jurisdiction or current.jurisdiction).strip().upper(),
             "language": (
@@ -230,22 +286,33 @@ class DocumentTemplateStore:
                 if isinstance(payload.disclaimer_footer, str)
                 else current.disclaimer_footer
             ),
-            "is_enabled": 1 if (payload.is_enabled if payload.is_enabled is not None else current.is_enabled) else 0,
-            "updated_at": _utc_now_iso(),
+            "is_enabled": bool(payload.is_enabled if payload.is_enabled is not None else current.is_enabled),
         }
+        now = _utc_now_iso()
+        next_version = current.latest_version + 1
+        next_template_id = str(uuid4())
         with self._connect() as conn:
             conn.execute(
                 self._sql(
                     """
-                    UPDATE document_templates
-                    SET jurisdiction = ?, language = ?, category = ?, title = ?, template_kind = ?,
-                        description = ?, source_format = ?, source_url = ?, body = ?, keywords_json = ?,
-                        flow_keys_json = ?, placeholders_json = ?, source_refs_json = ?, disclaimer_title = ?,
-                        disclaimer_text = ?, disclaimer_footer = ?, is_enabled = ?, updated_at = ?
-                    WHERE template_key = ? AND jurisdiction = ?
+                    INSERT INTO document_templates (
+                        template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
+                        description, source_format, source_url, body, keywords_json, flow_keys_json,
+                        placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
+                        version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
+                    next_template_id,
+                    current.template_key,
+                    current.lineage_key
+                    or _build_template_lineage_key(
+                        title=current.title,
+                        template_kind=current.template_kind,
+                        jurisdiction=current.jurisdiction,
+                        language=current.language,
+                    ),
                     updated["jurisdiction"],
                     updated["language"],
                     updated["category"],
@@ -262,17 +329,34 @@ class DocumentTemplateStore:
                     updated["disclaimer_title"],
                     updated["disclaimer_text"],
                     updated["disclaimer_footer"],
-                    updated["is_enabled"],
-                    updated["updated_at"],
-                    current.template_key,
-                    current.jurisdiction,
+                    next_version,
+                    now,
+                    1 if updated["is_enabled"] else 0,
+                    now,
+                    now,
                 ),
             )
+            conn.execute(
+                self._sql(
+                    """
+                    UPDATE case_type_templates
+                    SET template_id = ?, updated_at = ?
+                    WHERE template_id = ?
+                    """
+                ),
+                self._params(next_template_id, now, current.template_id),
+            )
             conn.commit()
-        return self.get(template_key=template_key, jurisdiction=str(updated["jurisdiction"]))
+        return self.get(template_key=template_key, jurisdiction=str(updated["jurisdiction"]), version=next_version)
 
-    def soft_delete(self, *, template_key: str, jurisdiction: str | None = None) -> DocumentTemplateDefinition:
-        current = self.get(template_key=template_key, jurisdiction=jurisdiction)
+    def soft_delete(
+        self,
+        *,
+        template_key: str,
+        jurisdiction: str | None = None,
+        version: int | None = None,
+    ) -> DocumentTemplateDefinition:
+        current = self.get(template_key=template_key, jurisdiction=jurisdiction, version=version)
         now = _utc_now_iso()
         with self._connect() as conn:
             conn.execute(
@@ -280,13 +364,37 @@ class DocumentTemplateStore:
                     """
                     UPDATE document_templates
                     SET is_deleted = 1, is_enabled = 0, updated_at = ?, deleted_at = ?
-                    WHERE template_key = ? AND jurisdiction = ?
+                    WHERE template_key = ? AND jurisdiction = ? AND version = ?
                     """
                 ),
-                self._params(now, now, current.template_key, current.jurisdiction),
+                self._params(now, now, current.template_key, current.jurisdiction, current.version),
             )
             conn.commit()
-        return self.get(template_key=template_key, jurisdiction=current.jurisdiction)
+        return self.get(template_key=template_key, jurisdiction=current.jurisdiction, version=current.version)
+
+    def list_versions(
+        self,
+        *,
+        template_key: str,
+        jurisdiction: str,
+        include_deleted: bool = False,
+    ) -> builtins.list[DocumentTemplateDefinition]:
+        clauses = ["template_key = ?", "jurisdiction = ?"]
+        params: list[object] = [template_key.strip(), jurisdiction.strip().upper()]
+        if not include_deleted:
+            clauses.append("is_deleted = 0")
+        query = (
+            "SELECT * FROM document_templates "
+            f"WHERE {' AND '.join(clauses)} "
+            "ORDER BY version DESC"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(self._sql(query), self._params(*params)).fetchall()
+            latest_versions = self._latest_versions_by_lineage(
+                conn,
+                [str(_row_to_mapping(row).get('lineage_key') or '') for row in rows],
+            )
+        return [self._row_to_definition(_row_to_mapping(row), latest_versions) for row in rows]
 
     def list_case_types(
         self,
@@ -523,7 +631,12 @@ class DocumentTemplateStore:
             return 0, None
         candidates = [
             item
-            for item in self.list(include_deleted=False, jurisdiction=country, template_kind=template_kind)
+            for item in self.list(
+                include_deleted=False,
+                jurisdiction=country,
+                template_kind=template_kind,
+                latest_only=True,
+            )
             if item.is_enabled
         ]
         scored = self._score_templates(
@@ -775,6 +888,27 @@ class DocumentTemplateStore:
             ).fetchone()
         return row is not None
 
+    def _latest_versions_by_lineage(self, conn: Any, lineage_keys: builtins.list[str]) -> dict[str, int]:
+        normalized = [key for key in dict.fromkeys(lineage_keys) if key]
+        if not normalized:
+            return {}
+        placeholders = ", ".join("?" for _ in normalized)
+        rows = conn.execute(
+            self._sql(
+                f"""
+                SELECT lineage_key, MAX(version) AS latest_version
+                FROM document_templates
+                WHERE lineage_key IN ({placeholders})
+                GROUP BY lineage_key
+                """
+            ),
+            self._params(*normalized),
+        ).fetchall()
+        return {
+            str(_row_to_mapping(row)["lineage_key"]): int(_row_to_mapping(row)["latest_version"] or 1)
+            for row in rows
+        }
+
     def _case_type_exists(self, *, case_type_key: str, jurisdiction: str) -> bool:
         with self._connect() as conn:
             row = conn.execute(
@@ -783,10 +917,18 @@ class DocumentTemplateStore:
             ).fetchone()
         return row is not None
 
-    def _row_to_definition(self, row: dict[str, Any]) -> DocumentTemplateDefinition:
+    def _row_to_definition(
+        self,
+        row: dict[str, Any],
+        latest_versions: dict[str, int] | None = None,
+    ) -> DocumentTemplateDefinition:
+        lineage_key = str(row.get("lineage_key") or "")
+        version = int(row.get("version") or 1)
+        latest_version = latest_versions.get(lineage_key, version) if latest_versions else version
         return DocumentTemplateDefinition(
             template_id=str(row["template_id"]),
             template_key=str(row["template_key"]),
+            lineage_key=lineage_key,
             jurisdiction=str(row["jurisdiction"]),
             language=str(row["language"]).strip() or None if row.get("language") is not None else None,
             category=str(row["category"]),
@@ -809,6 +951,11 @@ class DocumentTemplateStore:
             disclaimer_footer=str(row.get("disclaimer_footer") or ""),
             is_enabled=bool(row["is_enabled"]),
             is_deleted=bool(row["is_deleted"]),
+            version=version,
+            latest_version=latest_version,
+            stored_at=_parse_timestamp(row.get("stored_at")),
+            newer_version_available=version < latest_version,
+            is_latest_version=version >= latest_version,
             created_at=_parse_timestamp(row.get("created_at")),
             updated_at=_parse_timestamp(row.get("updated_at")),
             deleted_at=_parse_timestamp(row.get("deleted_at")),
@@ -849,12 +996,47 @@ class DocumentTemplateStore:
             "disclaimer_title": "TEXT NOT NULL DEFAULT ''",
             "disclaimer_text": "TEXT NOT NULL DEFAULT ''",
             "disclaimer_footer": "TEXT NOT NULL DEFAULT ''",
+            "lineage_key": "TEXT NOT NULL DEFAULT ''",
+            "version": "INTEGER NOT NULL DEFAULT 1",
+            "stored_at": "TEXT",
         }
         for column_name, definition in compatibility_columns.items():
             if column_name in existing_columns:
                 continue
             conn.execute(
                 self._sql(f"ALTER TABLE document_templates ADD COLUMN {column_name} {definition}")
+            )
+        conn.execute(
+            self._sql(
+                """
+                UPDATE document_templates
+                SET stored_at = COALESCE(stored_at, created_at, updated_at)
+                WHERE stored_at IS NULL OR stored_at = ''
+                """
+            )
+        )
+        rows = conn.execute(
+            self._sql(
+                """
+                SELECT template_id, title, template_kind, jurisdiction, language
+                FROM document_templates
+                WHERE lineage_key = '' OR lineage_key IS NULL
+                """
+            )
+        ).fetchall()
+        for row in rows:
+            mapped = _row_to_mapping(row)
+            conn.execute(
+                self._sql("UPDATE document_templates SET lineage_key = ? WHERE template_id = ?"),
+                self._params(
+                    _build_template_lineage_key(
+                        title=str(mapped.get("title") or ""),
+                        template_kind=str(mapped.get("template_kind") or ""),
+                        jurisdiction=str(mapped.get("jurisdiction") or ""),
+                        language=str(mapped.get("language") or ""),
+                    ),
+                    str(mapped["template_id"]),
+                ),
             )
 
     def _existing_columns(self, conn: Any) -> set[str]:
@@ -1030,6 +1212,24 @@ def _normalize_for_match(value: str) -> str:
     decomposed = unicodedata.normalize("NFD", lowered)
     no_diacritics = "".join(char for char in decomposed if unicodedata.category(char) != "Mn")
     return " ".join(no_diacritics.split())
+
+
+def _build_template_lineage_key(
+    *,
+    title: str,
+    template_kind: str,
+    jurisdiction: str,
+    language: str | None,
+) -> str:
+    normalized_language = (language or "").strip().lower() or "none"
+    return "|".join(
+        [
+            _normalize_for_match(title).replace("|", " "),
+            _normalize_for_match(template_kind).replace("|", " "),
+            _normalize_for_match(jurisdiction).replace("|", " "),
+            _normalize_for_match(normalized_language).replace("|", " "),
+        ]
+    )
 
 
 def _token_roots(value: str) -> set[str]:

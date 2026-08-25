@@ -87,6 +87,7 @@ describe("AIModelAdmin case catalog", () => {
         {
           template_id: "template-1",
           template_key: "employment-claim-template",
+          lineage_key: "employment-claim|claim|sk|sk",
           jurisdiction: "SK",
           language: "sk",
           category: "Employment",
@@ -105,6 +106,11 @@ describe("AIModelAdmin case catalog", () => {
           disclaimer_footer: "",
           is_enabled: true,
           is_deleted: false,
+          version: 2,
+          latest_version: 2,
+          stored_at: "2026-08-18T09:00:00Z",
+          newer_version_available: false,
+          is_latest_version: true,
           created_at: "2026-08-17T08:00:00Z",
           updated_at: "2026-08-17T08:00:00Z",
           deleted_at: null
@@ -136,6 +142,7 @@ describe("AIModelAdmin case catalog", () => {
             {
               template_id: "template-1",
               template_key: "employment-claim-template",
+              lineage_key: "employment-claim|claim|sk|sk",
               jurisdiction: "SK",
               language: "sk",
               category: "Employment",
@@ -154,6 +161,11 @@ describe("AIModelAdmin case catalog", () => {
               disclaimer_footer: "",
               is_enabled: true,
               is_deleted: false,
+              version: 2,
+              latest_version: 2,
+              stored_at: "2026-08-18T09:00:00Z",
+              newer_version_available: false,
+              is_latest_version: true,
               created_at: "2026-08-17T08:00:00Z",
               updated_at: "2026-08-17T08:00:00Z",
               deleted_at: null
@@ -192,12 +204,16 @@ describe("AIModelAdmin case catalog", () => {
       );
     });
 
-    expect(await screen.findAllByText("Employment dispute")).toHaveLength(2);
+    expect(await screen.findAllByText("Employment dispute")).toHaveLength(1);
     expect(screen.getByText("General consultation")).toBeDefined();
-    expect(screen.getAllByText("Employment claim").length).toBeGreaterThan(0);
     expect(screen.getByText("adminCaseCatalogNoLinkedTemplates")).toBeDefined();
     expect(screen.getByText("adminCaseCatalogPromptMissing")).toBeDefined();
 
+    await user.click(screen.getByRole("button", { name: "adminCaseCatalogTemplatesTitle" }));
+    expect(screen.getByText("Employment claim")).toBeDefined();
+    expect(screen.getByText("v2")).toBeDefined();
+
+    await user.click(screen.getByRole("button", { name: "adminCaseCatalogPromptsTitle" }));
     const promptDetails = screen.getByText("adminCaseCatalogViewPrompt").closest("details");
     expect(promptDetails).not.toBeNull();
     expect(within(promptDetails as HTMLDetailsElement).getByText(/Collect the employment timeline/)).toBeDefined();

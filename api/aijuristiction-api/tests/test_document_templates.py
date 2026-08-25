@@ -67,6 +67,8 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
         )
     )
     assert created.title == "Konzultacna zmluva"
+    assert created.version == 1
+    assert created.is_latest_version is True
 
     updated = store.update(
         template_key="sk.custom.consulting_agreement",
@@ -79,8 +81,17 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     )
     assert updated.title == "Konzultacna zmluva updated"
     assert updated.is_enabled is False
+    assert updated.version == 2
+    assert updated.latest_version == 2
 
-    deleted = store.soft_delete(template_key="sk.custom.consulting_agreement", jurisdiction="SK")
+    first_version = store.get(template_key="sk.custom.consulting_agreement", jurisdiction="SK", version=1)
+    assert first_version.newer_version_available is True
+    assert first_version.is_latest_version is False
+
+    versions = store.list_versions(template_key="sk.custom.consulting_agreement", jurisdiction="SK")
+    assert [item.version for item in versions] == [2, 1]
+
+    deleted = store.soft_delete(template_key="sk.custom.consulting_agreement", jurisdiction="SK", version=2)
     assert deleted.is_deleted is True
     assert deleted.is_enabled is False
 
@@ -133,6 +144,7 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert create_response.status_code == 201
     assert create_response.json()["template_key"] == "sk.custom.loan_agreement"
     assert create_response.json()["disclaimer_text"] == "Pred podpisom nechajte text skontrolovat advokatom."
+    assert create_response.json()["version"] == 1
 
     patch_response = client.patch(
         "/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK",
@@ -141,6 +153,14 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert patch_response.status_code == 200
     assert patch_response.json()["title"] == "Pozickova zmluva updated"
     assert patch_response.json()["disclaimer_footer"] == "Vyziaduje pravnu kontrolu"
+    assert patch_response.json()["version"] == 2
+
+    versions_response = client.get(
+        "/v1/document-templates/sk.custom.loan_agreement/versions",
+        params={"jurisdiction": "SK"},
+    )
+    assert versions_response.status_code == 200
+    assert [item["version"] for item in versions_response.json()["items"]] == [2, 1]
 
     match_response = client.get(
         "/v1/document-templates/match/search",
@@ -169,7 +189,7 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "Template preview" not in preview_text
     assert "sk.real_estate.lease_agreement" not in preview_text
 
-    delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK")
+    delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")
     assert delete_response.status_code == 200
     assert delete_response.json()["is_deleted"] is True
 

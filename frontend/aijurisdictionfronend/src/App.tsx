@@ -17,6 +17,7 @@ import LawValidation from "./pages/LawValidation";
 import LawRecommendation from "./pages/LawRecommendation";
 import Profile from "./pages/Profile";
 import AIModelAdmin from "./pages/AIModelAdmin";
+import AdminCaseCatalogTemplatePage from "./pages/AdminCaseCatalogTemplatePage";
 import AdminProviderCredentials from "./pages/AdminProviderCredentials";
 import DocumentViewer from "./pages/DocumentViewer";
 import SharedDocumentViewer from "./pages/SharedDocumentViewer";
@@ -185,6 +186,14 @@ const App: React.FC = () => {
           element={
             <AdminRoute>
               <AIModelAdmin />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/app/admin/case-catalog/templates/:templateKey"
+          element={
+            <AdminRoute>
+              <AdminCaseCatalogTemplatePage />
             </AdminRoute>
           }
         />

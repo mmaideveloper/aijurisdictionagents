@@ -15,6 +15,7 @@ from app.document_templates.models import (
     DocumentTemplateListResponse,
     DocumentTemplateMatchResponse,
     DocumentTemplateResponse,
+    DocumentTemplateVersionListResponse,
     DocumentTemplateUpdateRequest,
 )
 from app.document_templates.store import (
@@ -44,6 +45,7 @@ def list_document_templates(
     jurisdiction: str | None = Query(default=None),
     category: str | None = Query(default=None),
     template_kind: str | None = Query(default=None),
+    latest_only: bool = Query(default=False),
     store: DocumentTemplateStore = Depends(get_document_template_store),
 ) -> DocumentTemplateListResponse:
     items = store.list(
@@ -51,19 +53,36 @@ def list_document_templates(
         jurisdiction=jurisdiction,
         category=category,
         template_kind=template_kind,
+        latest_only=latest_only,
     )
     return DocumentTemplateListResponse(items=[DocumentTemplateResponse.from_definition(item) for item in items])
+
+
+@router.get("/{template_key}/versions", response_model=DocumentTemplateVersionListResponse)
+def list_document_template_versions(
+    template_key: str,
+    jurisdiction: str = Query(min_length=2, max_length=8),
+    include_deleted: bool = Query(default=False),
+    store: DocumentTemplateStore = Depends(get_document_template_store),
+) -> DocumentTemplateVersionListResponse:
+    items = store.list_versions(
+        template_key=template_key,
+        jurisdiction=jurisdiction,
+        include_deleted=include_deleted,
+    )
+    return DocumentTemplateVersionListResponse(items=[DocumentTemplateResponse.from_definition(item) for item in items])
 
 
 @router.get("/{template_key}", response_model=DocumentTemplateResponse)
 def get_document_template(
     template_key: str,
     jurisdiction: str | None = Query(default=None),
+    version: int | None = Query(default=None, ge=1),
     store: DocumentTemplateStore = Depends(get_document_template_store),
 ) -> DocumentTemplateResponse:
     try:
         return DocumentTemplateResponse.from_definition(
-            store.get(template_key=template_key, jurisdiction=jurisdiction)
+            store.get(template_key=template_key, jurisdiction=jurisdiction, version=version)
         )
     except DocumentTemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -75,10 +94,11 @@ def get_document_template(
 def preview_document_template_pdf(
     template_key: str,
     jurisdiction: str | None = Query(default=None),
+    version: int | None = Query(default=None, ge=1),
     store: DocumentTemplateStore = Depends(get_document_template_store),
 ) -> Response:
     try:
-        template = store.get(template_key=template_key, jurisdiction=jurisdiction)
+        template = store.get(template_key=template_key, jurisdiction=jurisdiction, version=version)
     except DocumentTemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except DocumentTemplateAmbiguousError as exc:
@@ -140,27 +160,31 @@ def update_document_template(
     template_key: str,
     payload: DocumentTemplateUpdateRequest,
     jurisdiction: str | None = Query(default=None),
+    version: int | None = Query(default=None, ge=1),
     store: DocumentTemplateStore = Depends(get_document_template_store),
 ) -> DocumentTemplateResponse:
     try:
         return DocumentTemplateResponse.from_definition(
-            store.update(template_key=template_key, payload=payload, jurisdiction=jurisdiction)
+            store.update(template_key=template_key, payload=payload, jurisdiction=jurisdiction, version=version)
         )
     except DocumentTemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except DocumentTemplateAmbiguousError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except DocumentTemplateConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/{template_key}", response_model=DocumentTemplateResponse)
 def delete_document_template(
     template_key: str,
     jurisdiction: str | None = Query(default=None),
+    version: int | None = Query(default=None, ge=1),
     store: DocumentTemplateStore = Depends(get_document_template_store),
 ) -> DocumentTemplateResponse:
     try:
         return DocumentTemplateResponse.from_definition(
-            store.soft_delete(template_key=template_key, jurisdiction=jurisdiction)
+            store.soft_delete(template_key=template_key, jurisdiction=jurisdiction, version=version)
         )
     except DocumentTemplateNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

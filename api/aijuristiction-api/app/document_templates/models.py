@@ -62,6 +62,7 @@ class DocumentTemplateUpdateRequest(BaseModel):
 class DocumentTemplateDefinition(BaseModel):
     template_id: str
     template_key: str
+    lineage_key: str = ""
     jurisdiction: str
     language: str | None = None
     category: str
@@ -80,6 +81,11 @@ class DocumentTemplateDefinition(BaseModel):
     disclaimer_footer: str = ""
     is_enabled: bool = True
     is_deleted: bool = False
+    version: int = 1
+    latest_version: int = 1
+    stored_at: datetime | None = None
+    newer_version_available: bool = False
+    is_latest_version: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
@@ -88,6 +94,7 @@ class DocumentTemplateDefinition(BaseModel):
 class DocumentTemplateResponse(BaseModel):
     template_id: str
     template_key: str
+    lineage_key: str = ""
     jurisdiction: str
     language: str | None = None
     category: str
@@ -106,6 +113,11 @@ class DocumentTemplateResponse(BaseModel):
     disclaimer_footer: str = ""
     is_enabled: bool
     is_deleted: bool
+    version: int
+    latest_version: int
+    stored_at: datetime | None = None
+    newer_version_available: bool
+    is_latest_version: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
@@ -115,6 +127,7 @@ class DocumentTemplateResponse(BaseModel):
         return cls(
             template_id=item.template_id,
             template_key=item.template_key,
+            lineage_key=item.lineage_key,
             jurisdiction=item.jurisdiction,
             language=item.language,
             category=item.category,
@@ -133,6 +146,11 @@ class DocumentTemplateResponse(BaseModel):
             disclaimer_footer=item.disclaimer_footer,
             is_enabled=item.is_enabled,
             is_deleted=item.is_deleted,
+            version=item.version,
+            latest_version=item.latest_version,
+            stored_at=item.stored_at,
+            newer_version_available=item.newer_version_available,
+            is_latest_version=item.is_latest_version,
             created_at=item.created_at,
             updated_at=item.updated_at,
             deleted_at=item.deleted_at,
@@ -140,6 +158,10 @@ class DocumentTemplateResponse(BaseModel):
 
 
 class DocumentTemplateListResponse(BaseModel):
+    items: list[DocumentTemplateResponse]
+
+
+class DocumentTemplateVersionListResponse(BaseModel):
     items: list[DocumentTemplateResponse]
 
 
