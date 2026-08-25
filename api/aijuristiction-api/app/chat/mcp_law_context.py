@@ -141,7 +141,7 @@ def _build_latest_court_context(
     profile = parse_court_decision_query(query)
     limit = profile.requested_limit or max(search_limit, 5)
     arguments: dict[str, Any] = {
-        "query": profile.topic_query,
+        "query": profile.topic_query or query.strip(),
         "limit": limit,
         "sort": "latest",
         "include_snippets": True,

@@ -202,6 +202,26 @@ The MCP server exposes:
 - `getStatistics(country_code)` includes court-decision collector version, total court decisions, published decisions, total versions, latest imported decision/source GUID, latest import time, court metadata, ECLI/file number, issue date, and collector cursor status.
 - `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, court_name, sort, include_snippets, include_summaries)` searches metadata, ready pseudonymized enrichments, and pseudonymized content chunks. Conversational Slovak presentation words are removed before retrieval; purchase-contract variants and common speech-to-text spelling such as `kupón predajnej zmluve` map to the selective purchase-contract query. A count in `posledných 5` is used when `limit` is omitted. `court_name` is an exact normalized named-court filter, while `court_type` selects a generic court category. `issue_date` remains the original source value for provenance; `issue_date_normalized DATE` drives calendar sorting and year filtering. Invalid/missing dates sort last and are surfaced through data-quality metadata. Snippets and summaries are opt-in and always use public pseudonymized content.
 
+For a topic-free request such as `Zobraz 5 poslednych sudnych rozhodnuti.`, the response uses
+`query_mode=latest_metadata`. This path does not invent a `rozhodnut:*` full-text predicate and
+does not read decision bodies, summaries, chunks, or embeddings. It orders matching published
+metadata by `issue_date_normalized DESC NULLS LAST`, then update timestamp and decision ID.
+
+Real-model acceptance for this topic-free path is reproducible with:
+
+```powershell
+.\scripts\run_issue_651_latest_court_e2e.ps1 `
+  -FinalScreenshotPath docs\screenshots\issue-651\issue-651-latest-five-gpt-5-mini.png
+```
+
+The runner uses Azure `gpt-5-mini`, the local frontend/API/MCP services, and two uniquely named
+loopback PostgreSQL databases populated only with deterministic synthetic records. It verifies the
+same five decision IDs and dates at the direct MCP boundary and in persisted chat citations, checks
+that model routing did not fall back, then drops both databases. The ignored manifest is retained for
+at most seven days; service logs containing the ephemeral internal MCP credential are deleted during
+cleanup. The stable sanitized screenshot is
+[issue-651-latest-five-gpt-5-mini.png](screenshots/issue-651/issue-651-latest-five-gpt-5-mini.png).
+
 The response includes aggregate corpus coverage and the warning that `latest` means the latest matching decisions currently available in JurisDigta. It is not a claim that the corpus contains every Slovak court decision. Legal summaries are retrieval aids, may be incomplete, and require human review before use in a legal conclusion. Logs contain only query length and filter/status metadata, never the raw question, decision text, summary, credentials, or personal data.
 
 Migration `databases/court-decision-collector/migrations/0002_normalize_issue_date_and_court_name.sql` backfills typed dates and normalized court names. Its validation query reports parsed, invalid, and missing dates; unparseable values remain `NULL` and are never replaced with invented dates.

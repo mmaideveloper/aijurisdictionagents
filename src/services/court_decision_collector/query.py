@@ -5,7 +5,9 @@ import re
 import unicodedata
 
 
-_COUNT_RE = re.compile(r"\b(?:posledn\w*|najnovs\w*)\s+(\d{1,2})\b")
+_COUNT_RE = re.compile(
+    r"\b(?:(?:posledn\w*|najnovs\w*)\s+(\d{1,2})|(\d{1,2})\s+(?:posledn\w*|najnovs\w*))\b"
+)
 _PRESENTATION_WORDS = {
     "mi", "ukaz", "ukazte", "zobraz", "zobrazte", "daj", "dajte", "summary",
     "sumar", "zhrnutie", "zhrnutia", "rozhodnutie", "rozhodnuti", "rozhodnutia",
@@ -24,6 +26,7 @@ class CourtDecisionQuery:
     requested_limit: int | None
     latest_requested: bool
     concepts: tuple[str, ...]
+    topic_free: bool
 
 
 def parse_court_decision_query(query: str) -> CourtDecisionQuery:
@@ -31,7 +34,8 @@ def parse_court_decision_query(query: str) -> CourtDecisionQuery:
 
     canonical = _canonical(query)
     count_match = _COUNT_RE.search(canonical)
-    requested_limit = min(max(int(count_match.group(1)), 1), 50) if count_match else None
+    count_value = next((value for value in count_match.groups() if value), None) if count_match else None
+    requested_limit = min(max(int(count_value), 1), 50) if count_value else None
     latest_requested = bool(re.search(r"\b(posledn\w*|najnovs\w*|latest|newest|last)\b", canonical))
     tokens = [token for token in re.findall(r"[a-z0-9]+", canonical) if not token.isdigit()]
     topic_tokens = [token for token in tokens if token not in _PRESENTATION_WORDS]
@@ -52,15 +56,17 @@ def parse_court_decision_query(query: str) -> CourtDecisionQuery:
             requested_limit=requested_limit,
             latest_requested=latest_requested,
             concepts=("purchase_contract",),
+            topic_free=False,
         )
 
     stems = tuple(dict.fromkeys(token[:24] for token in topic_tokens if len(token) >= 3))
     return CourtDecisionQuery(
-        topic_query=" ".join(stems) or canonical,
-        tsquery=" & ".join(f"{stem}:*" for stem in stems) or "rozhodnut:*",
+        topic_query=" ".join(stems),
+        tsquery=" & ".join(f"{stem}:*" for stem in stems),
         requested_limit=requested_limit,
         latest_requested=latest_requested,
         concepts=(),
+        topic_free=not stems,
     )
 
 

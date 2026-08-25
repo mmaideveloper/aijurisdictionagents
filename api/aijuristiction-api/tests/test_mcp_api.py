@@ -829,6 +829,60 @@ def test_mcp_search_court_decisions_latest_sort_passes_contract(monkeypatch, tmp
     assert payload["data_quality"]["latest_label_safe"] is True
 
 
+def test_mcp_generic_latest_court_query_forces_unfiltered_metadata_mode(monkeypatch, tmp_path: Path) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    mcp_key = _create_mcp_key(tmp_path)
+
+    class FakeCourtDecisionStore:
+        def search(self, **arguments: object) -> list[CourtDecisionSearchResult]:
+            assert arguments["query"] == "Zobraz 5 posledn\u00fdch s\u00fadnych rozhodnut\u00ed."
+            assert arguments["limit"] == 5
+            assert arguments["sort"] == "latest"
+            return [
+                CourtDecisionSearchResult(
+                    decision_id=f"decision-{index}",
+                    version_id=f"version-{index}",
+                    source_guid=f"source-{index}",
+                    court_name="Okresny sud Zilina",
+                    court_type="Okresny sud",
+                    file_number=f"{index}OdK/2026",
+                    case_number=f"case-{index}",
+                    ecli=f"ECLI:SK:OSZA:2026:{index}.1",
+                    issue_date="2026-08-20",
+                    source_url=f"https://example.test/decision/{index}",
+                    snippet="",
+                    score=0.0,
+                    content_source="metadata_only",
+                )
+                for index in range(5, 0, -1)
+            ]
+
+        def search_coverage(self) -> dict[str, object]:
+            return {
+                "published_decisions": 6,
+                "latest_issue_date": "2026-08-20",
+                "enriched_versions": 0,
+            }
+
+    monkeypatch.setattr(mcp_api, "_court_decision_store", lambda **_kwargs: FakeCourtDecisionStore())
+
+    response = _mcp_call(
+        "searchCourtDecisions",
+        {"query": "Zobraz 5 posledn\u00fdch s\u00fadnych rozhodnut\u00ed."},
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["sort"] == "latest"
+    assert payload["query_mode"] == "latest_metadata"
+    assert payload["metadata_only"] is True
+    assert payload["data_quality"]["topic_filter_applied"] is False
+    assert [item["decision_id"] for item in payload["results"]] == [
+        "decision-5", "decision-4", "decision-3", "decision-2", "decision-1"
+    ]
+
+
 def test_mcp_search_court_decisions_passes_exact_court_name(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     mcp_key = _create_mcp_key(tmp_path)

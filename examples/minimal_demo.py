@@ -118,6 +118,11 @@ print(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
 )
 print(
+    "mcp_unfiltered_latest_court_decisions => searchCourtDecisions(query='Zobraz 5 poslednych "
+    "sudnych rozhodnuti.') uses query_mode=latest_metadata and deterministic normalized-date "
+    "ordering across published metadata without reading decision text, summaries, chunks, or embeddings."
+)
+print(
     "mcp_purchase_contract_summaries => searchCourtDecisions(query='Ukáž mi posledných 5 "
     "súdnych rozhodnutí o kupón predajnej zmluve', sort='latest', include_summaries=True) "
     "normalizes the topic, searches pseudonymized enrichments/chunks, and returns the latest "
