@@ -395,6 +395,15 @@ The internal chat API may call the dedicated MCP service over
 service-to-service path is for API-originated legal grounding only; external MCP
 clients still need OAuth or an MCP API key.
 
+Internal calls use bounded timeout/retry/backoff settings and propagate generated
+request/correlation IDs. Persistent failures return a structured user-visible
+`status=unavailable` with a privacy-safe failure category. The production deploy
+must execute `getVersion` through authenticated JSON-RPC from inside the API
+container after both `/health` checks; a failed tool probe fails the deployment.
+The probe is metadata-only and never logs the shared secret, base URL, prompts,
+decision content, or customer data. Public OAuth behavior and the external
+`internal_raw` prohibition are unchanged.
+
 ## Logging And Debugging
 
 MCP server logs use the `jurisdigta-mcp-server.http` and `aijuristiction-api.mcp` loggers with the shared `API_LOG_LEVEL` or `LOG_LEVEL` setting.

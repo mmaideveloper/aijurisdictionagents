@@ -292,6 +292,17 @@ async def startup_log() -> None:
             dry_run=False,
         )
     store.initialize()
+    if os.getenv("INTERNAL_MCP_STARTUP_PROBE_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        from app.chat.mcp_law_context import probe_internal_mcp_readiness
+
+        attempts = int(os.getenv("INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS", "30"))
+        probe_internal_mcp_readiness(attempts=attempts)
+        logger.info("internal_mcp_startup_probe status=ready")
     law_snapshot = get_law_knowledge_snapshot(None)
     logger.info(
         (

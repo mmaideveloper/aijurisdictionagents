@@ -89,6 +89,11 @@ print(
     "https://mcp.jurisdigta.eu/MCP."
 )
 print(
+    "internal_mcp_readiness => production accepts traffic only after an authenticated "
+    "metadata-only getVersion JSON-RPC probe succeeds from inside the API container; "
+    "runtime retries and logs remain bounded and privacy-safe."
+)
+print(
     "mcp_legal_source_search => MCP remains model-free; clients parse natural-language legal "
     "questions and call protected searchLegalSources with structured filters such as "
     "query='prenajom bytu', source_types=['laws','court_decisions'], published_year=2026, "
