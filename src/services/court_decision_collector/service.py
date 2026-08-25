@@ -15,6 +15,7 @@ from .postgres_store import CourtDecisionSchedulerState, PostgresCourtDecisionSt
 ProgressLogger = Callable[[str], None]
 SleepFunction = Callable[[float], None]
 UtcNowFunction = Callable[[], datetime]
+CycleHook = Callable[[], object]
 
 
 class CourtDecisionSource(Protocol):
@@ -35,11 +36,17 @@ class CourtDecisionCollectorService:
         source: CourtDecisionSource | None = None,
         progress_logger: ProgressLogger | None = None,
         utc_now: UtcNowFunction | None = None,
+        enrichment_auto_queue: bool = False,
+        enrichment_max_attempts: int = 3,
+        enrichment_cycle_hook: CycleHook | None = None,
     ) -> None:
         self.store = store
         self.source = source
         self.progress_logger = progress_logger or (lambda message: logging.info(message))
         self.utc_now = utc_now or (lambda: datetime.now(timezone.utc))
+        self.enrichment_auto_queue = enrichment_auto_queue
+        self.enrichment_max_attempts = enrichment_max_attempts
+        self.enrichment_cycle_hook = enrichment_cycle_hook
 
     def sync_records(
         self,
@@ -56,6 +63,15 @@ class CourtDecisionCollectorService:
                 f"work_class={work_class} status=processing"
             )
             stored = self.store.upsert_decision(record, work_class=work_class)
+            if self.enrichment_auto_queue and stored.state in {"created", "updated"}:
+                enqueue = getattr(self.store, "enqueue_enrichment", None)
+                if callable(enqueue):
+                    enqueue(
+                        decision_id=stored.decision_id,
+                        version_id=stored.version_id,
+                        priority_class="recent",
+                        max_attempts=self.enrichment_max_attempts,
+                    )
             summary = summary.merge(
                 CourtDecisionSyncSummary(
                     processed=1,
@@ -230,6 +246,8 @@ class CourtDecisionCollectorService:
                     discovery_overlap_pages=discovery_overlap_pages,
                     backfill_pages_per_cycle=backfill_pages_per_cycle,
                 )
+                if self.enrichment_cycle_hook is not None:
+                    self.enrichment_cycle_hook()
                 total = total.merge(cycle)
                 idle_cycles = idle_cycles + 1 if cycle.processed == 0 else 0
                 state = self.store.get_scheduler_state(source_system=source.source_system)

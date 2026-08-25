@@ -9,6 +9,10 @@ from pypdf import PdfWriter
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult
 from services.court_decision_collector.domain import CourtDecisionRecord, StoredCourtDecision
 from services.court_decision_collector.enrichment import OnDemandCourtDecisionEnricher, build_local_extract_summary
+from services.court_decision_collector.pseudonymization import (
+    pseudonymize_court_decision_text,
+    validate_pseudonymized_court_decision_text,
+)
 
 
 class FakeEmbeddingClient:
@@ -112,6 +116,16 @@ def test_rejects_invalid_pdf_signature(tmp_path: Path) -> None:
             embedding_client=FakeEmbeddingClient(), downloader=lambda _url: b"not-pdf!",
         ).enrich_source_url(record.source_url)
     assert store.failed["error_type"] == "ValueError"
+
+
+def test_pseudonymization_removes_high_risk_direct_identifiers() -> None:
+    public = pseudonymize_court_decision_text(
+        "Kontakt test@example.com, +421 905 123 456, rodne cislo 010101/1234."
+    )
+    validate_pseudonymized_court_decision_text(public)
+    assert "test@example.com" not in public
+    assert "+421 905 123 456" not in public
+    assert "010101/1234" not in public
 
 
 def test_summary_prefers_outcome_and_omits_party_preamble() -> None:

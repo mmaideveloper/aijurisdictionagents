@@ -10,6 +10,7 @@ from .config import CourtDecisionCollectorConfig
 from .fixtures import FixtureCourtDecisionSource, sample_court_decision_records
 from .infosud_source import InfoSudSourceClient
 from .enrichment import OnDemandCourtDecisionEnricher
+from .enrichment_queue import BackgroundCourtDecisionEnricher
 from .postgres_store import PostgresCourtDecisionStore
 from .service import CourtDecisionCollectorService
 
@@ -24,6 +25,18 @@ def main() -> None:
     )
     parser.add_argument("--live", action="store_true", help="Fetch one page from the InfoSud API.")
     parser.add_argument("--enrich-source-url", default="", help="On-demand enrich one allowlisted InfoSud decision URL.")
+    parser.add_argument(
+        "--run-enrichment-once",
+        action="store_true",
+        help="Run one bounded durable background-enrichment cycle (must be enabled by env).",
+    )
+    parser.add_argument("--enrichment-pause", action="store_true", help="Durably pause enrichment claims.")
+    parser.add_argument("--enrichment-resume", action="store_true", help="Resume enrichment claims.")
+    parser.add_argument(
+        "--enrichment-retention-cleanup",
+        action="store_true",
+        help="Apply configured raw-text/PDF retention without claiming enrichment work.",
+    )
     parser.add_argument(
         "--run-service",
         action="store_true",
@@ -91,16 +104,63 @@ def main() -> None:
             progress_logger=progress_logger,
         )
     )
-    service = CourtDecisionCollectorService(store=store, source=source, progress_logger=progress_logger)
+    if args.enrichment_pause and args.enrichment_resume:
+        raise ValueError("Choose only one of --enrichment-pause or --enrichment-resume")
+    if args.enrichment_pause or args.enrichment_resume:
+        store.set_enrichment_paused(
+            source_system="infosud",
+            paused=args.enrichment_pause,
+            reason="operator_requested" if args.enrichment_pause else "",
+        )
+        print("enrichment_status:", "paused" if args.enrichment_pause else "resumed")
+        return
+
+    on_demand_enricher: OnDemandCourtDecisionEnricher | None = None
+    background_enricher: BackgroundCourtDecisionEnricher | None = None
+    if isinstance(source, InfoSudSourceClient):
+        on_demand_enricher = OnDemandCourtDecisionEnricher(
+            store=store,
+            source=source,
+            storage_root=config.storage_root,
+            max_pdf_bytes=config.max_pdf_bytes,
+        )
+        background_enricher = BackgroundCourtDecisionEnricher(
+            store=store,
+            enricher=on_demand_enricher,
+            config=config,
+            progress_logger=progress_logger,
+        )
+    service = CourtDecisionCollectorService(
+        store=store,
+        source=source,
+        progress_logger=progress_logger,
+        enrichment_auto_queue=config.enrichment_enabled,
+        enrichment_max_attempts=config.enrichment_max_attempts,
+        enrichment_cycle_hook=background_enricher.run_cycle if background_enricher else None,
+    )
     if args.enrich_source_url:
         if not isinstance(source, InfoSudSourceClient):
             raise ValueError("--enrich-source-url requires the live InfoSud source")
-        result = OnDemandCourtDecisionEnricher(
-            store=store, source=source, storage_root=config.storage_root,
-            max_pdf_bytes=config.max_pdf_bytes,
-        ).enrich_source_url(args.enrich_source_url)
+        if on_demand_enricher is None:
+            raise RuntimeError("On-demand enricher was not initialized")
+        enrichment_result = on_demand_enricher.enrich_source_url(args.enrich_source_url)
         import json
-        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        print(json.dumps(enrichment_result.to_dict(), ensure_ascii=False, indent=2))
+        return
+    if args.run_enrichment_once:
+        if background_enricher is None:
+            raise ValueError("--run-enrichment-once requires the live InfoSud source")
+        cycle_result = background_enricher.run_cycle()
+        print("enrichment_status:", cycle_result.status)
+        print("enrichment_processed:", cycle_result.processed)
+        print("enrichment_ready:", cycle_result.ready)
+        return
+    if args.enrichment_retention_cleanup:
+        if background_enricher is None:
+            raise ValueError("--enrichment-retention-cleanup requires the live InfoSud source")
+        retention_result = background_enricher.apply_retention()
+        print("enrichment_raw_cleared:", retention_result["raw_cleared"])
+        print("enrichment_pdf_cleared:", retention_result["pdf_cleared"])
         return
     limit = args.limit or config.default_limit
     if args.run_service:
@@ -123,6 +183,8 @@ def main() -> None:
             max_decisions=args.stop_after_decisions,
         )
         scheduler_status = store.get_scheduler_state(source_system=source.source_system).status
+        if background_enricher is not None:
+            background_enricher.run_cycle()
     elif args.live:
         summary = service.sync_live_page(page=args.page, size=limit)
         scheduler_status = store.status().status

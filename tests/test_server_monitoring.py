@@ -589,6 +589,13 @@ def test_exporter_renders_court_decision_metrics() -> None:
                         "published_decisions": 10,
                         "total_versions": 14,
                         "versions_with_embeddings": 13,
+                        "enrichment_pending": 6,
+                        "enrichment_processing": 1,
+                        "enrichment_ready": 4,
+                        "enrichment_failed": 2,
+                        "enrichment_chunks": 44,
+                        "enrichment_paused": True,
+                        "enrichment_latest_completed_at": "2026-06-20T01:02:03Z",
                         "processing_events": 8,
                         "processed_events": 7,
                         "idle_events": 2,
@@ -635,6 +642,13 @@ def test_exporter_renders_court_decision_metrics() -> None:
     assert 'jurisdigta_court_decisions_total{status="published"} 10.0' in metrics
     assert "jurisdigta_court_decision_versions_total 14.0" in metrics
     assert "jurisdigta_court_decision_versions_with_embeddings_total 13.0" in metrics
+    assert 'jurisdigta_court_decision_enrichment_queue{status="pending"} 6.0' in metrics
+    assert 'jurisdigta_court_decision_enrichment_queue{status="failed"} 2.0' in metrics
+    assert 'jurisdigta_court_decision_enrichments_total{status="ready"} 4.0' in metrics
+    assert "jurisdigta_court_decision_enrichment_chunks_total 44.0" in metrics
+    assert "jurisdigta_court_decision_enrichment_coverage_ratio 0.4" in metrics
+    assert "jurisdigta_court_decision_enrichment_paused 1.0" in metrics
+    assert "jurisdigta_court_decision_enrichment_latest_completed_timestamp_seconds" in metrics
     assert 'jurisdigta_court_decision_imports_total{work_class="new"} 101.0' in metrics
     assert 'jurisdigta_court_decision_imports_total{work_class="backfill"} 202.0' in metrics
     assert (

@@ -31,6 +31,7 @@ class FakeStore:
         self.scheduler = None
         self.queue = {}
         self.checkpoint_failures = 0
+        self.enrichment_queue = []
 
     def upsert_decision(self, record, *, work_class="manual"):
         previous = self.documents.get(record.source_guid)
@@ -38,6 +39,10 @@ class FakeStore:
         self.documents[record.source_guid] = record.version_checksum()
         state = "created" if previous is None else ("unchanged" if previous == record.version_checksum() else "updated")
         return type("Stored", (), {"decision_id": "decision-1", "version_id": "version-1", "state": state})()
+
+    def enqueue_enrichment(self, **kwargs):
+        self.enrichment_queue.append(kwargs)
+        return True
 
     def ensure_scheduler_state(
         self, *, source_system, source_total, source_updated_at, page_size,
@@ -170,6 +175,24 @@ def test_issue_date_parser_supports_source_and_iso_dates_without_fabrication() -
     assert str(_parse_issue_date("2026-06-29")) == "2026-06-29"
     assert _parse_issue_date("31.02.2012") is None
     assert _parse_issue_date("") is None
+
+
+def test_new_import_is_enqueued_as_recent_only_when_background_enabled() -> None:
+    store = FakeStore()
+    service = CourtDecisionCollectorService(
+        store=store,
+        enrichment_auto_queue=True,
+        enrichment_max_attempts=4,
+    )
+    service.sync_records([sample_court_decision_records()[0]], work_class="new")
+    assert store.enrichment_queue == [
+        {
+            "decision_id": "decision-1",
+            "version_id": "version-1",
+            "priority_class": "recent",
+            "max_attempts": 4,
+        }
+    ]
 
 
 def test_court_name_normalization_is_diacritic_insensitive_and_exact() -> None:

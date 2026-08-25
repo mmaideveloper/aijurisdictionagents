@@ -27,6 +27,8 @@ The first schema stores:
 - `court_decision_enrichments`: PDF provenance, processing state, complete source metadata,
   pseudonymized summary/topics, and summary embedding metadata
 - `court_decision_content_chunks`: pseudonymized chunks and local embedding vectors
+- `court_decision_enrichment_queue`: durable priority, lease, retry, dead-letter, and quarantine state
+- `court_decision_enrichment_control`: durable operator pause/resume state
 
 ## On-demand PDF enrichment
 
@@ -47,6 +49,29 @@ $env:SYSTEM_EMBEDDING_MODEL="all-MiniLM-L6-v2"
 Return metadata plus the pseudonymized AI-generated summary by default. Full pseudonymized text is
 explicit; raw PDF/text remains controlled internal data. Broad topical search covers enriched
 content only and must disclose that unprocessed PDFs may contain additional matches.
+
+## Bounded background enrichment
+
+Background enrichment is disabled by default. When explicitly enabled, the durable queue orders
+exact user requests first, recent imported decisions second, and historical background candidates
+last. A cycle claims at most the configured limit with a restart-safe lease. Failed work is retried
+with backoff and then moved to dead letter; residual direct identifiers cause fail-closed quarantine
+before any summary, embedding, or public chunk is created.
+
+```powershell
+# Enable only after storage/OCR capacity and retention have been approved.
+$env:COURT_DECISIONS_ENRICHMENT_ENABLED="true"
+.\conda\python.exe -m services.court_decision_collector --run-enrichment-once
+.\conda\python.exe -m services.court_decision_collector --enrichment-pause
+.\conda\python.exe -m services.court_decision_collector --enrichment-resume
+.\conda\python.exe -m services.court_decision_collector --enrichment-retention-cleanup
+```
+
+The disk guard stops new claims below `COURT_DECISIONS_ENRICHMENT_MIN_FREE_DISK_BYTES`. Retention
+removes eligible raw extracted text and PDFs only from the configured storage root; pseudonymized
+search artifacts and provenance/audit state remain. To roll back, pause the queue, set enrichment
+disabled, deploy the previous worker, and preserve queue/control rows for audit and later recovery.
+Do not drop queue state or bulk-delete PDFs outside the retention command.
 
 ## Privacy and legal-risk controls
 
@@ -84,6 +109,12 @@ The dashboard uses aggregate Prometheus metrics from
 - `jurisdigta_court_decisions_total`
 - `jurisdigta_court_decision_versions_total`
 - `jurisdigta_court_decision_versions_with_embeddings_total`
+- `jurisdigta_court_decision_enrichment_queue{status="pending|processing|failed"}`
+- `jurisdigta_court_decision_enrichments_total{status="ready"}`
+- `jurisdigta_court_decision_enrichment_chunks_total`
+- `jurisdigta_court_decision_enrichment_coverage_ratio`
+- `jurisdigta_court_decision_enrichment_paused`
+- `jurisdigta_court_decision_enrichment_latest_completed_timestamp_seconds`
 - `jurisdigta_court_decision_imports_total{work_class="new|backfill"}`
 - `jurisdigta_court_decision_imports_window{work_class="new|backfill",window="24h"}`
 - `jurisdigta_court_decision_queue{work_class="new|backfill"}`
@@ -203,6 +234,10 @@ The MCP server exposes:
 - `searchCourtDecisions(query, limit, offset, published_year, year_filter_mode, court_type, court_name, sort, include_snippets, include_summaries)` searches metadata, ready pseudonymized enrichments, and pseudonymized content chunks. Conversational Slovak presentation words are removed before retrieval; purchase-contract variants and common speech-to-text spelling such as `kupón predajnej zmluve` map to the selective purchase-contract query. A count in `posledných 5` is used when `limit` is omitted. `court_name` is an exact normalized named-court filter, while `court_type` selects a generic court category. `issue_date` remains the original source value for provenance; `issue_date_normalized DATE` drives calendar sorting and year filtering. Invalid/missing dates sort last and are surfaced through data-quality metadata. Snippets and summaries are opt-in and always use public pseudonymized content.
 
 The response includes aggregate corpus coverage and the warning that `latest` means the latest matching decisions currently available in JurisDigta. It is not a claim that the corpus contains every Slovak court decision. Legal summaries are retrieval aids, may be incomplete, and require human review before use in a legal conclusion. Logs contain only query length and filter/status metadata, never the raw question, decision text, summary, credentials, or personal data.
+
+Topical responses also expose `content_coverage_status` as `content_unavailable`, `partial`, or
+`complete`, plus aggregate ready/queued/failed/chunk counts. A zero-result topical search while
+coverage is unavailable or partial must never be presented as proof that no relevant decision exists.
 
 Migration `databases/court-decision-collector/migrations/0002_normalize_issue_date_and_court_name.sql` backfills typed dates and normalized court names. Its validation query reports parsed, invalid, and missing dates; unparseable values remain `NULL` and are never replaced with invented dates.
 
