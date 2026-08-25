@@ -8,7 +8,6 @@ import uuid
 
 import psycopg
 import pytest
-from reportlab.pdfgen import canvas
 
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult
 from services.court_decision_collector.config import CourtDecisionCollectorConfig
@@ -47,6 +46,8 @@ class SyntheticSource:
 
 
 def _pdf() -> bytes:
+    from reportlab.pdfgen import canvas
+
     output = BytesIO()
     document = canvas.Canvas(output)
     document.drawString(72, 760, "Kupna zmluva a prevod vlastnickeho prava k nehnutelnosti.")
