@@ -214,6 +214,7 @@ export interface CaseCatalogPrompt {
 export interface DocumentTemplateCatalogItem {
   template_id: string;
   template_key: string;
+  lineage_key: string;
   jurisdiction: string;
   language: string | null;
   category: string;
@@ -238,6 +239,11 @@ export interface DocumentTemplateCatalogItem {
   disclaimer_footer: string;
   is_enabled: boolean;
   is_deleted: boolean;
+  version: number;
+  latest_version: number;
+  stored_at: string | null;
+  newer_version_available: boolean;
+  is_latest_version: boolean;
   created_at: string | null;
   updated_at: string | null;
   deleted_at: string | null;
@@ -266,6 +272,12 @@ export interface CaseCatalogCaseTypeListResponse {
 
 export interface CaseCatalogDocumentTemplateListResponse {
   items: DocumentTemplateCatalogItem[];
+}
+
+export interface AdminDocumentTemplatePreviewResult {
+  blob: Blob;
+  contentType: string;
+  filename: string;
 }
 
 export interface AIModelAdminAuditEvent {
@@ -725,17 +737,88 @@ export const fetchAdminCaseCatalogCaseTypes = (
 
 export const fetchAdminCaseCatalogDocumentTemplates = (
   adminUserId: AdminAuthInput,
-  jurisdiction?: string
+  jurisdiction?: string,
+  latestOnly = false
 ): Promise<CaseCatalogDocumentTemplateListResponse> => {
   const params = new URLSearchParams({ include_deleted: "false" });
   if (jurisdiction?.trim()) {
     params.set("jurisdiction", jurisdiction.trim());
+  }
+  if (latestOnly) {
+    params.set("latest_only", "true");
   }
   return adminRequest<CaseCatalogDocumentTemplateListResponse>(
     `/v1/document-templates?${params.toString()}`,
     adminUserId,
     { method: "GET" }
   );
+};
+
+export const fetchAdminCaseCatalogDocumentTemplate = (
+  adminUserId: AdminAuthInput,
+  templateKey: string,
+  jurisdiction: string,
+  version?: number
+): Promise<DocumentTemplateCatalogItem> => {
+  const params = new URLSearchParams({ jurisdiction });
+  if (version) {
+    params.set("version", String(version));
+  }
+  return adminRequest<DocumentTemplateCatalogItem>(
+    `/v1/document-templates/${encodeURIComponent(templateKey)}?${params.toString()}`,
+    adminUserId,
+    { method: "GET" }
+  );
+};
+
+export const fetchAdminCaseCatalogDocumentTemplateVersions = (
+  adminUserId: AdminAuthInput,
+  templateKey: string,
+  jurisdiction: string
+): Promise<CaseCatalogDocumentTemplateListResponse> => {
+  const params = new URLSearchParams({ jurisdiction, include_deleted: "false" });
+  return adminRequest<CaseCatalogDocumentTemplateListResponse>(
+    `/v1/document-templates/${encodeURIComponent(templateKey)}/versions?${params.toString()}`,
+    adminUserId,
+    { method: "GET" }
+  );
+};
+
+export const fetchAdminCaseCatalogDocumentTemplatePreviewBlob = async (
+  adminAuthInput: AdminAuthInput,
+  templateKey: string,
+  jurisdiction: string,
+  version?: number
+): Promise<AdminDocumentTemplatePreviewResult> => {
+  const config = chatApiRuntimeConfig();
+  const params = new URLSearchParams({ jurisdiction });
+  if (version) {
+    params.set("version", String(version));
+  }
+  const response = await fetch(
+    `${config.baseUrl}/v1/document-templates/${encodeURIComponent(templateKey)}/preview/pdf?${params.toString()}`,
+    {
+      method: "GET",
+      headers: adminHeaders(adminAuthInput)
+    }
+  );
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? payload.detail : detail;
+    } catch {
+      detail = response.statusText || detail;
+    }
+    throw new Error(detail);
+  }
+  return {
+    blob: await response.blob(),
+    contentType: response.headers.get("Content-Type") || "application/pdf",
+    filename:
+      extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) ||
+      `${templateKey}-preview.pdf`
+  };
 };
 
 export const upsertAIModelGroup = (adminUserId: AdminAuthInput, input: GroupUpsertInput): Promise<AIModelGroup> =>

@@ -1,4 +1,5 @@
 import React from "react";
+import { createSearchParams } from "react-router-dom";
 import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
@@ -50,6 +51,7 @@ type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "provide
 type AdminFormMode = "table" | "create" | "edit";
 type AdminDashboardLoadState = "idle" | "loading" | "success" | "error";
 type AdminCaseCatalogLoadState = "idle" | "loading" | "success" | "error";
+type AdminCaseCatalogSection = "caseTypes" | "caseTemplates" | "casePrompts";
 
 const emptyProvider = {
   provider_code: "",
@@ -164,6 +166,7 @@ const AIModelAdmin: React.FC = () => {
   const [catalogCaseTypes, setCatalogCaseTypes] = React.useState<CaseCatalogCaseType[]>([]);
   const [catalogTemplates, setCatalogTemplates] = React.useState<DocumentTemplateCatalogItem[]>([]);
   const [catalogLoadState, setCatalogLoadState] = React.useState<AdminCaseCatalogLoadState>("idle");
+  const [activeCatalogSection, setActiveCatalogSection] = React.useState<AdminCaseCatalogSection>("caseTypes");
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
   const [exportingAdminCaseId, setExportingAdminCaseId] = React.useState<string | null>(null);
   const [assignmentQuery, setAssignmentQuery] = React.useState("");
@@ -887,6 +890,14 @@ const AIModelAdmin: React.FC = () => {
     { key: "audit", label: t("adminAuditTitle"), icon: <FaKey aria-hidden="true" /> }
   ];
 
+  const openCatalogTemplate = (template: DocumentTemplateCatalogItem) => {
+    const search = createSearchParams({
+      jurisdiction: template.jurisdiction,
+      version: String(template.version)
+    }).toString();
+    window.location.assign(`/app/admin/case-catalog/templates/${encodeURIComponent(template.template_key)}?${search}`);
+  };
+
   return (
     <main className="app-shell admin-models">
       <section className="page-heading">
@@ -911,15 +922,41 @@ const AIModelAdmin: React.FC = () => {
       <div className="admin-workspace">
         <aside className="admin-sidebar" aria-label={t("navAdmin")}>
           {sections.map((section) => (
-            <button
-              key={section.key}
-              type="button"
-              className={`admin-sidebar__item ${activeSection === section.key ? "is-active" : ""}`}
-              onClick={() => selectAdminSection(section.key)}
-            >
-              {section.icon}
-              <span>{section.label}</span>
-            </button>
+            <React.Fragment key={section.key}>
+              <button
+                type="button"
+                className={`admin-sidebar__item ${activeSection === section.key ? "is-active" : ""}`}
+                onClick={() => selectAdminSection(section.key)}
+              >
+                {section.icon}
+                <span>{section.label}</span>
+              </button>
+              {section.key === "caseCatalog" && activeSection === "caseCatalog" ? (
+                <div className="admin-sidebar__submenu" role="group" aria-label={t("adminCaseCatalogTitle")}>
+                  <button
+                    type="button"
+                    className={`admin-sidebar__subitem ${activeCatalogSection === "caseTypes" ? "is-active" : ""}`}
+                    onClick={() => setActiveCatalogSection("caseTypes")}
+                  >
+                    {t("adminCaseCatalogCaseTypesTitle")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-sidebar__subitem ${activeCatalogSection === "caseTemplates" ? "is-active" : ""}`}
+                    onClick={() => setActiveCatalogSection("caseTemplates")}
+                  >
+                    {t("adminCaseCatalogTemplatesTitle")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`admin-sidebar__subitem ${activeCatalogSection === "casePrompts" ? "is-active" : ""}`}
+                    onClick={() => setActiveCatalogSection("casePrompts")}
+                  >
+                    {t("adminCaseCatalogPromptsTitle")}
+                  </button>
+                </div>
+              ) : null}
+            </React.Fragment>
           ))}
         </aside>
 
@@ -1271,6 +1308,7 @@ const AIModelAdmin: React.FC = () => {
 
               {catalogLoadState === "success" ? (
                 <>
+                  {activeCatalogSection === "caseTypes" ? (
                   <section className="admin-panel">
                     <h2>{t("adminCaseCatalogCaseTypesTitle")}</h2>
                     <AdminRecordsTable
@@ -1294,7 +1332,9 @@ const AIModelAdmin: React.FC = () => {
                       ])}
                     />
                   </section>
+                  ) : null}
 
+                  {activeCatalogSection === "caseTemplates" ? (
                   <section className="admin-panel">
                     <h2>{t("adminCaseCatalogTemplatesTitle")}</h2>
                     <AdminRecordsTable
@@ -1303,25 +1343,30 @@ const AIModelAdmin: React.FC = () => {
                         t("adminCaseCatalogTemplate"),
                         t("adminCaseCatalogCategory"),
                         t("adminCaseCatalogTemplateKind"),
-                        t("adminCaseCatalogSource"),
+                        t("adminCaseCatalogVersion"),
+                        t("adminCaseCatalogStoredAt"),
                         t("adminStatus")
                       ]}
                       rows={catalogTemplates.map((item) => [
-                        <div>
+                        <button className="button ghost admin-link-button" type="button" onClick={() => openCatalogTemplate(item)}>
                           <strong>{item.title}</strong>
                           <div><small>{item.template_key}</small></div>
-                        </div>,
+                        </button>,
                         item.category,
                         item.template_kind,
-                        <div>
-                          <div>{item.source_format}</div>
-                          <small>{item.source_url}</small>
-                        </div>,
-                        item.is_enabled ? t("adminEnabled") : t("adminDisabled")
+                        `v${item.version}`,
+                        item.stored_at ?? item.created_at ?? t("adminNotConfigured"),
+                        item.is_enabled
+                          ? item.newer_version_available
+                            ? t("adminCaseCatalogNewerVersionAvailable")
+                            : t("adminEnabled")
+                          : t("adminDisabled")
                       ])}
                     />
                   </section>
+                  ) : null}
 
+                  {activeCatalogSection === "casePrompts" ? (
                   <section className="admin-panel">
                     <h2>{t("adminCaseCatalogPromptsTitle")}</h2>
                     <AdminRecordsTable
@@ -1344,6 +1389,7 @@ const AIModelAdmin: React.FC = () => {
                       ])}
                     />
                   </section>
+                  ) : null}
                 </>
               ) : null}
             </section>

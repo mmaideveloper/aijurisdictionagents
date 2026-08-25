@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS document_templates (
     template_id TEXT PRIMARY KEY,
     template_key TEXT NOT NULL,
+    lineage_key TEXT NOT NULL,
     jurisdiction TEXT NOT NULL,
     language TEXT NULL,
     category TEXT NOT NULL,
@@ -17,15 +18,18 @@ CREATE TABLE IF NOT EXISTS document_templates (
     disclaimer_title TEXT NOT NULL DEFAULT '',
     disclaimer_text TEXT NOT NULL DEFAULT '',
     disclaimer_footer TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 1,
+    stored_at TEXT NOT NULL,
     is_enabled INTEGER NOT NULL DEFAULT 1,
     is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted_at TEXT NULL,
-    UNIQUE(jurisdiction, template_key)
+    UNIQUE(jurisdiction, template_key, version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_document_templates_key ON document_templates(template_key);
+CREATE INDEX IF NOT EXISTS idx_document_templates_lineage ON document_templates(lineage_key);
 CREATE INDEX IF NOT EXISTS idx_document_templates_jurisdiction ON document_templates(jurisdiction);
 CREATE INDEX IF NOT EXISTS idx_document_templates_enabled ON document_templates(is_enabled);
 CREATE INDEX IF NOT EXISTS idx_document_templates_deleted ON document_templates(is_deleted);
