@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal, cast
 import unicodedata
 from uuid import uuid4
 
@@ -38,6 +38,10 @@ class FlowPackVersionConflictError(ValueError):
     pass
 
 
+class FlowPackImmutableError(ValueError):
+    pass
+
+
 class FlowPackAmbiguousError(ValueError):
     pass
 
@@ -47,7 +51,7 @@ class FlowPackStore:
         self._config = config
         self._config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
-        self._seed_defaults_if_empty()
+        self._seed_missing_defaults()
 
     @classmethod
     def from_env(cls) -> "FlowPackStore":
@@ -146,8 +150,9 @@ class FlowPackStore:
                     """
                 INSERT INTO flow_packs (
                     flow_id, flow_key, version, jurisdiction, domain, title, description,
-                    definition_json, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    definition_json, is_enabled, lifecycle_state, is_deleted, created_at, updated_at,
+                    deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                 """
                 ),
                 self._params(
@@ -160,6 +165,7 @@ class FlowPackStore:
                     payload.description.strip(),
                     json.dumps(payload.definition, ensure_ascii=False, sort_keys=True),
                     1 if payload.is_enabled else 0,
+                    "published" if payload.is_enabled else "draft",
                     now,
                     now,
                 ),
@@ -205,6 +211,11 @@ class FlowPackStore:
         current = self.get(flow_key=flow_key, version=version, jurisdiction=jurisdiction)
         if current.is_deleted:
             raise FlowPackNotFoundError(f"Flow pack '{flow_key}' version {version} is deleted")
+        if current.lifecycle_state != "draft":
+            raise FlowPackImmutableError(
+                f"Flow pack '{flow_key}' version {version} is published and immutable; "
+                "create a new draft version"
+            )
         updated = {
             "jurisdiction": (payload.jurisdiction or current.jurisdiction).strip().upper(),
             "domain": (payload.domain or current.domain).strip().lower(),
@@ -250,12 +261,27 @@ class FlowPackStore:
         jurisdiction: str | None = None,
     ) -> FlowPackResponse:
         current = self.get(flow_key=flow_key, version=version, jurisdiction=jurisdiction)
+        if enabled and current.lifecycle_state == "retired":
+            raise FlowPackImmutableError(
+                f"Retired flow pack '{flow_key}' version {version} cannot be republished"
+            )
+        lifecycle_state = "published" if enabled else (
+            "draft" if current.lifecycle_state == "draft" else "retired"
+        )
         with self._connect() as conn:
             conn.execute(
                 self._sql(
-                    "UPDATE flow_packs SET is_enabled = ?, updated_at = ? WHERE flow_key = ? AND version = ? AND jurisdiction = ?"
+                    "UPDATE flow_packs SET is_enabled = ?, lifecycle_state = ?, updated_at = ? "
+                    "WHERE flow_key = ? AND version = ? AND jurisdiction = ?"
                 ),
-                self._params(1 if enabled else 0, _utc_now_iso(), flow_key.strip(), version, current.jurisdiction),
+                self._params(
+                    1 if enabled else 0,
+                    lifecycle_state,
+                    _utc_now_iso(),
+                    flow_key.strip(),
+                    version,
+                    current.jurisdiction,
+                ),
             )
             conn.commit()
         return self.get(flow_key=flow_key, version=version, jurisdiction=current.jurisdiction)
@@ -311,13 +337,15 @@ class FlowPackStore:
         scored.sort(key=lambda pair: pair[0], reverse=True)
         return scored[0][1] if scored else None
 
-    def _seed_defaults_if_empty(self) -> None:
-        with self._connect() as conn:
-            row = conn.execute(self._sql("SELECT COUNT(1) as count FROM flow_packs")).fetchone()
-        if row is not None and int(row["count"]) > 0:
-            return
+    def _seed_missing_defaults(self) -> None:
         for item in build_default_slovak_flow_packs():
-            self.create(FlowPackCreateRequest.model_validate(item))
+            payload = FlowPackCreateRequest.model_validate(item)
+            if not self._version_exists(
+                flow_key=payload.flow_key,
+                version=payload.version or 1,
+                jurisdiction=payload.jurisdiction,
+            ):
+                self.create(payload)
 
     def _initialize(self) -> None:
         with self._connect() as conn:
@@ -328,6 +356,7 @@ class FlowPackStore:
             else:
                 conn.executescript(_load_schema_sql())
             self._migrate_legacy_uniqueness(conn)
+            self._migrate_lifecycle_state(conn)
             conn.commit()
 
     @property
@@ -360,6 +389,23 @@ class FlowPackStore:
                 self._params(flow_key.strip()),
             ).fetchone()
         return row is not None
+
+    def _migrate_lifecycle_state(self, conn: Any) -> None:
+        if self._is_postgres:
+            conn.execute(
+                "ALTER TABLE flow_packs ADD COLUMN IF NOT EXISTS lifecycle_state "
+                "TEXT NOT NULL DEFAULT 'published'"
+            )
+            return
+        columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(flow_packs)").fetchall()
+        }
+        if "lifecycle_state" not in columns:
+            conn.execute(
+                "ALTER TABLE flow_packs ADD COLUMN lifecycle_state "
+                "TEXT NOT NULL DEFAULT 'published'"
+            )
 
     def _version_exists(self, *, flow_key: str, version: int, jurisdiction: str) -> bool:
         with self._connect() as conn:
@@ -465,6 +511,9 @@ class FlowPackStore:
             description=str(row["description"]),
             definition=json.loads(str(row["definition_json"])) if row["definition_json"] else {},
             is_enabled=bool(row["is_enabled"]),
+            lifecycle_state=cast(
+                Literal["draft", "published", "retired"], str(row["lifecycle_state"])
+            ),
             is_deleted=bool(row["is_deleted"]),
             created_at=_from_iso(str(row["created_at"])),
             updated_at=_from_iso(str(row["updated_at"])),

@@ -720,6 +720,10 @@ That means:
 - `web_build_deploy` uses the same two boolean inputs with safe `false` defaults and preserves its full lint/unit/E2E/build gate before image publication.
 - `test` and `prod` remain manual `workflow_dispatch` targets unless a workflow is explicitly changed to auto-deploy them
 - `Self-Managed Prod Deploy` is manual-only and always uses the protected `prod` GitHub Environment
+- `Self-Managed Prod Deploy` requires `case_orchestration_mode=active|legacy` (default `active`)
+  and reads optional prod variable `JURISDIGTA_CASE_ORCHESTRATION_CASE_TYPES` (default
+  `sk.civil.payment_confirmation`). Use `legacy` for rollback; do not widen the allowlist until
+  the real LangGraph evidence gate passes.
 - `Self-Managed Prod Deploy` configures Python 3.13 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
 - `Self-Managed Prod Deploy` runs the issue #646 Azure Foundry `gpt-5-mini` MCP law check after the server deploy, uploads seven-day evidence, and fails the workflow when that real-model route fails. Qwen is excluded from this automatic gate. There is no equivalent automatic test-environment step because this workflow targets only the protected self-managed `prod` Environment.
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
@@ -739,6 +743,8 @@ After setup, verify:
 - `TURNSTILE_SITE_KEY` is set on the corporate web GitHub Environment and `TURNSTILE_SECRET_KEY` is set on the API GitHub Environment when `CONTACT_CAPTCHA_REQUIRED=true`
 - `AZURE_EMAIL_SCHEDULER_JOB_NAME` and `AZURE_EMAIL_SCHEDULER_CRON_EXPRESSION` are set when the dedicated email ACA job should run
 - self-managed prod document processor settings are set or accepted at defaults: `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON`, `JURISDIGTA_DOCUMENT_PROCESSOR_CRON_EXPRESSION`, and `JURISDIGTA_DOCUMENT_PROCESSOR_LIMIT`
+- `JURISDIGTA_CASE_ORCHESTRATION_CASE_TYPES` is set to the reviewed production allowlist and the
+  dispatch `case_orchestration_mode` is explicitly reviewed before deployment
 - self-managed prod Ollama is installed as a separate localhost-only service and `curl -fsS http://127.0.0.1:11434/api/tags` succeeds
 - optional `CAR_VALIDATION_API_BASE_URL` and `CAR_VALIDATION_API_KEY` are set together when live vehicle validation should be enabled
 - the focused generated-PDF E2E example succeeds locally with `npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts` after installing the pinned PDF dependencies

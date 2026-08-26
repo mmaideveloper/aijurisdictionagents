@@ -90,3 +90,12 @@ Use the repository default minimal demo command for smoke checks:
 `python examples/minimal_demo.py`
 
 See `docs/SEQUENCE.md` for a high-level sequence diagram.
+
+## Durable case orchestration
+
+Guided cases can now execute through a typed LangGraph state machine with persisted checkpoints,
+sanitized ordered events, and independent input/output/privacy/final-review gates. The case
+catalog routes the request, a persisted assignment pins a reviewed graph and immutable flow-pack
+version, and JurisDigta MCP supplies current legal requirements. The legacy orchestrator remains
+available as a fail-closed rollout fallback. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md` and
+`docs/ADR-635-LANGGRAPH-CASE-ORCHESTRATION.md`.

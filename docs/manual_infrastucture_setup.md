@@ -726,6 +726,19 @@ The self-managed production deployment script performs the Ollama install, priva
 - If cleanup itself causes an operational concern, omit `finalize_image_retention` in a controlled rollback deployment; do not replace it with global volume or runtime-storage deletion.
 - Keep `/srv/jurisdigta/secrets/jurisdigta.env` owned by `root:jurisdigta-admin` at mode `0640`; validate with `stat -c '%a %U %G %n' /srv/jurisdigta/secrets/jurisdigta.env`. This is distinct from encrypted USB profile files, which remain mode `0600`.
 
+### LangGraph case-orchestration rollout
+
+- Owner: JurisDigta production application administrator and legal workflow reviewer.
+- Set protected `prod` variable `JURISDIGTA_CASE_ORCHESTRATION_CASE_TYPES` to the reviewed
+  comma-separated allowlist; initially use only `sk.civil.payment_confirmation`.
+- Dispatch `Self-Managed Prod Deploy` with `case_orchestration_mode=active` only after the exact
+  commit's build, API, frontend, migration, and real local E2E gates pass.
+- Validate PostgreSQL migrations, `langgraph_checkpoints*`, `case_workflow_*` tables, API health,
+  one synthetic interrupt/resume run, ordered sanitized events, PDF/text/render evidence, and no
+  raw facts or credentials in logs.
+- Roll back by dispatching the last validated commit with `case_orchestration_mode=legacy`.
+  Existing pinned workflow records remain readable; do not delete PostgreSQL data during rollback.
+
 ### Privacy And Compliance Notes
 
 - Treat server environment files, PostgreSQL data, document storage, logs, and backups as sensitive operational data.

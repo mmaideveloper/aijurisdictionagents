@@ -73,6 +73,10 @@ All endpoints require `x-api-key`.
 ## Soft delete and versioning behavior
 
 - `DELETE` marks `is_deleted=true`, sets `deleted_at`, and forces `is_enabled=false`.
+- lifecycle is `draft -> published -> retired`; a retired version cannot be republished.
+- only draft versions are editable. Enabling publishes a version permanently and published
+  content is immutable; changes require a derived draft with a new version.
+- mutation endpoints require authenticated admin authorization in addition to `x-api-key`.
 - version values are immutable and unique per `flow_key`.
 - uniqueness is country-scoped: `(jurisdiction, flow_key, version)`.
 - creating a new version never mutates prior versions.
@@ -105,3 +109,8 @@ Repository default smoke demo remains available:
 ```bash
 python examples/minimal_demo.py
 ```
+
+Executable case packs additionally declare required/conditional facts, MCP query/failure policy,
+prompt references, templates, allowlisted tools, consent purpose, validation gates, escalation,
+and human oversight. Assignment validation rejects disabled, deleted, draft, incompatible, or
+unregistered graph/flow combinations. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.

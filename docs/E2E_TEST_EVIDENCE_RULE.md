@@ -129,3 +129,13 @@ A separate provider integration test is required to claim live Slovak Azure STT 
 ## Retention
 
 Local evidence belongs under ignored `mobile_app/e2e-playwright/artifacts/` and should be deleted after review or within seven days. CI retention must be seven days or less unless a documented audit requirement mandates longer.
+
+## LangGraph proof
+
+A case-workflow acceptance manifest must record the real provider/model, local services and
+PostgreSQL database, synthetic run/case identifiers, pinned graph/flow versions, expected and
+observed node path, MCP source IDs, artifact IDs, and audit event IDs. It must assert ordered
+`langgraph_run_started`, assignment pin, interrupt, resume, input validation, MCP result, output
+validation, final review, and completion/escalation events. Missing events, legacy routing, mocks,
+or unavailable prerequisites fail the test. Document scenarios also retain the PDF, first-page
+render, structural/text validation, and a stable final-state screenshot for at most seven days.

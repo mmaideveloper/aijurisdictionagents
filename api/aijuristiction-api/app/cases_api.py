@@ -304,6 +304,11 @@ def delete_case(case_id: str, user_id: str, store: ApiDatabaseStore = Depends(ge
     _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     try:
         store.soft_delete_case(case_id=case_id, user_id=user_id)
+        from app.case_workflows.service import get_case_workflow_service
+
+        get_case_workflow_service().store.delete_case_workflows(
+            case_id=case_id, user_id=user_id
+        )
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
