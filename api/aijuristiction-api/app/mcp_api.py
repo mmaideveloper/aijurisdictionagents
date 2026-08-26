@@ -2743,6 +2743,9 @@ def _search_court_decisions(
 ) -> dict[str, Any]:
     if year_filter_mode != "published_in":
         raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
+    query_profile = parse_court_decision_query(query)
+    if query_profile.topic_free:
+        sort = "latest"
     started_at = time.perf_counter()
     logger.info(
         (
@@ -2851,6 +2854,7 @@ def _search_court_decisions(
         "published_year": published_year,
         "court_name": court_name or None,
         "sort": sort,
+        "query_mode": "latest_metadata" if query_profile.topic_free and sort == "latest" else "filtered",
         "limit": limit,
         "offset": offset,
         "status": "ok",
@@ -2867,6 +2871,7 @@ def _search_court_decisions(
             "latest_label_safe": bool(results)
             and all(item["issue_date_status"] == "valid" for item in results),
             "exact_court_filter_applied": bool(court_name),
+            "topic_filter_applied": not query_profile.topic_free,
         },
         "duration_ms": duration_ms,
         "timeout_ms": _COURT_DECISION_MCP_SEARCH_TIMEOUT_MS,

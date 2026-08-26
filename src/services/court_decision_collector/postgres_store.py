@@ -260,17 +260,8 @@ class PostgresCourtDecisionStore:
         if sort not in {"relevance", "latest"}:
             raise ValueError("sort must be relevance or latest.")
         query_profile = parse_court_decision_query(query)
-        query_vector = parse_embedding_vector(
-            build_embedding_vector(query_profile.topic_query, dimensions=self.embedding_dimensions)
-        )
-        candidate_limit = max((limit + offset) * 10, 100)
-        pattern = f"%{query_profile.topic_query.lower()}%"
         filters = ""
-        params: dict[str, object] = {
-            "tsquery": query_profile.tsquery,
-            "pattern": pattern,
-            "candidate_limit": candidate_limit,
-        }
+        params: dict[str, object] = {}
         if published_year is not None:
             filters += " AND EXTRACT(YEAR FROM d.issue_date_normalized) = %(published_year)s"
             params["published_year"] = published_year
@@ -280,6 +271,25 @@ class PostgresCourtDecisionStore:
         if court_name.strip():
             filters += " AND d.court_name_normalized = %(court_name_normalized)s"
             params["court_name_normalized"] = normalize_court_name(court_name)
+        if query_profile.topic_free:
+            return self._search_latest_metadata(
+                filters=filters,
+                params=params,
+                limit=limit,
+                offset=offset,
+            )
+
+        query_vector = parse_embedding_vector(
+            build_embedding_vector(query_profile.topic_query, dimensions=self.embedding_dimensions)
+        )
+        candidate_limit = max((limit + offset) * 10, 100)
+        params.update(
+            {
+                "tsquery": query_profile.tsquery,
+                "pattern": f"%{query_profile.topic_query.lower()}%",
+                "candidate_limit": candidate_limit,
+            }
+        )
         order_by = (
             "d.issue_date_normalized DESC NULLS LAST, d.updated_at DESC, lexical_rank DESC"
             if sort == "latest"
@@ -455,6 +465,60 @@ class PostgresCourtDecisionStore:
                 reverse=True,
             )[offset : offset + limit]
         return sorted(scored, key=lambda item: item.score, reverse=True)[offset : offset + limit]
+
+    def _search_latest_metadata(
+        self,
+        *,
+        filters: str,
+        params: dict[str, object],
+        limit: int,
+        offset: int,
+    ) -> list[CourtDecisionSearchResult]:
+        query_params = {**params, "limit": limit, "offset": offset}
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT d.decision_id, d.source_guid, d.court_name, d.court_type,
+                       d.file_number, d.case_number, d.ecli, d.issue_date,
+                       d.issue_date_normalized, d.source_url, v.version_id
+                FROM court_decision_documents AS d
+                JOIN LATERAL (
+                    SELECT version_id
+                    FROM court_decision_versions
+                    WHERE decision_id = d.decision_id
+                    ORDER BY stored_at DESC, version_id DESC
+                    LIMIT 1
+                ) AS v ON true
+                WHERE d.current_status = 'published'
+                  {filters}
+                ORDER BY d.issue_date_normalized DESC NULLS LAST,
+                         d.updated_at DESC,
+                         d.decision_id DESC
+                LIMIT %(limit)s
+                OFFSET %(offset)s
+                """,
+                query_params,
+            ).fetchall()
+        return [
+            CourtDecisionSearchResult(
+                decision_id=str(row["decision_id"]),
+                version_id=str(row["version_id"]),
+                source_guid=str(row["source_guid"]),
+                court_name=str(row["court_name"] or ""),
+                court_type=str(row["court_type"] or ""),
+                file_number=str(row["file_number"] or ""),
+                case_number=str(row["case_number"] or ""),
+                ecli=str(row["ecli"] or ""),
+                issue_date=str(row["issue_date"] or ""),
+                source_url=str(row["source_url"] or ""),
+                snippet="",
+                score=0.0,
+                summary="",
+                enrichment_status="not_checked",
+                content_source="metadata_only",
+            )
+            for row in rows
+        ]
 
     def search_coverage(self) -> dict[str, object]:
         """Return non-sensitive corpus coverage needed to qualify 'latest' claims."""

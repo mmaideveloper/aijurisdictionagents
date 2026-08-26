@@ -15,6 +15,7 @@ from services.court_decision_collector.postgres_store import (
     CourtDecisionCollectorStatus,
     CourtDecisionSchedulerState,
     CourtDecisionWorkItem,
+    PostgresCourtDecisionStore,
     _parse_issue_date,
     normalize_court_name,
 )
@@ -187,6 +188,74 @@ def test_conversational_purchase_contract_query_extracts_topic_count_and_latest(
     assert profile.latest_requested is True
     assert profile.concepts == ("purchase_contract",)
     assert "predaj:* & zmluv:*" in profile.tsquery
+
+
+def test_generic_latest_court_query_has_no_synthetic_topic_filter() -> None:
+    profile = parse_court_decision_query("Zobraz 5 posledn\u00fdch s\u00fadnych rozhodnut\u00ed.")
+
+    assert profile.topic_query == ""
+    assert profile.tsquery == ""
+    assert profile.requested_limit == 5
+    assert profile.latest_requested is True
+    assert profile.topic_free is True
+
+
+def test_postgres_generic_latest_query_uses_metadata_only_ordering(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    rows = [
+        {
+            "decision_id": f"decision-{index}",
+            "version_id": f"version-{index}",
+            "source_guid": f"source-{index}",
+            "court_name": "Okresny sud Zilina",
+            "court_type": "Okresny sud",
+            "file_number": f"{index}OdK/2026",
+            "case_number": f"case-{index}",
+            "ecli": f"ECLI:SK:OSZA:2026:{index}.1",
+            "issue_date": "2026-08-20",
+            "source_url": f"https://example.test/decision/{index}",
+        }
+        for index in range(5, 0, -1)
+    ]
+
+    class FakeResult:
+        def fetchall(self):
+            return rows
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, sql: str, params: dict[str, object]):
+            captured["sql"] = sql
+            captured["params"] = params
+            return FakeResult()
+
+    store = PostgresCourtDecisionStore(connection_uri="postgresql://unused")
+    monkeypatch.setattr(store, "_connect", lambda: FakeConnection())
+
+    results = store.search(
+        query="Zobraz 5 posledn\u00fdch s\u00fadnych rozhodnut\u00ed.",
+        limit=5,
+        sort="latest",
+    )
+
+    sql = str(captured["sql"])
+    assert "to_tsvector" not in sql
+    assert "pseudonymized_text" not in sql
+    assert "court_decision_enrichments" not in sql
+    assert "d.issue_date_normalized DESC NULLS LAST" in sql
+    assert "d.updated_at DESC" in sql
+    assert "d.decision_id DESC" in sql
+    assert captured["params"] == {"limit": 5, "offset": 0}
+    assert [result.decision_id for result in results] == [
+        "decision-5", "decision-4", "decision-3", "decision-2", "decision-1"
+    ]
+    assert all(result.content_source == "metadata_only" for result in results)
+    assert all(result.snippet == "" and result.summary == "" for result in results)
 
 
 class FakeResponse:

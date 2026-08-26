@@ -2553,6 +2553,42 @@ def test_mcp_law_context_returns_latest_five_purchase_contract_summaries(monkeyp
     assert context.processing_event["details"]["human_review_required"] is True
 
 
+def test_mcp_law_context_preserves_generic_latest_question_for_metadata_search(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    query = "Zobraz 5 posledn\u00fdch s\u00fadnych rozhodnut\u00ed."
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {
+            "results": [
+                {
+                    "decision_id": f"latest-{index}",
+                    "court_name": "Okresny sud Zilina",
+                    "file_number": f"{index}OdK/2026",
+                    "issue_date": "2026-08-20",
+                    "source_url": f"https://example.test/latest-{index}",
+                }
+                for index in range(1, 6)
+            ],
+            "coverage_notice": "Latest decisions available in the JurisDigta corpus.",
+        }
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    context = build_mcp_law_context(query=query, country="SK", language="sk-SK")
+
+    assert context is not None
+    assert calls == [("searchCourtDecisions", {
+        "query": query,
+        "limit": 5,
+        "sort": "latest",
+        "include_snippets": True,
+        "include_summaries": True,
+    })]
+    assert context.processing_event["details"]["court_decision_count"] == 5
+
+
 def test_court_decision_research_bypasses_document_case_type_detection() -> None:
     from app.chat.case_type_detection import _is_legal_research_request
 
