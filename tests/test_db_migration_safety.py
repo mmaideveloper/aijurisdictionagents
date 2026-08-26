@@ -22,6 +22,9 @@ _LEGACY_ALLOWED_EXCEPTIONS = {
     Path("databases/laws-collector/migrations/0003_enable_real_law_embeddings.sql"): {
         "ALTER COLUMN TYPE"
     },
+    Path("databases/api/migrations/0019_document_templates_case_catalog.sql"): {
+        "DROP CONSTRAINT"
+    },
 }
 
 

@@ -124,3 +124,20 @@ def test_court_decision_metadata_search_index_uses_immutable_expression() -> Non
         assert "concat_ws" not in metadata_index
         assert "'simple'::regconfig" in metadata_index
         assert "COALESCE(court_name, '')" in metadata_index
+
+
+def test_api_document_template_case_catalog_migration_is_versioned() -> None:
+    migrations = runner.list_migration_files("api")
+    migration = next(
+        path for path in migrations if path.name == "0019_document_templates_case_catalog.sql"
+    )
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "ADD COLUMN IF NOT EXISTS lineage_key" in sql
+    assert "ADD COLUMN IF NOT EXISTS version" in sql
+    assert "ADD COLUMN IF NOT EXISTS stored_at" in sql
+    assert "DROP CONSTRAINT document_templates_jurisdiction_template_key_key" in sql
+    assert "UNIQUE (jurisdiction, template_key, version)" in sql
+    assert "CREATE TABLE IF NOT EXISTS case_types" in sql
+    assert "CREATE TABLE IF NOT EXISTS case_type_templates" in sql
+    assert "CREATE TABLE IF NOT EXISTS case_prompts" in sql

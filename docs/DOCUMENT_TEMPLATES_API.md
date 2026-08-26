@@ -36,6 +36,7 @@ Runtime data uses SQLite under repository runtime storage:
 SQL asset:
 
 - `databases/api/document_templates_schema.sql`
+- production Postgres migration: `databases/api/migrations/0019_document_templates_case_catalog.sql`
 
 Notes:
 
@@ -43,6 +44,8 @@ Notes:
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
 - the same catalog database now also stores `case_types`, `case_type_templates`, and `case_prompts`
+- Postgres and Azure deployments must apply the numbered API migration stream; the document-template
+  and case-catalog tables are no longer deploy-safe as runtime-only schema drift fixes
 
 ## Case Types And Prompts
 
