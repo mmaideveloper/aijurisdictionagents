@@ -1,7 +1,7 @@
 # LangGraph case orchestration
 
 JurisDigta uses a registered, versioned LangGraph runtime for guided legal cases. The first
-active reference is `sk.civil.payment_confirmation` on
+active reference is `sk.civil.payment_confirmation@2` on
 `legal_document_workflow@1`; all other enabled Slovak case types receive an explicit
 `unsupported_or_human_review@1` assignment until their legal configuration is reviewed.
 
@@ -56,6 +56,12 @@ privacy, legal, and real-path E2E review used for the payment-confirmation refer
 Production deploy selects `active` or `legacy` explicitly. Roll back by dispatching the exact
 validated commit with `case_orchestration_mode=legacy`; never change a running case's pinned
 versions. A retired flow version cannot be republished, and a published version cannot be edited.
+
+Deployments can contain the legacy `sk.civil.payment_confirmation@1` definition created before
+the MCP retrieval policy became mandatory. Startup preserves that published version, seeds the
+compatible `@2` definition, and assigns new cases to the newest enabled version that satisfies
+the legal-document workflow contract. Existing runs and assignments remain pinned to their
+original immutable version.
 
 Run the deterministic example:
 

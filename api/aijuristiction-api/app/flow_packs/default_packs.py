@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
 def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
-    return [
+    packs: list[dict[str, Any]] = [
         {
             "flow_key": "sk.system.unsupported_or_human_review",
             "version": 1,
@@ -410,3 +411,15 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
             },
         },
     ]
+    payment_confirmation_v1 = next(
+        item
+        for item in packs
+        if item["flow_key"] == "sk.civil.payment_confirmation" and item["version"] == 1
+    )
+    payment_confirmation_v2 = deepcopy(payment_confirmation_v1)
+    payment_confirmation_v2["version"] = 2
+    payment_confirmation_v2["definition"]["prompt_references"] = [
+        "sk.civil.payment_confirmation@2"
+    ]
+    packs.append(payment_confirmation_v2)
+    return packs
