@@ -159,6 +159,8 @@ def _is_legal_research_request(value: str) -> bool:
     normalized = unicodedata.normalize("NFKD", value.casefold())
     canonical = "".join(char for char in normalized if not unicodedata.combining(char))
     canonical = re.sub(r"\s+", " ", canonical).strip()
+    if re.search(r"\b(zakon\w*|law|laws)\b", canonical):
+        return True
     return any(
         marker in canonical
         for marker in (

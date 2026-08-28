@@ -2410,13 +2410,66 @@ def test_mcp_law_context_uses_latest_sort_for_latest_law_question(monkeypatch) -
     assert context is not None
     assert calls[0] == (
         "searchLaws",
-        {"query": "zakon", "country_code": "SK", "limit": 1, "sort": "latest"},
+        {
+            "query": "Daj mi posledny zakon v systeme?",
+            "country_code": "SK",
+            "limit": 1,
+            "sort": "latest",
+            "include_summaries": True,
+        },
     )
     assert calls[1][0] == "getLawText"
     assert calls[1][1]["document_id"] == "doc-136-2026"
-    assert "latest law in the JurisDigta system" in context.prompt_note
+    assert "latest 1 law result(s) in the JurisDigta system" in context.prompt_note
     assert "Do not show raw MCP JSON" in context.prompt_note
     assert "136/2026 Z. z." in context.prompt_note
+
+
+def test_mcp_law_context_honors_explicit_latest_law_count(monkeypatch) -> None:
+    from app.chat.mcp_law_context import build_mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        if name == "searchLaws":
+            return {
+                "results": [
+                    {
+                        "document_id": f"doc-{index}",
+                        "law_identifier_text": f"{index}/2026 Z. z.",
+                        "title": f"Zakon o verejnej teme {index}",
+                        "summary": f"Verejna tema {index}",
+                        "source_url": f"https://static.slov-lex.sk/zakon/{index}",
+                    }
+                    for index in range(1, 6)
+                ]
+            }
+        if name == "getLawText":
+            return {
+                "document_id": arguments["document_id"],
+                "content_text": "Synteticky verejny pravny text.",
+            }
+        raise AssertionError(name)
+
+    monkeypatch.setattr("app.chat.mcp_law_context._call_mcp_tool", fake_call_tool)
+    question = "Zobraz mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju."
+
+    context = build_mcp_law_context(query=question, country="SK", language="sk-SK")
+
+    assert context is not None
+    assert calls[0] == (
+        "searchLaws",
+        {
+            "query": question,
+            "country_code": "SK",
+            "limit": 5,
+            "sort": "latest",
+            "include_summaries": True,
+        },
+    )
+    assert "latest 5 law result(s)" in context.prompt_note
+    assert all(f"{index}/2026 Z. z." in context.prompt_note for index in range(1, 6))
 
 
 def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(monkeypatch) -> None:
@@ -2795,7 +2848,13 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     assert "Najnovsi zakon v systeme je 136/2026 Z. z." in visible
     assert calls[0] == (
         "searchLaws",
-        {"query": "zakon", "country_code": "SK", "limit": 1, "sort": "latest"},
+        {
+            "query": "Daj mi posledny zakon v systeme?",
+            "country_code": "SK",
+            "limit": 1,
+            "sort": "latest",
+            "include_summaries": True,
+        },
     )
     assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
     assert "Do not show raw MCP JSON" in captured_prompts[-1]
