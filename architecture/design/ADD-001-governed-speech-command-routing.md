@@ -9,7 +9,7 @@
 - Approval source: Requesting stakeholder instruction in Codex task, 2026-08-28
 - Related use cases: [`UC-001`](../use-cases/UC-001-speech-input-and-safe-command-execution.md) (Draft)
 - Related business decisions: To verify; a BDR is likely required for local-device access and standing authorization policy
-- Related diagrams: Current [container view](../diagrams/jurisdigta/jurisdigta-current-container.mmd); target container and voice-command dynamic views To create
+- Related diagrams: Current [container view](../diagrams/jurisdigta/jurisdigta-current-container.mmd); target [speech-command container](../diagrams/jurisdigta/jurisdigta-target-speech-command-container.mmd), [dynamic view](../diagrams/jurisdigta/jurisdigta-target-speech-command-dynamic.mmd), and [evidence](../diagrams/jurisdigta/jurisdigta-target-speech-command-evidence.md)
 - Related decisions: [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) (Accepted)
 
 ## Executive Summary
@@ -110,8 +110,8 @@ These parts demonstrate feasibility but leave policy distributed across clients 
 ### C4 views
 
 - Current [container view](../diagrams/jurisdigta/jurisdigta-current-container.mmd): establishes existing clients, API, data stores, workers, and external services.
-- Target container view To create with `$generate-c4`: answer “Where are transcript review, routing, policy authorization, server capabilities, and the local-device trust boundary enforced?”
-- Voice-command dynamic view To create with `$generate-c4`: answer “Which checks and confirmations occur from spoken input through ORSR or local contract-search execution, including denial and cancellation?”
+- Target [speech-command container view](../diagrams/jurisdigta/jurisdigta-target-speech-command-container.mmd): answers “Where are transcript review, routing, policy authorization, server capabilities, and the local-device trust boundary enforced?”
+- Target [voice-command dynamic view](../diagrams/jurisdigta/jurisdigta-target-speech-command-dynamic.mmd): answers “Which checks and confirmations occur from spoken input through ORSR or local contract-search execution, including denial and cancellation?”
 
 ## Quality Attribute Scenarios
 
@@ -182,12 +182,12 @@ These parts demonstrate feasibility but leave policy distributed across clients 
 ## Verification and Implementation Readiness
 
 - [ ] Reviewed use cases and acceptance criteria are linked.
-- [ ] Required C4 views are linked and evidence-backed.
+- [x] Required conceptual target C4 views are linked and evidence-backed; rendered validation remains pending.
 - [x] Binding decisions are accepted and reconciled.
 - [ ] Compliance blockers are closed.
 - [x] Test, migration, observability, rollback, and documentation work are outlined; measurable service targets and final schemas remain open.
 
-Readiness: Not ready. Approval confirms the conceptual design and ADR-001, but UC-001 is Draft, target C4 views are missing, and material compliance/ownership decisions remain open.
+Readiness: Not ready. Approval confirms the conceptual design and ADR-001 and target C4 sources now exist, but UC-001 is Draft and material compliance/ownership decisions remain open.
 
 ## Evidence
 

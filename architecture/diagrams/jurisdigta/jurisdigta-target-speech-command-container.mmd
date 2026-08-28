@@ -1,0 +1,58 @@
+flowchart LR
+  title["JurisDigta target containers — governed speech questions and commands<br/><small>Conceptual target; approved ADD-001 / accepted ADR-001</small>"]
+
+  user["JurisDigta user<br/><small>Reviews transcript and authorizes actions</small>"]
+  reviewer["Human reviewer<br/><small>Reviews legal-risk outcomes</small>"]
+
+  subgraph device["User device trust boundary"]
+    client["JurisDigta client<br/><small>Mobile or web; transcript, preview, confirmation</small>"]
+    stt["Speech recognition adapter<br/><small>Device/browser or disclosed remote mode</small>"]
+    local["Local capability connector<br/><small>Proposed; read-only approved-root search</small>"]
+  end
+
+  subgraph platform["JurisDigta controlled platform boundary"]
+    intake["Request intake and intent router<br/><small>Proposal only; structured slots</small>"]
+    chat["Question and legal workflow path<br/><small>Existing chat/case behavior</small>"]
+    catalog["Capability catalog<br/><small>Proposed versioned policy metadata</small>"]
+    policy["Policy and authorization gateway<br/><small>Proposed deny-by-default execution boundary</small>"]
+    executor["Capability execution orchestrator<br/><small>Proposed idempotency, timeout, cancellation</small>"]
+    tools["Server capability adapters<br/><small>Existing tools evolved behind gateway</small>"]
+    audit[("Case, authorization, and audit stores<br/><small>Existing stores plus proposed records</small>")]
+  end
+
+  remoteStt["Remote STT provider<br/><small>External; only after applicable consent</small>"]
+  orsr["Official ORSR service<br/><small>External public business registry</small>"]
+
+  user -->|"Speaks and reviews text [potential personal/legal data]"| client
+  reviewer -->|"Reviews legal-risk output [authorized case access]"| client
+  client -->|"Active audio segment and locale [transient]"| stt
+  stt -.->|"Optional disclosed remote recognition [audio; consent required]"| remoteStt
+  stt -->|"Transcript and recognition metadata"| client
+  client -->|"Reviewed text, context, correlation/idempotency key [HTTPS API]"| intake
+  intake -->|"Question and case context [existing internal interface]"| chat
+  chat -->|"Answer and review state"| client
+  intake -->|"Candidate intent and capability traits [interface to define]"| catalog
+  catalog -->|"Eligible capability versions and policy metadata"| intake
+  intake -->|"Execution proposal and required authorization"| client
+  client -->|"Selected proposal, confirmation, and scope grant [HTTPS API; schema to define]"| policy
+  policy -->|"Validate identity, consent, scope, risk, versions"| catalog
+  policy -->|"Record authorization/denial metadata [redacted]"| audit
+  policy -->|"Immutable authorized capability request"| executor
+  executor -->|"Registered server operation and minimum slots"| tools
+  tools -->|"Company query [HTTPS; current integration]"| orsr
+  orsr -->|"Sourced match/result"| tools
+  executor -.->|"Proposed mutually authenticated scoped request [protocol to decide]"| local
+  local -.->|"Minimal filename/metadata result; no content upload by default"| executor
+  executor -->|"Execution status, provenance, related capability suggestions"| client
+  executor -->|"Record outcome, versions, timing [redacted]"| audit
+
+  classDef title fill:#FFFFFF,color:#111827,stroke:#FFFFFF
+  classDef existing fill:#2F6FAB,color:#FFFFFF,stroke:#123B6D
+  classDef proposed fill:#FFF7D6,color:#111827,stroke:#B7791F,stroke-dasharray: 5 4
+  classDef external fill:#E5E7EB,color:#111827,stroke:#6B7280
+  classDef person fill:#DBEAFE,color:#111827,stroke:#2F6FAB
+  class title title
+  class client,stt,intake,chat,tools,audit existing
+  class local,catalog,policy,executor proposed
+  class remoteStt,orsr external
+  class user,reviewer person

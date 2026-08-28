@@ -8,7 +8,7 @@
 - Decision source: Requesting stakeholder instruction in Codex task, 2026-08-28
 - Supersedes: None
 - Superseded by: None
-- Related artifacts: [`UC-001`](../use-cases/UC-001-speech-input-and-safe-command-execution.md), [`ADD-001`](../design/ADD-001-governed-speech-command-routing.md), target container and voice-command dynamic C4 views To create
+- Related artifacts: [`UC-001`](../use-cases/UC-001-speech-input-and-safe-command-execution.md), [`ADD-001`](../design/ADD-001-governed-speech-command-routing.md), target [container view](../diagrams/jurisdigta/jurisdigta-target-speech-command-container.mmd), [dynamic view](../diagrams/jurisdigta/jurisdigta-target-speech-command-dynamic.mmd), and [evidence](../diagrams/jurisdigta/jurisdigta-target-speech-command-evidence.md)
 
 ## Context
 
