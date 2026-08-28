@@ -44,6 +44,45 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.justice.fees.exemption_fo" in keys
     assert "sk.justice.company_registry.initial_registration" in keys
 
+    employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+    assert employment.source_url == "https://www.aksamec.sk/pracovna-zmluva-vzor-2026/"
+    assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body
+    assert "Článok VII" in employment.body
+    assert "Za zamestnávateľa: ____________________" in employment.body
+    assert {reference.source_kind for reference in employment.source_refs} == {
+        "official_legislation",
+        "reviewed_template_guidance",
+    }
+    assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
+
+
+def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    empty_version = store.update(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(body=""),
+    )
+    assert empty_version.version == 2
+
+    refreshed = DocumentTemplateStore(config).get(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+    assert refreshed.version == 3
+    assert "Článok I" in refreshed.body
+
+    unchanged = DocumentTemplateStore(config).get(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+    assert unchanged.version == 3
+
 
 def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
@@ -188,6 +227,22 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "Poprad, Slovakia, 05801" in preview_text
     assert "Template preview" not in preview_text
     assert "sk.real_estate.lease_agreement" not in preview_text
+
+    employment_preview = client.get(
+        "/v1/document-templates/sk.employment.employment_contract/preview/pdf",
+        params={"jurisdiction": "SK"},
+    )
+    assert employment_preview.status_code == 200
+    employment_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(employment_preview.content)).pages
+    )
+    employment_text_normalized = " ".join(employment_text.split())
+    assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in employment_text
+    assert "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA" in employment_text
+    assert "MZDOVÉ PODMIENKY" in employment_text
+    assert "Za zamestnávateľa" in employment_text
+    assert "individuálnu" in employment_text
+    assert "ľudskú kontrolu" in employment_text_normalized
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")
     assert delete_response.status_code == 200

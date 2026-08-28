@@ -64,6 +64,7 @@ class DocumentTemplateStore:
         self._config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self._seed_defaults_if_empty()
+        self._refresh_empty_seeded_document_template_bodies()
         self._seed_case_types_if_empty()
         self._refresh_seeded_case_type_descriptions()
 
@@ -796,6 +797,35 @@ class DocumentTemplateStore:
                     disclaimer_footer=item.disclaimer_footer,
                     is_enabled=item.is_enabled,
                 )
+            )
+
+    def _refresh_empty_seeded_document_template_bodies(self) -> None:
+        """Version legacy metadata-only seeds without replacing managed template content."""
+        canonical_by_key = {
+            item.template_key: item
+            for item in build_default_document_templates()
+            if item.template_key == "sk.employment.employment_contract" and item.body.strip()
+        }
+        for template_key, canonical in canonical_by_key.items():
+            try:
+                current = self.get(template_key=template_key, jurisdiction=canonical.jurisdiction)
+            except DocumentTemplateNotFoundError:
+                continue
+            if current.body.strip():
+                continue
+            self.update(
+                template_key=template_key,
+                jurisdiction=canonical.jurisdiction,
+                payload=DocumentTemplateUpdateRequest(
+                    description=canonical.description,
+                    source_format=canonical.source_format,
+                    source_url=canonical.source_url,
+                    body=canonical.body,
+                    source_refs=list(canonical.source_refs),
+                    disclaimer_title=canonical.disclaimer_title,
+                    disclaimer_text=canonical.disclaimer_text,
+                    disclaimer_footer=canonical.disclaimer_footer,
+                ),
             )
 
     def _seed_case_types_if_empty(self) -> None:
