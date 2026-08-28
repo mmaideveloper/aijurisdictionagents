@@ -281,7 +281,7 @@ python examples/minimal_demo.py
 ```
 
 The payment-confirmation reference case links template
-`sk.civil.payment_confirmation` to flow `sk.civil.payment_confirmation@1`. The LangGraph run pins
+`sk.civil.payment_confirmation` to flow `sk.civil.payment_confirmation@2`. The LangGraph run pins
 that relationship, fills only verified facts, blocks unresolved placeholders, records MCP source
 IDs, and requires human review disclosure before use. Admin Case Catalog shows the active graph,
 flow lifecycle/version, validation result, and assignment history.

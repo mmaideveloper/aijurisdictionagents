@@ -309,10 +309,8 @@ class CaseWorkflowApplicationService:
             linked_flow_keys = [
                 key for template in case_type.templates for key in template.flow_keys
             ]
-            chosen = (
-                ("sk.civil.payment_confirmation", 1)
-                if case_type.case_type_key == "sk.civil.payment_confirmation"
-                else self._latest_enabled_flow(linked_flow_keys, case_type.jurisdiction)
+            chosen = self._latest_enabled_flow(
+                linked_flow_keys, case_type.jurisdiction
             )
             graph_key = "legal_document_workflow" if chosen else "unsupported_or_human_review"
             flow_key, flow_version = chosen or ("sk.system.unsupported_or_human_review", 1)

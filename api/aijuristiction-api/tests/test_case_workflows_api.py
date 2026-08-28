@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 from io import BytesIO
+import json
+from pathlib import Path
+import sqlite3
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
@@ -44,8 +46,10 @@ def test_generated_draft_preserves_only_missing_verified_facts() -> None:
     assert "ľudskú kontrolu" in result
 
 
-def _service(tmp_path: Path) -> CaseWorkflowApplicationService:
-    flow_store = FlowPackStore(
+def _service(
+    tmp_path: Path, *, flow_store: FlowPackStore | None = None
+) -> CaseWorkflowApplicationService:
+    flow_store = flow_store or FlowPackStore(
         FlowPackStoreConfig(
             db_option="local", db_cloud="", sqlite_path=tmp_path / "flows.sqlite3"
         )
@@ -73,6 +77,50 @@ def _service(tmp_path: Path) -> CaseWorkflowApplicationService:
     )
     service.ensure_default_assignments()
     return service
+
+
+def test_default_assignment_preserves_legacy_v1_and_selects_compatible_v2(
+    tmp_path: Path,
+) -> None:
+    flow_path = tmp_path / "flows.sqlite3"
+    config = FlowPackStoreConfig(db_option="local", db_cloud="", sqlite_path=flow_path)
+    FlowPackStore(config)
+    legacy_definition = {
+        "required_facts": ["payer_identification", "recipient_identification", "amount"],
+        "outputs": ["payment_confirmation"],
+    }
+    with sqlite3.connect(flow_path) as connection:
+        connection.execute(
+            "DELETE FROM flow_packs WHERE flow_key = ? AND version = ? AND jurisdiction = ?",
+            ("sk.civil.payment_confirmation", 2, "SK"),
+        )
+        connection.execute(
+            "UPDATE flow_packs SET definition_json = ? "
+            "WHERE flow_key = ? AND version = ? AND jurisdiction = ?",
+            (
+                json.dumps(legacy_definition),
+                "sk.civil.payment_confirmation",
+                1,
+                "SK",
+            ),
+        )
+
+    upgraded_store = FlowPackStore(config)
+    service = _service(tmp_path, flow_store=upgraded_store)
+    assignment = service.store.get_active_assignment(
+        case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
+    )
+
+    assert assignment.flow_version == 2
+    assert upgraded_store.get(
+        flow_key="sk.civil.payment_confirmation", version=1, jurisdiction="SK"
+    ).definition == legacy_definition
+    assert isinstance(
+        upgraded_store.get(
+            flow_key="sk.civil.payment_confirmation", version=2, jurisdiction="SK"
+        ).definition.get("mcp_retrieval"),
+        dict,
+    )
 
 
 def test_every_enabled_slovak_case_type_has_a_valid_active_assignment(tmp_path: Path) -> None:
