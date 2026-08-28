@@ -1941,6 +1941,18 @@ def _run_direct_lawyer_turn(
         messages=history,
         lawyer_content=normalized_lawyer_content,
     )
+    if mcp_law_context is not None and mcp_law_context.grounded_latest_laws_reply:
+        normalized_lawyer_content = mcp_law_context.grounded_latest_laws_reply
+        mcp_event_details = mcp_law_context.processing_event.get("details")
+        _LOGGER.info(
+            "Applied deterministic grounded latest-laws reply",
+            extra={
+                "session_id": str(session_id),
+                "result_count": mcp_event_details.get("result_count")
+                if isinstance(mcp_event_details, dict)
+                else None,
+            },
+        )
     persisted_lawyer = _persist_direct_assistant_message(
         session_id=session_id,
         session=session,

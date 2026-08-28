@@ -2470,6 +2470,17 @@ def test_mcp_law_context_honors_explicit_latest_law_count(monkeypatch) -> None:
     )
     assert "latest 5 law result(s)" in context.prompt_note
     assert all(f"{index}/2026 Z. z." in context.prompt_note for index in range(1, 6))
+    assert context.grounded_latest_laws_reply is not None
+    assert "Najnovšie zákony" in context.grounded_latest_laws_reply
+    assert all(
+        f"{index}/2026 Z. z. – Zakon o verejnej teme {index}"
+        in context.grounded_latest_laws_reply
+        for index in range(1, 6)
+    )
+    assert all(
+        f"Súhrn: Verejna tema {index}" in context.grounded_latest_laws_reply
+        for index in range(1, 6)
+    )
 
 
 def test_mcp_law_context_uses_combined_legal_sources_for_court_decision_query(monkeypatch) -> None:
@@ -2859,6 +2870,82 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
     assert "Do not show raw MCP JSON" in captured_prompts[-1]
     assert "internal-mcp-law-context.txt" in captured_document_paths
+    assert any(event.get("stage") == "mcp_law_context" for event in events)
+
+
+def test_latest_laws_reply_uses_every_grounded_summary_when_model_omits_them(monkeypatch) -> None:
+    from app.chat.mcp_law_context import McpLawContext
+    from app.chat.models import Session
+    from app.chat.repository import InMemoryChatRepository
+    import app.chat.api as chat_api
+
+    repository = InMemoryChatRepository()
+    session = repository.create_session(
+        Session(country="SK", language="sk-SK", discussion_type="advice")
+    )
+    grounded_reply = (
+        "Najnovšie zákony v systéme JurisDigta:\n\n"
+        "1. **221/2026 Z. z. – Zákon o téme A**\n   Súhrn: Verejná téma A.\n\n"
+        "2. **220/2026 Z. z. – Zákon o téme B**\n   Súhrn: Verejná téma B.\n\n"
+        "Súhrny sú odvodené z importovaných verejných metadát."
+    )
+
+    class _IncompleteLawyer:
+        system_prompt = "fake-system"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            return SimpleNamespace(
+                content="Pripravil som prehľad predpisov, ale položky som vynechal.",
+                agent_name="LawyerSlovakia",
+            )
+
+    context = McpLawContext(
+        prompt_note="INTERNAL MCP LAW TOOL CONTEXT",
+        document=None,
+        processing_event={
+            "stage": "mcp_law_context",
+            "message": "MCP contacted",
+            "details": {"result_count": 2, "citations": []},
+        },
+        grounded_latest_laws_reply=grounded_reply,
+    )
+    monkeypatch.setattr(chat_api, "_repository", repository)
+    monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        chat_api,
+        "prepare_country_direct_reply",
+        lambda **_kwargs: SimpleNamespace(
+            direct_reply=None,
+            prompt_note="",
+            supplemental_documents=[],
+            processing_events=[],
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
+        "_resolve_session_llm_route",
+        lambda **_kwargs: SimpleNamespace(
+            client=object(), route_type="case", provider="azurefoundry", model="gpt-5-mini"
+        ),
+    )
+    monkeypatch.setattr(
+        "aijurisdictionagents.agents.create_lawyer_agent",
+        lambda llm, country: _IncompleteLawyer(),
+    )
+    monkeypatch.setattr(chat_api, "build_mcp_law_context", lambda **_kwargs: context)
+
+    _user, lawyer, visible, events, _route = chat_api._run_direct_lawyer_turn(
+        session_id=session.id,
+        session=session,
+        content="Zobraz mi posledne 2 zakony aj so sumarom.",
+    )
+
+    assert visible == grounded_reply
+    assert lawyer.content == grounded_reply
+    assert "221/2026 Z. z." in visible
+    assert "220/2026 Z. z." in visible
+    assert "Verejná téma A" in visible
+    assert "Verejná téma B" in visible
     assert any(event.get("stage") == "mcp_law_context" for event in events)
 
 
