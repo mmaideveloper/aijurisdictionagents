@@ -371,15 +371,15 @@ def _search_arguments(*, query: str, limit: int) -> dict[str, Any]:
     latest_law_query = _is_latest_law_query(query)
     if match is not None:
         search_query = f"{int(match.group('number'))}/{int(match.group('year'))}"
-    elif latest_law_query:
-        search_query = "zakon"
+    latest_limit = _requested_latest_law_count(query) if latest_law_query else None
     arguments: dict[str, Any] = {
         "query": search_query,
         "country_code": "SK",
-        "limit": 1 if latest_law_query else limit,
+        "limit": latest_limit if latest_limit is not None else limit,
     }
     if latest_law_query:
         arguments["sort"] = "latest"
+        arguments["include_summaries"] = True
     if match is not None:
         arguments["law_number"] = int(match.group("number"))
         arguments["law_year"] = int(match.group("year"))
@@ -401,6 +401,11 @@ def _is_latest_law_query(query: str) -> bool:
         normalized,
     )
     return latest_then_law is not None or law_then_latest is not None
+
+
+def _requested_latest_law_count(query: str) -> int:
+    match = re.search(r"\b(?P<count>\d{1,2})\b", _canonical(query))
+    return min(max(int(match.group("count")), 1), 10) if match is not None else 1
 
 
 def _is_latest_court_query(query: str) -> bool:
@@ -542,15 +547,18 @@ def _prompt_note(
         "MCP law results:",
     ]
     if search_arguments.get("sort") == "latest":
+        result_count = int(search_arguments.get("limit") or 1)
         lines.insert(
             6,
-            "- The user asked for the latest law in the JurisDigta system; use the first MCP law result as the latest imported law.",
+            f"- The user asked for the latest {result_count} law result(s) in the JurisDigta system; "
+            "use every returned result and its metadata-derived summary.",
         )
     for index, result in enumerate(laws, start=1):
         lines.append(
             f"{index}. document_id={result.get('document_id', '')}; "
             f"identifier={result.get('law_identifier_text', '')}; "
-            f"title={result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''}"
+            f"title={result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''}; "
+            f"summary={result.get('summary') or ''}"
         )
     if court_decisions:
         lines.extend(["", "MCP court-decision results:"])

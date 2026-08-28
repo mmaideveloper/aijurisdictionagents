@@ -1859,6 +1859,7 @@ def _tool_search_legal_sources(arguments: dict[str, Any]) -> dict[str, Any]:
             law_number=None,
             metadata_only=True,
             sort=sort,
+            include_summaries=False,
         )
     if "court_decisions" in source_types:
         court_decisions_payload = _search_court_decisions(
@@ -1931,6 +1932,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
     published_year = _optional_positive_int(arguments.get("published_year"))
     year_filter_mode = _year_filter_mode(arguments.get("year_filter_mode"))
     sort = _search_sort(arguments.get("sort"))
+    include_summaries = _bool_argument(arguments.get("include_summaries"), default=False)
     requested_law_year = _optional_positive_int(arguments.get("law_year"))
     requested_law_number = _optional_positive_int(arguments.get("law_number"))
     parsed_identifier = _parse_law_identifier(query)
@@ -1949,6 +1951,7 @@ def _tool_search_laws(arguments: dict[str, Any]) -> dict[str, Any]:
         law_number=requested_law_number,
         metadata_only=True,
         sort=sort,
+        include_summaries=include_summaries,
     )
 
 
@@ -1964,10 +1967,18 @@ def _search_laws(
     law_number: int | None,
     metadata_only: bool,
     sort: str,
+    include_summaries: bool,
 ) -> dict[str, Any]:
     if year_filter_mode != "published_in":
         raise HTTPException(status_code=400, detail="Only year_filter_mode=published_in is supported")
-    pattern = f"%{query.lower()}%"
+    broad_latest_request = _is_broad_latest_law_request(
+        query=query,
+        sort=sort,
+        published_year=published_year,
+        law_year=law_year,
+        law_number=law_number,
+    )
+    pattern = "%" if broad_latest_request else f"%{query.lower()}%"
     exact = query.lower()
     provision_profile = (
         build_legal_query_profile(query)
@@ -2131,7 +2142,9 @@ def _search_laws(
             duration_ms=duration_ms,
             error_kind=error_kind,
         )
-    metadata_results = [_search_result_from_row(row) for row in rows]
+    metadata_results = [
+        _search_result_from_row(row, include_summary=include_summaries) for row in rows
+    ]
     provision_results = (
         _rank_provision_candidates(rows=provision_rows, profile=provision_profile)
         if provision_profile is not None
@@ -2150,6 +2163,8 @@ def _search_laws(
         "year_filter_mode": year_filter_mode,
         "published_year": published_year,
         "sort": sort,
+        "query_scope": "all_latest" if broad_latest_request else "matching",
+        "include_summaries": include_summaries,
         "metadata_only": metadata_only and not provision_results,
         "retrieval_mode": "provision_aware" if provision_results else "metadata",
         "query_concepts": list(provision_profile.concepts) if provision_profile is not None else [],
@@ -3402,6 +3417,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "include_summaries": {"type": "boolean", "default": False},
                 },
                 "additionalProperties": False,
             },
@@ -4134,8 +4150,10 @@ def _pkce_s256_challenge(code_verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def _search_result_from_row(row: Sequence[Any]) -> dict[str, Any]:
-    return {
+def _search_result_from_row(
+    row: Sequence[Any], *, include_summary: bool = False
+) -> dict[str, Any]:
+    result = {
         "document_id": str(row[0]),
         "country_code": str(row[1]),
         "collection_code": str(row[2]),
@@ -4151,6 +4169,73 @@ def _search_result_from_row(row: Sequence[Any]) -> dict[str, Any]:
         "title": str(row[12]),
         "law_type": str(row[13]),
     }
+    if include_summary:
+        subject = str(row[12] or row[6] or row[5]).strip()
+        result["summary"] = f"Predpis sa podľa importovaných verejných metadát týka témy: {subject}."
+        result["summary_status"] = "metadata_derived"
+    return result
+
+
+def _is_broad_latest_law_request(
+    *,
+    query: str,
+    sort: str,
+    published_year: int | None,
+    law_year: int | None,
+    law_number: int | None,
+) -> bool:
+    if sort != "latest" or any(
+        value is not None for value in (published_year, law_year, law_number)
+    ):
+        return False
+    tokens = re.findall(r"[a-z0-9]+", normalize_legal_text(query))
+    if not any(token.startswith(("posledn", "najnovs", "nov")) for token in tokens):
+        return False
+    if not any(token.startswith(("zakon", "predpis")) or token in {"law", "laws"} for token in tokens):
+        return False
+    generic_tokens = {
+        "a",
+        "aj",
+        "and",
+        "co",
+        "coho",
+        "cover",
+        "daj",
+        "include",
+        "last",
+        "me",
+        "mi",
+        "new",
+        "newest",
+        "of",
+        "please",
+        "prosim",
+        "sa",
+        "show",
+        "so",
+        "the",
+        "they",
+        "tykaju",
+        "what",
+        "with",
+        "zobraz",
+    }
+    generic_prefixes = (
+        "posledn",
+        "najnovs",
+        "nov",
+        "zakon",
+        "predpis",
+        "sumar",
+        "zhrnut",
+    )
+    return all(
+        token.isdigit()
+        or token in generic_tokens
+        or token in {"law", "laws", "latest", "summary", "summaries"}
+        or token.startswith(generic_prefixes)
+        for token in tokens
+    )
 
 
 def _optional_positive_int(value: Any) -> int | None:

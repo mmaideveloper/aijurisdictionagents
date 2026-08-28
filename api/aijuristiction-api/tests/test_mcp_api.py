@@ -1331,6 +1331,50 @@ def test_mcp_search_laws_supports_published_year_metadata_filter(monkeypatch, tm
     assert "content_text" not in payload["results"][0]
 
 
+def test_mcp_search_laws_returns_broad_latest_results_with_metadata_summaries(
+    monkeypatch, tmp_path: Path
+) -> None:
+    _configure_env(monkeypatch, tmp_path)
+    db_path = tmp_path / "laws.sqlite3"
+    _create_laws_db(db_path)
+    mcp_key = _create_mcp_key(tmp_path)
+    for law_number in range(1, 6):
+        _insert_law_search_fixture(
+            db_path,
+            document_id=f"doc-latest-{law_number}",
+            version_id=f"ver-latest-{law_number}",
+            metadata_id=f"meta-latest-{law_number}",
+            artifact_id=f"artifact-latest-{law_number}",
+            law_year=2026,
+            law_number=law_number,
+            official_name=f"Zakon o verejnej teme {law_number}",
+            lawyer_title=f"Verejna tema {law_number}",
+            law_identifier_text=f"{law_number}/2026 Z. z.",
+            title=f"Zakon o verejnej teme {law_number}",
+            content_text=f"Verejny pravny text {law_number}.",
+        )
+
+    response = _mcp_call(
+        "searchLaws",
+        {
+            "query": "Zobraz mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju.",
+            "country_code": "SK",
+            "sort": "latest",
+            "limit": 5,
+            "include_summaries": True,
+        },
+        headers={"authorization": f"Bearer {mcp_key}"},
+    )
+
+    assert response.status_code == 200
+    payload = _tool_payload(response)
+    assert payload["query_scope"] == "all_latest"
+    assert payload["include_summaries"] is True
+    assert [item["law_number"] for item in payload["results"]] == [5, 4, 3, 2, 1]
+    assert all(item["summary_status"] == "metadata_derived" for item in payload["results"])
+    assert all("verejných metadát" in item["summary"] for item in payload["results"])
+
+
 def test_mcp_get_law_text_caps_large_default_payload(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     db_path = tmp_path / "laws.sqlite3"

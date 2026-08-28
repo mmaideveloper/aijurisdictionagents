@@ -15,6 +15,9 @@ def test_law_lookup_is_legal_research_not_document_case_detection() -> None:
     )
     assert _is_legal_research_request("Čo ustanovuje zákon č. 40/1964 Zb.?")
     assert _is_legal_research_request("Summarize legal act 192/2026 from the official source.")
+    assert _is_legal_research_request(
+        "Zobraz mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju."
+    )
 
 
 def test_document_drafting_request_is_not_misclassified_as_legal_research() -> None:
