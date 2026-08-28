@@ -28,11 +28,11 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 
 ## Current designs
 
-- [ADD-001: Governed speech question and command routing](design/ADD-001-governed-speech-command-routing.md) — Draft, conceptual target
+- [ADD-001: Governed speech question and command routing](design/ADD-001-governed-speech-command-routing.md) — Approved, conceptual target
 
 ## Current decisions
 
-- [ADR-001: Route speech-derived commands only through policy-enforced registered capabilities](decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) — Proposed
+- [ADR-001: Route speech-derived commands only through policy-enforced registered capabilities](decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) — Accepted
 
 ## Workflow
 

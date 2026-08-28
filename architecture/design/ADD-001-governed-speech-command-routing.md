@@ -2,14 +2,15 @@
 
 ## Record
 
-- Status: Draft
+- Status: Approved
 - State described: Conceptual target
 - Owner: Unknown
 - Date: 2026-08-28
+- Approval source: Requesting stakeholder instruction in Codex task, 2026-08-28
 - Related use cases: [`UC-001`](../use-cases/UC-001-speech-input-and-safe-command-execution.md) (Draft)
 - Related business decisions: To verify; a BDR is likely required for local-device access and standing authorization policy
 - Related diagrams: Current [container view](../diagrams/jurisdigta/jurisdigta-current-container.mmd); target container and voice-command dynamic views To create
-- Related decisions: [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) (Proposed)
+- Related decisions: [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) (Accepted)
 
 ## Executive Summary
 
@@ -17,7 +18,7 @@ JurisDigta already supports reviewed speech transcripts, selected voice intents,
 
 The design deliberately separates recognition from authorization. Speech or model output may propose an intent, but cannot directly execute shell, PowerShell, Python, SQL, filesystem, or external-service operations. A capability catalog exposes only registered operations with schemas, permissions, data destinations, side-effect levels, and confirmation policy. A proposed local connector performs constrained read-only searches inside user-approved roots; ORSR remains a server-side external capability. Related capabilities are recommendations requiring separate selection and authorization.
 
-Material uncertainty remains around client scope, local connector deployment and ownership, capability risk levels, lawful bases, retention, and service targets. Because UC-001 is Draft and ADR-001 is Proposed, this ADD is not implementation-ready.
+Material uncertainty remains around client scope, local connector deployment and ownership, capability risk levels, lawful bases, retention, and service targets. Approval establishes the conceptual design direction but does not make it implementation-ready because UC-001 remains Draft and the documented blockers remain open.
 
 ## Scope and Non-goals
 
@@ -157,7 +158,7 @@ These parts demonstrate feasibility but leave policy distributed across clients 
 
 | Decision topic | ADR | Status | Design impact |
 |---|---|---|---|
-| Execution boundary for speech-derived commands | [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) | Proposed | Introduces registered structured capabilities and centralized policy authorization; excludes transcript-generated OS/code execution |
+| Execution boundary for speech-derived commands | [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) | Accepted | Introduces registered structured capabilities and centralized policy authorization; excludes transcript-generated OS/code execution |
 | Local connector deployment, authentication, and update model | To create after product/security direction | Not yet decided | Determines device trust boundary and operational ownership |
 | Capability risk/confirmation taxonomy and standing grants | BDR likely, then ADR if technical choice remains | Not yet decided | Determines UX and authorization policy |
 | Intent classification strategy (rules, model, hybrid) | To create only if independently material | Not yet decided | Must remain proposal-only and unable to authorize execution |
@@ -182,11 +183,11 @@ These parts demonstrate feasibility but leave policy distributed across clients 
 
 - [ ] Reviewed use cases and acceptance criteria are linked.
 - [ ] Required C4 views are linked and evidence-backed.
-- [ ] Binding decisions are accepted and reconciled.
+- [x] Binding decisions are accepted and reconciled.
 - [ ] Compliance blockers are closed.
 - [x] Test, migration, observability, rollback, and documentation work are outlined; measurable service targets and final schemas remain open.
 
-Readiness: Not ready. UC-001 is Draft, ADR-001 is Proposed, target C4 views are missing, and material compliance/ownership decisions remain open.
+Readiness: Not ready. Approval confirms the conceptual design and ADR-001, but UC-001 is Draft, target C4 views are missing, and material compliance/ownership decisions remain open.
 
 ## Evidence
 

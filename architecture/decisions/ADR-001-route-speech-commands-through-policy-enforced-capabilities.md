@@ -2,10 +2,10 @@
 
 ## Record
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-28
 - Decision owner: Architecture authority (Unknown)
-- Decision source: Not yet decided
+- Decision source: Requesting stakeholder instruction in Codex task, 2026-08-28
 - Supersedes: None
 - Superseded by: None
 - Related artifacts: [`UC-001`](../use-cases/UC-001-speech-input-and-safe-command-execution.md), [`ADD-001`](../design/ADD-001-governed-speech-command-routing.md), target container and voice-command dynamic C4 views To create
@@ -59,7 +59,7 @@ The repository already contains reviewed transcript flows, a structured voice in
 
 ## Decision
 
-Propose Option B: speech-derived and typed natural-language commands shall execute only through policy-enforced registered capabilities.
+Select Option B: speech-derived and typed natural-language commands shall execute only through policy-enforced registered capabilities.
 
 The binding boundaries, if accepted, are:
 
@@ -72,7 +72,7 @@ The binding boundaries, if accepted, are:
 7. Related capabilities are recommendations only. Each requires separate selection, preview, policy evaluation, and authorization.
 8. Unsupported commands fail safely and may be captured as product demand without expanding privileges or improvising generated code.
 
-This ADR remains Proposed and is not binding until an authoritative decision is recorded.
+This decision was accepted by the requesting stakeholder on 2026-08-28 and is binding for the related conceptual target design. Changes require a superseding ADR.
 
 ## Consequences
 
@@ -127,4 +127,4 @@ This ADR remains Proposed and is not binding until an authoritative decision is 
 | Some audio action code couples recognition with action-specific behavior. | `src/aijurisdictionagents/agents/audio_action_tools.py` | Confirmed |
 | Registry metadata currently satisfies the proposed complete policy contract. | Repository evidence reviewed 2026-08-28 | Not established; To verify |
 | A constrained general local file-search connector exists. | Repository search and UC-001 evidence | Not found; proposed |
-| Option B has authoritative approval. | No decision source supplied | Not yet decided |
+| Option B has authoritative approval. | Requesting stakeholder instruction in Codex task, 2026-08-28 | Confirmed |
