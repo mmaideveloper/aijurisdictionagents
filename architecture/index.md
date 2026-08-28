@@ -26,6 +26,14 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 
 - [UC-001: Submit questions and safely execute commands by speech](use-cases/UC-001-speech-input-and-safe-command-execution.md) — Draft
 
+## Current designs
+
+- [ADD-001: Governed speech question and command routing](design/ADD-001-governed-speech-command-routing.md) — Draft, conceptual target
+
+## Current decisions
+
+- [ADR-001: Route speech-derived commands only through policy-enforced registered capabilities](decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) — Proposed
+
 ## Workflow
 
 Use `$idea-task` for discovery. It routes ordinary changes to `$prepare-task`, user or business behavior to `$generate-use-case`, material business choices to `$generate-bdr`, and architecture-significant changes to `$architecture-change`.

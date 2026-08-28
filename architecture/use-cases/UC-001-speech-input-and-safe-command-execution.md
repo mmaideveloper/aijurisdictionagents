@@ -6,7 +6,7 @@
 - Owner: Product owner (to assign)
 - Date: 2026-08-28
 - Stakeholders: JurisDigta users, product owner, legal/compliance reviewer, security reviewer, client application owners, tool owners
-- Related artifacts: [`docs/VOICE_INTENT_ROUTER.md`](../../docs/VOICE_INTENT_ROUTER.md), [`docs/mobile_voice_flow.md`](../../docs/mobile_voice_flow.md), [`docs/mobile_voice_compliance.md`](../../docs/mobile_voice_compliance.md), [`docs/SLOVAK_COMPANY_CHECKS.md`](../../docs/SLOVAK_COMPANY_CHECKS.md), [`docs/LEGAL_WORKFLOW_ROUTING.md`](../../docs/LEGAL_WORKFLOW_ROUTING.md), [`docs/E2E_TEST_EVIDENCE_RULE.md`](../../docs/E2E_TEST_EVIDENCE_RULE.md)
+- Related artifacts: [`ADD-001`](../design/ADD-001-governed-speech-command-routing.md), [`ADR-001`](../decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md), [`docs/VOICE_INTENT_ROUTER.md`](../../docs/VOICE_INTENT_ROUTER.md), [`docs/mobile_voice_flow.md`](../../docs/mobile_voice_flow.md), [`docs/mobile_voice_compliance.md`](../../docs/mobile_voice_compliance.md), [`docs/SLOVAK_COMPANY_CHECKS.md`](../../docs/SLOVAK_COMPANY_CHECKS.md), [`docs/LEGAL_WORKFLOW_ROUTING.md`](../../docs/LEGAL_WORKFLOW_ROUTING.md), [`docs/E2E_TEST_EVIDENCE_RULE.md`](../../docs/E2E_TEST_EVIDENCE_RULE.md)
 
 ## Goal and Business Outcome
 
