@@ -1,0 +1,21 @@
+name: Validate architecture use case
+
+on:
+  workflow_dispatch:
+    inputs:
+      use_case_id:
+        description: "Synthetic use-case identifier, for example UC-001"
+        required: true
+        default: "UC-001"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    uses: mmaideveloper/aiarchitecttoolkit/.github/workflows/validate-use-case.yml@16d82099486e03a698a8491f2f47d4163dae9c6f
+    with:
+      project_name: jurisdigta
+      use_case_id: ${{ inputs.use_case_id }}
+      toolkit_ref: 16d82099486e03a698a8491f2f47d4163dae9c6f
