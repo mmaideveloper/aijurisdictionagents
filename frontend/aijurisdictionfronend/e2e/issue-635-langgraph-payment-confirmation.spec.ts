@@ -54,7 +54,15 @@ test("real local frontend executes persisted LangGraph interrupt/resume and revi
     "payment_purpose",
   ];
   for (const [index, turn] of turns.entries()) {
-    if (index > 0) await reloadSelectedCase(page, input.caseTitle);
+    if (index > 0) {
+      await reloadSelectedCase(page, input.caseTitle);
+      await expect(
+        page
+          .locator(".assistant-message")
+          .filter({ hasText: new RegExp(expectedPendingFields[index - 1], "i") })
+          .last(),
+      ).toBeVisible({ timeout: 60_000 });
+    }
     let ready = false;
     for (let attempt = 0; attempt < 3 && !ready; attempt += 1) {
       await expect(composer).toBeEnabled({ timeout: 60_000 });
@@ -103,6 +111,10 @@ test("real local frontend executes persisted LangGraph interrupt/resume and revi
       await expect(response).toBeVisible({ timeout: 60_000 });
       await expect(response).toContainText(/100 EUR/i);
     }
+    const expectedMessageCount = (index + 1) * 2;
+    await expect(
+      page.locator("button").filter({ hasText: input.caseTitle }).first(),
+    ).toContainText(`${expectedMessageCount} messages`, { timeout: 60_000 });
   }
 
   const runResponse = await request.get(
