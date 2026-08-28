@@ -130,22 +130,101 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Pracovne a personalne dokumenty",
             title="Pracovna zmluva",
             template_kind="employment_contract",
-            description="Seed metadata pre pracovnu zmluvu.",
-            source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
-            body="",
+            description=(
+                "Kontrolovany kanonicky zaklad slovenskej pracovnej zmluvy s povinnymi nalezitostami, "
+                "zaverecnymi ustanoveniami a podpisovymi blokmi. Pred podpisom vyzaduje doplnenie faktov "
+                "a individualnu kontrolu pravnikom alebo pracovnopravnym specialistom."
+            ),
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
+            body=(
+                "PRACOVNÁ ZMLUVA\n"
+                "uzatvorená podľa § 42 a nasl. zákona č. 311/2001 Z. z. Zákonník práce\n\n"
+                "Zamestnávateľ:\n"
+                "[DOPLNIŤ: obchodné meno/názov, sídlo, IČO a osoba oprávnená konať]\n\n"
+                "Zamestnanec:\n"
+                "[DOPLNIŤ: meno, priezvisko, dátum narodenia a adresa trvalého pobytu]\n\n"
+                "(ďalej spolu aj ako „zmluvné strany“) uzatvárajú túto pracovnú zmluvu:\n\n"
+                "Článok I\n"
+                "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA\n"
+                "1. Zamestnanec bude vykonávať druh práce: [DOPLNIŤ].\n"
+                "2. Stručná charakteristika dohodnutého druhu práce: [DOPLNIŤ hlavné pracovné činnosti].\n\n"
+                "Článok II\n"
+                "MIESTO VÝKONU PRÁCE A DEŇ NÁSTUPU\n"
+                "1. Miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania: [DOPLNIŤ].\n"
+                "2. Dohodnutý deň nástupu do práce: [DOPLNIŤ].\n\n"
+                "Článok III\n"
+                "TRVANIE PRACOVNÉHO POMERU A SKÚŠOBNÁ DOBA\n"
+                "1. Pracovný pomer sa uzatvára na [DOPLNIŤ: neurčitý čas / určitý čas do ...].\n"
+                "2. Skúšobná doba je [DOPLNIŤ iba ak bola dohodnutá a je zákonne prípustná; inak uviesť, "
+                "že sa nedohodla].\n\n"
+                "Článok IV\n"
+                "MZDOVÉ PODMIENKY\n"
+                "1. Zamestnancovi patrí základná zložka mzdy vo výške [DOPLNIŤ] EUR brutto za "
+                "[DOPLNIŤ: mesiac/hodinu].\n"
+                "2. Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín: [DOPLNIŤ alebo uviesť, "
+                "že sa neuplatňujú; rešpektovať zákonné mzdové nároky].\n\n"
+                "Článok V\n"
+                "PRACOVNÉ PODMIENKY\n"
+                "1. Ustanovený týždenný pracovný čas a jeho rozvrhnutie: [DOPLNIŤ].\n"
+                "2. Výmera dovolenky, pravidlá skončenia pracovného pomeru a ďalšie pracovné podmienky "
+                "sa spravujú Zákonníkom práce, príslušnou kolektívnou zmluvou, ak sa uplatňuje, a písomnou "
+                "informáciou zamestnávateľa poskytnutou v zákonnom rozsahu a lehote.\n\n"
+                "Článok VI\n"
+                "PRÁVA A POVINNOSTI ZMLUVNÝCH STRÁN\n"
+                "1. Zamestnávateľ prideľuje zamestnancovi prácu podľa tejto zmluvy, vytvára podmienky na jej "
+                "riadny výkon a vypláca dohodnutú mzdu.\n"
+                "2. Zamestnanec vykonáva prácu osobne, riadne a v dohodnutom pracovnom čase a dodržiava "
+                "právne a vnútorné predpisy, s ktorými bol preukázateľne oboznámený.\n"
+                "3. Zamestnávateľ spracúva osobné údaje zamestnanca len v rozsahu a na účely potrebné na "
+                "vznik, plnenie a evidenciu pracovnoprávneho vzťahu a poskytne mu samostatnú informáciu o "
+                "spracúvaní osobných údajov.\n\n"
+                "Článok VII\n"
+                "ZÁVEREČNÉ USTANOVENIA\n"
+                "1. Táto zmluva je vyhotovená v dvoch rovnopisoch; jeden dostane zamestnanec a jeden "
+                "zamestnávateľ.\n"
+                "2. Zmeny tejto zmluvy možno vykonať iba písomnou dohodou zmluvných strán, ak právny "
+                "predpis neustanovuje inak.\n"
+                "3. Práva a povinnosti výslovne neupravené touto zmluvou sa spravujú Zákonníkom práce a "
+                "ostatnými všeobecne záväznými právnymi predpismi Slovenskej republiky.\n"
+                "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, jej obsahu porozumeli a na znak "
+                "súhlasu ju podpisujú slobodne a vážne.\n\n"
+                "V [DOPLNIŤ miesto], dňa [DOPLNIŤ dátum]\n\n"
+                "Za zamestnávateľa: ____________________\n"
+                "Zamestnanec: _________________________\n"
+            ),
             keywords=("pracovna zmluva", "zamestnanec", "zamestnavatel"),
             flow_keys=(),
             placeholders=("principal_identification", "agent_identification"),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="Pracovná zmluva – vzor 2026",
+                    url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="reviewed_template_guidance",
+                    notes=(
+                        "Presna zdrojova stranka skontrolovana 2026-08-28; pouzita na strukturalnu kontrolu "
+                        "povinnych a volitelnych nalezitosti. Kanonicke telo je povodny text JurisDigta."
+                    ),
+                ),
+                TemplateSourceReference(
+                    label="Zákon č. 311/2001 Z. z. Zákonník práce",
+                    url="https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2001/311/",
+                    publisher="Ministerstvo spravodlivosti SR – Slov-Lex",
+                    source_kind="official_legislation",
+                    notes=(
+                        "Oficialne konsolidovane znenie skontrolovane 2026-08-28; pravny zaklad najma § 42 "
+                        "az § 44. Pred pouzitim treba overit aktualne znenie a konkretne skutkove okolnosti."
+                    ),
                 ),
             ),
+            disclaimer_title="Dôležité upozornenie",
+            disclaimer_text=(
+                "Toto je vzorový právny návrh vytvorený na základe všeobecných požiadaviek slovenského "
+                "pracovného práva. Nie je právnym poradenstvom ani hotovou zmluvou. Pred podpisom doplňte "
+                "všetky označené údaje, overte aktuálne právne znenie a zabezpečte individuálnu ľudskú kontrolu."
+            ),
+            disclaimer_footer="Vzorový návrh – pred podpisom vyžaduje individuálnu ľudskú a právnu kontrolu.",
             is_enabled=True,
             is_deleted=False,
         ),

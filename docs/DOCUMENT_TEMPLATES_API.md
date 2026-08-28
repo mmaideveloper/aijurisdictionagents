@@ -43,6 +43,9 @@ Notes:
 - delete is implemented as soft delete
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
+- the canonical Slovak employment-contract seed contains an original reviewed body, an exact reviewed guidance URL,
+  an official Slov-Lex legal-basis reference, visible draft/human-review warnings, and article/signature structure;
+  startup versions only a legacy empty instance of this seed and never replaces a non-empty managed body
 - the same catalog database now also stores `case_types`, `case_type_templates`, and `case_prompts`
 - Postgres and Azure deployments must apply the numbered API migration stream; the document-template
   and case-catalog tables are no longer deploy-safe as runtime-only schema drift fixes
@@ -227,6 +230,22 @@ professional document layout as generated client-facing PDFs.
 
 For Slovak templates and generated Slovak document exports, the renderer now adds a visible legal disclaimer block on
 the first page and repeats a short disclaimer in the footer so the draft status is not easy to miss.
+
+The `sk.employment.employment_contract` preview is deliberately a canonical fill-in draft rather than legal advice.
+Its source alignment was reviewed on August 28, 2026 against the exact AK Samec employment-contract guidance page and
+the official current Slov-Lex page for Act No. 311/2001 Coll., especially Sections 42–44. The body is original
+JurisDigta text: external template wording is not copied. Bracketed fields must be completed and the result must be
+reviewed by a qualified human before signature. The structured employment fact/placeholder schema is maintained as a
+separate follow-up so this canonical-source change does not silently invent or persist employee facts.
+
+Generate a synthetic, locally seeded preview and validate its extracted article/signature markers with:
+
+```powershell
+.\conda\python.exe examples\employment_contract_preview_demo.py
+```
+
+The demo writes its disposable SQLite runtime below `runs/storage/api/sqlite/`, removes it after rendering, and stores
+the generated PDF under the ignored `runs/document-template-demo/` path by default.
 
 The chat simulator now includes a **Document Templates** panel. Use **Refresh Templates** to load templates from
 the selected API base URL and **Generate PDF** on any row to download that template preview. This is intended for
