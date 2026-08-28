@@ -40,6 +40,19 @@ A representative German desktop capture is kept at
 The page ships with Slovak (default), German, and English translations. Use the `SK/DE/EN` toggle in the header.
 The selection is stored in `localStorage` (`aj_lang`).
 
+## Agent application entry point
+
+The localized button directly below the homepage product title links to
+`https://agent.jurisdigta.eu` in the same browser tab. The Playwright suite
+checks its localized accessible name, exact tracking-free destination,
+responsive placement, and live navigation.
+
+Run `npm run test:e2e` from `corporate-web` to regenerate transient evidence
+under `corporate-web/test-results/`. The sanitized 689x856 review capture for
+issue 681 is retained at
+`docs/screenshots/issue-681/corporate-agent-entry-mobile.png`; transient test
+output can be deleted after review.
+
 ## Pricing sync
 
 The pricing cards and FAQ mirror the backend subscription and free-case limits:
