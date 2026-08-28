@@ -1,5 +1,6 @@
 schema_version: 1
 project:
+  key: jurisdigta
   name: JurisDigta
   domain: legal-ai
 artifacts:
@@ -12,7 +13,7 @@ artifacts:
   reviews: reviews
 governance:
   privacy: GDPR
-  ai_regulation: EU AI Act
+  ai_regulation: EU AI Act applicability-to-confirm
   safety: human oversight for legal-risk outputs
   approval_authorities: []
 task_management:
