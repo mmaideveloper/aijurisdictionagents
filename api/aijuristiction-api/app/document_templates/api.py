@@ -231,6 +231,19 @@ def _template_preview_facts() -> dict[str, str]:
         "transfer_share": "50 %",
         "transfer_price": "5 000 EUR",
         "estimated_timeline": "spravidla niekoľko pracovných dní až týždňov",
+        "employer_identification": (
+            "Synthetic Employer s. r. o., Testovacia 10, 811 01 Bratislava, IČO 12345678, "
+            "konateľka Eva Testová"
+        ),
+        "employee_identification": (
+            "Adam Vzorový, dátum narodenia 01.01.1990, trvalý pobyt Skúšobná 5, 040 01 Košice"
+        ),
+        "work_type": "softvérový vývojár",
+        "work_description": "návrh, implementácia a testovanie aplikačného softvéru",
+        "work_place": "Testovacia 10, 811 01 Bratislava",
+        "start_date": "01.09.2026",
+        "base_wage": "2 000",
+        "wage_period": "mesiac",
     }
 
 

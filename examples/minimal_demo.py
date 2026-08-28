@@ -41,8 +41,8 @@ print(
 )
 print(
     "employment_contract_template => run python examples/employment_contract_preview_demo.py; "
-    "the generated canonical Slovak fill-in PDF validates exact provenance, mandatory clause structure, "
-    "signature blocks, and a visible human-review warning without external data."
+    "the generated canonical Slovak fill-in PDF validates exact provenance, the ordered required/optional fact "
+    "schema, field-specific follow-up questions, mandatory clauses, and human-review warnings without external data."
 )
 print(
     "model_routing_request_store => database migrations and schema initialization run at API "

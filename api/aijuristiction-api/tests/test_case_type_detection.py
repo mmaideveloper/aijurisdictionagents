@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 from uuid import uuid4
 
-from app.chat.case_type_detection import _clarification_reply, _detection_trace, _is_legal_research_request
+from app.chat.case_type_detection import (
+    _build_case_catalog_prompt_note,
+    _clarification_reply,
+    _detection_trace,
+    _is_legal_research_request,
+)
 from app.chat.models import Message, MessageRole, Session
+from app.document_templates.models import TemplateFactField
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseCatalogSelection
 
@@ -81,6 +88,37 @@ def test_clarification_reply_uses_specific_question() -> None:
     )
 
     assert "Ide o najom, alebo o kupu nehnutelnosti?" in reply
+
+
+def test_case_catalog_prompt_exposes_ordered_employment_fact_questions() -> None:
+    note = _build_case_catalog_prompt_note(
+        selection=SimpleNamespace(confidence_score=0.95, status="matched"),
+        case_type_name="Pracovna zmluva",
+        case_type_key="sk.employment.employment_contract",
+        case_prompt_text="Vyziadaj iba nevyhnutne udaje.",
+        template_titles=["Pracovna zmluva"],
+        template_fact_fields=[
+            TemplateFactField(
+                key="employer_identification",
+                label="Identifikácia zamestnávateľa",
+                required=True,
+                question="Kto je zamestnávateľ?",
+                aliases=["zamestnavatel"],
+            ),
+            TemplateFactField(
+                key="probation_terms",
+                label="Skúšobná doba",
+                required=False,
+                question="Má sa dohodnúť skúšobná doba?",
+                default_value="Skúšobná doba sa nedohodla",
+            ),
+        ],
+    )
+
+    assert "REQUIRED employer_identification" in note
+    assert "If missing, ask: Kto je zamestnávateľ?" in note
+    assert "OPTIONAL probation_terms" in note
+    assert "Ask the exact question for only the first still-missing REQUIRED field" in note
 
 
 def test_case_catalog_store_allows_session_selection_without_case(tmp_path) -> None:

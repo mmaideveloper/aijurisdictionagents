@@ -1372,6 +1372,21 @@ def _legal_document_template_source_note(*, content: str, country: str) -> list[
                 "downloaded or derived.",
             ]
         )
+    fact_schema = getattr(template, "fact_schema", ())
+    if fact_schema:
+        lines.append("- Use this managed fact schema and resolve known aliases before requesting more data:")
+        for field in fact_schema:
+            requirement = "required" if field.required else "optional"
+            aliases = f"; aliases={','.join(field.aliases)}" if field.aliases else ""
+            default = f"; default={field.default_value}" if field.default_value else ""
+            lines.append(
+                f"  - {requirement} {field.key} ({field.label}){aliases}{default}; "
+                f"missing-question={field.question}"
+            )
+        lines.append(
+            "- Ask only the exact question for the first missing required field. Do not ask for a fact already "
+            "present in the conversation, case memory, uploaded documents, or an explicitly scoped profile default."
+        )
     return lines
 
 
@@ -7670,7 +7685,7 @@ def _extract_document_facts(
         "Spravidla niekoÄ¾ko pracovnÃ½ch dnÃ­ aÅ¾ tÃ½Å¾dÅˆov po Ãºplnom podanÃ­.",
     )
 
-    return {
+    facts = {
         "prenajimatel": prenajimatel,
         "najomca": najomca,
         "predmet": predmet,
@@ -7702,6 +7717,76 @@ def _extract_document_facts(
         "filing_authority": filing_authority,
         "estimated_timeline": estimated_timeline,
     }
+    facts.update(_extract_employment_contract_facts(source_lines=source_lines, case=case))
+    return facts
+
+
+_EMPLOYMENT_FACT_LABELS: dict[str, tuple[str, ...]] = {
+    "employer_identification": ("zamestnávateľ", "zamestnavatel", "employer"),
+    "employee_identification": ("zamestnanec", "employee"),
+    "work_type": ("druh práce", "druh prace", "pracovná pozícia", "pracovna pozicia", "job title"),
+    "work_description": (
+        "charakteristika práce",
+        "charakteristika prace",
+        "pracovná náplň",
+        "pracovna napln",
+        "job description",
+    ),
+    "work_place": ("miesto výkonu práce", "miesto vykonu prace", "workplace", "work location"),
+    "start_date": ("deň nástupu", "den nastupu", "dátum nástupu", "datum nastupu", "start date"),
+    "base_wage": ("základná mzda", "zakladna mzda", "hrubá mzda", "hruba mzda", "base wage"),
+    "wage_period": ("mzdové obdobie", "mzdove obdobie", "wage period", "pay period"),
+    "employment_term": (
+        "trvanie pracovného pomeru",
+        "trvanie pracovneho pomeru",
+        "employment term",
+        "contract duration",
+    ),
+    "probation_terms": ("skúšobná doba", "skusobna doba", "probation period"),
+    "additional_wage_terms": ("ďalšie zložky mzdy", "dalsie zlozky mzdy", "bonus terms"),
+    "pay_date": ("výplatný termín", "vyplatny termin", "pay date"),
+    "weekly_working_time": ("týždenný pracovný čas", "tyzdenny pracovny cas", "weekly working time"),
+    "work_schedule": ("rozvrhnutie pracovného času", "rozvrhnutie pracovneho casu", "work schedule"),
+    "signature_place": ("miesto podpisu", "signature place"),
+    "signature_date": ("dátum podpisu", "datum podpisu", "signature date"),
+}
+
+
+def _extract_employment_contract_facts(
+    *,
+    source_lines: List[str],
+    case: dict[str, Any],
+) -> dict[str, str]:
+    extracted: dict[str, str] = {}
+    for container_key in ("facts", "employment_contract_facts"):
+        container = case.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        for key, value in container.items():
+            normalized_value = " ".join(str(value or "").split())
+            if key in _EMPLOYMENT_FACT_LABELS and not _is_missing_document_fact(normalized_value):
+                extracted[key] = normalized_value
+
+    for raw_line in source_lines:
+        line = _repair_common_mojibake(raw_line).strip()
+        separator_index = line.find(":")
+        if separator_index < 0:
+            continue
+        label = _canonicalize_document_text(re.sub(r"^[\-*\d.)\s]+", "", line[:separator_index]))
+        value = " ".join(line[separator_index + 1 :].strip().split())
+        if _is_missing_document_fact(value):
+            continue
+        for key, labels in _EMPLOYMENT_FACT_LABELS.items():
+            if label in {_canonicalize_document_text(item) for item in labels}:
+                extracted[key] = value
+                break
+
+    full_text = _canonicalize_document_text(" ".join(source_lines))
+    if any(marker in full_text for marker in ("som zamestnanec", "i am the employee")):
+        extracted["requesting_party_role"] = "employee"
+    elif any(marker in full_text for marker in ("som zamestnavatel", "i am the employer")):
+        extracted["requesting_party_role"] = "employer"
+    return extracted
 
 
 def _extract_payment_confirmation_sentence_facts(text: str) -> dict[str, str]:
@@ -7759,6 +7844,12 @@ def _apply_user_profile_document_defaults(
         enriched["transferor_name"] = profile_identity
     if _is_missing_document_fact(enriched.get("payment_payer")):
         enriched["payment_payer"] = profile_identity
+    employment_identity = _format_user_profile_employment_identity(user_profile)
+    requesting_party_role = enriched.get("requesting_party_role", "").strip().lower()
+    if requesting_party_role == "employee" and _is_missing_document_fact(
+        enriched.get("employee_identification")
+    ):
+        enriched["employee_identification"] = employment_identity
     return enriched
 
 
@@ -7818,6 +7909,18 @@ def _format_user_profile_document_identity(user: User) -> str:
         identity_parts.append(f"DIC: {user.tax_number}")
     if identity_parts:
         parts.append("; ".join(identity_parts))
+    return ", ".join(part for part in parts if part.strip())
+
+
+def _format_user_profile_employment_identity(user: User) -> str:
+    """Use only employment-contract identity fields, excluding high-risk unrelated identifiers."""
+    display_name = _user_profile_document_display_name(user)
+    parts: list[str] = [display_name] if display_name else []
+    if user.date_of_birth:
+        parts.append(f"dátum narodenia: {user.date_of_birth}")
+    address_parts = _user_profile_document_address(user)
+    if address_parts:
+        parts.append(f"trvalý pobyt: {', '.join(address_parts)}")
     return ", ".join(part for part in parts if part.strip())
 
 

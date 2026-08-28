@@ -1307,6 +1307,61 @@ def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> 
     assert "ab123456" in normalized
 
 
+def test_employment_contract_facts_merge_user_case_memory_and_minimized_profile_defaults() -> None:
+    from app.chat.api import _apply_user_profile_document_defaults, _extract_document_facts
+    from aijurisdictionagents.api_db import User
+
+    source_lines = [
+        "Som zamestnanec.",
+        "Zamestnávateľ: Synthetic Employer s. r. o., IČO 12345678, Testovacia 10, Bratislava",
+        "Druh práce: softvérový vývojár",
+        "Miesto výkonu práce: Bratislava",
+        "Deň nástupu: 01.09.2026",
+        "Základná mzda: 2 000",
+        "Mzdové obdobie: mesiac",
+    ]
+    facts = _extract_document_facts(
+        source_lines,
+        {
+            "case": {
+                "employment_contract_facts": {
+                    "work_description": "vývoj a testovanie softvéru",
+                }
+            }
+        },
+    )
+    user_profile = User(
+        user_id="synthetic-employee",
+        phone_number="+421900000000",
+        email="synthetic.employee@example.invalid",
+        first_name="Adam",
+        last_name="Vzorový",
+        full_name="Adam Vzorový",
+        address="Skúšobná 5",
+        city="Košice",
+        country="SK",
+        zip_code="040 01",
+        tax_number="SHOULD-NOT-BE-USED",
+        identity_card_number="SHOULD-NOT-BE-USED",
+        date_of_birth="1990-01-01",
+        social_security_number="SHOULD-NOT-BE-USED",
+        data_processing_consent_at=None,
+        data_processing_consent_version=None,
+        mcp_api_key_hash=None,
+        mcp_api_key_expires_at=None,
+        created_at="2026-08-28T00:00:00Z",
+    )
+
+    enriched = _apply_user_profile_document_defaults(facts=facts, user_profile=user_profile)
+
+    assert enriched["requesting_party_role"] == "employee"
+    assert enriched["employer_identification"].startswith("Synthetic Employer")
+    assert enriched["work_description"] == "vývoj a testovanie softvéru"
+    assert "Adam Vzorový" in enriched["employee_identification"]
+    assert "dátum narodenia: 1990-01-01" in enriched["employee_identification"]
+    assert "SHOULD-NOT-BE-USED" not in enriched["employee_identification"]
+
+
 def test_document_export_replaces_rental_party_placeholders_from_case_parties() -> None:
     from app.chat.api import _build_document_export_content
     from app.chat.models import Message, MessageRole, SessionResult

@@ -37,6 +37,7 @@ SQL asset:
 
 - `databases/api/document_templates_schema.sql`
 - production Postgres migration: `databases/api/migrations/0019_document_templates_case_catalog.sql`
+- structured template-fact migration: `databases/api/migrations/0021_document_template_fact_schema.sql`
 
 Notes:
 
@@ -46,6 +47,9 @@ Notes:
 - the canonical Slovak employment-contract seed contains an original reviewed body, an exact reviewed guidance URL,
   an official Slov-Lex legal-basis reference, visible draft/human-review warnings, and article/signature structure;
   startup versions only a legacy empty instance of this seed and never replaces a non-empty managed body
+- `fact_schema` stores ordered field metadata (`key`, localized `label`, `required`, exact missing-field `question`,
+  accepted `aliases`, explicitly scoped `profile_sources`, and an optional safe `default_value`); the legacy flat
+  `placeholders` field remains available for backward compatibility
 - the same catalog database now also stores `case_types`, `case_type_templates`, and `case_prompts`
 - Postgres and Azure deployments must apply the numbered API migration stream; the document-template
   and case-catalog tables are no longer deploy-safe as runtime-only schema drift fixes
@@ -237,6 +241,18 @@ the official current Slov-Lex page for Act No. 311/2001 Coll., especially Sectio
 JurisDigta text: external template wording is not copied. Bracketed fields must be completed and the result must be
 reviewed by a qualified human before signature. The structured employment fact/placeholder schema is maintained as a
 separate follow-up so this canonical-source change does not silently invent or persist employee facts.
+
+The employment template now has eight explicit required facts: employer identification, employee identification,
+work type, work description, work place, start date, base wage, and wage period. Employment term, probation, extra
+wage terms, pay date, working time/schedule, and signature place/date are optional and carry conservative draft
+defaults. Resolution is ordered and deterministic: exact key, accepted user/case-memory alias, explicitly scoped
+profile default, then optional default. The first unresolved required field exposes its own Slovak follow-up question.
+Generic `principal_identification` / `agent_identification` fields are not used by this template.
+
+Profile mapping is role-scoped. When the conversation explicitly identifies the signed-in user as the employee, the
+employment identity uses only name, date of birth, and permanent-address fields. It deliberately excludes rodné číslo,
+identity-card number, and tax number. Employer profile data is used only when it is explicitly supplied for the
+employer role. This data-minimization boundary applies before any external model drafting step.
 
 Generate a synthetic, locally seeded preview and validate its extracted article/signature markers with:
 

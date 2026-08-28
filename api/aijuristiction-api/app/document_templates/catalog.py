@@ -10,6 +10,7 @@ from app.document_templates.models import (
     DocumentTemplateDefinition,
     DownloadedTemplateSource,
     RenderedTemplateResult,
+    TemplateFactField,
     TemplateSourceReference,
 )
 
@@ -141,32 +142,32 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "PRACOVNÁ ZMLUVA\n"
                 "uzatvorená podľa § 42 a nasl. zákona č. 311/2001 Z. z. Zákonník práce\n\n"
                 "Zamestnávateľ:\n"
-                "[DOPLNIŤ: obchodné meno/názov, sídlo, IČO a osoba oprávnená konať]\n\n"
+                "{{employer_identification}}\n\n"
                 "Zamestnanec:\n"
-                "[DOPLNIŤ: meno, priezvisko, dátum narodenia a adresa trvalého pobytu]\n\n"
+                "{{employee_identification}}\n\n"
                 "(ďalej spolu aj ako „zmluvné strany“) uzatvárajú túto pracovnú zmluvu:\n\n"
                 "Článok I\n"
                 "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA\n"
-                "1. Zamestnanec bude vykonávať druh práce: [DOPLNIŤ].\n"
-                "2. Stručná charakteristika dohodnutého druhu práce: [DOPLNIŤ hlavné pracovné činnosti].\n\n"
+                "1. Zamestnanec bude vykonávať druh práce: {{work_type}}.\n"
+                "2. Stručná charakteristika dohodnutého druhu práce: {{work_description}}.\n\n"
                 "Článok II\n"
                 "MIESTO VÝKONU PRÁCE A DEŇ NÁSTUPU\n"
-                "1. Miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania: [DOPLNIŤ].\n"
-                "2. Dohodnutý deň nástupu do práce: [DOPLNIŤ].\n\n"
+                "1. Miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania: {{work_place}}.\n"
+                "2. Dohodnutý deň nástupu do práce: {{start_date}}.\n\n"
                 "Článok III\n"
                 "TRVANIE PRACOVNÉHO POMERU A SKÚŠOBNÁ DOBA\n"
-                "1. Pracovný pomer sa uzatvára na [DOPLNIŤ: neurčitý čas / určitý čas do ...].\n"
-                "2. Skúšobná doba je [DOPLNIŤ iba ak bola dohodnutá a je zákonne prípustná; inak uviesť, "
-                "že sa nedohodla].\n\n"
+                "1. Pracovný pomer sa uzatvára na {{employment_term}}.\n"
+                "2. {{probation_terms}}.\n\n"
                 "Článok IV\n"
                 "MZDOVÉ PODMIENKY\n"
-                "1. Zamestnancovi patrí základná zložka mzdy vo výške [DOPLNIŤ] EUR brutto za "
-                "[DOPLNIŤ: mesiac/hodinu].\n"
-                "2. Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín: [DOPLNIŤ alebo uviesť, "
-                "že sa neuplatňujú; rešpektovať zákonné mzdové nároky].\n\n"
+                "1. Zamestnancovi patrí základná zložka mzdy vo výške {{base_wage}} EUR brutto za "
+                "{{wage_period}}.\n"
+                "2. Ďalšie zložky mzdy a podmienky ich priznania: {{additional_wage_terms}}.\n"
+                "3. Výplatný termín: {{pay_date}}.\n\n"
                 "Článok V\n"
                 "PRACOVNÉ PODMIENKY\n"
-                "1. Ustanovený týždenný pracovný čas a jeho rozvrhnutie: [DOPLNIŤ].\n"
+                "1. Ustanovený týždenný pracovný čas: {{weekly_working_time}}. Rozvrhnutie pracovného "
+                "času: {{work_schedule}}.\n"
                 "2. Výmera dovolenky, pravidlá skončenia pracovného pomeru a ďalšie pracovné podmienky "
                 "sa spravujú Zákonníkom práce, príslušnou kolektívnou zmluvou, ak sa uplatňuje, a písomnou "
                 "informáciou zamestnávateľa poskytnutou v zákonnom rozsahu a lehote.\n\n"
@@ -189,13 +190,152 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "ostatnými všeobecne záväznými právnymi predpismi Slovenskej republiky.\n"
                 "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, jej obsahu porozumeli a na znak "
                 "súhlasu ju podpisujú slobodne a vážne.\n\n"
-                "V [DOPLNIŤ miesto], dňa [DOPLNIŤ dátum]\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\n"
                 "Za zamestnávateľa: ____________________\n"
                 "Zamestnanec: _________________________\n"
             ),
             keywords=("pracovna zmluva", "zamestnanec", "zamestnavatel"),
             flow_keys=(),
-            placeholders=("principal_identification", "agent_identification"),
+            placeholders=(
+                "employer_identification",
+                "employee_identification",
+                "work_type",
+                "work_description",
+                "work_place",
+                "start_date",
+                "employment_term",
+                "probation_terms",
+                "base_wage",
+                "wage_period",
+                "additional_wage_terms",
+                "pay_date",
+                "weekly_working_time",
+                "work_schedule",
+                "signature_place",
+                "signature_date",
+            ),
+            fact_schema=(
+                TemplateFactField(
+                    key="employer_identification",
+                    label="Identifikácia zamestnávateľa",
+                    question=(
+                        "Uveďte obchodné meno alebo názov zamestnávateľa, sídlo, IČO a osobu oprávnenú konať."
+                    ),
+                    aliases=["zamestnavatel", "employer", "employer_details"],
+                    profile_sources=["employer_identification"],
+                    description="Len údaje potrebné na jednoznačné označenie zamestnávateľa.",
+                ),
+                TemplateFactField(
+                    key="employee_identification",
+                    label="Identifikácia zamestnanca",
+                    question="Uveďte meno, priezvisko, dátum narodenia a adresu trvalého pobytu zamestnanca.",
+                    aliases=["zamestnanec", "employee", "employee_details"],
+                    profile_sources=["employee_identification"],
+                    description=(
+                        "Nevyžaduje rodné číslo ani číslo dokladu; používa iba zákonom potrebný rozsah."
+                    ),
+                ),
+                TemplateFactField(
+                    key="work_type",
+                    label="Druh práce",
+                    question="Aký druh práce bude zamestnanec vykonávať?",
+                    aliases=["druh_prace", "job_title", "position"],
+                ),
+                TemplateFactField(
+                    key="work_description",
+                    label="Stručná charakteristika práce",
+                    question="Aké hlavné pracovné činnosti patria k dohodnutému druhu práce?",
+                    aliases=["charakteristika_prace", "job_description", "duties"],
+                ),
+                TemplateFactField(
+                    key="work_place",
+                    label="Miesto výkonu práce",
+                    question="Aké bude miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania?",
+                    aliases=["miesto_vykonu_prace", "work_location", "workplace"],
+                ),
+                TemplateFactField(
+                    key="start_date",
+                    label="Deň nástupu do práce",
+                    question="Aký je dohodnutý deň nástupu do práce?",
+                    aliases=["den_nastupu", "employment_start_date"],
+                ),
+                TemplateFactField(
+                    key="base_wage",
+                    label="Základná zložka mzdy",
+                    question="Aká je dohodnutá základná hrubá mzda v EUR?",
+                    aliases=["zakladna_mzda", "gross_wage", "salary"],
+                ),
+                TemplateFactField(
+                    key="wage_period",
+                    label="Mzdové obdobie",
+                    question="Je základná mzda dohodnutá za mesiac alebo za hodinu?",
+                    aliases=["mzdove_obdobie", "salary_period", "pay_period"],
+                ),
+                TemplateFactField(
+                    key="employment_term",
+                    label="Trvanie pracovného pomeru",
+                    required=False,
+                    question="Má byť pracovný pomer na neurčitý čas alebo na určitý čas do konkrétneho dátumu?",
+                    aliases=["trvanie_pracovneho_pomeru", "contract_duration"],
+                    default_value="neurčitý čas",
+                ),
+                TemplateFactField(
+                    key="probation_terms",
+                    label="Skúšobná doba",
+                    required=False,
+                    question="Má sa dohodnúť zákonne prípustná skúšobná doba, a ak áno, v akej dĺžke?",
+                    aliases=["skusobna_doba", "probation_period"],
+                    default_value="Skúšobná doba sa nedohodla",
+                ),
+                TemplateFactField(
+                    key="additional_wage_terms",
+                    label="Ďalšie zložky mzdy",
+                    required=False,
+                    question="Majú sa dohodnúť ďalšie zložky mzdy alebo podmienky ich priznania?",
+                    aliases=["dalsie_zlozky_mzdy", "bonus_terms"],
+                    default_value="Neuplatňujú sa; zákonné mzdové nároky tým nie sú dotknuté",
+                ),
+                TemplateFactField(
+                    key="pay_date",
+                    label="Výplatný termín",
+                    required=False,
+                    question="Aký je výplatný termín mzdy?",
+                    aliases=["vyplatny_termin", "salary_payment_date"],
+                    default_value="podľa písomnej informácie zamestnávateľa",
+                ),
+                TemplateFactField(
+                    key="weekly_working_time",
+                    label="Týždenný pracovný čas",
+                    required=False,
+                    question="Aký je ustanovený týždenný pracovný čas?",
+                    aliases=["tyzdenny_pracovny_cas", "weekly_hours"],
+                    default_value="podľa písomnej informácie zamestnávateľa a Zákonníka práce",
+                ),
+                TemplateFactField(
+                    key="work_schedule",
+                    label="Rozvrhnutie pracovného času",
+                    required=False,
+                    question="Ako bude pracovný čas rozvrhnutý?",
+                    aliases=["rozvrhnutie_pracovneho_casu", "work_schedule_terms"],
+                    default_value="podľa písomnej informácie zamestnávateľa",
+                ),
+                TemplateFactField(
+                    key="signature_place",
+                    label="Miesto podpisu",
+                    required=False,
+                    question="Aké miesto sa má uviesť pri podpise zmluvy?",
+                    aliases=["miesto_podpisu"],
+                    default_value="________________",
+                ),
+                TemplateFactField(
+                    key="signature_date",
+                    label="Dátum podpisu",
+                    required=False,
+                    question="Aký dátum sa má uviesť pri podpise zmluvy?",
+                    aliases=["datum_podpisu"],
+                    default_value="________________",
+                ),
+            ),
             source_refs=(
                 TemplateSourceReference(
                     label="Pracovná zmluva – vzor 2026",
@@ -556,7 +696,8 @@ def render_template(
 ) -> RenderedTemplateResult:
     if not template.body.strip():
         return RenderedTemplateResult(title=template.title, lines=[], unresolved_fields=[])
-    context = _build_render_context(facts=facts, country=country, language=language)
+    resolved_facts = resolve_template_facts(template=template, facts=facts)
+    context = _build_render_context(facts=resolved_facts, country=country, language=language)
     unresolved_fields: list[str] = []
 
     def replace(match: re.Match[str]) -> str:
@@ -575,6 +716,72 @@ def render_template(
         lines=[line.rstrip() for line in rendered.splitlines() if line.strip()],
         unresolved_fields=list(dict.fromkeys(unresolved_fields)),
     )
+
+
+def resolve_template_facts(
+    *,
+    template: DocumentTemplateDefinition,
+    facts: dict[str, str],
+    profile_defaults: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Resolve explicit facts, aliases, scoped profile defaults, and safe optional defaults."""
+    values = {key: str(value).strip() for key, value in facts.items() if str(value).strip()}
+    profile_values = {
+        key: str(value).strip()
+        for key, value in (profile_defaults or {}).items()
+        if str(value).strip()
+    }
+    for field in template.fact_schema:
+        value = next(
+            (
+                values[key]
+                for key in (field.key, *field.aliases)
+                if key in values and values[key]
+            ),
+            "",
+        )
+        if not value:
+            value = next(
+                (
+                    profile_values[key]
+                    for key in field.profile_sources
+                    if key in profile_values and profile_values[key]
+                ),
+                "",
+            )
+        if not value:
+            value = field.default_value.strip()
+        if value:
+            values[field.key] = value
+    return values
+
+
+def missing_required_template_facts(
+    *,
+    template: DocumentTemplateDefinition,
+    facts: dict[str, str],
+    profile_defaults: dict[str, str] | None = None,
+) -> list[TemplateFactField]:
+    resolved = resolve_template_facts(
+        template=template,
+        facts=facts,
+        profile_defaults=profile_defaults,
+    )
+    return [field for field in template.fact_schema if field.required and not resolved.get(field.key)]
+
+
+def next_missing_template_fact_question(
+    *,
+    template: DocumentTemplateDefinition,
+    facts: dict[str, str],
+    profile_defaults: dict[str, str] | None = None,
+) -> str | None:
+    missing = missing_required_template_facts(
+        template=template,
+        facts=facts,
+        profile_defaults=profile_defaults,
+    )
+    return missing[0].question if missing else None
 
 
 def download_template_sources(
@@ -635,8 +842,8 @@ def _build_render_context(*, facts: dict[str, str], country: str, language: str 
             "transferee_identification": _value(values, "transferee_name"),
             "share_scope": _value(values, "transfer_share"),
             "transfer_price": _value(values, "transfer_price", "0 EUR"),
-            "signature_place": "[mesto]",
-            "signature_date": "[datum]",
+            "signature_place": _value(values, "signature_place", "________________"),
+            "signature_date": _value(values, "signature_date", "________________"),
         }
     )
     return {

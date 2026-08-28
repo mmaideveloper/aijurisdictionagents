@@ -141,3 +141,14 @@ def test_api_document_template_case_catalog_migration_is_versioned() -> None:
     assert "CREATE TABLE IF NOT EXISTS case_types" in sql
     assert "CREATE TABLE IF NOT EXISTS case_type_templates" in sql
     assert "CREATE TABLE IF NOT EXISTS case_prompts" in sql
+
+
+def test_api_document_template_fact_schema_migration_is_additive() -> None:
+    migrations = runner.list_migration_files("api")
+    migration = next(
+        path for path in migrations if path.name == "0021_document_template_fact_schema.sql"
+    )
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "ADD COLUMN IF NOT EXISTS fact_schema_json" in sql
+    assert "DEFAULT '[]'" in sql

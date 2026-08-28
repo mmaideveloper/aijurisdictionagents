@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS document_templates (
     keywords_json TEXT NOT NULL,
     flow_keys_json TEXT NOT NULL,
     placeholders_json TEXT NOT NULL,
+    fact_schema_json TEXT NOT NULL DEFAULT '[]',
     source_refs_json TEXT NOT NULL,
     disclaimer_title TEXT NOT NULL DEFAULT '',
     disclaimer_text TEXT NOT NULL DEFAULT '',

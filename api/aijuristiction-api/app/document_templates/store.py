@@ -27,6 +27,7 @@ from app.document_templates.models import (
     DocumentTemplateDefinition,
     DocumentTemplateResponse,
     DocumentTemplateUpdateRequest,
+    TemplateFactField,
     TemplateSourceReference,
 )
 
@@ -64,7 +65,7 @@ class DocumentTemplateStore:
         self._config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self._seed_defaults_if_empty()
-        self._refresh_empty_seeded_document_template_bodies()
+        self._refresh_system_seeded_document_templates()
         self._seed_case_types_if_empty()
         self._refresh_seeded_case_type_descriptions()
 
@@ -200,9 +201,9 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, body, keywords_json, flow_keys_json,
-                        placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
-                        version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                        placeholders_json, fact_schema_json, source_refs_json, disclaimer_title, disclaimer_text,
+                        disclaimer_footer, version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -221,6 +222,11 @@ class DocumentTemplateStore:
                     json.dumps(payload.keywords, ensure_ascii=False, sort_keys=True),
                     json.dumps(payload.flow_keys, ensure_ascii=False, sort_keys=True),
                     json.dumps(payload.placeholders, ensure_ascii=False, sort_keys=True),
+                    json.dumps(
+                        [item.model_dump(mode="json") for item in payload.fact_schema],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
                     json.dumps([item.model_dump(mode="json") for item in payload.source_refs], ensure_ascii=False, sort_keys=True),
                     payload.disclaimer_title.strip(),
                     payload.disclaimer_text.strip(),
@@ -265,6 +271,13 @@ class DocumentTemplateStore:
             "keywords_json": json.dumps(payload.keywords if payload.keywords is not None else list(current.keywords), ensure_ascii=False, sort_keys=True),
             "flow_keys_json": json.dumps(payload.flow_keys if payload.flow_keys is not None else list(current.flow_keys), ensure_ascii=False, sort_keys=True),
             "placeholders_json": json.dumps(payload.placeholders if payload.placeholders is not None else list(current.placeholders), ensure_ascii=False, sort_keys=True),
+            "fact_schema_json": json.dumps(
+                [item.model_dump(mode="json") for item in payload.fact_schema]
+                if payload.fact_schema is not None
+                else [item.model_dump(mode="json") for item in current.fact_schema],
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             "source_refs_json": json.dumps(
                 [item.model_dump(mode="json") for item in payload.source_refs]
                 if payload.source_refs is not None
@@ -299,9 +312,9 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, body, keywords_json, flow_keys_json,
-                        placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
-                        version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                        placeholders_json, fact_schema_json, source_refs_json, disclaimer_title, disclaimer_text,
+                        disclaimer_footer, version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -326,6 +339,7 @@ class DocumentTemplateStore:
                     updated["keywords_json"],
                     updated["flow_keys_json"],
                     updated["placeholders_json"],
+                    updated["fact_schema_json"],
                     updated["source_refs_json"],
                     updated["disclaimer_title"],
                     updated["disclaimer_text"],
@@ -791,6 +805,7 @@ class DocumentTemplateStore:
                     keywords=list(item.keywords),
                     flow_keys=list(item.flow_keys),
                     placeholders=list(item.placeholders),
+                    fact_schema=list(item.fact_schema),
                     source_refs=list(item.source_refs),
                     disclaimer_title=item.disclaimer_title,
                     disclaimer_text=item.disclaimer_text,
@@ -799,8 +814,8 @@ class DocumentTemplateStore:
                 )
             )
 
-    def _refresh_empty_seeded_document_template_bodies(self) -> None:
-        """Version legacy metadata-only seeds without replacing managed template content."""
+    def _refresh_system_seeded_document_templates(self) -> None:
+        """Version recognized legacy system seeds without replacing administrator content."""
         canonical_by_key = {
             item.template_key: item
             for item in build_default_document_templates()
@@ -811,7 +826,13 @@ class DocumentTemplateStore:
                 current = self.get(template_key=template_key, jurisdiction=canonical.jurisdiction)
             except DocumentTemplateNotFoundError:
                 continue
-            if current.body.strip():
+            is_empty_legacy_seed = not current.body.strip()
+            is_previous_canonical_employment_seed = (
+                not current.fact_schema
+                and current.source_url == "https://www.aksamec.sk/pracovna-zmluva-vzor-2026/"
+                and "[DOPLNIŤ: obchodné meno/názov" in current.body
+            )
+            if not (is_empty_legacy_seed or is_previous_canonical_employment_seed):
                 continue
             self.update(
                 template_key=template_key,
@@ -821,6 +842,8 @@ class DocumentTemplateStore:
                     source_format=canonical.source_format,
                     source_url=canonical.source_url,
                     body=canonical.body,
+                    placeholders=list(canonical.placeholders),
+                    fact_schema=list(canonical.fact_schema),
                     source_refs=list(canonical.source_refs),
                     disclaimer_title=canonical.disclaimer_title,
                     disclaimer_text=canonical.disclaimer_text,
@@ -975,6 +998,11 @@ class DocumentTemplateStore:
             keywords=tuple(_parse_json_array(row.get("keywords_json"))),
             flow_keys=tuple(_parse_json_array(row.get("flow_keys_json"))),
             placeholders=tuple(_parse_json_array(row.get("placeholders_json"))),
+            fact_schema=tuple(
+                TemplateFactField.model_validate(item)
+                for item in _parse_json_array(row.get("fact_schema_json"))
+                if isinstance(item, dict)
+            ),
             source_refs=tuple(
                 TemplateSourceReference.model_validate(item)
                 for item in _parse_json_array(row.get("source_refs_json"))
@@ -1030,6 +1058,7 @@ class DocumentTemplateStore:
             "disclaimer_title": "TEXT NOT NULL DEFAULT ''",
             "disclaimer_text": "TEXT NOT NULL DEFAULT ''",
             "disclaimer_footer": "TEXT NOT NULL DEFAULT ''",
+            "fact_schema_json": "TEXT NOT NULL DEFAULT '[]'",
             "lineage_key": "TEXT NOT NULL DEFAULT ''",
             "version": "INTEGER NOT NULL DEFAULT 1",
             "stored_at": "TEXT",

@@ -7,6 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
+from app.document_templates.catalog import (
+    missing_required_template_facts,
+    next_missing_template_fact_question,
+    resolve_template_facts,
+)
 from app.document_templates.api import get_document_template_store, router
 from app.document_templates.models import DocumentTemplateCreateRequest, DocumentTemplateUpdateRequest
 from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
@@ -49,11 +54,67 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body
     assert "Článok VII" in employment.body
     assert "Za zamestnávateľa: ____________________" in employment.body
+    assert "principal_identification" not in employment.placeholders
+    assert "agent_identification" not in employment.placeholders
+    assert {field.key for field in employment.fact_schema if field.required} == {
+        "employer_identification",
+        "employee_identification",
+        "work_type",
+        "work_description",
+        "work_place",
+        "start_date",
+        "base_wage",
+        "wage_period",
+    }
+    assert {field.key for field in employment.fact_schema if not field.required} >= {
+        "employment_term",
+        "probation_terms",
+        "weekly_working_time",
+        "signature_date",
+    }
     assert {reference.source_kind for reference in employment.source_refs} == {
         "official_legislation",
         "reviewed_template_guidance",
     }
     assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
+
+
+def test_employment_template_fact_schema_resolves_aliases_profile_defaults_and_question_order(
+    tmp_path: Path,
+) -> None:
+    employment = _build_store(tmp_path).get(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+
+    first_question = next_missing_template_fact_question(template=employment, facts={})
+    assert first_question == (
+        "Uveďte obchodné meno alebo názov zamestnávateľa, sídlo, IČO a osobu oprávnenú konať."
+    )
+
+    resolved = resolve_template_facts(
+        template=employment,
+        facts={
+            "zamestnavatel": "Synthetic Employer s. r. o., IČO 12345678, Testovacia 10, Bratislava",
+            "job_title": "softvérový vývojár",
+            "job_description": "vývoj a testovanie softvéru",
+            "work_location": "Bratislava",
+            "employment_start_date": "01.09.2026",
+            "gross_wage": "2 000",
+            "pay_period": "mesiac",
+        },
+        profile_defaults={
+            "employee_identification": (
+                "Adam Vzorový, dátum narodenia 01.01.1990, trvalý pobyt Skúšobná 5, Košice"
+            )
+        },
+    )
+
+    assert resolved["employer_identification"].startswith("Synthetic Employer")
+    assert resolved["employee_identification"].startswith("Adam Vzorový")
+    assert resolved["work_type"] == "softvérový vývojár"
+    assert resolved["employment_term"] == "neurčitý čas"
+    assert missing_required_template_facts(template=employment, facts=resolved) == []
 
 
 def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_path: Path) -> None:
@@ -101,6 +162,7 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
             body="Konzultacna zmluva medzi {{seller_identification}} a {{buyer_identification}}.",
             keywords=["konzultacna zmluva", "consulting agreement"],
             placeholders=["seller_identification", "buyer_identification"],
+            fact_schema=[],
             source_refs=[],
             is_enabled=True,
         )
@@ -173,6 +235,18 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
             "keywords": ["pozicka", "pozickova zmluva"],
             "flow_keys": [],
             "placeholders": [],
+            "fact_schema": [
+                {
+                    "key": "lender_identification",
+                    "label": "Veriteľ",
+                    "required": True,
+                    "question": "Kto je veriteľ?",
+                    "aliases": ["veritel"],
+                    "profile_sources": [],
+                    "default_value": "",
+                    "description": "",
+                }
+            ],
             "source_refs": [],
             "disclaimer_title": "Dolezite upozornenie",
             "disclaimer_text": "Pred podpisom nechajte text skontrolovat advokatom.",
@@ -183,6 +257,7 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert create_response.status_code == 201
     assert create_response.json()["template_key"] == "sk.custom.loan_agreement"
     assert create_response.json()["disclaimer_text"] == "Pred podpisom nechajte text skontrolovat advokatom."
+    assert create_response.json()["fact_schema"][0]["question"] == "Kto je veriteľ?"
     assert create_response.json()["version"] == 1
 
     patch_response = client.patch(
@@ -243,6 +318,9 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "Za zamestnávateľa" in employment_text
     assert "individuálnu" in employment_text
     assert "ľudskú kontrolu" in employment_text_normalized
+    assert "Nevyriešené polia náhľadu" not in employment_text
+    assert "[mesto]" not in employment_text
+    assert "[datum]" not in employment_text
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")
     assert delete_response.status_code == 200

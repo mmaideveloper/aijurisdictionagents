@@ -143,9 +143,18 @@ def resolve_case_catalog_context(
         case_type_key=case_type.case_type_key,
         case_prompt_text=case_type.prompt.prompt_text if case_type.prompt is not None else "",
         template_titles=[item.title for item in case_type.templates],
+        template_fact_fields=[field for item in case_type.templates for field in item.fact_schema],
     )
     template_documents = [
-        _template_document(item.template_id, item.template_key, item.title, item.template_kind, item.description, item.body)
+        _template_document(
+            item.template_id,
+            item.template_key,
+            item.title,
+            item.template_kind,
+            item.description,
+            item.body,
+            item.fact_schema,
+        )
         for item in case_type.templates
     ]
     return CaseCatalogContext(
@@ -616,6 +625,7 @@ def _build_case_catalog_prompt_note(
     case_type_key: str,
     case_prompt_text: str,
     template_titles: list[str],
+    template_fact_fields: list[Any],
 ) -> str:
     lines = [
         "AUTOMATIC CASE-TYPE DETECTION:",
@@ -634,6 +644,24 @@ def _build_case_catalog_prompt_note(
     if template_titles:
         lines.extend(["", "MATCHED TEMPLATE TITLES:"])
         lines.extend(f"- {title}" for title in template_titles)
+    if template_fact_fields:
+        lines.extend(["", "MATCHED TEMPLATE FACT SCHEMA:"])
+        for field in template_fact_fields:
+            requirement = "REQUIRED" if field.required else "OPTIONAL"
+            aliases = f"; accepted aliases: {', '.join(field.aliases)}" if field.aliases else ""
+            default = f"; safe default: {field.default_value}" if field.default_value else ""
+            lines.append(
+                f"- {requirement} {field.key} ({field.label}){aliases}{default}. "
+                f"If missing, ask: {field.question}"
+            )
+        lines.extend(
+            [
+                "- Resolve facts already present in the conversation, case memory, uploaded documents, or "
+                "explicitly scoped signed-in profile defaults before asking the next question.",
+                "- Ask the exact question for only the first still-missing REQUIRED field; do not request optional "
+                "fields before all required fields are known.",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -653,6 +681,7 @@ def _template_document(
     template_kind: str,
     description: str,
     body: str,
+    fact_schema: tuple[Any, ...],
 ) -> Document:
     lines = [
         f"Template title: {title}",
@@ -662,6 +691,15 @@ def _template_document(
     ]
     if body.strip():
         lines.extend(["", "Template body:", body.strip()])
+    if fact_schema:
+        lines.extend(["", "Template fact schema:"])
+        lines.extend(
+            (
+                f"- {'required' if field.required else 'optional'} {field.key}: {field.label}; "
+                f"question={field.question}"
+            )
+            for field in fact_schema
+        )
     return Document(
         doc_id=template_id,
         path=f"case-templates/{template_key}.txt",

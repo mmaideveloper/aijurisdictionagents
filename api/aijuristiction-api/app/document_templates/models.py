@@ -14,6 +14,17 @@ class TemplateSourceReference(BaseModel):
     notes: str = Field(default="", max_length=2000)
 
 
+class TemplateFactField(BaseModel):
+    key: str = Field(min_length=2, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+    label: str = Field(min_length=2, max_length=200)
+    required: bool = True
+    question: str = Field(min_length=3, max_length=500)
+    aliases: list[str] = Field(default_factory=list)
+    profile_sources: list[str] = Field(default_factory=list)
+    default_value: str = Field(default="", max_length=1000)
+    description: str = Field(default="", max_length=1000)
+
+
 class DocumentTemplateBasePayload(BaseModel):
     template_key: str = Field(min_length=3, max_length=200)
     jurisdiction: str = Field(min_length=2, max_length=8)
@@ -28,6 +39,7 @@ class DocumentTemplateBasePayload(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     flow_keys: list[str] = Field(default_factory=list)
     placeholders: list[str] = Field(default_factory=list)
+    fact_schema: list[TemplateFactField] = Field(default_factory=list)
     source_refs: list[TemplateSourceReference] = Field(default_factory=list)
     disclaimer_title: str = Field(default="", max_length=200)
     disclaimer_text: str = Field(default="", max_length=4000)
@@ -52,6 +64,7 @@ class DocumentTemplateUpdateRequest(BaseModel):
     keywords: list[str] | None = None
     flow_keys: list[str] | None = None
     placeholders: list[str] | None = None
+    fact_schema: list[TemplateFactField] | None = None
     source_refs: list[TemplateSourceReference] | None = None
     disclaimer_title: str | None = Field(default=None, max_length=200)
     disclaimer_text: str | None = Field(default=None, max_length=4000)
@@ -75,6 +88,7 @@ class DocumentTemplateDefinition(BaseModel):
     keywords: tuple[str, ...] = ()
     flow_keys: tuple[str, ...] = ()
     placeholders: tuple[str, ...] = ()
+    fact_schema: tuple[TemplateFactField, ...] = ()
     source_refs: tuple[TemplateSourceReference, ...] = ()
     disclaimer_title: str = ""
     disclaimer_text: str = ""
@@ -107,6 +121,7 @@ class DocumentTemplateResponse(BaseModel):
     keywords: list[str]
     flow_keys: list[str]
     placeholders: list[str]
+    fact_schema: list[TemplateFactField]
     source_refs: list[TemplateSourceReference]
     disclaimer_title: str = ""
     disclaimer_text: str = ""
@@ -140,6 +155,7 @@ class DocumentTemplateResponse(BaseModel):
             keywords=list(item.keywords),
             flow_keys=list(item.flow_keys),
             placeholders=list(item.placeholders),
+            fact_schema=list(item.fact_schema),
             source_refs=list(item.source_refs),
             disclaimer_title=item.disclaimer_title,
             disclaimer_text=item.disclaimer_text,
