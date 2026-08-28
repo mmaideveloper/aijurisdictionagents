@@ -92,6 +92,7 @@ class McpLawContext:
     prompt_note: str
     document: CoreDocument | None
     processing_event: dict[str, object]
+    grounded_latest_laws_reply: str | None = None
 
 
 def build_mcp_law_context(
@@ -245,6 +246,16 @@ def _build_laws_only_context(
         path="internal-mcp-law-context.txt",
         content=_document_content(laws=laws, law_texts=law_texts, court_decisions=[], fallback_records=[]),
     )
+    grounded_latest_laws_reply = None
+    if (
+        search_arguments.get("sort") == "latest"
+        and search_arguments.get("include_summaries") is True
+        and int(search_arguments.get("limit") or 1) > 1
+    ):
+        grounded_latest_laws_reply = _grounded_latest_laws_reply(
+            laws=laws,
+            language=language,
+        )
     return McpLawContext(
         prompt_note=prompt_note,
         document=document,
@@ -262,6 +273,7 @@ def _build_laws_only_context(
                 "web_search_status": "not_requested",
             },
         },
+        grounded_latest_laws_reply=grounded_latest_laws_reply,
     )
 
 
@@ -406,6 +418,59 @@ def _is_latest_law_query(query: str) -> bool:
 def _requested_latest_law_count(query: str) -> int:
     match = re.search(r"\b(?P<count>\d{1,2})\b", _canonical(query))
     return min(max(int(match.group("count")), 1), 10) if match is not None else 1
+
+
+def _grounded_latest_laws_reply(
+    *, laws: list[dict[str, Any]], language: str | None
+) -> str | None:
+    rows: list[tuple[str, str, str]] = []
+    for law in laws:
+        identifier = _bounded_display_text(
+            law.get("law_identifier_text") or law.get("law_identifier"),
+            max_chars=80,
+        )
+        title = _bounded_display_text(
+            law.get("title") or law.get("lawyer_title") or law.get("official_name"),
+            max_chars=300,
+        )
+        summary = _bounded_display_text(law.get("summary"), max_chars=600)
+        if not identifier or not title or not summary:
+            return None
+        rows.append((identifier, title, summary))
+    if not rows:
+        return None
+
+    normalized_language = (language or "").strip().lower()
+    if normalized_language.startswith("sk"):
+        heading = "Najnovšie zákony v systéme JurisDigta:"
+        summary_label = "Súhrn"
+        limitation = (
+            "Súhrny sú odvodené z importovaných verejných metadát. "
+            "Pred právnym použitím ich skontrolujte v úplnom znení predpisu."
+        )
+    elif normalized_language.startswith("de"):
+        heading = "Neueste Gesetze im JurisDigta-System:"
+        summary_label = "Zusammenfassung"
+        limitation = (
+            "Die Zusammenfassungen werden aus importierten öffentlichen Metadaten abgeleitet. "
+            "Prüfen Sie vor der rechtlichen Verwendung den vollständigen Gesetzestext."
+        )
+    else:
+        heading = "Latest laws in the JurisDigta system:"
+        summary_label = "Summary"
+        limitation = (
+            "The summaries are derived from imported public metadata. "
+            "Review the full legal text before relying on them."
+        )
+    items = [
+        f"{index}. **{identifier} – {title}**\n   {summary_label}: {summary}"
+        for index, (identifier, title, summary) in enumerate(rows, start=1)
+    ]
+    return "\n\n".join((heading, *items, limitation))
+
+
+def _bounded_display_text(value: Any, *, max_chars: int) -> str:
+    return " ".join(str(value or "").split())[:max_chars].strip()
 
 
 def _is_latest_court_query(query: str) -> bool:

@@ -31,6 +31,7 @@ type McpSource = {
   title: string;
   sourceUrl: string;
   textCharacters: number;
+  summary?: string;
 };
 
 type CaseCitation = {
@@ -368,6 +369,9 @@ test('production remains stable when a synthetic case requests the latest five l
     expect(observed, 'All five latest MCP sources must persist as case citations').toHaveLength(5);
     for (const source of latestSources) {
       expect(answer, `Answer must identify ${source.identifier}`).toContain(source.identifier);
+      expect(answer, `Answer must include the title for ${source.identifier}`).toContain(source.title);
+      expect(source.summary, `MCP summary must exist for ${source.identifier}`).not.toBe('');
+      expect(answer, `Answer must include the summary for ${source.identifier}`).toContain(String(source.summary));
     }
 
     const auditResponse = await request.get(
@@ -585,6 +589,7 @@ async function discoverLatestLawsThroughMcp(
       title: String(result.title ?? result.official_name ?? identifier),
       sourceUrl: String(result.source_url ?? ''),
       textCharacters: summary.length,
+      summary,
     };
   });
 }
