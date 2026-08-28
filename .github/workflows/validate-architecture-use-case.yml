@@ -61,7 +61,8 @@ jobs:
             relative="${diagram#architecture/}"
             output="build/architecture/mermaid/${relative%.mmd}.svg"
             mkdir -p "$(dirname "$output")"
-            mmdc --input "$diagram" --output "$output" --backgroundColor transparent
+            mmdc --input "$diagram" --output "$output" --backgroundColor transparent \
+              --puppeteerConfigFile .github/mermaid-puppeteer-config.json
           done < <(find architecture -type f -name '*.mmd' -print0)
 
       - name: Upload rendered architecture diagrams
