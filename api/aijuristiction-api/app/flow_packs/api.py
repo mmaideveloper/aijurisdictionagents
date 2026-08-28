@@ -4,6 +4,7 @@ from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.ai_model_admin_api import AdminContext, require_ai_model_admin
 from app.flow_packs.models import (
     FlowPackCreateRequest,
     FlowPackCreateVersionRequest,
@@ -15,6 +16,7 @@ from app.flow_packs.models import (
 from app.flow_packs.store import (
     FlowPackAmbiguousError,
     FlowPackNotFoundError,
+    FlowPackImmutableError,
     FlowPackStore,
     FlowPackVersionConflictError,
 )
@@ -68,6 +70,7 @@ def get_flow_pack_version(
 @router.post("", response_model=FlowPackResponse, status_code=status.HTTP_201_CREATED)
 def create_flow_pack(
     payload: FlowPackCreateRequest,
+    _: AdminContext = Depends(require_ai_model_admin),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:
     try:
@@ -80,6 +83,7 @@ def create_flow_pack(
 def create_flow_pack_version(
     flow_key: str,
     payload: FlowPackCreateVersionRequest,
+    _: AdminContext = Depends(require_ai_model_admin),
     jurisdiction: str | None = Query(default=None),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:
@@ -98,6 +102,7 @@ def update_flow_pack_version(
     flow_key: str,
     version: int,
     payload: FlowPackUpdateRequest,
+    _: AdminContext = Depends(require_ai_model_admin),
     jurisdiction: str | None = Query(default=None),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:
@@ -107,12 +112,15 @@ def update_flow_pack_version(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except FlowPackAmbiguousError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/{flow_key}/versions/{version}/enable", response_model=FlowPackResponse)
 def enable_flow_pack_version(
     flow_key: str,
     version: int,
+    _: AdminContext = Depends(require_ai_model_admin),
     jurisdiction: str | None = Query(default=None),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:
@@ -122,12 +130,15 @@ def enable_flow_pack_version(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except FlowPackAmbiguousError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/{flow_key}/versions/{version}/disable", response_model=FlowPackResponse)
 def disable_flow_pack_version(
     flow_key: str,
     version: int,
+    _: AdminContext = Depends(require_ai_model_admin),
     jurisdiction: str | None = Query(default=None),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:
@@ -143,6 +154,7 @@ def disable_flow_pack_version(
 def soft_delete_flow_pack_version(
     flow_key: str,
     version: int,
+    _: AdminContext = Depends(require_ai_model_admin),
     jurisdiction: str | None = Query(default=None),
     store: FlowPackStore = Depends(get_flow_pack_store),
 ) -> FlowPackResponse:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 import tempfile
 from uuid import uuid4
@@ -8,22 +9,29 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai_model_admin_api import AdminContext, require_ai_model_admin
 from app.flow_packs.api import get_flow_pack_store
 from app.main import app
 
 client = TestClient(app)
-AUTH_HEADERS = {"x-api-key": "aijuris"}
+AUTH_HEADERS = {"x-api-key": "aijuris", "x-admin-api-key": "admin-secret"}
 
 
 @pytest.fixture(autouse=True)
-def isolated_flow_pack_store() -> None:
+def isolated_flow_pack_store() -> Iterator[None]:
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = Path(tmp_dir) / "flow_packs.sqlite3"
         os.environ["API_FLOW_PACKS_SQLITE_PATH"] = str(db_path)
+        os.environ["JURISDIGTA_ADMIN_API_KEY"] = "admin-secret"
+        app.dependency_overrides[require_ai_model_admin] = lambda: AdminContext(
+            user_id="test-admin", email="admin@example.test"
+        )
         get_flow_pack_store.cache_clear()
+        app.dependency_overrides.pop(require_ai_model_admin, None)
         yield
         get_flow_pack_store.cache_clear()
         os.environ.pop("API_FLOW_PACKS_SQLITE_PATH", None)
+        os.environ.pop("JURISDIGTA_ADMIN_API_KEY", None)
 
 
 def test_list_default_flow_packs() -> None:
@@ -49,7 +57,7 @@ def test_create_update_enable_disable_soft_delete_and_version() -> None:
             "title": "Predžalobná výzva",
             "description": "Flow pre predzalobnu vyzvu",
             "definition": {"required_facts": ["counterparty", "claim_summary"]},
-            "is_enabled": True,
+            "is_enabled": False,
         },
     )
     assert create_response.status_code == 201
@@ -64,19 +72,28 @@ def test_create_update_enable_disable_soft_delete_and_version() -> None:
     assert update_response.status_code == 200
     assert update_response.json()["title"] == "Predžalobná výzva - aktualizovaná"
 
-    disable_response = client.post(
-        f"/v1/flow-packs/{flow_key}/versions/1/disable",
-        headers=AUTH_HEADERS,
-    )
-    assert disable_response.status_code == 200
-    assert disable_response.json()["is_enabled"] is False
-
     enable_response = client.post(
         f"/v1/flow-packs/{flow_key}/versions/1/enable",
         headers=AUTH_HEADERS,
     )
     assert enable_response.status_code == 200
     assert enable_response.json()["is_enabled"] is True
+    assert enable_response.json()["lifecycle_state"] == "published"
+
+    immutable_response = client.patch(
+        f"/v1/flow-packs/{flow_key}/versions/1",
+        headers=AUTH_HEADERS,
+        json={"title": "Published versions cannot change"},
+    )
+    assert immutable_response.status_code == 409
+
+    disable_response = client.post(
+        f"/v1/flow-packs/{flow_key}/versions/1/disable",
+        headers=AUTH_HEADERS,
+    )
+    assert disable_response.status_code == 200
+    assert disable_response.json()["is_enabled"] is False
+    assert disable_response.json()["lifecycle_state"] == "retired"
 
     create_version_response = client.post(
         f"/v1/flow-packs/{flow_key}/versions",

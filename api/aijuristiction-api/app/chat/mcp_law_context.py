@@ -103,10 +103,13 @@ def build_mcp_law_context(
     text_limit: int = 2,
     max_chars_per_law: int = 3000,
     web_search_approved: bool = False,
+    force: bool = False,
 ) -> McpLawContext | None:
     """Build law context through the same MCP law tools exposed to external assistants."""
 
-    if not _should_use_mcp_law_context(query=query, country=country, language=language):
+    if not force and not _should_use_mcp_law_context(
+        query=query, country=country, language=language
+    ):
         return None
 
     if _should_search_court_decisions(query):

@@ -299,6 +299,137 @@ test('production MCP law grounding is preserved through Azure Foundry gpt-5-mini
   ).toEqual([]);
 });
 
+test('production remains stable when a synthetic case requests the latest five laws with summaries', async ({
+  browser,
+  request,
+}, testInfo) => {
+  test.setTimeout(timeoutMs + 180_000);
+  expect(e2ePassword, 'JURISDIGTA_E2E_TEST_USER_PASSWORD must be supplied securely').not.toBe('');
+  expect(expectedCommitSha).toMatch(/^[0-9a-f]{40}$/i);
+  const cell = scenario.modelMatrix.find((item) => item.expectedPlan === 'paid') ?? scenario.modelMatrix[0];
+  expect(cell).toBeTruthy();
+  const requestedQuestion = 'Zobraz mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju.&#x20;';
+  const submittedQuestion = 'Zobraz mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju. ';
+  const runId = `issue-635-prod-stability-${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
+  const page = await browser.newPage({ viewport: { width: 1600, height: 1200 } });
+  let userId = '';
+  let caseId = '';
+  let screenshotName = '';
+  let manifest: Record<string, unknown> = {};
+  try {
+    const oauth = await authorizeMcp(request, cell!.email, e2ePassword);
+    userId = oauth.userId;
+    const latestSources = await discoverLatestLawsThroughMcp(request, oauth.accessToken, submittedQuestion);
+    expect(latestSources).toHaveLength(5);
+
+    const routeResponse = await request.get(
+      `${apiBaseUrl}/v1/model-routing/effective?task_type=chat_reply&user_id=${encodeURIComponent(userId)}`,
+      { headers: apiHeaders() },
+    );
+    expect(routeResponse.ok()).toBeTruthy();
+    const route = (await routeResponse.json()) as Record<string, unknown>;
+    expect(normalizeProvider(String(route.provider ?? ''))).toBe(normalizeProvider(cell!.expectedProvider));
+    expect(normalizeModel(String(route.model ?? ''))).toBe(normalizeModel(cell!.expectedModel));
+    expect(String(route.route_type ?? '')).not.toMatch(/fallback/i);
+
+    const caseTitle = `[${runId}] Latest five laws`;
+    const caseResponse = await request.post(`${apiBaseUrl}/v1/cases`, {
+      headers: apiHeaders(),
+      data: { user_id: userId, title: caseTitle },
+    });
+    expect(caseResponse.status()).toBe(201);
+    caseId = String(((await caseResponse.json()) as Record<string, unknown>).case_id ?? '');
+
+    await seedFrontendSession(page, userId, cell!.email);
+    await page.goto(`${frontendBaseUrl}/app/assistant`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+    await page.getByText(caseTitle, { exact: true }).click({ timeout: 60_000 });
+    await page.locator('.assistant-composer__input').fill(submittedQuestion);
+    await page.locator('.assistant-composer__send').click();
+    const assistantMessage = page.locator('.assistant-message').last();
+    await expect(assistantMessage).toContainText(/zákon|zakon/i, { timeout: timeoutMs });
+    await expect(page.locator('.assistant-tool-panel')).toContainText(/JurisDigta MCP/i, {
+      timeout: timeoutMs,
+    });
+
+    const historyResponse = await request.get(
+      `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/history?user_id=${encodeURIComponent(userId)}&limit=20`,
+      { headers: apiHeaders() },
+    );
+    expect(historyResponse.ok()).toBeTruthy();
+    const history = (await historyResponse.json()) as {
+      messages?: Array<{ role?: string; content?: string }>;
+      citations?: CaseCitation[];
+    };
+    const answer = String(
+      (history.messages ?? []).filter((message) => message.role === 'assistant').at(-1)?.content ?? '',
+    );
+    const citationIds = new Set((history.citations ?? []).map((citation) => String(citation.source_id ?? '')));
+    const observed = latestSources.filter((source) => citationIds.has(source.documentId));
+    expect(observed, 'All five latest MCP sources must persist as case citations').toHaveLength(5);
+    for (const source of latestSources) {
+      expect(answer, `Answer must identify ${source.identifier}`).toContain(source.identifier);
+    }
+
+    const auditResponse = await request.get(
+      `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/ai-model-audit?user_id=${encodeURIComponent(userId)}&limit=20`,
+      { headers: apiHeaders() },
+    );
+    expect(auditResponse.ok()).toBeTruthy();
+    const audit = (await auditResponse.json()) as { entries?: ModelAuditEntry[] };
+    const modelAudit = audit.entries?.[0];
+    expect(normalizeProvider(String(modelAudit?.provider ?? ''))).toBe(normalizeProvider(cell!.expectedProvider));
+    expect(normalizeModel(String(modelAudit?.model ?? ''))).toBe(normalizeModel(cell!.expectedModel));
+    expect(String(modelAudit?.route_type ?? '')).not.toMatch(/fallback/i);
+
+    screenshotName = 'issue-635-prod-stability-passed.png';
+    await page.screenshot({ path: testInfo.outputPath(screenshotName), fullPage: true });
+    manifest = {
+      schemaVersion: 1,
+      scenarioId: 'issue-635-prod-stability-latest-five-laws',
+      runId,
+      syntheticOnly: true,
+      requestedQuestion,
+      submittedNormalizedQuestion: submittedQuestion.trim(),
+      deployedCommitSha: expectedCommitSha,
+      services: { frontendBaseUrl, apiBaseUrl, mcpBaseUrl, database: 'production-postgresql' },
+      realModelRoute: {
+        provider: String(route.provider ?? ''),
+        model: String(route.model ?? ''),
+        modelProfileId: String(route.model_profile_id ?? ''),
+        routeType: String(route.route_type ?? ''),
+      },
+      expectedSourceIds: latestSources.map((source) => source.documentId),
+      observedSourceIds: observed.map((source) => source.documentId),
+      answerSha256: sha256(answer),
+      screenshot: screenshotName,
+      retention: 'Delete this ignored evidence within 7 days.',
+      result: 'passed',
+    };
+  } finally {
+    if (!screenshotName) {
+      screenshotName = 'issue-635-prod-stability-failed.png';
+      await page.screenshot({ path: testInfo.outputPath(screenshotName), fullPage: true }).catch(() => undefined);
+    }
+    const manifestPath = testInfo.outputPath('issue-635-prod-stability-manifest.json');
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    await testInfo.attach('issue-635-prod-stability-manifest', {
+      path: manifestPath,
+      contentType: 'application/json',
+    });
+    await testInfo.attach('issue-635-prod-stability-screenshot', {
+      path: testInfo.outputPath(screenshotName),
+      contentType: 'image/png',
+    }).catch(() => undefined);
+    if (caseId && userId) {
+      await request.delete(
+        `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}?user_id=${encodeURIComponent(userId)}`,
+        { headers: apiHeaders() },
+      ).catch(() => undefined);
+    }
+    await page.close();
+  }
+});
+
 function apiHeaders(): Record<string, string> {
   return { 'x-api-key': apiKey, Accept: 'application/json' };
 }
@@ -421,6 +552,41 @@ async function discoverLawThroughMcp(
     sourceUrl,
     textCharacters: content.length,
   };
+}
+
+async function discoverLatestLawsThroughMcp(
+  request: APIRequestContext,
+  accessToken: string,
+  question: string,
+): Promise<McpSource[]> {
+  const payload = await callMcpTool(request, accessToken, 'searchLaws', {
+    query: question,
+    country_code: scenario.countryCode,
+    sort: 'latest',
+    limit: 5,
+    include_summaries: true,
+  });
+  const results = Array.isArray(payload.results)
+    ? (payload.results as Array<Record<string, unknown>>).slice(0, 5)
+    : [];
+  expect(results, 'MCP must return exactly five current laws for the production stability scenario').toHaveLength(5);
+  return results.map((result) => {
+    const documentId = String(result.document_id ?? '');
+    const identifier = String(
+      result.law_identifier_text ?? result.law_identifier ?? result.identifier ?? '',
+    ).trim();
+    const summary = String(result.summary ?? result.ai_summary ?? result.description ?? '').trim();
+    expect(documentId).not.toBe('');
+    expect(identifier).not.toBe('');
+    expect(summary, `MCP result ${identifier} must expose a summary`).not.toBe('');
+    return {
+      documentId,
+      identifier,
+      title: String(result.title ?? result.official_name ?? identifier),
+      sourceUrl: String(result.source_url ?? ''),
+      textCharacters: summary.length,
+    };
+  });
 }
 
 async function callMcpTool(

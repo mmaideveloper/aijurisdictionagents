@@ -13,11 +13,20 @@ import {
   AdminUserSummary,
   AdminUsersPage,
   CaseCatalogCaseType,
+  CaseWorkflowAssignment,
   DocumentTemplateCatalogItem,
+  FlowPackCatalogItem,
+  RegisteredCaseWorkflowGraph,
   OllamaModelInventory,
   disableAIModelUserOverride,
   fetchAdminCaseCatalogCaseTypes,
   fetchAdminCaseCatalogDocumentTemplates,
+  fetchCaseWorkflowAssignments,
+  fetchFlowPackCatalog,
+  fetchRegisteredCaseWorkflowGraphs,
+  validateCaseWorkflowAssignment,
+  assignCaseWorkflow,
+  createDraftFlowPackVersion,
   fetchAdminUsers,
   fetchAdminCaseExportBlob,
   fetchAdminUserCases,
@@ -165,6 +174,14 @@ const AIModelAdmin: React.FC = () => {
   const [adminCaseList, setAdminCaseList] = React.useState<AdminCaseList | null>(null);
   const [catalogCaseTypes, setCatalogCaseTypes] = React.useState<CaseCatalogCaseType[]>([]);
   const [catalogTemplates, setCatalogTemplates] = React.useState<DocumentTemplateCatalogItem[]>([]);
+  const [workflowAssignments, setWorkflowAssignments] = React.useState<CaseWorkflowAssignment[]>([]);
+  const [workflowGraphs, setWorkflowGraphs] = React.useState<RegisteredCaseWorkflowGraph[]>([]);
+  const [flowPacks, setFlowPacks] = React.useState<FlowPackCatalogItem[]>([]);
+  const [workflowCaseTypeKey, setWorkflowCaseTypeKey] = React.useState("");
+  const [workflowGraphRef, setWorkflowGraphRef] = React.useState("legal_document_workflow@1");
+  const [workflowFlowRef, setWorkflowFlowRef] = React.useState("");
+  const [workflowReplacementConfirmed, setWorkflowReplacementConfirmed] = React.useState(false);
+  const [workflowValidation, setWorkflowValidation] = React.useState("");
   const [catalogLoadState, setCatalogLoadState] = React.useState<AdminCaseCatalogLoadState>("idle");
   const [activeCatalogSection, setActiveCatalogSection] = React.useState<AdminCaseCatalogSection>("caseTypes");
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
@@ -360,18 +377,76 @@ const AIModelAdmin: React.FC = () => {
     setCatalogLoadState("loading");
     setError("");
     try {
-      const [caseTypesResponse, templatesResponse] = await Promise.all([
+      const [caseTypesResponse, templatesResponse, assignmentsResponse, graphsResponse, flowsResponse] = await Promise.all([
         fetchAdminCaseCatalogCaseTypes(adminAuth),
-        fetchAdminCaseCatalogDocumentTemplates(adminAuth)
+        fetchAdminCaseCatalogDocumentTemplates(adminAuth),
+        fetchCaseWorkflowAssignments(adminAuth),
+        fetchRegisteredCaseWorkflowGraphs(adminAuth),
+        fetchFlowPackCatalog(adminAuth)
       ]);
       setCatalogCaseTypes(caseTypesResponse.items);
       setCatalogTemplates(templatesResponse.items);
+      setWorkflowAssignments(assignmentsResponse.items);
+      setWorkflowGraphs(graphsResponse);
+      setFlowPacks(flowsResponse.items);
       setCatalogLoadState("success");
     } catch (loadError) {
       setCatalogLoadState("error");
       setError(loadError instanceof Error ? loadError.message : t("adminCaseCatalogLoadFailed"));
     }
   }, [adminAuth, adminUserId, catalogLoadState, t]);
+
+  const workflowAssignmentInput = React.useCallback(() => {
+    const [graphKey, graphVersion] = workflowGraphRef.split("@");
+    const [flowKey, flowVersion] = workflowFlowRef.split("@");
+    return {
+      case_type_key: workflowCaseTypeKey,
+      jurisdiction: "SK",
+      graph_key: graphKey ?? "",
+      graph_version: Number(graphVersion),
+      flow_key: flowKey ?? "",
+      flow_version: Number(flowVersion),
+      confirmation: workflowReplacementConfirmed
+    };
+  }, [workflowCaseTypeKey, workflowFlowRef, workflowGraphRef, workflowReplacementConfirmed]);
+
+  const validateWorkflowAssignment = async () => {
+    setError("");
+    try {
+      const result = await validateCaseWorkflowAssignment(adminAuth, workflowAssignmentInput());
+      setWorkflowValidation(`${result.status}: ${result.message}`);
+    } catch (validationError) {
+      setWorkflowValidation("");
+      setError(validationError instanceof Error ? validationError.message : t("adminCaseCatalogLoadFailed"));
+    }
+  };
+
+  const saveWorkflowAssignment = async () => {
+    setError("");
+    try {
+      await assignCaseWorkflow(adminAuth, workflowAssignmentInput());
+      setWorkflowValidation("");
+      setWorkflowReplacementConfirmed(false);
+      setCatalogLoadState("idle");
+      await loadCaseCatalog();
+      setStatus(t("adminSaved"));
+    } catch (assignmentError) {
+      setError(assignmentError instanceof Error ? assignmentError.message : t("adminCaseCatalogLoadFailed"));
+    }
+  };
+
+  const cloneWorkflowFlowDraft = async () => {
+    const [flowKey] = workflowFlowRef.split("@");
+    if (!flowKey) return;
+    try {
+      const draft = await createDraftFlowPackVersion(adminAuth, flowKey, "SK");
+      setFlowPacks((items) => [draft, ...items]);
+      setWorkflowFlowRef(`${draft.flow_key}@${draft.version}`);
+      setWorkflowValidation(`draft: ${draft.flow_key}@${draft.version}`);
+    } catch (draftError) {
+      setError(draftError instanceof Error ? draftError.message : t("adminCaseCatalogLoadFailed"));
+    }
+  };
 
   const runAction = async (action: () => Promise<unknown>, successMessage: string) => {
     setError("");
@@ -1318,19 +1393,103 @@ const AIModelAdmin: React.FC = () => {
                         t("adminCaseCatalogJurisdiction"),
                         t("adminCaseCatalogLinkedTemplates"),
                         t("adminCaseCatalogPromptStatus"),
-                        t("adminStatus")
+                        "LangGraph / flow",
+                        "Validation",
+                        t("adminStatus"),
+                        t("adminAction")
                       ]}
-                      rows={catalogCaseTypes.map((item) => [
-                        <div>
-                          <strong>{item.name}</strong>
-                          <div><small>{item.case_type_key}</small></div>
-                        </div>,
-                        [item.jurisdiction, item.language].filter(Boolean).join(" / "),
-                        renderLinkedTemplatesCell(item.templates, t("adminCaseCatalogNoLinkedTemplates")),
-                        item.prompt ? t("adminCaseCatalogPromptAvailable") : t("adminCaseCatalogPromptMissing"),
-                        item.is_enabled ? t("adminEnabled") : t("adminDisabled")
-                      ])}
+                      rows={catalogCaseTypes.map((item) => {
+                        const assignment = workflowAssignments.find((candidate) =>
+                          candidate.case_type_key === item.case_type_key && candidate.is_active
+                        );
+                        return [
+                          <div>
+                            <strong>{item.name}</strong>
+                            <div><small>{item.case_type_key}</small></div>
+                          </div>,
+                          [item.jurisdiction, item.language].filter(Boolean).join(" / "),
+                          renderLinkedTemplatesCell(item.templates, t("adminCaseCatalogNoLinkedTemplates")),
+                          item.prompt ? t("adminCaseCatalogPromptAvailable") : t("adminCaseCatalogPromptMissing"),
+                          assignment
+                            ? `${assignment.graph_key}@${assignment.graph_version} / ${assignment.flow_key}@${assignment.flow_version}`
+                            : t("adminNotConfigured"),
+                          assignment?.validation_status ?? t("adminNotConfigured"),
+                          item.is_enabled ? t("adminEnabled") : t("adminDisabled"),
+                          <button
+                            className="button ghost"
+                            type="button"
+                            onClick={() => {
+                              setWorkflowCaseTypeKey(item.case_type_key);
+                              if (assignment) {
+                                setWorkflowGraphRef(`${assignment.graph_key}@${assignment.graph_version}`);
+                                setWorkflowFlowRef(`${assignment.flow_key}@${assignment.flow_version}`);
+                              }
+                              setWorkflowReplacementConfirmed(false);
+                              setWorkflowValidation("");
+                            }}
+                          >
+                            {t("adminEdit")}
+                          </button>
+                        ];
+                      })}
                     />
+                    <form className="admin-form-stack" onSubmit={(event) => event.preventDefault()}>
+                      <h3>Case workflow assignment</h3>
+                      <p className="admin-muted">
+                        Only reviewed registered graphs and schema-constrained flow-pack versions can be assigned.
+                        Published versions are immutable and changes apply only to new cases.
+                      </p>
+                      <label>
+                        {t("adminCaseCatalogCaseType")}
+                        <select value={workflowCaseTypeKey} onChange={(event) => setWorkflowCaseTypeKey(event.target.value)}>
+                          <option value="">{t("adminNotConfigured")}</option>
+                          {catalogCaseTypes.filter((item) => item.is_enabled).map((item) => (
+                            <option key={item.case_type_key} value={item.case_type_key}>{item.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Registered LangGraph
+                        <select value={workflowGraphRef} onChange={(event) => setWorkflowGraphRef(event.target.value)}>
+                          {workflowGraphs.map((graph) => (
+                            <option key={`${graph.graph_key}@${graph.graph_version}`} value={`${graph.graph_key}@${graph.graph_version}`}>
+                              {graph.graph_key}@{graph.graph_version}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Published flow pack
+                        <select value={workflowFlowRef} onChange={(event) => setWorkflowFlowRef(event.target.value)}>
+                          <option value="">{t("adminNotConfigured")}</option>
+                          {flowPacks.map((flow) => (
+                            <option key={`${flow.flow_key}@${flow.version}`} value={`${flow.flow_key}@${flow.version}`}>
+                              {flow.title} — {flow.flow_key}@{flow.version} ({flow.lifecycle_state})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={workflowReplacementConfirmed}
+                          onChange={(event) => setWorkflowReplacementConfirmed(event.target.checked)}
+                        />
+                        Confirm prospective replacement of the active default assignment
+                      </label>
+                      {workflowValidation ? <p className="form-success">{workflowValidation}</p> : null}
+                      <div className="admin-inline-actions">
+                        <button className="secondary-button" type="button" disabled={!workflowFlowRef} onClick={() => void cloneWorkflowFlowDraft()}>
+                          Create immutable-version draft
+                        </button>
+                        <button className="secondary-button" type="button" disabled={!workflowCaseTypeKey || !workflowFlowRef} onClick={() => void validateWorkflowAssignment()}>
+                          Validate compatibility
+                        </button>
+                        <button className="primary-button" type="button" disabled={!workflowCaseTypeKey || !workflowFlowRef || !workflowReplacementConfirmed} onClick={() => void saveWorkflowAssignment()}>
+                          Assign for new cases
+                        </button>
+                      </div>
+                    </form>
                   </section>
                   ) : null}
 

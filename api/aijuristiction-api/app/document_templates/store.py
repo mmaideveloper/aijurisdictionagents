@@ -833,16 +833,20 @@ class DocumentTemplateStore:
         if not updates:
             return
         with self._connect() as conn:
-            conn.executemany(
-                self._sql(
-                    """
-                    UPDATE case_types
-                    SET description = ?, updated_at = ?
-                    WHERE case_type_key = ? AND jurisdiction = ?
-                    """
-                ),
-                [self._params(*values) for values in updates],
-            )
+            cursor = conn.cursor()
+            try:
+                cursor.executemany(
+                    self._sql(
+                        """
+                        UPDATE case_types
+                        SET description = ?, updated_at = ?
+                        WHERE case_type_key = ? AND jurisdiction = ?
+                        """
+                    ),
+                    [self._params(*values) for values in updates],
+                )
+            finally:
+                cursor.close()
             conn.commit()
 
     def _initialize(self) -> None:

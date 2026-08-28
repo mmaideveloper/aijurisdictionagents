@@ -8,6 +8,11 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 import {
   fetchAdminCaseCatalogCaseTypes,
   fetchAdminCaseCatalogDocumentTemplates,
+  fetchCaseWorkflowAssignments,
+  fetchFlowPackCatalog,
+  fetchRegisteredCaseWorkflowGraphs,
+  validateCaseWorkflowAssignment,
+  assignCaseWorkflow,
   fetchAIModelAdminDashboard,
   fetchOllamaModels
 } from "../api/adminModelClient";
@@ -31,6 +36,12 @@ vi.mock("../api/adminModelClient", () => ({
   fetchAdminCaseExportBlob: vi.fn(),
   fetchAdminCaseCatalogCaseTypes: vi.fn(),
   fetchAdminCaseCatalogDocumentTemplates: vi.fn(),
+  fetchCaseWorkflowAssignments: vi.fn(),
+  fetchFlowPackCatalog: vi.fn(),
+  fetchRegisteredCaseWorkflowGraphs: vi.fn(),
+  validateCaseWorkflowAssignment: vi.fn(),
+  assignCaseWorkflow: vi.fn(),
+  createDraftFlowPackVersion: vi.fn(),
   fetchAdminUserCases: vi.fn(),
   fetchAIModelAdminDashboard: vi.fn(),
   fetchAIModelUserOverride: vi.fn(),
@@ -78,10 +89,52 @@ describe("AIModelAdmin case catalog", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows case types, linked templates, and stored prompts in a read-only admin section", async () => {
+  it("shows case types, linked templates, prompts, and controlled workflow management", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchAIModelAdminDashboard).mockResolvedValue(dashboard);
     vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
+    const assignment = {
+      assignment_id: "assignment-1",
+      case_type_key: "employment-dispute",
+      jurisdiction: "SK",
+      graph_key: "legal_document_workflow",
+      graph_version: 1,
+      flow_key: "sk.employment.claim",
+      flow_version: 1,
+      is_active: true,
+      validation_status: "valid",
+      validation_message: "compatible",
+      effective_from: "2026-08-26T00:00:00Z",
+      effective_to: null,
+      created_by: "admin-1",
+      created_at: "2026-08-26T00:00:00Z",
+      supersedes_assignment_id: null
+    };
+    vi.mocked(fetchCaseWorkflowAssignments).mockResolvedValue({ items: [assignment] });
+    vi.mocked(fetchFlowPackCatalog).mockResolvedValue({
+      items: [{
+        flow_key: "sk.employment.claim",
+        version: 1,
+        jurisdiction: "SK",
+        title: "Employment claim",
+        description: "Validated flow",
+        definition: {},
+        is_enabled: true,
+        lifecycle_state: "published",
+        is_deleted: false,
+        created_at: "2026-08-26T00:00:00Z",
+        updated_at: "2026-08-26T00:00:00Z"
+      }]
+    });
+    vi.mocked(fetchRegisteredCaseWorkflowGraphs).mockResolvedValue([{
+      graph_key: "legal_document_workflow",
+      graph_version: 1,
+      node_names: ["verify_input", "review_case"],
+      supports_interrupt_resume: true,
+      supports_automated_finalization: true
+    }]);
+    vi.mocked(validateCaseWorkflowAssignment).mockResolvedValue({ status: "valid", message: "compatible" });
+    vi.mocked(assignCaseWorkflow).mockResolvedValue(assignment);
     vi.mocked(fetchAdminCaseCatalogDocumentTemplates).mockResolvedValue({
       items: [
         {
@@ -204,10 +257,21 @@ describe("AIModelAdmin case catalog", () => {
       );
     });
 
-    expect(await screen.findAllByText("Employment dispute")).toHaveLength(1);
+    expect(await screen.findAllByText("Employment dispute")).toHaveLength(2);
     expect(screen.getByText("General consultation")).toBeDefined();
     expect(screen.getByText("adminCaseCatalogNoLinkedTemplates")).toBeDefined();
     expect(screen.getByText("adminCaseCatalogPromptMissing")).toBeDefined();
+    expect(screen.getByText("legal_document_workflow@1 / sk.employment.claim@1")).toBeDefined();
+
+    await user.click(screen.getAllByRole("button", { name: "adminEdit" })[0]!);
+    await user.click(screen.getByRole("checkbox", { name: /Confirm prospective replacement/i }));
+    await user.click(screen.getByRole("button", { name: "Validate compatibility" }));
+    await waitFor(() => expect(validateCaseWorkflowAssignment).toHaveBeenCalled());
+    await user.click(screen.getByRole("button", { name: "Assign for new cases" }));
+    await waitFor(() => expect(assignCaseWorkflow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ confirmation: true, flow_key: "sk.employment.claim" })
+    ));
 
     await user.click(screen.getByRole("button", { name: "adminCaseCatalogTemplatesTitle" }));
     expect(screen.getByText("Employment claim")).toBeDefined();

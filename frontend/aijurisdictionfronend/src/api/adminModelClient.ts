@@ -270,6 +270,56 @@ export interface CaseCatalogCaseTypeListResponse {
   items: CaseCatalogCaseType[];
 }
 
+export interface CaseWorkflowAssignment {
+  assignment_id: string;
+  case_type_key: string;
+  jurisdiction: string;
+  graph_key: string;
+  graph_version: number;
+  flow_key: string;
+  flow_version: number;
+  is_active: boolean;
+  validation_status: string;
+  validation_message: string;
+  effective_from: string;
+  effective_to: string | null;
+  created_by: string;
+  created_at: string;
+  supersedes_assignment_id: string | null;
+}
+
+export interface RegisteredCaseWorkflowGraph {
+  graph_key: string;
+  graph_version: number;
+  node_names: string[];
+  supports_interrupt_resume: boolean;
+  supports_automated_finalization: boolean;
+}
+
+export interface CaseWorkflowAssignmentInput {
+  case_type_key: string;
+  jurisdiction: string;
+  graph_key: string;
+  graph_version: number;
+  flow_key: string;
+  flow_version: number;
+  confirmation: boolean;
+}
+
+export interface FlowPackCatalogItem {
+  flow_key: string;
+  version: number;
+  jurisdiction: string;
+  title: string;
+  description: string;
+  definition: Record<string, unknown>;
+  is_enabled: boolean;
+  lifecycle_state: "draft" | "published" | "retired";
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CaseCatalogDocumentTemplateListResponse {
   items: DocumentTemplateCatalogItem[];
 }
@@ -734,6 +784,60 @@ export const fetchAdminCaseCatalogCaseTypes = (
     method: "GET"
   });
 };
+
+export const fetchCaseWorkflowAssignments = (
+  adminAuth: AdminAuthInput,
+  jurisdiction = "SK"
+): Promise<{ items: CaseWorkflowAssignment[] }> =>
+  adminRequest<{ items: CaseWorkflowAssignment[] }>(
+    `/v1/case-workflows/assignments?jurisdiction=${encodeURIComponent(jurisdiction)}`,
+    adminAuth,
+    { method: "GET" }
+  );
+
+export const fetchRegisteredCaseWorkflowGraphs = (
+  adminAuth: AdminAuthInput
+): Promise<RegisteredCaseWorkflowGraph[]> =>
+  adminRequest<RegisteredCaseWorkflowGraph[]>("/v1/case-workflows/graphs", adminAuth, { method: "GET" });
+
+export const fetchFlowPackCatalog = (
+  adminAuth: AdminAuthInput,
+  jurisdiction = "SK"
+): Promise<{ items: FlowPackCatalogItem[] }> =>
+  adminRequest<{ items: FlowPackCatalogItem[] }>(
+    `/v1/flow-packs?jurisdiction=${encodeURIComponent(jurisdiction)}&include_deleted=false`,
+    adminAuth,
+    { method: "GET" }
+  );
+
+export const validateCaseWorkflowAssignment = (
+  adminAuth: AdminAuthInput,
+  input: CaseWorkflowAssignmentInput
+): Promise<{ status: string; message: string }> =>
+  adminRequest<{ status: string; message: string }>("/v1/case-workflows/assignments/validate", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const assignCaseWorkflow = (
+  adminAuth: AdminAuthInput,
+  input: CaseWorkflowAssignmentInput
+): Promise<CaseWorkflowAssignment> =>
+  adminRequest<CaseWorkflowAssignment>("/v1/case-workflows/assignments", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const createDraftFlowPackVersion = (
+  adminAuth: AdminAuthInput,
+  flowKey: string,
+  jurisdiction: string
+): Promise<FlowPackCatalogItem> =>
+  adminRequest<FlowPackCatalogItem>(
+    `/v1/flow-packs/${encodeURIComponent(flowKey)}/versions?jurisdiction=${encodeURIComponent(jurisdiction)}`,
+    adminAuth,
+    { method: "POST", body: JSON.stringify({ is_enabled: false }) }
+  );
 
 export const fetchAdminCaseCatalogDocumentTemplates = (
   adminUserId: AdminAuthInput,

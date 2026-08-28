@@ -412,6 +412,9 @@ start_api_and_mcp() {
     -e STORAGE_OPTION=local \
     -e STORE_LOCAL=/workspace/runs/storage/api/files \
     -e DOCUMENT_PROCESSOR_OPTION=azure \
+    -e AI_CASE_ORCHESTRATION_MODE="${AI_CASE_ORCHESTRATION_MODE:-legacy}" \
+    -e AI_CASE_ORCHESTRATION_CASE_TYPES="${AI_CASE_ORCHESTRATION_CASE_TYPES:-sk.civil.payment_confirmation}" \
+    -e LANGGRAPH_STRICT_MSGPACK=true \
     -e LOCAL_LLM_BASE_URL="$local_llm_base_url" \
     -e LOCAL_LLM_OPENAI_BASE_URL="$local_llm_base_url/v1" \
     -e LOCAL_LLM_HEALTH_URL="$local_llm_base_url/api/tags" \

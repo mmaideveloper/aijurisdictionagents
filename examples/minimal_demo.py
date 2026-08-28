@@ -35,6 +35,11 @@ print(
     "only key names/statuses are reported and secret values remain redacted."
 )
 print(
+    "langgraph_case_orchestration => run python examples/langgraph_case_workflow_demo.py; "
+    "the demo proves typed routing, pinned versions, interrupt/resume, deterministic review, "
+    "and sanitized ordered audit events without external data or credentials."
+)
+print(
     "model_routing_request_store => database migrations and schema initialization run at API "
     "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
 )

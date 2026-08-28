@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -26,7 +26,7 @@ class FlowPackCreateVersionRequest(BaseModel):
     title: str | None = Field(default=None, min_length=3, max_length=200)
     description: str | None = Field(default=None, min_length=3, max_length=2000)
     definition: dict[str, Any] | None = None
-    is_enabled: bool = True
+    is_enabled: bool = False
 
 
 class FlowPackUpdateRequest(BaseModel):
@@ -47,6 +47,7 @@ class FlowPackResponse(BaseModel):
     description: str
     definition: dict[str, Any]
     is_enabled: bool
+    lifecycle_state: Literal["draft", "published", "retired"]
     is_deleted: bool
     created_at: datetime
     updated_at: datetime

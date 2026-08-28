@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS flow_packs (
     description TEXT NOT NULL,
     definition_json TEXT NOT NULL,
     is_enabled INTEGER NOT NULL DEFAULT 1,
+    lifecycle_state TEXT NOT NULL DEFAULT 'published',
     is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

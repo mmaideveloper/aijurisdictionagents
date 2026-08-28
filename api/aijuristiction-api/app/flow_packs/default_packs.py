@@ -6,6 +6,33 @@ from typing import Any
 def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
     return [
         {
+            "flow_key": "sk.system.unsupported_or_human_review",
+            "version": 1,
+            "jurisdiction": "SK",
+            "domain": "governance",
+            "title": "Bezpečný prechod na ľudskú kontrolu",
+            "description": (
+                "Explicitný neautomatizovaný tok pre typy prípadov bez schváleného "
+                "vykonateľného pracovného postupu."
+            ),
+            "is_enabled": True,
+            "definition": {
+                "required_facts": [],
+                "conditional_facts": [],
+                "mcp_retrieval": {"required": False, "query_keys": []},
+                "allowed_tools": [],
+                "required_tools": [],
+                "optional_tools": [],
+                "consent_policy": {"required_for_personal_data_tools": True},
+                "prompt_references": ["case_type_prompt@current"],
+                "templates": [],
+                "validation_gates": ["review_case"],
+                "escalation_rules": ["always_human_review"],
+                "human_review": {"required": True},
+                "automated_finalization": False,
+            },
+        },
+        {
             "flow_key": "sk.contract.sale_purchase",
             "version": 1,
             "jurisdiction": "SK",
@@ -231,6 +258,7 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                     "payment_date",
                     "payment_purpose",
                 ],
+                "conditional_facts": [],
                 "outputs": ["payment_confirmation"],
                 "steps": [
                     "collect_payment_confirmation_facts",
@@ -238,6 +266,34 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
                     "generate_payment_confirmation",
                 ],
                 "delivery": {"single_document": "payment_confirmation", "multi_document_bundle": "zip"},
+                "mcp_retrieval": {
+                    "required": True,
+                    "query_keys": ["payment_confirmation_legal_requirements"],
+                    "failure_policy": "human_review_required",
+                },
+                "allowed_tools": [],
+                "required_tools": [],
+                "optional_tools": [],
+                "consent_policy": {
+                    "purpose": "prepare_payment_confirmation",
+                    "required_for_personal_data_tools": True,
+                    "withdrawal_supported": True,
+                },
+                "prompt_references": ["sk.civil.payment_confirmation@1"],
+                "templates": ["payment_confirmation"],
+                "validation_gates": [
+                    "verify_input",
+                    "verify_output",
+                    "verify_safety_and_gdpr",
+                    "review_case",
+                ],
+                "human_review": {"required_on_failure": True},
+                "escalation_rules": [
+                    "missing_legal_sources",
+                    "unresolved_fact_conflict",
+                    "validator_failure",
+                ],
+                "automated_finalization": True,
             },
         },
         {
