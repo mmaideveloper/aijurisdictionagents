@@ -198,6 +198,15 @@ main {
   text-transform: none;
 }
 
+.product-entry {
+  display: flex;
+  justify-content: center;
+}
+
+.product-entry-button {
+  min-width: min(100%, 15rem);
+}
+
 .hero {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
