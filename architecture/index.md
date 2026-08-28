@@ -22,6 +22,10 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 - [Container view](diagrams/jurisdigta/jurisdigta-current-container.mmd)
 - [Diagram evidence](diagrams/jurisdigta/jurisdigta-current-evidence.md)
 
+## Current use cases
+
+- [UC-001: Submit questions and safely execute commands by speech](use-cases/UC-001-speech-input-and-safe-command-execution.md) — Draft
+
 ## Workflow
 
 Use `$idea-task` for discovery. It routes ordinary changes to `$prepare-task`, user or business behavior to `$generate-use-case`, material business choices to `$generate-bdr`, and architecture-significant changes to `$architecture-change`.
