@@ -64,6 +64,7 @@ class DocumentTemplateStore:
         self._config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
         self._seed_defaults_if_empty()
+        self._refresh_seeded_templates()
         self._seed_case_types_if_empty()
         self._refresh_seeded_case_type_descriptions()
 
@@ -798,17 +799,70 @@ class DocumentTemplateStore:
                 )
             )
 
+    def _refresh_seeded_templates(self) -> None:
+        for item in build_default_document_templates():
+            try:
+                current = self.get(template_key=item.template_key, jurisdiction=item.jurisdiction)
+            except DocumentTemplateNotFoundError:
+                continue
+            if not self._should_refresh_seeded_template(current=current, seed=item):
+                continue
+            self.update(
+                template_key=current.template_key,
+                jurisdiction=current.jurisdiction,
+                payload=DocumentTemplateUpdateRequest(
+                    language=item.language,
+                    category=item.category,
+                    title=item.title,
+                    template_kind=item.template_kind,
+                    description=item.description,
+                    source_format=item.source_format,
+                    source_url=item.source_url,
+                    body=item.body,
+                    keywords=list(item.keywords),
+                    flow_keys=list(item.flow_keys),
+                    placeholders=list(item.placeholders),
+                    source_refs=list(item.source_refs),
+                    is_enabled=item.is_enabled,
+                ),
+            )
+
+    def _should_refresh_seeded_template(
+        self,
+        *,
+        current: DocumentTemplateDefinition,
+        seed: DocumentTemplateDefinition,
+    ) -> bool:
+        if current.template_key != "sk.employment.employment_contract":
+            return False
+        if current.jurisdiction != seed.jurisdiction:
+            return False
+        if current.body.strip() == seed.body.strip() and current.source_url.strip() == seed.source_url.strip():
+            return False
+        if current.body.strip():
+            return False
+        if current.source_url.strip() != "https://www.aksamec.sk/vzory/":
+            return False
+        if current.description.strip() != "Seed metadata pre pracovnu zmluvu.":
+            return False
+        if tuple(current.placeholders) != ("principal_identification", "agent_identification"):
+            return False
+        source_ref_urls = tuple(source.url for source in current.source_refs)
+        if source_ref_urls != ("https://www.aksamec.sk/vzory/",):
+            return False
+        return current.is_latest_version
+
     def _seed_case_types_if_empty(self) -> None:
         with self._connect() as conn:
             row = conn.execute(self._sql("SELECT COUNT(1) AS count FROM case_types")).fetchone()
         if row is not None and int(row["count"]) > 0:
             return
-        templates = self.list(include_deleted=False)
+        templates = self.list(include_deleted=False, latest_only=True)
         for item in build_default_case_types(templates):
             self.create_case_type(item)
 
     def _refresh_seeded_case_type_descriptions(self) -> None:
-        default_items = build_default_case_types(self.list(include_deleted=False))
+        default_items = build_default_case_types(self.list(include_deleted=False, latest_only=True))
         if not default_items:
             return
         updates: list[tuple[str, str, str, str]] = []

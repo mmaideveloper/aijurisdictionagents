@@ -130,20 +130,179 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Pracovne a personalne dokumenty",
             title="Pracovna zmluva",
             template_kind="employment_contract",
-            description="Seed metadata pre pracovnu zmluvu.",
+            description=(
+                "Reviewed managed body pre pracovnu zmluvu zosuladenu s clanenim vzoru AK Samec "
+                "a s odkazom na Zakonnik prace."
+            ),
             source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
-            body="",
+            source_url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
+            body=(
+                "PRACOVNA ZMLUVA\n\n"
+                "uzatvorena podla § 42 a nasl. zakona c. 311/2001 Z. z. Zakonnik prace v zneni neskorsich predpisov\n\n"
+                "medzi zmluvnymi stranami:\n\n"
+                "Zamestnavatel:\n"
+                "{{employer_business_name}}\n"
+                "Sidlo: {{employer_seat}}\n"
+                "ICO: {{employer_ico}}\n"
+                "DIC: {{employer_dic}}\n"
+                "IC DPH: {{employer_vat_id}}\n"
+                "Zapis v registri: {{employer_register_entry}}\n"
+                "Bankove spojenie: {{employer_bank_name}}\n"
+                "IBAN: {{employer_iban}}\n"
+                "Zastupeny: {{employer_representative}}\n"
+                "E-mail: {{employer_email}}\n"
+                "Telefon: {{employer_phone}}\n\n"
+                "a\n\n"
+                "Zamestnanec:\n"
+                "{{employee_full_name}}\n"
+                "Rodne priezvisko: {{employee_birth_surname}}\n"
+                "Datum narodenia: {{employee_birth_date}}\n"
+                "Rodne cislo: {{employee_birth_number}}\n"
+                "Miesto narodenia: {{employee_birth_place}}\n"
+                "Trvaly pobyt: {{employee_residence}}\n"
+                "Statna prislusnost: {{employee_nationality}}\n"
+                "Cislo obcianskeho preukazu: {{employee_id_card_number}}\n"
+                "E-mail: {{employee_email}}\n"
+                "Telefon: {{employee_phone}}\n"
+                "Bankovy ucet: {{employee_bank_account}}\n\n"
+                "sa dohodli na tejto pracovnej zmluve:\n\n"
+                "Clanok I.\n"
+                "Druh prace a miesto vykonu prace\n\n"
+                "1. Zamestnanec bude pre zamestnavatela vykonavat pracu na pracovnej pozicii "
+                "{{job_position}}.\n"
+                "2. Druh prace zahrna najma: {{job_description}}.\n"
+                "3. Miestom vykonu prace je {{place_of_work}}.\n"
+                "4. Pravidelne pracovisko na ucely cestovnych nahrad je {{regular_workplace}}.\n"
+                "5. Nadriadenym zamestnancom je {{supervisor_name}}.\n\n"
+                "Clanok II.\n"
+                "Vznik pracovneho pomeru a trvanie zmluvy\n\n"
+                "1. Zamestnanec nastupi do prace dna {{start_date}}.\n"
+                "2. Pracovny pomer sa uzatvara ako {{employment_term_description}}.\n"
+                "3. Zmluvne strany dohodli skusobnu dobu v trvani {{probation_period}}.\n"
+                "4. Cislo pracovnej zmluvy: {{contract_number}}.\n\n"
+                "Clanok III.\n"
+                "Pracovny cas\n\n"
+                "1. Tyzdenny pracovny cas zamestnanca je {{weekly_working_hours}}.\n"
+                "2. Rozvrhnutie pracovneho casu: {{working_time_distribution}}.\n"
+                "3. Zakladny pracovny cas je {{core_working_time}}.\n"
+                "4. Volitelny pracovny cas je {{flexible_working_time}}.\n"
+                "5. Prestavka na odpocinok a jedenie: {{break_duration}}.\n\n"
+                "Clanok IV.\n"
+                "Mzdove podmienky\n\n"
+                "1. Zamestnancovi patri zakladna mesacna mzda vo vyske {{base_monthly_salary}} brutto.\n"
+                "2. Variabilna zlozka mzdy: {{variable_salary_component}}.\n"
+                "3. Vyplatny termin: {{payday}}.\n"
+                "4. Sposob vyplacania mzdy: {{salary_payment_method}}.\n"
+                "5. Mzdovy stupen: {{salary_grade}}.\n\n"
+                "Clanok V.\n"
+                "Dovolenka a prekazky v praci\n\n"
+                "1. Zamestnancovi patri dovolenka {{vacation_entitlement}}.\n"
+                "2. Prekazky v praci a nahrada mzdy sa spravuju Zakonnikom prace a internymi predpismi zamestnavatela.\n\n"
+                "Clanok VI.\n"
+                "Dalsie pracovne podmienky\n\n"
+                "1. Vypovedna doba: {{notice_period}}.\n"
+                "2. Home office: {{home_office_arrangement}}.\n"
+                "3. Pracovne vybavenie poskytnute zamestnancovi: {{work_equipment}}.\n"
+                "4. Zamestnanecke benefity: {{employee_benefits}}.\n\n"
+                "Clanok VII.\n"
+                "Prava a povinnosti zmluvnych stran\n\n"
+                "1. Zamestnanec je povinny vykonavat pracu osobne, riadne, vcas a podla pokynov zamestnavatela, "
+                "ak su v sulade s pravnymi predpismi.\n"
+                "2. Zamestnavatel je povinny pridelovat zamestnancovi pracu podla tejto zmluvy, vytvarat "
+                "vhodne pracovne podmienky a vyplacat mzdu riadne a vcas.\n"
+                "3. Zamestnanec je povinny chranit opravnene zaujmy zamestnavatela, zachovavat mlcanlivost "
+                "o skutocnostiach, s ktorymi sa oboznamil pri vykone prace, a dodrziavat bezpecnostne pravidla.\n\n"
+                "Clanok VIII.\n"
+                "Ochrana osobnych udajov a sluzobnych prostriedkov\n\n"
+                "1. Zmluvne strany beru na vedomie, ze osobne udaje sa spracuvaju v rozsahu potrebnom na "
+                "uzatvorenie a plnenie tejto zmluvy a na splnenie zakonnych povinnosti zamestnavatela.\n"
+                "2. Zamestnanec je povinny pouzivat zverene pracovne prostriedky hospodarne a v sulade s ich urcenim.\n\n"
+                "Clanok IX.\n"
+                "Zaverecne ustanovenia\n\n"
+                "1. Pravne vztahy vyslovne neupravene touto zmluvou sa spravuju Zakonnikom prace, "
+                "suvisejucimi pravnymi predpismi a internymi predpismi zamestnavatela.\n"
+                "2. Tuto zmluvu mozno menit alebo doplnat len pisomnymi, vzostupne cislovanymi dodatkami.\n"
+                "3. Zmluva je vyhotovena v dvoch rovnopisoch, z ktorych kazda zmluvna strana obdrzi po jednom vyhotoveni.\n"
+                "4. Zmluvne strany vyhlasuju, ze si zmluvu precitali, jej obsahu porozumeli a na znak suhlasu ju podpisuju.\n\n"
+                "V {{signature_place}} dna {{signature_date}}\n\n"
+                "Za zamestnavatela:\n"
+                "{{employer_signatory_name}}\n"
+                "{{employer_signatory_title}}\n\n"
+                "Zamestnanec:\n"
+                "{{employee_signatory_name}}\n"
+            ),
             keywords=("pracovna zmluva", "zamestnanec", "zamestnavatel"),
             flow_keys=(),
-            placeholders=("principal_identification", "agent_identification"),
+            placeholders=(
+                "employer_business_name",
+                "employer_seat",
+                "employer_ico",
+                "employer_dic",
+                "employer_vat_id",
+                "employer_register_entry",
+                "employer_bank_name",
+                "employer_iban",
+                "employer_representative",
+                "employer_email",
+                "employer_phone",
+                "employee_full_name",
+                "employee_birth_surname",
+                "employee_birth_date",
+                "employee_birth_number",
+                "employee_birth_place",
+                "employee_residence",
+                "employee_nationality",
+                "employee_id_card_number",
+                "employee_email",
+                "employee_phone",
+                "employee_bank_account",
+                "job_position",
+                "job_description",
+                "place_of_work",
+                "regular_workplace",
+                "supervisor_name",
+                "start_date",
+                "employment_term_description",
+                "probation_period",
+                "contract_number",
+                "weekly_working_hours",
+                "working_time_distribution",
+                "core_working_time",
+                "flexible_working_time",
+                "break_duration",
+                "base_monthly_salary",
+                "variable_salary_component",
+                "payday",
+                "salary_payment_method",
+                "salary_grade",
+                "vacation_entitlement",
+                "notice_period",
+                "home_office_arrangement",
+                "work_equipment",
+                "employee_benefits",
+                "signature_place",
+                "signature_date",
+                "employer_signatory_name",
+                "employer_signatory_title",
+                "employee_signatory_name",
+            ),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="AK Samec - Pracovna zmluva",
+                    url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="external_template_page",
+                    notes=(
+                        "Exact source page reviewed on 2026-08-28. Managed canonical body is source-aligned "
+                        "but maintained in-product for deterministic drafting and auditability."
+                    ),
+                ),
+                TemplateSourceReference(
+                    label="Zakonnik prace c. 311/2001 Z. z.",
+                    url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/",
+                    publisher="Slov-Lex",
+                    source_kind="official_legislation",
+                    notes="Relevant legal basis for employment contract minimum requirements and labor-law framing.",
                 ),
             ),
             is_enabled=True,

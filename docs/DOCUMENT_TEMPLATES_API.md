@@ -25,6 +25,11 @@ It now also seeds a deterministic snapshot of the direct template/form entries l
 This import boundary intentionally excludes nested external subcatalog contents such as `eZaloby`, `spravcovia`,
 or other linked collections that require opening a second index page.
 
+As of August 28, 2026, `sk.employment.employment_contract` is no longer metadata-only. The managed catalog now stores
+an in-product reviewed canonical body for `Pracovna zmluva`, points `source_url` to the exact AK Samec source page
+`https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/`, and keeps a separate Slov-Lex legal-basis source reference for
+`zakon c. 311/2001 Z. z. Zakonnik prace`.
+
 ## Storage
 
 Runtime data uses SQLite under repository runtime storage:
@@ -43,6 +48,9 @@ Notes:
 - delete is implemented as soft delete
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
+- targeted seed refresh now upgrades the legacy metadata-only `sk.employment.employment_contract` row in place by
+  writing a new latest version when the stored row still matches the original empty-body AK index seed; custom or
+  already reviewed template versions are left untouched
 - the same catalog database now also stores `case_types`, `case_type_templates`, and `case_prompts`
 - Postgres and Azure deployments must apply the numbered API migration stream; the document-template
   and case-catalog tables are no longer deploy-safe as runtime-only schema drift fixes

@@ -231,6 +231,66 @@ def _template_preview_facts() -> dict[str, str]:
         "transfer_share": "50 %",
         "transfer_price": "5 000 EUR",
         "estimated_timeline": "spravidla niekoľko pracovných dní až týždňov",
+        "employer_business_name": "Fiktiva Digital Solutions s.r.o.",
+        "employer_seat": "Inovacna 18, 040 01 Kosice",
+        "employer_ico": "99 999 999",
+        "employer_dic": "2099999999",
+        "employer_vat_id": "SK2099999999",
+        "employer_register_entry": "Obchodny register Mestskeho sudu Kosice, oddiel Sro, vlozka c. 99999/V",
+        "employer_bank_name": "Testovacia banka, a. s.",
+        "employer_iban": "SK00 0000 0000 0000 0000 0000",
+        "employer_representative": "Ing. Martin Vzorovy, konatel",
+        "employer_email": "personalne@fiktiva-example.sk",
+        "employer_phone": "+421 900 000 000",
+        "employee_full_name": "Lucia Vzorova",
+        "employee_birth_surname": "Testova",
+        "employee_birth_date": "14. februara 1994",
+        "employee_birth_number": "945214/0000",
+        "employee_birth_place": "Poprad",
+        "employee_residence": "Vzorova 27, 058 01 Poprad",
+        "employee_nationality": "Slovenska republika",
+        "employee_id_card_number": "TEST000001",
+        "employee_email": "lucia.vzorova@example.com",
+        "employee_phone": "+421 900 000 111",
+        "employee_bank_account": "SK00 1111 0000 0012 3456 7890",
+        "job_position": "AI vyvojar / softverovy inzinier",
+        "job_description": (
+            "navrh, vyvoj, testovanie a udrzba softverovych rieseni vyuzivajucich umelu inteligenciu, "
+            "integracia AI modelov do informacnych systemov a tvorba technickej dokumentacie"
+        ),
+        "place_of_work": (
+            "Inovacna 18, 040 01 Kosice a praca na dialku z uzemia Slovenskej republiky podla dohody "
+            "so zamestnavatelom"
+        ),
+        "regular_workplace": "Kosice",
+        "supervisor_name": "Ing. Peter Modelovy, veduci vyvoja",
+        "start_date": "1. oktobra 2026",
+        "employment_term_description": "pracovny pomer na dobu neurcitu",
+        "probation_period": "3 mesiace",
+        "contract_number": "PZ-2026-014",
+        "weekly_working_hours": "40 hodin tyzdenne",
+        "working_time_distribution": "pondelok az piatok",
+        "core_working_time": "od 9.00 do 15.00 hod.",
+        "flexible_working_time": "od 7.00 do 9.00 hod. a od 15.00 do 18.00 hod.",
+        "break_duration": "30 minut",
+        "base_monthly_salary": "3 200 EUR",
+        "variable_salary_component": "do 10 % zakladnej mesacnej mzdy podla dosiahnutych pracovnych vysledkov",
+        "payday": "najneskor 15. den kalendarneho mesiaca nasledujuceho po mesiaci, za ktory mzda patri",
+        "salary_payment_method": "bezhotovostnym prevodom na bankovy ucet zamestnanca",
+        "salary_grade": "4",
+        "vacation_entitlement": "v rozsahu podla prislusnych ustanoveni Zakonnika prace",
+        "notice_period": "podla Zakonnika prace a dlzky trvania pracovneho pomeru",
+        "home_office_arrangement": "najviac 3 pracovne dni v tyzdni po dohode s nadriadenym",
+        "work_equipment": "sluzobny notebook, mobilny telefon, pristup k vyvojovym a cloudovym nastrojom, bezpecnostny autentifikacny token",
+        "employee_benefits": (
+            "prispevok na stravovanie podla platnych pravnych predpisov, prispevok na vzdelavanie do vysky "
+            "1 000 EUR rocne, 3 dni pracovneho volna navyse, flexibilny pracovny cas a moznost prace na dialku"
+        ),
+        "signature_place": "Kosice",
+        "signature_date": "15. septembra 2026",
+        "employer_signatory_name": "Ing. Martin Vzorovy",
+        "employer_signatory_title": "konatel spolocnosti",
+        "employee_signatory_name": "Lucia Vzorova",
     }
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import sqlite3
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -9,7 +10,7 @@ from pypdf import PdfReader
 
 from app.document_templates.api import get_document_template_store, router
 from app.document_templates.models import DocumentTemplateCreateRequest, DocumentTemplateUpdateRequest
-from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
+from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig, _load_schema_sql
 from app.security import require_api_key
 
 
@@ -43,6 +44,77 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.employment.employment_contract" in keys
     assert "sk.justice.fees.exemption_fo" in keys
     assert "sk.justice.company_registry.initial_registration" in keys
+
+
+def test_pracovna_zmluva_seed_has_reviewed_body_and_exact_source(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+
+    template = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+
+    assert template.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
+    assert "Clanok I." in template.body
+    assert "Zakonnik prace" in template.body
+    assert template.placeholders[0] == "employer_business_name"
+    assert template.source_refs[0].url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
+    assert template.source_refs[1].url == "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/"
+
+
+def test_store_refreshes_metadata_only_pracovna_zmluva_seed(tmp_path: Path) -> None:
+    sqlite_path = tmp_path / "document_templates.sqlite3"
+    conn = sqlite3.connect(sqlite_path)
+    try:
+        conn.executescript(_load_schema_sql())
+        conn.execute(
+            """
+            INSERT INTO document_templates (
+                template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
+                description, source_format, source_url, body, keywords_json, flow_keys_json, placeholders_json,
+                source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer, version, stored_at,
+                is_enabled, is_deleted, created_at, updated_at, deleted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            """,
+            (
+                "seed-sk-employment-contract-v1",
+                "sk.employment.employment_contract",
+                "pracovna zmluva|employment_contract|sk|sk-sk",
+                "SK",
+                "sk-SK",
+                "Pracovne a personalne dokumenty",
+                "Pracovna zmluva",
+                "employment_contract",
+                "Seed metadata pre pracovnu zmluvu.",
+                "DOCX/PDF",
+                "https://www.aksamec.sk/vzory/",
+                "",
+                '["pracovna zmluva", "zamestnanec", "zamestnavatel"]',
+                "[]",
+                '["principal_identification", "agent_identification"]',
+                '[{"label":"AK Samec vzory","notes":"Seed URL dodana pouzivatelom.","publisher":"AK Samec","source_kind":"external_template_index","url":"https://www.aksamec.sk/vzory/"}]',
+                "",
+                "",
+                "",
+                1,
+                "2026-08-28T00:00:00+00:00",
+                1,
+                0,
+                "2026-08-28T00:00:00+00:00",
+                "2026-08-28T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = _build_store(tmp_path)
+    refreshed = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+    assert refreshed.version == 2
+    assert refreshed.latest_version == 2
+    assert refreshed.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
+    assert "Clanok IX." in refreshed.body
+
+    reloaded = _build_store(tmp_path).get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+    assert reloaded.version == 2
+    assert reloaded.latest_version == 2
 
 
 def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
@@ -188,6 +260,21 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "Poprad, Slovakia, 05801" in preview_text
     assert "Template preview" not in preview_text
     assert "sk.real_estate.lease_agreement" not in preview_text
+
+    employment_preview_response = client.get(
+        "/v1/document-templates/sk.employment.employment_contract/preview/pdf",
+        params={"jurisdiction": "SK"},
+    )
+    assert employment_preview_response.status_code == 200
+    employment_preview_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(employment_preview_response.content)).pages
+    )
+    assert "Pracovna zmluva" in employment_preview_text
+    assert "Clanok I." in employment_preview_text
+    assert "Clanok IV." in employment_preview_text
+    assert "Clanok IX." in employment_preview_text
+    assert "Fiktiva Digital Solutions s.r.o." in employment_preview_text
+    assert "Tato sablona zatial nema ulozene telo dokumentu." not in employment_preview_text
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")
     assert delete_response.status_code == 200
