@@ -119,6 +119,8 @@ def preview_document_template_pdf(
                 *[f"- {field}" for field in rendered.unresolved_fields],
             ]
         )
+    if rendered.follow_up_question:
+        lines.extend(["", "Prvá odporúčaná doplňujúca otázka:", rendered.follow_up_question])
 
     # Import lazily so the template API can be tested standalone while still using
     # the production document PDF renderer for visual quality checks.

@@ -56,6 +56,7 @@ from app.case_workflows.service import (
     workflow_user_reply,
 )
 from app.document_templates.disclaimers import resolve_disclaimer_from_templates
+from app.document_templates.catalog import apply_employment_profile_defaults
 from app.document_templates.store import get_document_template_store
 from app.security import require_api_key
 from app.services.email_scheduler import EmailScheduler
@@ -7759,6 +7760,18 @@ def _apply_user_profile_document_defaults(
         enriched["transferor_name"] = profile_identity
     if _is_missing_document_fact(enriched.get("payment_payer")):
         enriched["payment_payer"] = profile_identity
+    enriched = apply_employment_profile_defaults(
+        facts=enriched,
+        profile_defaults={
+            "display_name": _user_profile_document_display_name(user_profile),
+            "address": ", ".join(_user_profile_document_address(user_profile)),
+            "date_of_birth": user_profile.date_of_birth or "",
+            "birth_number": user_profile.social_security_number or "",
+            "identity_card_number": user_profile.identity_card_number or "",
+            "email": user_profile.email,
+            "phone_number": user_profile.phone_number or "",
+        },
+    )
     return enriched
 
 
