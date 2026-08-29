@@ -7615,7 +7615,17 @@ def _extract_document_facts(
                             prefix_canonical = _canonicalize_document_text(prefix)
                             if prefix_canonical != canonical_label and not prefix_canonical[:1].isdigit():
                                 break
-                    if canonical_continuation.startswith(("1 zamestnavatel", "2 zamestnanec", "3 udaje", "4 pracovny")):
+                    if canonical_continuation.startswith(
+                        (
+                            "1 zamestnavatel",
+                            "2 zamestnanec",
+                            "3 udaje",
+                            "4 pracovny",
+                            "5 mzdove",
+                            "6 dalsie",
+                            "7 podpisove",
+                        )
+                    ):
                         break
                     parts.append(" ".join(continuation.split()))
                 combined = "; ".join(part for part in parts if part)

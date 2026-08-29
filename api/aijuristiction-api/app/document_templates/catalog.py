@@ -722,8 +722,8 @@ def _build_render_context(
             "transferee_identification": _value(values, "transferee_name"),
             "share_scope": _value(values, "transfer_share"),
             "transfer_price": _value(values, "transfer_price", "0 EUR"),
-            "signature_place": "[mesto]",
-            "signature_date": "[datum]",
+            "signature_place": _value(values, "signature_place", "[mesto]"),
+            "signature_date": _value(values, "signature_date", "[datum]"),
         }
     )
     if template_key == "sk.employment.employment_contract" or template_kind == "employment_contract":

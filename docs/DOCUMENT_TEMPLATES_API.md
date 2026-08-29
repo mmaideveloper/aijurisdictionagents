@@ -247,6 +247,11 @@ JurisDigta text: external template wording is not copied. Bracketed fields must 
 reviewed by a qualified human before signature. The structured employment fact/placeholder schema is maintained as a
 separate follow-up so this canonical-source change does not silently invent or persist employee facts.
 
+As of August 29, 2026, the chat export regression suite also proves the end-to-end `GET /v1/chat/sessions/{session_id}/export`
+path can take a realistic employment questionnaire, infer `employment_contract`, and render a final `Pracovna zmluva`
+PDF with article-based canonical structure (`Článok I`, salary section, signature blocks) instead of a thin summary-only
+layout.
+
 Generate a synthetic, locally seeded preview and validate its extracted article/signature markers with:
 
 ```powershell
