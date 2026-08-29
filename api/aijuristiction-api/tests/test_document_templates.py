@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import unicodedata
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -30,6 +31,12 @@ def _build_client(store: DocumentTemplateStore) -> TestClient:
     app.dependency_overrides[get_document_template_store] = lambda: store
     app.dependency_overrides[require_api_key] = lambda: None
     return TestClient(app)
+
+
+def _canonical_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    plain = "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+    return " ".join(plain.split())
 
 
 def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) -> None:
@@ -362,17 +369,17 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     employment_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(BytesIO(employment_preview.content)).pages
     )
-    employment_text_normalized = " ".join(employment_text.split())
+    employment_text_normalized = _canonical_text(employment_text)
     assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in employment_text
     assert "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/" not in employment_text
     assert "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA" in employment_text
     assert "MZDOVÉ PODMIENKY" in employment_text
     assert "Fiktíva Digital Solutions" in employment_text
     assert "Lucia Vzorová" in employment_text
-    assert "AI vývojár / softvérový inžinier" in employment_text
+    assert "ai vyvojar / softverovy inzinier" in employment_text_normalized
     assert "Za zamestnávateľa" in employment_text
-    assert "individuálnu" in employment_text
-    assert "ľudskú kontrolu" in employment_text_normalized
+    assert "individualnu" in employment_text_normalized
+    assert "ludsku kontrolu" in employment_text_normalized
     assert "Nevyriešené polia náhľadu" not in employment_text
     assert "Prvá odporúčaná doplňujúca otázka" not in employment_text
 

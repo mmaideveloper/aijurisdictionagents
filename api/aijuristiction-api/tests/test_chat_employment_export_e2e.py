@@ -24,35 +24,56 @@ def _canonical_text(value: str) -> str:
 
 
 def _load_chat_api():
+    stubbed_modules: dict[str, types.ModuleType] = {}
+    original_modules = {name: sys.modules.get(name) for name in (
+        "app.chat.core_runtime",
+        "app.chat.case_type_detection",
+        "app.chat.country_services",
+        "app.flow_packs.api",
+        "app.chat.intent_policy_service",
+        "app.chat.mcp_law_context",
+        "app.chat.mcp_status_context",
+        "app.chat.output_validation",
+        "app.chat.result_metadata",
+        "app.case_workflows.service",
+        "app.security",
+        "app.services.email_scheduler",
+        "aijurisdictionagents.llm",
+        "aijurisdictionagents.llm.base",
+        "aijurisdictionagents.llm.routing",
+        "services.document_processor.runtime",
+        "services.document_processor.service",
+    )}
+
     core_runtime = types.ModuleType("app.chat.core_runtime")
     core_runtime.core_message_role = lambda *args, **kwargs: "assistant"
     core_runtime.run_orchestration = lambda *args, **kwargs: None
-    sys.modules["app.chat.core_runtime"] = core_runtime
+    stubbed_modules["app.chat.core_runtime"] = core_runtime
 
     case_type_detection = types.ModuleType("app.chat.case_type_detection")
     case_type_detection.resolve_case_catalog_context = lambda *args, **kwargs: None
-    sys.modules["app.chat.case_type_detection"] = case_type_detection
+    stubbed_modules["app.chat.case_type_detection"] = case_type_detection
 
     country_services = types.ModuleType("app.chat.country_services")
     country_services.prepare_country_direct_reply = lambda *args, **kwargs: None
-    sys.modules["app.chat.country_services"] = country_services
+    stubbed_modules["app.chat.country_services"] = country_services
 
     flow_packs_api = types.ModuleType("app.flow_packs.api")
     flow_packs_api.get_flow_pack_store = lambda *args, **kwargs: None
-    sys.modules["app.flow_packs.api"] = flow_packs_api
+    stubbed_modules["app.flow_packs.api"] = flow_packs_api
 
     intent_policy = types.ModuleType("app.chat.intent_policy_service")
     intent_policy.build_document_task_plan_note = lambda *args, **kwargs: ""
     intent_policy.is_document_modernization_request = lambda *args, **kwargs: False
-    sys.modules["app.chat.intent_policy_service"] = intent_policy
+    stubbed_modules["app.chat.intent_policy_service"] = intent_policy
 
     mcp_law_context = types.ModuleType("app.chat.mcp_law_context")
     mcp_law_context.build_mcp_law_context = lambda **_kwargs: None
-    sys.modules["app.chat.mcp_law_context"] = mcp_law_context
+    stubbed_modules["app.chat.mcp_law_context"] = mcp_law_context
 
     mcp_status_context = types.ModuleType("app.chat.mcp_status_context")
     mcp_status_context.build_mcp_status_context = lambda *args, **kwargs: None
-    sys.modules["app.chat.mcp_status_context"] = mcp_status_context
+    stubbed_modules["app.chat.mcp_status_context"] = mcp_status_context
 
     output_validation = types.ModuleType("app.chat.output_validation")
 
@@ -65,17 +86,17 @@ def _load_chat_api():
 
     output_validation.AILawyerOutputMessageValidationAgent = _ValidationAgent
     output_validation.LawyerOutputUserProfile = _LawyerOutputUserProfile
-    sys.modules["app.chat.output_validation"] = output_validation
+    stubbed_modules["app.chat.output_validation"] = output_validation
 
     result_metadata = types.ModuleType("app.chat.result_metadata")
     result_metadata.build_session_result_metadata = lambda *args, **kwargs: {}
-    sys.modules["app.chat.result_metadata"] = result_metadata
+    stubbed_modules["app.chat.result_metadata"] = result_metadata
 
     service_module = types.ModuleType("app.case_workflows.service")
     service_module.handle_active_chat_workflow_turn = lambda *args, **kwargs: None
     service_module.handle_chat_workflow_turn = lambda *args, **kwargs: None
     service_module.workflow_user_reply = lambda *args, **kwargs: None
-    sys.modules["app.case_workflows.service"] = service_module
+    stubbed_modules["app.case_workflows.service"] = service_module
 
     security_module = types.ModuleType("app.security")
 
@@ -83,7 +104,7 @@ def _load_chat_api():
         return None
 
     security_module.require_api_key = _require_api_key
-    sys.modules["app.security"] = security_module
+    stubbed_modules["app.security"] = security_module
 
     email_scheduler = types.ModuleType("app.services.email_scheduler")
 
@@ -91,11 +112,11 @@ def _load_chat_api():
         pass
 
     email_scheduler.EmailScheduler = _EmailScheduler
-    sys.modules["app.services.email_scheduler"] = email_scheduler
+    stubbed_modules["app.services.email_scheduler"] = email_scheduler
 
     llm_module = types.ModuleType("aijurisdictionagents.llm")
     llm_module.get_embedding_client = lambda *args, **kwargs: None
-    sys.modules["aijurisdictionagents.llm"] = llm_module
+    stubbed_modules["aijurisdictionagents.llm"] = llm_module
 
     llm_base = types.ModuleType("aijurisdictionagents.llm.base")
 
@@ -104,7 +125,7 @@ def _load_chat_api():
 
     llm_base.ModelProcessingTimeout = _ModelProcessingTimeout
     llm_base.read_positive_finite_env_seconds = lambda *args, **kwargs: 1.0
-    sys.modules["aijurisdictionagents.llm.base"] = llm_base
+    stubbed_modules["aijurisdictionagents.llm.base"] = llm_base
 
     llm_routing = types.ModuleType("aijurisdictionagents.llm.routing")
 
@@ -117,13 +138,13 @@ def _load_chat_api():
     llm_routing.ModelRouteUnavailable = _ModelRouteUnavailable
     llm_routing.RoutedLLMClient = _RoutedLLMClient
     llm_routing.get_routed_llm_client = lambda *args, **kwargs: None
-    sys.modules["aijurisdictionagents.llm.routing"] = llm_routing
+    stubbed_modules["aijurisdictionagents.llm.routing"] = llm_routing
 
     processor_runtime = types.ModuleType("services.document_processor.runtime")
     processor_runtime.cosine_similarity = lambda *args, **kwargs: 0.0
     processor_runtime.lexical_overlap_score = lambda *args, **kwargs: 0.0
     processor_runtime.parse_embedding_vector = lambda *args, **kwargs: []
-    sys.modules["services.document_processor.runtime"] = processor_runtime
+    stubbed_modules["services.document_processor.runtime"] = processor_runtime
 
     processor_service = types.ModuleType("services.document_processor.service")
 
@@ -131,10 +152,18 @@ def _load_chat_api():
         pass
 
     processor_service.DocumentProcessor = _DocumentProcessor
-    sys.modules["services.document_processor.service"] = processor_service
+    stubbed_modules["services.document_processor.service"] = processor_service
 
-    sys.modules.pop("app.chat.api", None)
-    return importlib.import_module("app.chat.api")
+    try:
+        sys.modules.update(stubbed_modules)
+        sys.modules.pop("app.chat.api", None)
+        return importlib.import_module("app.chat.api")
+    finally:
+        for name, module in original_modules.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 def test_employment_chat_export_renders_canonical_template_from_questionnaire(monkeypatch) -> None:
