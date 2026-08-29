@@ -20,9 +20,11 @@ from app.case_workflows.store import CaseWorkflowStore, WorkflowAssignmentNotFou
 from app.chat.mcp_law_context import build_mcp_law_context
 from app.document_templates.store import (
     CaseTypeNotFoundError,
+    DocumentTemplateNotFoundError,
     DocumentTemplateStore,
     get_document_template_store,
 )
+from app.document_templates.catalog import render_template
 from app.document_templates.models import DocumentTemplateCreateRequest, TemplateSourceReference
 from app.flow_packs.store import FlowPackNotFoundError, FlowPackStore
 from aijurisdictionagents.agents import create_lawyer_agent
@@ -88,6 +90,22 @@ class ProductionCaseWorkflowServices:
     def draft_documents(
         self, state: CaseWorkflowState
     ) -> tuple[str, list[dict[str, Any]]]:
+        template_first_draft = _render_template_first_employment_draft(state)
+        if template_first_draft is not None:
+            answer, template = template_first_draft
+            return answer, [
+                {
+                    "artifact_id": f"{state['workflow_run_id']}:draft",
+                    "artifact_type": "legal_document_draft",
+                    "status": "draft",
+                    "provider": "managed_template",
+                    "model": "",
+                    "route_type": "template_first",
+                    "template_key": template.template_key,
+                    "template_version": template.version,
+                    "template_title": template.title,
+                }
+            ]
         route = get_routed_llm_client(
             store=self._api_store,
             user_id=state.get("user_id", ""),
@@ -622,6 +640,57 @@ def _normalize_generated_draft(value: str, *, verified_facts: dict[str, str]) ->
     if "ľudskú kontrolu" not in normalized.casefold():
         normalized = f"{normalized}\n\n{disclosure}".strip()
     return normalized
+
+
+def _render_template_first_employment_draft(
+    state: CaseWorkflowState,
+) -> tuple[str, Any] | None:
+    jurisdiction = str(state.get("jurisdiction", "SK")).strip().upper() or "SK"
+    language = str(state.get("language", "sk-SK")).strip() or "sk-SK"
+    case_type_key = str(state.get("case_type_key", "")).strip()
+    request_text = str(state.get("request_text", "")).strip()
+    if not _is_template_first_employment_request(
+        case_type_key=case_type_key,
+        request_text=request_text,
+        jurisdiction=jurisdiction,
+    ):
+        return None
+    try:
+        template = get_document_template_store().get(
+            template_key="sk.employment.employment_contract",
+            jurisdiction=jurisdiction,
+        )
+    except DocumentTemplateNotFoundError:
+        return None
+    rendered = render_template(
+        template=template,
+        facts={
+            key: str(value).strip()
+            for key, value in dict(state.get("verified_facts", {})).items()
+            if str(value).strip()
+        },
+        country=jurisdiction,
+        language=language,
+    )
+    if not rendered.lines or rendered.missing_required_fields:
+        return None
+    return "\n".join(rendered.lines).strip(), template
+
+
+def _is_template_first_employment_request(
+    *,
+    case_type_key: str,
+    request_text: str,
+    jurisdiction: str,
+) -> bool:
+    if case_type_key == "sk.employment.employment_contract":
+        return True
+    score, template = get_document_template_store().find_best_match(
+        request_text=request_text,
+        country=jurisdiction,
+        template_kind="employment_contract",
+    )
+    return bool(score > 0 and template is not None and template.template_key == "sk.employment.employment_contract")
 
 
 def workflow_user_reply(run: WorkflowRunResponse, *, language: str) -> str:

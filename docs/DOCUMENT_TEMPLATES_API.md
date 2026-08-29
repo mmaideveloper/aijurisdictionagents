@@ -46,6 +46,9 @@ Notes:
 - `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
 - as of August 29, 2026, the chat export path treats `employment_contract` as a first-class document kind and routes
   detected Slovak employment-contract exports through the managed template instead of the generic memo formatter
+- the legal-document workflow `draft_documents` node now uses a template-first strategy for `Pracovna zmluva` when
+  verified employment facts satisfy the managed template, and only falls back to the model path when template rendering
+  is unavailable or unresolved
 - the canonical Slovak employment-contract seed contains an original reviewed body, an exact reviewed guidance URL,
   an official Slov-Lex legal-basis reference, visible draft/human-review warnings, and article/signature structure;
   startup versions only a legacy empty instance of this seed and never replaces a non-empty managed body
