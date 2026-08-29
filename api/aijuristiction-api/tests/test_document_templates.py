@@ -46,8 +46,10 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.justice.company_registry.initial_registration" in keys
 
     employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
-    assert employment.source_url == "https://www.aksamec.sk/pracovna-zmluva-vzor-2026/"
+    assert employment.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
     assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body
+    assert "Článok I" in employment.body
+    assert "Článok IV" in employment.body
     assert "Článok VII" in employment.body
     assert "{{employer_business_name}}" in employment.body
     assert "{{employee_full_name}}" in employment.body
@@ -56,8 +58,12 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "employee_residence" in employment.placeholders
     assert "base_monthly_salary" in employment.placeholders
     assert {reference.source_kind for reference in employment.source_refs} == {
+        "external_template_page",
         "official_legislation",
-        "reviewed_template_guidance",
+    }
+    assert {reference.url for reference in employment.source_refs} == {
+        "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/",
     }
     assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
 
@@ -88,6 +94,32 @@ def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_
         jurisdiction="SK",
     )
     assert unchanged.version == 3
+
+
+def test_document_template_store_does_not_overwrite_non_empty_employment_body(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    customized = store.update(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(
+            body="CUSTOM PRACOVNA ZMLUVA\n\nČlánok I\nVlastné znenie.",
+            source_url="https://example.com/custom-pracovna-zmluva",
+        ),
+    )
+    assert customized.version == 2
+
+    reloaded = DocumentTemplateStore(config).get(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+    assert reloaded.version == 2
+    assert reloaded.body == "CUSTOM PRACOVNA ZMLUVA\n\nČlánok I\nVlastné znenie."
+    assert reloaded.source_url == "https://example.com/custom-pracovna-zmluva"
 
 
 def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
@@ -332,11 +364,16 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     )
     employment_text_normalized = " ".join(employment_text.split())
     assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in employment_text
+    assert "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/" not in employment_text
     assert "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA" in employment_text
     assert "MZDOVÉ PODMIENKY" in employment_text
+    assert "Fiktíva Digital Solutions" in employment_text
+    assert "Lucia Vzorová" in employment_text
+    assert "AI vývojár / softvérový inžinier" in employment_text
     assert "Za zamestnávateľa" in employment_text
     assert "individuálnu" in employment_text
     assert "ľudskú kontrolu" in employment_text_normalized
+    assert "Nevyriešené polia náhľadu" not in employment_text
     assert "Prvá odporúčaná doplňujúca otázka" not in employment_text
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")

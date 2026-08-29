@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import lru_cache
+from io import BytesIO
+from pathlib import Path
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
+from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
+from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
+from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
+from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 
 from app.document_templates.catalog import render_template
 from app.document_templates.disclaimers import resolve_template_disclaimer
@@ -121,23 +127,33 @@ def preview_document_template_pdf(
         )
     if rendered.follow_up_question:
         lines.extend(["", "Prvá odporúčaná doplňujúca otázka:", rendered.follow_up_question])
+    disclaimer = resolve_template_disclaimer(template)
 
     # Import lazily so the template API can be tested standalone while still using
     # the production document PDF renderer for visual quality checks.
-    from app.chat.api import _build_professional_document_pdf
-
-    disclaimer = resolve_template_disclaimer(template)
-    pdf_content = _build_professional_document_pdf(
-        title=rendered.title or template.title,
-        lines=lines,
-        country=template.jurisdiction,
-        language=template.language,
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        case_id=f"template-preview:{template.template_key}",
-        footer_line=f"AIJ | Template preview | {template.template_key}",
-        verification_score=None,
-        disclaimer=disclaimer,
-    )
+    try:
+        from app.chat.api import _build_professional_document_pdf
+    except ModuleNotFoundError:
+        pdf_content = _build_standalone_template_preview_pdf(
+            title=rendered.title or template.title,
+            lines=lines,
+            country=template.jurisdiction,
+            language=template.language,
+            footer_line=f"AIJ | Template preview | {template.template_key}",
+            disclaimer=disclaimer,
+        )
+    else:
+        pdf_content = _build_professional_document_pdf(
+            title=rendered.title or template.title,
+            lines=lines,
+            country=template.jurisdiction,
+            language=template.language,
+            generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            case_id=f"template-preview:{template.template_key}",
+            footer_line=f"AIJ | Template preview | {template.template_key}",
+            verification_score=None,
+            disclaimer=disclaimer,
+        )
     filename = _template_preview_filename(template)
     return Response(
         content=pdf_content,
@@ -233,6 +249,37 @@ def _template_preview_facts() -> dict[str, str]:
         "transfer_share": "50 %",
         "transfer_price": "5 000 EUR",
         "estimated_timeline": "spravidla niekoľko pracovných dní až týždňov",
+        "employer_business_name": "Fiktíva Digital Solutions",
+        "employer_seat": "Inovačná 18, 040 01 Košice",
+        "employer_ico": "99 999 999",
+        "employer_representative": "Ing. Martin Vzorový, konateľ",
+        "employer_email": "personalne@fiktiva-example.sk",
+        "employer_phone": "+421 900 000 000",
+        "employee_full_name": "Lucia Vzorová",
+        "employee_birth_date": "14. februára 1994",
+        "employee_birth_number": "945214/0000",
+        "employee_residence": "Vzorová 27, 058 01 Poprad",
+        "employee_id_card_number": "TEST000001",
+        "employee_email": "lucia.vzorova@example.com",
+        "employee_phone": "+421 900 000 111",
+        "job_position": "AI vývojár / softvérový inžinier",
+        "job_description": "návrh, vývoj, testovanie a údržba AI riešení",
+        "place_of_work": "Inovačná 18, 040 01 Košice a práca na diaľku v SR podľa dohody",
+        "start_date": "1. októbra 2026",
+        "employment_term_description": "pracovný pomer na dobu neurčitú",
+        "probation_period": "3 mesiace",
+        "base_monthly_salary": "3 200 EUR brutto",
+        "variable_salary_component": "do 10 % základnej mesačnej mzdy podľa výsledkov",
+        "salary_payday": "najneskôr 15. deň kalendárneho mesiaca",
+        "salary_payment_method": "bezhotovostným prevodom na účet zamestnanca",
+        "weekly_working_hours": "40 hodín",
+        "working_time_distribution": "pondelok až piatok",
+        "vacation_entitlement": "v rozsahu podľa Zákonníka práce",
+        "additional_work_conditions": "home office najviac 3 dni týždenne; notebook a mobilný telefón",
+        "signature_place": "Košice",
+        "signature_date": "15. septembra 2026",
+        "employer_signatory_name": "Ing. Martin Vzorový",
+        "employee_signatory_name": "Lucia Vzorová",
     }
 
 
@@ -259,4 +306,141 @@ def _metadata_only_preview_lines(template: DocumentTemplateDefinition) -> list[s
 def _template_preview_filename(template: DocumentTemplateDefinition) -> str:
     stem = re.sub(r"[^A-Za-z0-9._-]+", "_", template.template_key).strip("._-")
     return f"{stem or 'document_template'}-preview.pdf"
+
+
+def _build_standalone_template_preview_pdf(
+    *,
+    title: str,
+    lines: list[str],
+    country: str,
+    language: str | None,
+    footer_line: str,
+    disclaimer: tuple[str, str, str] | None,
+) -> bytes:
+    regular_font, bold_font = _resolve_template_preview_fonts(country=country, language=language)
+    page_width, page_height = A4
+    margin_left = 52.0
+    margin_top = 60.0
+    margin_bottom = 44.0
+    line_height = 15.0
+    body_font_size = 11.0
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4, pageCompression=0)
+    pdf.setTitle(title.strip() or "Dokument")
+    pdf.setAuthor("JurisDigta")
+    pdf.setSubject("Template preview")
+    intro_lines = [
+        title,
+        "",
+        "JurisDigta",
+    ]
+    if (language or "").strip().lower().startswith("sk") or (country or "").strip().upper() == "SK":
+        intro_lines.extend(
+            [
+                "Jurisdikcia: Slovenská republika",
+                "Typ dokumentu: právny návrh",
+                "",
+            ]
+        )
+    wrapped_lines = _wrap_template_preview_lines(
+        intro_lines + _template_preview_disclaimer_lines(disclaimer) + list(lines),
+        width=88,
+    )
+
+    def draw_footer() -> None:
+        footer = "JurisDigta | Poprad, Slovakia, 05801 | Skore overenia dokumentu: -"
+        if disclaimer is not None and disclaimer[2].strip():
+            footer = f"{footer} | {disclaimer[2].strip()}"
+        pdf.setFont(regular_font, 9)
+        pdf.drawString(margin_left, margin_bottom - 10, footer)
+
+    y = page_height - margin_top
+    for index, line in enumerate(wrapped_lines):
+        if y <= margin_bottom + 20:
+            draw_footer()
+            pdf.showPage()
+            y = page_height - margin_top
+        if index == 0:
+            pdf.setFont(bold_font, 16)
+            pdf.drawString(margin_left, y, line)
+            y -= line_height * 1.4
+            continue
+        if not line.strip():
+            y -= line_height * 0.7
+            continue
+        if _looks_like_template_preview_heading(line):
+            pdf.setFont(bold_font, body_font_size + 1)
+        else:
+            pdf.setFont(regular_font, body_font_size)
+        pdf.drawString(margin_left, y, line)
+        y -= line_height
+    draw_footer()
+    pdf.save()
+    return buffer.getvalue()
+
+
+def _template_preview_disclaimer_lines(disclaimer: tuple[str, str, str] | None) -> list[str]:
+    if disclaimer is None:
+        return []
+    title, text, _footer = disclaimer
+    lines: list[str] = []
+    if title.strip():
+        lines.append(title.strip())
+    if text.strip():
+        lines.append(text.strip())
+    if lines:
+        lines.append("")
+    return lines
+
+
+def _wrap_template_preview_lines(lines: list[str], *, width: int) -> list[str]:
+    wrapped: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            wrapped.append("")
+            continue
+        current = stripped
+        while len(current) > width:
+            split_at = current.rfind(" ", 0, width)
+            if split_at <= 0:
+                split_at = width
+            wrapped.append(current[:split_at].rstrip())
+            current = current[split_at:].lstrip()
+        wrapped.append(current)
+    return wrapped
+
+
+def _looks_like_template_preview_heading(line: str) -> bool:
+    normalized = line.strip()
+    if normalized.startswith("Článok") or normalized.startswith("Clanok"):
+        return True
+    return normalized.isupper() and len(normalized) <= 80
+
+
+def _resolve_template_preview_fonts(*, country: str, language: str | None) -> tuple[str, str]:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country in {"SK", "CZ", "DE", "AT"} or normalized_language.startswith(("sk", "cs", "de")):
+        font_candidates = [
+            ("AIJTemplateDejaVuSerif", "DejaVuSerif.ttf", "DejaVuSerif-Bold.ttf"),
+            ("AIJTemplateDejaVuSans", "DejaVuSans.ttf", "DejaVuSans-Bold.ttf"),
+        ]
+        font_dirs = [
+            Path("/usr/share/fonts/truetype/dejavu"),
+            Path("/usr/local/share/fonts"),
+            Path("C:/Windows/Fonts"),
+        ]
+        for font_name, regular_name, bold_name in font_candidates:
+            for font_dir in font_dirs:
+                regular_path = font_dir / regular_name
+                bold_path = font_dir / bold_name
+                if regular_path.exists() and bold_path.exists():
+                    if font_name not in pdfmetrics.getRegisteredFontNames():
+                        pdfmetrics.registerFont(TTFont(font_name, str(regular_path)))
+                    bold_font_name = f"{font_name}-Bold"
+                    if bold_font_name not in pdfmetrics.getRegisteredFontNames():
+                        pdfmetrics.registerFont(TTFont(bold_font_name, str(bold_path)))
+                    return font_name, bold_font_name
+    return "Helvetica", "Helvetica-Bold"
 

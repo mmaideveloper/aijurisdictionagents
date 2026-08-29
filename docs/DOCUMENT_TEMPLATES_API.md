@@ -49,6 +49,9 @@ Notes:
 - the legal-document workflow `draft_documents` node now uses a template-first strategy for `Pracovna zmluva` when
   verified employment facts satisfy the managed template, and only falls back to the model path when template rendering
   is unavailable or unresolved
+- the template preview endpoint now has standalone PDF fallback rendering, and the employment-template regression suite
+  asserts exact reviewed-source provenance, non-empty clause-rich seed content, and filled preview output without
+  metadata-only or unresolved-field fallback
 - the canonical Slovak employment-contract seed contains an original reviewed body, an exact reviewed guidance URL,
   an official Slov-Lex legal-basis reference, visible draft/human-review warnings, and article/signature structure;
   startup versions only a legacy empty instance of this seed and never replaces a non-empty managed body

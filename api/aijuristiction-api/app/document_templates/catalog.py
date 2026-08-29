@@ -136,7 +136,7 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "a individualnu kontrolu pravnikom alebo pracovnopravnym specialistom."
             ),
             source_format="HTML/LAW",
-            source_url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
+            source_url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
             body=(
                 "PRACOVNÁ ZMLUVA\n"
                 "uzatvorená podľa § 42 a nasl. zákona č. 311/2001 Z. z. Zákonník práce\n\n"
@@ -239,24 +239,21 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             ),
             source_refs=(
                 TemplateSourceReference(
-                    label="Pracovná zmluva – vzor 2026",
-                    url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
+                    label="AK Samec - Pracovna zmluva",
+                    url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
                     publisher="AK Samec",
-                    source_kind="reviewed_template_guidance",
+                    source_kind="external_template_page",
                     notes=(
-                        "Presna zdrojova stranka skontrolovana 2026-08-28; pouzita na strukturalnu kontrolu "
-                        "povinnych a volitelnych nalezitosti. Kanonicke telo je povodny text JurisDigta."
+                        "Exact source page reviewed on 2026-08-28. Managed canonical body is source-aligned "
+                        "but maintained in-product for deterministic drafting and auditability."
                     ),
                 ),
                 TemplateSourceReference(
-                    label="Zákon č. 311/2001 Z. z. Zákonník práce",
-                    url="https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2001/311/",
-                    publisher="Ministerstvo spravodlivosti SR – Slov-Lex",
+                    label="Zakonnik prace c. 311/2001 Z. z.",
+                    url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/",
+                    publisher="Slov-Lex",
                     source_kind="official_legislation",
-                    notes=(
-                        "Oficialne konsolidovane znenie skontrolovane 2026-08-28; pravny zaklad najma § 42 "
-                        "az § 44. Pred pouzitim treba overit aktualne znenie a konkretne skutkove okolnosti."
-                    ),
+                    notes="Relevant legal basis for employment contract minimum requirements and labor-law framing.",
                 ),
             ),
             disclaimer_title="Dôležité upozornenie",
