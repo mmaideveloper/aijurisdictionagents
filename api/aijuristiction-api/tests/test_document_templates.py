@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import unicodedata
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from app.document_templates.api import get_document_template_store, router
+from app.document_templates.catalog import apply_employment_profile_defaults, render_template
 from app.document_templates.models import DocumentTemplateCreateRequest, DocumentTemplateUpdateRequest
 from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
 from app.security import require_api_key
@@ -31,6 +33,12 @@ def _build_client(store: DocumentTemplateStore) -> TestClient:
     return TestClient(app)
 
 
+def _canonical_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    plain = "".join(char for char in normalized if not unicodedata.combining(char)).lower()
+    return " ".join(plain.split())
+
+
 def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
 
@@ -45,13 +53,24 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.justice.company_registry.initial_registration" in keys
 
     employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
-    assert employment.source_url == "https://www.aksamec.sk/pracovna-zmluva-vzor-2026/"
+    assert employment.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
     assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body
+    assert "Článok I" in employment.body
+    assert "Článok IV" in employment.body
     assert "Článok VII" in employment.body
-    assert "Za zamestnávateľa: ____________________" in employment.body
+    assert "{{employer_business_name}}" in employment.body
+    assert "{{employee_full_name}}" in employment.body
+    assert "principal_identification" not in employment.placeholders
+    assert "agent_identification" not in employment.placeholders
+    assert "employee_residence" in employment.placeholders
+    assert "base_monthly_salary" in employment.placeholders
     assert {reference.source_kind for reference in employment.source_refs} == {
+        "external_template_page",
         "official_legislation",
-        "reviewed_template_guidance",
+    }
+    assert {reference.url for reference in employment.source_refs} == {
+        "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/",
     }
     assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
 
@@ -82,6 +101,120 @@ def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_
         jurisdiction="SK",
     )
     assert unchanged.version == 3
+
+
+def test_document_template_store_does_not_overwrite_non_empty_employment_body(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    customized = store.update(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(
+            body="CUSTOM PRACOVNA ZMLUVA\n\nČlánok I\nVlastné znenie.",
+            source_url="https://example.com/custom-pracovna-zmluva",
+        ),
+    )
+    assert customized.version == 2
+
+    reloaded = DocumentTemplateStore(config).get(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+    assert reloaded.version == 2
+    assert reloaded.body == "CUSTOM PRACOVNA ZMLUVA\n\nČlánok I\nVlastné znenie."
+    assert reloaded.source_url == "https://example.com/custom-pracovna-zmluva"
+
+
+def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    template = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+
+    rendered = render_template(
+        template=template,
+        facts={
+            "obchodne_meno": "Fiktíva Digital Solutions",
+            "sidlo": "Inovačná 18, 040 01 Košice",
+            "ico": "99 999 999",
+            "zastupeny": "Ing. Martin Vzorový, konateľ",
+            "meno_a_priezvisko": "Lucia Vzorová",
+            "datum_narodenia": "14. februára 1994",
+            "trvaly_pobyt": "Vzorová 27, 058 01 Poprad",
+            "druh_prace": "návrh, vývoj a údržba AI riešení",
+            "pracovna_pozicia": "AI vývojár",
+            "miesto_vykonu_prace": "Košice a práca na diaľku",
+            "den_nastupu": "1. októbra 2026",
+            "druh_pracovneho_pomeru": "dobu neurčitú",
+            "zakladna_mesacna_mzda": "3 200 EUR",
+            "tyzdenny_pracovny_cas": "40 hodín",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    rendered_text = "\n".join(rendered.lines)
+    assert "Fiktíva Digital Solutions" in rendered_text
+    assert "Lucia Vzorová" in rendered_text
+    assert "AI vývojár" in rendered_text
+    assert rendered.missing_required_fields == []
+    assert rendered.follow_up_question is None
+
+
+def test_employment_template_reports_first_missing_required_field(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    template = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+
+    rendered = render_template(
+        template=template,
+        facts={
+            "obchodne_meno": "Fiktíva Digital Solutions",
+            "sidlo": "Inovačná 18, 040 01 Košice",
+            "ico": "99 999 999",
+            "zastupeny": "Ing. Martin Vzorový, konateľ",
+            "meno_a_priezvisko": "Lucia Vzorová",
+            "datum_narodenia": "14. februára 1994",
+            "trvaly_pobyt": "Vzorová 27, 058 01 Poprad",
+            "druh_prace": "návrh, vývoj a údržba AI riešení",
+            "pracovna_pozicia": "AI vývojár",
+            "miesto_vykonu_prace": "Košice a práca na diaľku",
+            "druh_pracovneho_pomeru": "dobu neurčitú",
+            "zakladna_mesacna_mzda": "3 200 EUR",
+            "tyzdenny_pracovny_cas": "40 hodín",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert rendered.missing_required_fields == ["start_date"]
+    assert rendered.follow_up_question == "Aký je dohodnutý deň nástupu do práce?"
+    assert "start_date" in rendered.unresolved_fields
+
+
+def test_employment_profile_defaults_fill_missing_identity_fields() -> None:
+    enriched = apply_employment_profile_defaults(
+        facts={"job_position": "AI vývojár"},
+        profile_defaults={
+            "display_name": "Lucia Vzorová",
+            "address": "Vzorová 27, 058 01 Poprad, SK",
+            "date_of_birth": "1994-02-14",
+            "birth_number": "945214/0000",
+            "identity_card_number": "TEST000001",
+            "email": "lucia@example.com",
+            "phone_number": "+421900111222",
+        },
+    )
+
+    assert enriched["employee_full_name"] == "Lucia Vzorová"
+    assert enriched["employee_signatory_name"] == "Lucia Vzorová"
+    assert enriched["employee_residence"] == "Vzorová 27, 058 01 Poprad, SK"
+    assert enriched["employee_birth_date"] == "1994-02-14"
+    assert enriched["employee_birth_number"] == "945214/0000"
+    assert enriched["employee_id_card_number"] == "TEST000001"
+    assert enriched["employee_email"] == "lucia@example.com"
+    assert enriched["employee_phone"] == "+421900111222"
 
 
 def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
@@ -236,13 +369,19 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     employment_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(BytesIO(employment_preview.content)).pages
     )
-    employment_text_normalized = " ".join(employment_text.split())
+    employment_text_normalized = _canonical_text(employment_text)
     assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in employment_text
+    assert "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/" not in employment_text
     assert "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA" in employment_text
     assert "MZDOVÉ PODMIENKY" in employment_text
+    assert "Fiktíva Digital Solutions" in employment_text
+    assert "Lucia Vzorová" in employment_text
+    assert "ai vyvojar / softverovy inzinier" in employment_text_normalized
     assert "Za zamestnávateľa" in employment_text
-    assert "individuálnu" in employment_text
-    assert "ľudskú kontrolu" in employment_text_normalized
+    assert "individualnu" in employment_text_normalized
+    assert "ludsku kontrolu" in employment_text_normalized
+    assert "Nevyriešené polia náhľadu" not in employment_text
+    assert "Prvá odporúčaná doplňujúca otázka" not in employment_text
 
     delete_response = client.delete("/v1/document-templates/sk.custom.loan_agreement?jurisdiction=SK&version=2")
     assert delete_response.status_code == 200

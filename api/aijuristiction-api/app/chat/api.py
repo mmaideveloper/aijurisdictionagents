@@ -56,7 +56,8 @@ from app.case_workflows.service import (
     workflow_user_reply,
 )
 from app.document_templates.disclaimers import resolve_disclaimer_from_templates
-from app.document_templates.store import get_document_template_store
+from app.document_templates.catalog import apply_employment_profile_defaults, render_template
+from app.document_templates.store import DocumentTemplateNotFoundError, get_document_template_store
 from app.security import require_api_key
 from app.services.email_scheduler import EmailScheduler
 from app.versioning import get_api_version, get_core_version
@@ -6541,6 +6542,7 @@ def _build_document_export_assets(
                     filename=_document_asset_filename(
                         entry=entry,
                         fallback_filename=_build_pdf_filename(session_id=session_id, kind="document"),
+                        document_kind=document_kind,
                     ),
                     title=export_title,
                     lines=_strip_duplicate_body_title(title=export_title, lines=entry_lines),
@@ -6558,6 +6560,7 @@ def _build_document_export_assets(
                 filename=_document_asset_filename(
                     entry=entry,
                     fallback_filename=_build_pdf_filename(session_id=session_id, kind="document"),
+                    document_kind=document_kind,
                 ),
                 title=title,
                 lines=_strip_duplicate_body_title(title=title, lines=lines),
@@ -6736,6 +6739,10 @@ def _looks_like_exportable_legal_document_body(content: str) -> bool:
 
 def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
     lowered = _canonicalize_document_text(title)
+    if document_kind == "employment_contract" or any(
+        token in lowered for token in ("pracovn", "employment contract", "zamestnan", "zakonnik prace")
+    ):
+        return "contract"
     if document_kind == "rental_agreement":
         if "zmluv" in lowered and ("najom" in lowered or "najm" in lowered or "lease" in lowered):
             return "contract"
@@ -6758,6 +6765,8 @@ def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
 
 
 def _fallback_document_entry_filename(title: str, *, document_kind: str, entry_type: str) -> str:
+    if document_kind == "employment_contract":
+        return "Pracovna_zmluva.pdf"
     if document_kind == "rental_agreement":
         known_filenames = {
             "contract": "Najomna_zmluva.pdf",
@@ -6877,6 +6886,15 @@ def _build_document_export_content(
             lines = _build_slovak_payment_confirmation_lines(facts)
             lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
             return title, _strip_duplicate_body_title(title=title, lines=lines)
+        if document_kind == "employment_contract":
+            return _build_employment_contract_document_asset_content(
+                entry={},
+                facts=facts,
+                country=country,
+                language=language,
+                law_citation_lines=law_citation_lines,
+                fallback_index=1,
+            )
         if document_kind == "rental_agreement":
             lines = _build_standard_slovak_agreement_lines(facts)
             lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -6904,6 +6922,15 @@ def _build_document_export_content(
         lines = _build_english_payment_confirmation_lines(facts)
         lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         return title, _strip_duplicate_body_title(title=title, lines=lines)
+    if document_kind == "employment_contract":
+        return _build_employment_contract_document_asset_content(
+            entry={},
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+            fallback_index=1,
+        )
     if document_kind == "easement_demand":
         lines = _build_english_easement_demand_lines(facts)
         lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -6944,6 +6971,8 @@ def _document_export_title_from_recommendation(
             "potvrdenie" in lowered and any(token in lowered for token in ("zaplat", "uhrad", "platb"))
         ):
             return "Potvrdenie o zaplatení"
+        if document_kind == "employment_contract":
+            return "Pracovna zmluva"
         if "plnomoc" in lowered or "splnomoc" in lowered:
             return "Plnomocenstvo"
         if "vypoved" in lowered and ("najom" in lowered or "najm" in lowered):
@@ -6964,6 +6993,8 @@ def _document_export_title_from_recommendation(
         "confirmation" in lowered and any(token in lowered for token in ("payment", "paid"))
     ):
         return "Payment Confirmation"
+    if document_kind == "employment_contract":
+        return "Employment Contract"
     if "payment confirmation" in lowered or ("confirmation" in lowered and "payment" in lowered):
         return "Payment Confirmation"
     if document_kind == "rental_agreement":
@@ -7068,12 +7099,15 @@ def _document_asset_filename(
     *,
     entry: dict[str, Any] | None,
     fallback_filename: str,
+    document_kind: str | None = None,
 ) -> str:
     raw_name = ""
     if entry is not None:
         raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
     candidate = Path(raw_name).name if raw_name else ""
     if not candidate:
+        if document_kind == "employment_contract":
+            return "Pracovna_zmluva.pdf"
         return fallback_filename
     stem = Path(candidate).stem.strip() or Path(fallback_filename).stem
     return f"{stem}.pdf"
@@ -7099,6 +7133,7 @@ def _build_multi_document_export_assets(
         filename = _document_asset_filename(
             entry=entry,
             fallback_filename=f"document-{index}.pdf",
+            document_kind=document_kind,
         )
         unique_filename = _deduplicate_export_filename(filename=filename, used_filenames=used_filenames)
         title, lines = _build_document_asset_content(
@@ -7134,7 +7169,7 @@ def _is_third_party_document(
     title: str,
     lines: list[str],
 ) -> bool:
-    if document_kind in {"rental_agreement", "share_transfer", "easement_demand"}:
+    if document_kind in {"rental_agreement", "share_transfer", "easement_demand", "employment_contract"}:
         return True
     entry_type = _canonicalize_document_text(str((entry or {}).get("type") or ""))
     if entry_type in {"contract", "minutes", "articles", "registry_filing", "handover_protocol", "inventory"}:
@@ -7197,6 +7232,7 @@ def _resolve_document_export_disclaimer(
 
 def _template_kind_for_document_kind(document_kind: str) -> str | None:
     mapping = {
+        "employment_contract": "employment_contract",
         "rental_agreement": "rental_agreement",
         "share_transfer": "share_transfer_agreement",
         "easement_demand": "court_filing",
@@ -7250,8 +7286,22 @@ def _build_document_asset_content(
             language=language,
             law_citation_lines=law_citation_lines,
         )
+    if document_kind == "employment_contract":
+        return _build_employment_contract_document_asset_content(
+            entry=entry,
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+            fallback_index=fallback_index,
+        )
 
-    title = _document_asset_title(entry=entry, language=language, fallback_index=fallback_index)
+    title = _document_asset_title(
+        entry=entry,
+        language=language,
+        fallback_index=fallback_index,
+        document_kind=document_kind,
+    )
     prefers_slovak = (language or "").strip().lower().startswith("sk")
     if prefers_slovak:
         lines = _build_generic_slovak_case_document_lines(facts)
@@ -7265,6 +7315,7 @@ def _document_asset_title(
     entry: dict[str, Any],
     language: str | None,
     fallback_index: int,
+    document_kind: str | None = None,
 ) -> str:
     raw_title = str(entry.get("title") or entry.get("name") or entry.get("label") or "").strip()
     if raw_title:
@@ -7274,10 +7325,66 @@ def _document_asset_title(
         stem = Path(raw_name).stem.replace("_", " ").replace("-", " ").strip()
         if stem:
             return stem
+    if document_kind == "employment_contract":
+        prefers_slovak = (language or "").strip().lower().startswith("sk")
+        return "Pracovna zmluva" if prefers_slovak else "Employment Contract"
     prefers_slovak = (language or "").strip().lower().startswith("sk")
     if prefers_slovak:
         return f"Dokument {fallback_index}"
     return f"Document {fallback_index}"
+
+
+def _build_employment_contract_document_asset_content(
+    *,
+    entry: dict[str, Any],
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    law_citation_lines: list[str],
+    fallback_index: int,
+) -> tuple[str, list[str]]:
+    title, lines = _render_employment_contract_template(
+        facts=facts,
+        country=country,
+        language=language,
+    )
+    if not lines:
+        title = _document_asset_title(
+            entry=entry,
+            language=language,
+            fallback_index=fallback_index,
+            document_kind="employment_contract",
+        )
+        prefers_slovak = country.strip().upper() == "SK" or (language or "").strip().lower().startswith("sk")
+        lines = (
+            _build_generic_slovak_case_document_lines(facts)
+            if prefers_slovak
+            else _build_generic_english_case_document_lines(facts)
+        )
+    lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    return title, _strip_duplicate_body_title(title=title, lines=lines)
+
+
+def _render_employment_contract_template(
+    *,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+) -> tuple[str, list[str]]:
+    try:
+        template = get_document_template_store().get(
+            template_key="sk.employment.employment_contract",
+            jurisdiction=country.strip().upper() or "SK",
+        )
+    except DocumentTemplateNotFoundError:
+        return "", []
+    rendered = render_template(
+        template=template,
+        facts=facts,
+        country=country,
+        language=language,
+    )
+    return template.title, rendered.lines
 
 
 def _build_rental_document_asset_content(
@@ -7462,6 +7569,98 @@ def _extract_document_facts(
             line = re.sub(r"^[\-\*\s]+", "", line)
             line = re.sub(r"\*\*", "", line)
             canonical_line = _canonicalize_document_text(line)
+            for label in labels:
+                canonical_label = _canonicalize_document_text(label).rstrip(":")
+                if not canonical_line.startswith(canonical_label):
+                    continue
+                separator_index = line.find(":")
+                if separator_index < 0:
+                    continue
+                value = " ".join(line[separator_index + 1 :].strip().split())
+                return value or default
+        return default
+
+    def _capture_multiline_value(labels: tuple[str, ...], default: str = "") -> str:
+        for index, raw_line in enumerate(source_lines):
+            line = _repair_common_mojibake(raw_line).strip()
+            if not line:
+                continue
+            line = re.sub(r"\*\*", "", line)
+            canonical_line = _canonicalize_document_text(line)
+            for label in labels:
+                canonical_label = _canonicalize_document_text(label).rstrip(":")
+                if not canonical_line.startswith(canonical_label):
+                    continue
+                separator_index = line.find(":")
+                if separator_index < 0:
+                    continue
+                parts: list[str] = []
+                inline_value = " ".join(line[separator_index + 1 :].strip().split())
+                if inline_value:
+                    parts.append(inline_value)
+                for continuation_raw in source_lines[index + 1 :]:
+                    continuation = _repair_common_mojibake(continuation_raw).strip()
+                    if not continuation:
+                        if parts:
+                            break
+                        continue
+                    continuation = re.sub(r"\*\*", "", continuation)
+                    continuation = re.sub(r"^[\-\*\s]+", "", continuation).strip()
+                    if not continuation:
+                        continue
+                    canonical_continuation = _canonicalize_document_text(continuation)
+                    if ":" in continuation:
+                        prefix = continuation.split(":", 1)[0].strip()
+                        if prefix and len(prefix) <= 80:
+                            prefix_canonical = _canonicalize_document_text(prefix)
+                            if prefix_canonical != canonical_label and not prefix_canonical[:1].isdigit():
+                                break
+                    if canonical_continuation.startswith(
+                        (
+                            "1 zamestnavatel",
+                            "2 zamestnanec",
+                            "3 udaje",
+                            "4 pracovny",
+                            "5 mzdove",
+                            "6 dalsie",
+                            "7 podpisove",
+                        )
+                    ):
+                        break
+                    parts.append(" ".join(continuation.split()))
+                combined = "; ".join(part for part in parts if part)
+                return combined or default
+        return default
+
+    def _capture_line_value_after(
+        anchor_labels: tuple[str, ...],
+        labels: tuple[str, ...],
+        default: str,
+    ) -> str:
+        anchor_index: int | None = None
+        for index, raw_line in enumerate(source_lines):
+            canonical_line = _canonicalize_document_text(_repair_common_mojibake(raw_line).strip())
+            if any(canonical_line.startswith(_canonicalize_document_text(label)) for label in anchor_labels):
+                anchor_index = index
+                break
+        if anchor_index is None:
+            return default
+        for raw_line in source_lines[anchor_index + 1 :]:
+            line = _repair_common_mojibake(raw_line).strip()
+            if not line:
+                continue
+            line = re.sub(r"^[\-\*\s]+", "", line)
+            line = re.sub(r"\*\*", "", line)
+            canonical_line = _canonicalize_document_text(line)
+            if any(
+                canonical_line.startswith(_canonicalize_document_text(label))
+                for label in ("1. zamestnavatel", "1 zamestnavatel", "2. zamestnanec", "2 zamestnanec")
+            ):
+                if any(
+                    canonical_line.startswith(_canonicalize_document_text(label)) for label in anchor_labels
+                ):
+                    continue
+                break
             for label in labels:
                 canonical_label = _canonicalize_document_text(label).rstrip(":")
                 if not canonical_line.startswith(canonical_label):
@@ -7669,6 +7868,92 @@ def _extract_document_facts(
         r"(niekoÄ¾ko tÃ½Å¾dÅˆov|niekolko tyzdnov|[0-9]+\s*(?:pracovnÃ½ch|pracovnych)\s+dnÃ­|[0-9]+\s*dnÃ­)",
         "Spravidla niekoÄ¾ko pracovnÃ½ch dnÃ­ aÅ¾ tÃ½Å¾dÅˆov po Ãºplnom podanÃ­.",
     )
+    employer_business_name = _capture_line_value(
+        ("obchodne meno", "obchodné meno", "zamestnavatel", "zamestnávateľ"),
+        "",
+    )
+    employer_seat = _capture_line_value(("sidlo", "sídlo"), "")
+    employer_ico = _capture_line_value(("ico", "ičo"), "")
+    employer_representative = _capture_line_value(("zastupeny", "zastúpený"), "")
+    employer_email = _capture_line_value_after(("1. zamestnavatel", "1 zamestnavatel"), ("e-mail", "email"), "")
+    employer_phone = _capture_line_value_after(("1. zamestnavatel", "1 zamestnavatel"), ("telefon", "telefón"), "")
+    employee_full_name = _capture_line_value_after(
+        ("2. zamestnanec", "2 zamestnanec"),
+        ("meno a priezvisko", "zamestnanec"),
+        "",
+    )
+    employee_birth_date = _capture_line_value_after(
+        ("2. zamestnanec", "2 zamestnanec"),
+        ("datum narodenia", "dátum narodenia"),
+        "",
+    )
+    employee_birth_number = _capture_line_value_after(
+        ("2. zamestnanec", "2 zamestnanec"),
+        ("rodne cislo", "rodné číslo"),
+        "",
+    )
+    employee_residence = _capture_line_value_after(
+        ("2. zamestnanec", "2 zamestnanec"),
+        ("trvaly pobyt", "trvalý pobyt"),
+        "",
+    )
+    employee_id_card_number = _capture_line_value(
+        ("cislo obcianskeho preukazu", "číslo občianskeho preukazu"),
+        "",
+    )
+    employee_email = _capture_line_value_after(("2. zamestnanec", "2 zamestnanec"), ("e-mail", "email"), "")
+    employee_phone = _capture_line_value_after(("2. zamestnanec", "2 zamestnanec"), ("telefon", "telefón"), "")
+    job_position = _capture_line_value(("pracovna pozicia", "pracovná pozícia"), "")
+    job_description = _capture_multiline_value(("druh prace", "druh práce"), "")
+    place_of_work = _capture_multiline_value(("miesto vykonu prace", "miesto výkonu práce"), "")
+    start_date = _capture_line_value(("den nastupu do prace", "deň nástupu do práce"), "")
+    employment_term_description = _capture_line_value(
+        ("druh pracovneho pomeru", "druh pracovného pomeru"),
+        "",
+    )
+    probation_period = _capture_line_value(("skusobna doba", "skúšobná doba"), "")
+    base_monthly_salary = _capture_line_value(
+        ("zakladna mesacna mzda", "základná mesačná mzda"),
+        "",
+    )
+    variable_salary_component = _capture_multiline_value(
+        ("variabilna zlozka mzdy", "variabilná zložka mzdy"),
+        "",
+    )
+    salary_payday = _capture_multiline_value(("vyplatny termin", "výplatný termín"), "")
+    salary_payment_method = _capture_multiline_value(
+        ("sposob vyplacania mzdy", "spôsob vyplácania mzdy"),
+        "",
+    )
+    weekly_working_hours = _capture_line_value(
+        ("tyzdenny pracovny cas", "týždenný pracovný čas"),
+        "",
+    )
+    working_time_distribution = _capture_multiline_value(
+        ("rozvrhnutie pracovneho casu", "rozvrhnutie pracovného času"),
+        "",
+    )
+    vacation_entitlement = _capture_multiline_value(("dovolenka",), "")
+    additional_work_conditions = "; ".join(
+        part
+        for part in (
+            _capture_multiline_value(("vypovedna doba", "výpovedná doba"), ""),
+            _capture_multiline_value(("home office",), ""),
+            _capture_multiline_value(("pracovne vybavenie", "pracovné vybavenie"), ""),
+            _capture_multiline_value(("zamestnanecke benefity", "zamestnanecké benefity"), ""),
+        )
+        if part
+    )
+    signature_place = _capture_line_value(
+        ("miesto uzatvorenia pracovnej zmluvy", "miesto uzatvorenia"),
+        "",
+    )
+    signature_date = _capture_line_value(
+        ("datum uzatvorenia pracovnej zmluvy", "dátum uzatvorenia pracovnej zmluvy", "datum uzatvorenia"),
+        "",
+    )
+    employer_signatory_name = _capture_multiline_value(("za zamestnavatela", "za zamestnávateľa"), "")
+    employee_signatory_name = _capture_multiline_value(("zamestnanec",), "")
 
     return {
         "prenajimatel": prenajimatel,
@@ -7701,6 +7986,37 @@ def _extract_document_facts(
         "transferee_name": transferee_name,
         "filing_authority": filing_authority,
         "estimated_timeline": estimated_timeline,
+        "employer_business_name": employer_business_name,
+        "employer_seat": employer_seat,
+        "employer_ico": employer_ico,
+        "employer_representative": employer_representative,
+        "employer_email": employer_email,
+        "employer_phone": employer_phone,
+        "employee_full_name": employee_full_name,
+        "employee_birth_date": employee_birth_date,
+        "employee_birth_number": employee_birth_number,
+        "employee_residence": employee_residence,
+        "employee_id_card_number": employee_id_card_number,
+        "employee_email": employee_email,
+        "employee_phone": employee_phone,
+        "job_position": job_position,
+        "job_description": job_description,
+        "place_of_work": place_of_work,
+        "start_date": start_date,
+        "employment_term_description": employment_term_description,
+        "probation_period": probation_period,
+        "base_monthly_salary": base_monthly_salary,
+        "variable_salary_component": variable_salary_component,
+        "salary_payday": salary_payday,
+        "salary_payment_method": salary_payment_method,
+        "weekly_working_hours": weekly_working_hours,
+        "working_time_distribution": working_time_distribution,
+        "vacation_entitlement": vacation_entitlement,
+        "additional_work_conditions": additional_work_conditions,
+        "signature_place": signature_place,
+        "signature_date": signature_date,
+        "employer_signatory_name": employer_signatory_name,
+        "employee_signatory_name": employee_signatory_name,
     }
 
 
@@ -7759,6 +8075,18 @@ def _apply_user_profile_document_defaults(
         enriched["transferor_name"] = profile_identity
     if _is_missing_document_fact(enriched.get("payment_payer")):
         enriched["payment_payer"] = profile_identity
+    enriched = apply_employment_profile_defaults(
+        facts=enriched,
+        profile_defaults={
+            "display_name": _user_profile_document_display_name(user_profile),
+            "address": ", ".join(_user_profile_document_address(user_profile)),
+            "date_of_birth": user_profile.date_of_birth or "",
+            "birth_number": user_profile.social_security_number or "",
+            "identity_card_number": user_profile.identity_card_number or "",
+            "email": user_profile.email,
+            "phone_number": user_profile.phone_number or "",
+        },
+    )
     return enriched
 
 
@@ -8642,7 +8970,14 @@ def _extract_json_value(content: str, start_index: int) -> str | None:
 def _detect_document_kind(
     source_lines: List[str],
     case_update: dict[str, Any] | None,
-) -> Literal["rental_agreement", "easement_demand", "share_transfer", "payment_confirmation", "generic_case_document"]:
+) -> Literal[
+    "rental_agreement",
+    "easement_demand",
+    "share_transfer",
+    "payment_confirmation",
+    "employment_contract",
+    "generic_case_document",
+]:
     combined = _canonicalize_document_text(" ".join(source_lines))
     case = case_update.get("case", {}) if isinstance(case_update, dict) else {}
     matter = case.get("matter", {}) if isinstance(case, dict) else {}
@@ -8707,8 +9042,22 @@ def _detect_document_kind(
         "confirmation of payment",
         "receipt of payment",
     )
+    employment_contract_tokens = (
+        "pracovna zmluva",
+        "pracovná zmluva",
+        "employment contract",
+        "zamestnavatel",
+        "zamestnávateľ",
+        "zamestnanec",
+        "zakonnik prace",
+        "zákonník práce",
+        "druh pracovneho pomeru",
+        "druh pracovného pomeru",
+    )
     if any(token in haystack for token in purchase_sale_tokens):
         return "generic_case_document"
+    if any(token in haystack for token in employment_contract_tokens):
+        return "employment_contract"
     if any(token in haystack for token in payment_confirmation_tokens):
         return "payment_confirmation"
     if any(token in haystack for token in rental_tokens):

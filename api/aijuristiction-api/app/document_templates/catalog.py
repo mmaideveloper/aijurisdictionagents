@@ -136,40 +136,49 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "a individualnu kontrolu pravnikom alebo pracovnopravnym specialistom."
             ),
             source_format="HTML/LAW",
-            source_url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
+            source_url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
             body=(
                 "PRACOVNÁ ZMLUVA\n"
                 "uzatvorená podľa § 42 a nasl. zákona č. 311/2001 Z. z. Zákonník práce\n\n"
                 "Zamestnávateľ:\n"
-                "[DOPLNIŤ: obchodné meno/názov, sídlo, IČO a osoba oprávnená konať]\n\n"
+                "{{employer_business_name}}\n"
+                "Sídlo: {{employer_seat}}\n"
+                "IČO: {{employer_ico}}\n"
+                "Osoba oprávnená konať: {{employer_representative}}\n"
+                "E-mail: {{employer_email}}\n"
+                "Telefón: {{employer_phone}}\n\n"
                 "Zamestnanec:\n"
-                "[DOPLNIŤ: meno, priezvisko, dátum narodenia a adresa trvalého pobytu]\n\n"
+                "{{employee_full_name}}\n"
+                "Dátum narodenia: {{employee_birth_date}}\n"
+                "Rodné číslo: {{employee_birth_number}}\n"
+                "Adresa trvalého pobytu: {{employee_residence}}\n"
+                "Číslo občianskeho preukazu: {{employee_id_card_number}}\n"
+                "E-mail: {{employee_email}}\n"
+                "Telefón: {{employee_phone}}\n\n"
                 "(ďalej spolu aj ako „zmluvné strany“) uzatvárajú túto pracovnú zmluvu:\n\n"
                 "Článok I\n"
                 "DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA\n"
-                "1. Zamestnanec bude vykonávať druh práce: [DOPLNIŤ].\n"
-                "2. Stručná charakteristika dohodnutého druhu práce: [DOPLNIŤ hlavné pracovné činnosti].\n\n"
+                "1. Zamestnanec bude vykonávať druh práce: {{job_position}}.\n"
+                "2. Stručná charakteristika dohodnutého druhu práce: {{job_description}}.\n\n"
                 "Článok II\n"
                 "MIESTO VÝKONU PRÁCE A DEŇ NÁSTUPU\n"
-                "1. Miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania: [DOPLNIŤ].\n"
-                "2. Dohodnutý deň nástupu do práce: [DOPLNIŤ].\n\n"
+                "1. Miesto alebo miesta výkonu práce, prípadne pravidlo ich určovania: {{place_of_work}}.\n"
+                "2. Dohodnutý deň nástupu do práce: {{start_date}}.\n\n"
                 "Článok III\n"
                 "TRVANIE PRACOVNÉHO POMERU A SKÚŠOBNÁ DOBA\n"
-                "1. Pracovný pomer sa uzatvára na [DOPLNIŤ: neurčitý čas / určitý čas do ...].\n"
-                "2. Skúšobná doba je [DOPLNIŤ iba ak bola dohodnutá a je zákonne prípustná; inak uviesť, "
-                "že sa nedohodla].\n\n"
+                "1. Pracovný pomer sa uzatvára na {{employment_term_description}}.\n"
+                "2. Skúšobná doba je {{probation_period}}.\n\n"
                 "Článok IV\n"
                 "MZDOVÉ PODMIENKY\n"
-                "1. Zamestnancovi patrí základná zložka mzdy vo výške [DOPLNIŤ] EUR brutto za "
-                "[DOPLNIŤ: mesiac/hodinu].\n"
-                "2. Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín: [DOPLNIŤ alebo uviesť, "
-                "že sa neuplatňujú; rešpektovať zákonné mzdové nároky].\n\n"
+                "1. Zamestnancovi patrí základná zložka mzdy vo výške {{base_monthly_salary}} brutto mesačne.\n"
+                "2. Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín: {{variable_salary_component}} "
+                "Výplatný termín: {{salary_payday}}. Spôsob vyplácania mzdy: {{salary_payment_method}}.\n\n"
                 "Článok V\n"
                 "PRACOVNÉ PODMIENKY\n"
-                "1. Ustanovený týždenný pracovný čas a jeho rozvrhnutie: [DOPLNIŤ].\n"
-                "2. Výmera dovolenky, pravidlá skončenia pracovného pomeru a ďalšie pracovné podmienky "
-                "sa spravujú Zákonníkom práce, príslušnou kolektívnou zmluvou, ak sa uplatňuje, a písomnou "
-                "informáciou zamestnávateľa poskytnutou v zákonnom rozsahu a lehote.\n\n"
+                "1. Ustanovený týždenný pracovný čas a jeho rozvrhnutie: {{weekly_working_hours}}; "
+                "{{working_time_distribution}}.\n"
+                "2. Výmera dovolenky: {{vacation_entitlement}}.\n"
+                "3. Ďalšie pracovné podmienky a pracovné vybavenie: {{additional_work_conditions}}.\n\n"
                 "Článok VI\n"
                 "PRÁVA A POVINNOSTI ZMLUVNÝCH STRÁN\n"
                 "1. Zamestnávateľ prideľuje zamestnancovi prácu podľa tejto zmluvy, vytvára podmienky na jej "
@@ -189,33 +198,62 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "ostatnými všeobecne záväznými právnymi predpismi Slovenskej republiky.\n"
                 "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, jej obsahu porozumeli a na znak "
                 "súhlasu ju podpisujú slobodne a vážne.\n\n"
-                "V [DOPLNIŤ miesto], dňa [DOPLNIŤ dátum]\n\n"
-                "Za zamestnávateľa: ____________________\n"
-                "Zamestnanec: _________________________\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\n"
+                "Za zamestnávateľa: {{employer_signatory_name}}\n"
+                "Zamestnanec: {{employee_signatory_name}}\n"
             ),
             keywords=("pracovna zmluva", "zamestnanec", "zamestnavatel"),
             flow_keys=(),
-            placeholders=("principal_identification", "agent_identification"),
+            placeholders=(
+                "employer_business_name",
+                "employer_seat",
+                "employer_ico",
+                "employer_representative",
+                "employer_email",
+                "employer_phone",
+                "employee_full_name",
+                "employee_birth_date",
+                "employee_birth_number",
+                "employee_residence",
+                "employee_id_card_number",
+                "employee_email",
+                "employee_phone",
+                "job_position",
+                "job_description",
+                "place_of_work",
+                "start_date",
+                "employment_term_description",
+                "probation_period",
+                "base_monthly_salary",
+                "variable_salary_component",
+                "salary_payday",
+                "salary_payment_method",
+                "weekly_working_hours",
+                "working_time_distribution",
+                "vacation_entitlement",
+                "additional_work_conditions",
+                "signature_place",
+                "signature_date",
+                "employer_signatory_name",
+                "employee_signatory_name",
+            ),
             source_refs=(
                 TemplateSourceReference(
-                    label="Pracovná zmluva – vzor 2026",
-                    url="https://www.aksamec.sk/pracovna-zmluva-vzor-2026/",
+                    label="AK Samec - Pracovna zmluva",
+                    url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
                     publisher="AK Samec",
-                    source_kind="reviewed_template_guidance",
+                    source_kind="external_template_page",
                     notes=(
-                        "Presna zdrojova stranka skontrolovana 2026-08-28; pouzita na strukturalnu kontrolu "
-                        "povinnych a volitelnych nalezitosti. Kanonicke telo je povodny text JurisDigta."
+                        "Exact source page reviewed on 2026-08-28. Managed canonical body is source-aligned "
+                        "but maintained in-product for deterministic drafting and auditability."
                     ),
                 ),
                 TemplateSourceReference(
-                    label="Zákon č. 311/2001 Z. z. Zákonník práce",
-                    url="https://www.slov-lex.sk/ezbierky/pravne-predpisy/SK/ZZ/2001/311/",
-                    publisher="Ministerstvo spravodlivosti SR – Slov-Lex",
+                    label="Zakonnik prace c. 311/2001 Z. z.",
+                    url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2001/311/",
+                    publisher="Slov-Lex",
                     source_kind="official_legislation",
-                    notes=(
-                        "Oficialne konsolidovane znenie skontrolovane 2026-08-28; pravny zaklad najma § 42 "
-                        "az § 44. Pred pouzitim treba overit aktualne znenie a konkretne skutkove okolnosti."
-                    ),
+                    notes="Relevant legal basis for employment contract minimum requirements and labor-law framing.",
                 ),
             ),
             disclaimer_title="Dôležité upozornenie",
@@ -556,7 +594,13 @@ def render_template(
 ) -> RenderedTemplateResult:
     if not template.body.strip():
         return RenderedTemplateResult(title=template.title, lines=[], unresolved_fields=[])
-    context = _build_render_context(facts=facts, country=country, language=language)
+    context = _build_render_context(
+        facts=facts,
+        country=country,
+        language=language,
+        template_key=template.template_key,
+        template_kind=template.template_kind,
+    )
     unresolved_fields: list[str] = []
 
     def replace(match: re.Match[str]) -> str:
@@ -574,7 +618,43 @@ def render_template(
         title=template.title,
         lines=[line.rstrip() for line in rendered.splitlines() if line.strip()],
         unresolved_fields=list(dict.fromkeys(unresolved_fields)),
+        missing_required_fields=_missing_required_template_fields(
+            template_key=template.template_key,
+            facts=facts,
+            country=country,
+            language=language,
+        ),
+        follow_up_question=_template_follow_up_question(
+            template_key=template.template_key,
+            facts=facts,
+            country=country,
+            language=language,
+        ),
     )
+
+
+def apply_employment_profile_defaults(
+    *,
+    facts: dict[str, str],
+    profile_defaults: dict[str, str],
+) -> dict[str, str]:
+    enriched = dict(facts)
+    for field_name, profile_key in (
+        ("employee_full_name", "display_name"),
+        ("employee_signatory_name", "display_name"),
+        ("employee_residence", "address"),
+        ("employee_birth_date", "date_of_birth"),
+        ("employee_birth_number", "birth_number"),
+        ("employee_id_card_number", "identity_card_number"),
+        ("employee_email", "email"),
+        ("employee_phone", "phone_number"),
+    ):
+        if enriched.get(field_name):
+            continue
+        value = str(profile_defaults.get(profile_key, "")).strip()
+        if value:
+            enriched[field_name] = value
+    return enriched
 
 
 def download_template_sources(
@@ -608,7 +688,14 @@ def download_template_sources(
     return results
 
 
-def _build_render_context(*, facts: dict[str, str], country: str, language: str | None) -> dict[str, str]:
+def _build_render_context(
+    *,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    template_key: str,
+    template_kind: str,
+) -> dict[str, str]:
     values = {key: str(value).strip() for key, value in facts.items() if str(value).strip()}
     values.update(
         {
@@ -635,10 +722,12 @@ def _build_render_context(*, facts: dict[str, str], country: str, language: str 
             "transferee_identification": _value(values, "transferee_name"),
             "share_scope": _value(values, "transfer_share"),
             "transfer_price": _value(values, "transfer_price", "0 EUR"),
-            "signature_place": "[mesto]",
-            "signature_date": "[datum]",
+            "signature_place": _value(values, "signature_place", "[mesto]"),
+            "signature_date": _value(values, "signature_date", "[datum]"),
         }
     )
+    if template_key == "sk.employment.employment_contract" or template_kind == "employment_contract":
+        values.update(_employment_contract_render_values(values))
     return {
         key: value if value else _todo_marker(field_name=key, country=country, language=language)
         for key, value in values.items()
@@ -649,12 +738,210 @@ def _value(values: dict[str, str], key: str, default: str = "") -> str:
     return str(values.get(key, "")).strip() or default
 
 
+def _employment_contract_render_values(values: dict[str, str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for field_name, aliases in _EMPLOYMENT_CONTRACT_FIELD_ALIASES.items():
+        resolved[field_name] = _first_present(values, field_name, *aliases)
+    optional_defaults = {
+        "probation_period": "nedohodla sa",
+        "variable_salary_component": "neuplatňujú sa ďalšie zložky mzdy, ak sa strany písomne nedohodnú inak.",
+        "salary_payday": "najneskôr v kalendárny deň určený vnútornými pravidlami zamestnávateľa",
+        "salary_payment_method": "bezhotovostným prevodom na určený účet zamestnanca",
+        "working_time_distribution": "rozvrhnutie určí zamestnávateľ v súlade so Zákonníkom práce",
+        "vacation_entitlement": "v rozsahu podľa Zákonníka práce",
+        "additional_work_conditions": "ďalšie pracovné podmienky budú uvedené v písomnej informácii zamestnávateľa",
+        "employer_email": "neuvedené",
+        "employer_phone": "neuvedené",
+        "employee_birth_number": "neuvedené",
+        "employee_id_card_number": "neuvedené",
+        "employee_email": "neuvedené",
+        "employee_phone": "neuvedené",
+        "signature_place": "miesto bude doplnené pred podpisom",
+        "signature_date": "dátum bude doplnený pred podpisom",
+    }
+    for field_name, default in optional_defaults.items():
+        if not resolved.get(field_name):
+            resolved[field_name] = default
+    if not resolved.get("employer_signatory_name"):
+        resolved["employer_signatory_name"] = resolved.get("employer_representative", "")
+    if not resolved.get("employee_signatory_name"):
+        resolved["employee_signatory_name"] = resolved.get("employee_full_name", "")
+    if not resolved.get("additional_work_conditions"):
+        extra_parts = [
+            resolved.get("working_time_distribution", ""),
+            resolved.get("vacation_entitlement", ""),
+        ]
+        resolved["additional_work_conditions"] = "; ".join(part for part in extra_parts if part)
+    return resolved
+
+
+def _missing_required_template_fields(
+    *,
+    template_key: str,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+) -> list[str]:
+    if template_key != "sk.employment.employment_contract":
+        return []
+    resolved = _employment_contract_render_values(
+        {key: str(value).strip() for key, value in facts.items() if str(value).strip()}
+    )
+    missing: list[str] = []
+    for field_name in _EMPLOYMENT_CONTRACT_REQUIRED_FIELDS:
+        value = resolved.get(field_name, "")
+        if not value or value == _todo_marker(field_name=field_name, country=country, language=language):
+            missing.append(field_name)
+    return missing
+
+
+def _template_follow_up_question(
+    *,
+    template_key: str,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+) -> str | None:
+    if template_key != "sk.employment.employment_contract":
+        return None
+    missing = _missing_required_template_fields(
+        template_key=template_key,
+        facts=facts,
+        country=country,
+        language=language,
+    )
+    if not missing:
+        return None
+    first = missing[0]
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return _EMPLOYMENT_CONTRACT_FIELD_QUESTIONS[first]
+    return f"Please provide the required employment-contract field: {first}."
+
+
+def _first_present(values: dict[str, str], key: str, *aliases: str) -> str:
+    for candidate in (key, *aliases):
+        value = str(values.get(candidate, "")).strip()
+        if value:
+            return value
+    return ""
+
+
 def _todo_marker(*, field_name: str, country: str, language: str | None) -> str:
     normalized_country = (country or "").strip().upper()
     normalized_language = (language or "").strip().lower()
     if normalized_country == "SK" or normalized_language.startswith("sk"):
         return f"[DOPLNIT: {field_name}]"
     return f"[TODO: {field_name}]"
+
+
+_EMPLOYMENT_CONTRACT_REQUIRED_FIELDS = (
+    "employer_business_name",
+    "employer_seat",
+    "employer_ico",
+    "employer_representative",
+    "employee_full_name",
+    "employee_birth_date",
+    "employee_residence",
+    "job_position",
+    "job_description",
+    "place_of_work",
+    "start_date",
+    "employment_term_description",
+    "base_monthly_salary",
+    "weekly_working_hours",
+)
+
+_EMPLOYMENT_CONTRACT_FIELD_QUESTIONS = {
+    "employer_business_name": "Aké je obchodné meno zamestnávateľa?",
+    "employer_seat": "Aké je sídlo zamestnávateľa?",
+    "employer_ico": "Aké je IČO zamestnávateľa?",
+    "employer_representative": "Kto je osoba oprávnená konať za zamestnávateľa?",
+    "employee_full_name": "Aké je celé meno zamestnanca?",
+    "employee_birth_date": "Aký je dátum narodenia zamestnanca?",
+    "employee_residence": "Aký je trvalý pobyt zamestnanca?",
+    "job_position": "Aká je pracovná pozícia zamestnanca?",
+    "job_description": "Aký druh práce alebo stručná charakteristika práce sa má do zmluvy uviesť?",
+    "place_of_work": "Aké je miesto výkonu práce?",
+    "start_date": "Aký je dohodnutý deň nástupu do práce?",
+    "employment_term_description": "Ide o pracovný pomer na dobu neurčitú alebo určitú?",
+    "base_monthly_salary": "Aká je dohodnutá základná mesačná mzda?",
+    "weekly_working_hours": "Aký je ustanovený týždenný pracovný čas?",
+}
+
+_EMPLOYMENT_CONTRACT_FIELD_ALIASES = {
+    "employer_business_name": (
+        "obchodne_meno",
+        "obchodné_meno",
+        "zamestnavatel",
+        "zamestnávateľ",
+        "employer_name",
+        "company_name",
+    ),
+    "employer_seat": ("sidlo", "sídlo", "employer_seat", "company_seat"),
+    "employer_ico": ("ico", "ičo", "company_identifier", "company_id"),
+    "employer_representative": ("zastupeny", "zastúpený", "employer_representative"),
+    "employer_email": ("zamestnavatel_email", "zamestnávateľ_email", "employer_email"),
+    "employer_phone": ("zamestnavatel_telefon", "zamestnávateľ_telefón", "employer_phone"),
+    "employee_full_name": ("meno_a_priezvisko", "employee_name", "client_name"),
+    "employee_birth_date": ("datum_narodenia", "dátum_narodenia", "date_of_birth"),
+    "employee_birth_number": ("rodne_cislo", "rodné_číslo", "social_security_number"),
+    "employee_residence": ("trvaly_pobyt", "trvalý_pobyt", "employee_address", "address"),
+    "employee_id_card_number": (
+        "cislo_obcianskeho_preukazu",
+        "číslo_občianskeho_preukazu",
+        "identity_card_number",
+    ),
+    "employee_email": ("zamestnanec_email", "employee_email", "email"),
+    "employee_phone": ("zamestnanec_telefon", "zamestnanec_telefón", "employee_phone", "phone_number"),
+    "job_position": ("pracovna_pozicia", "pracovná_pozícia", "job_position"),
+    "job_description": ("druh_prace", "druh_práce", "job_description"),
+    "place_of_work": ("miesto_vykonu_prace", "miesto_výkonu_práce", "place_of_work"),
+    "start_date": ("den_nastupu", "deň_nástupu", "start_date"),
+    "employment_term_description": (
+        "druh_pracovneho_pomeru",
+        "druh_pracovného_pomeru",
+        "employment_term_description",
+    ),
+    "probation_period": ("skusobna_doba", "skúšobná_doba", "probation_period"),
+    "base_monthly_salary": (
+        "zakladna_mesacna_mzda",
+        "základná_mesačná_mzda",
+        "base_monthly_salary",
+    ),
+    "variable_salary_component": (
+        "variabilna_zlozka_mzdy",
+        "variabilná_zložka_mzdy",
+        "variable_salary_component",
+    ),
+    "salary_payday": ("vyplatny_termin", "výplatný_termín", "salary_payday"),
+    "salary_payment_method": (
+        "sposob_vyplacania_mzdy",
+        "spôsob_vyplácania_mzdy",
+        "salary_payment_method",
+    ),
+    "weekly_working_hours": (
+        "tyzdenny_pracovny_cas",
+        "týždenný_pracovný_čas",
+        "weekly_working_hours",
+    ),
+    "working_time_distribution": (
+        "rozvrhnutie_pracovneho_casu",
+        "rozvrhnutie_pracovného_času",
+        "working_time_distribution",
+    ),
+    "vacation_entitlement": ("dovolenka", "vacation_entitlement"),
+    "additional_work_conditions": (
+        "dalsie_pracovne_podmienky",
+        "ďalšie_pracovné_podmienky",
+        "additional_work_conditions",
+    ),
+    "signature_place": ("miesto_uzatvorenia", "miesto_uzatvorenia_zmluvy", "signature_place"),
+    "signature_date": ("datum_uzatvorenia", "dátum_uzatvorenia", "signature_date"),
+    "employer_signatory_name": ("za_zamestnavatela", "za_zamestnávateľa", "employer_signatory_name"),
+    "employee_signatory_name": ("zamestnanec_podpis", "employee_signatory_name"),
+}
 
 
 def _merge_template_seeds(

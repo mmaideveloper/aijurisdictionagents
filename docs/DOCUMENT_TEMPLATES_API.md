@@ -43,6 +43,15 @@ Notes:
 - delete is implemented as soft delete
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
+- `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
+- as of August 29, 2026, the chat export path treats `employment_contract` as a first-class document kind and routes
+  detected Slovak employment-contract exports through the managed template instead of the generic memo formatter
+- the legal-document workflow `draft_documents` node now uses a template-first strategy for `Pracovna zmluva` when
+  verified employment facts satisfy the managed template, and only falls back to the model path when template rendering
+  is unavailable or unresolved
+- the template preview endpoint now has standalone PDF fallback rendering, and the employment-template regression suite
+  asserts exact reviewed-source provenance, non-empty clause-rich seed content, and filled preview output without
+  metadata-only or unresolved-field fallback
 - the canonical Slovak employment-contract seed contains an original reviewed body, an exact reviewed guidance URL,
   an official Slov-Lex legal-basis reference, visible draft/human-review warnings, and article/signature structure;
   startup versions only a legacy empty instance of this seed and never replaces a non-empty managed body
@@ -237,6 +246,11 @@ the official current Slov-Lex page for Act No. 311/2001 Coll., especially Sectio
 JurisDigta text: external template wording is not copied. Bracketed fields must be completed and the result must be
 reviewed by a qualified human before signature. The structured employment fact/placeholder schema is maintained as a
 separate follow-up so this canonical-source change does not silently invent or persist employee facts.
+
+As of August 29, 2026, the chat export regression suite also proves the end-to-end `GET /v1/chat/sessions/{session_id}/export`
+path can take a realistic employment questionnaire, infer `employment_contract`, and render a final `Pracovna zmluva`
+PDF with article-based canonical structure (`Článok I`, salary section, signature blocks) instead of a thin summary-only
+layout.
 
 Generate a synthetic, locally seeded preview and validate its extracted article/signature markers with:
 
