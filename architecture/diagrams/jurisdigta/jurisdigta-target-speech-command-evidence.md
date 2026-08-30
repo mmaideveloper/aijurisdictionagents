@@ -11,7 +11,7 @@
 ## Stakeholder questions
 
 - Container view: Where are transcript review, routing, policy authorization, server capabilities, and the local-device trust boundary enforced?
-- Dynamic view: Which checks and confirmations occur from spoken input through ORSR or approved-root contract search, including denial and cancellation?
+- Dynamic view: Which checks and confirmations occur from spoken input through ORSR or session-scoped browser folder search, including denial and cancellation?
 
 ## Legend and notation
 
@@ -26,31 +26,31 @@
 
 | Element or relationship | Source | Confidence/state |
 |---|---|---|
-| User reviews an editable transcript before ordinary submission | `docs/mobile_voice_flow.md`, UC-001 FR-02/FR-03 | Existing behavior; confirmed for documented mobile/web flow |
-| Device/browser or disclosed remote STT adapter | `docs/mobile_voice_flow.md`, `docs/mobile_voice_compliance.md` | Existing modes; exact cross-client implementation varies |
+| User reviews an editable web transcript before ordinary submission | `frontend/aijurisdictionfronend/src/pages/Home.tsx`, `frontend/aijurisdictionfronend/README.md` | Confirmed existing web behavior |
+| Browser-native STT adapter | `frontend/aijurisdictionfronend/src/audio/speechToText.ts` | Confirmed existing web behavior |
 | Remote audio upload requires applicable consent and raw audio is transient by default | `docs/mobile_voice_compliance.md` | Confirmed project policy |
 | Client-independent request/intent API | `docs/VOICE_INTENT_ROUTER.md`, `api/aijuristiction-api/app/voice_intent_api.py` | Existing, limited intents |
 | Existing question/chat path | Current container view and API chat source | Confirmed current boundary |
-| Mobile structured tool invocation payload and generic fallback | `mobile_app/lib/chat/intent_mapper.dart` | Confirmed code |
+| Authenticated assistant routing at `agent.jurisdigta.eu` | `frontend/aijurisdictionfronend/src/routing.ts`, frontend README | Confirmed code/documentation |
 | Existing registered ORSR and verification tools | `src/aijurisdictionagents/tools/registry.py`, `docs/SLOVAK_COMPANY_CHECKS.md` | Confirmed code/documentation |
 | Capability catalog with policy-complete metadata | ADD-001, ADR-001 | Proposed |
 | Central policy and authorization gateway | ADD-001, ADR-001 | Approved design / accepted decision; not implemented |
 | Idempotent execution orchestrator | ADD-001, UC-001 QA-06 | Proposed |
-| Local read-only approved-root connector | UC-001 FR-10, ADD-001 | Proposed; no implementation found |
+| Browser session-scoped filename/metadata search | Stakeholder clarification 2026-08-30, GitHub issue #695 | Confirmed target scope; not implemented |
 | ORSR external interaction over HTTPS | Existing ORSR tool/documentation | Confirmed current integration |
 | Separate preview/confirmation and related-tool authorization | UC-001 FR-09/FR-12/FR-13, ADR-001 | Required target behavior |
 | Authorization/audit persistence | ADD-001 | Conceptual; exact store/schema To decide |
 
 ## Assumptions
 
-- Mobile and web remain the first documented client types; a local connector is a separate runnable boundary rather than unrestricted backend filesystem access.
-- Filename/metadata-only search is the first local-search increment; opening or uploading content is a separate capability.
-- Existing HTTPS client/API and ORSR interactions remain; the local connector protocol is intentionally not selected.
+- The first release targets only the authenticated React assistant at `agent.jurisdigta.eu`.
+- Browser-selected, session-scoped filename/metadata search is the first local-search increment; folder handles are not persisted, and opening, reading, or uploading content is out of scope.
+- Existing HTTPS client/API and ORSR interactions remain; local filename/metadata search executes inside the browser session after user folder selection and gateway authorization.
 
 ## Unresolved questions
 
-- Which clients, desktop operating systems, and approved folder types are in the first release?
-- Where does the local connector run, how is it authenticated/updated/revoked, and who operates it?
+- Which supported browsers expose the required directory-selection API, and what exact manual fallback is presented elsewhere?
+- Does ADR-001 require a superseding ADR because the first release uses an in-browser capability rather than a separately installed connector?
 - What capability risk taxonomy, standing grants, authorization record retention, and audit availability rules apply?
 - Are the intent router, catalog, policy gateway, and executor modules within one API deployment or separately deployable containers?
 - What are the final controller/processor roles, remote STT transfer safeguards, DPIA result, and EU AI Act classification?

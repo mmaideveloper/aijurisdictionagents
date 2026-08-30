@@ -4,10 +4,10 @@ flowchart LR
   user["JurisDigta user<br/><small>Reviews transcript and authorizes actions</small>"]
   reviewer["Human reviewer<br/><small>Reviews legal-risk outcomes</small>"]
 
-  subgraph device["User device trust boundary"]
-    client["JurisDigta client<br/><small>Mobile or web; transcript, preview, confirmation</small>"]
+  subgraph device["User browser/device trust boundary"]
+    client["agent.jurisdigta.eu web client<br/><small>React; transcript, preview, confirmation</small>"]
     stt["Speech recognition adapter<br/><small>Device/browser or disclosed remote mode</small>"]
-    local["Local capability connector<br/><small>Proposed; read-only approved-root search</small>"]
+    local["Browser directory-search capability<br/><small>Proposed; session-only filename/metadata search</small>"]
   end
 
   subgraph platform["JurisDigta controlled platform boundary"]
@@ -41,8 +41,8 @@ flowchart LR
   executor -->|"Registered server operation and minimum slots"| tools
   tools -->|"Company query [HTTPS; current integration]"| orsr
   orsr -->|"Sourced match/result"| tools
-  executor -.->|"Proposed mutually authenticated scoped request [protocol to decide]"| local
-  local -.->|"Minimal filename/metadata result; no content upload by default"| executor
+  client -.->|"After gateway authorization: search user-selected folder [browser API]"| local
+  local -.->|"Minimal filename/metadata result; no content read/upload"| client
   executor -->|"Execution status, provenance, related capability suggestions"| client
   executor -->|"Record outcome, versions, timing [redacted]"| audit
 

@@ -32,7 +32,7 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 ## Current designs
 
 - [ADD-001: Governed speech question and command routing](design/ADD-001-governed-speech-command-routing.md) — Approved, conceptual target
-- [ADD-001 implementation task plan](design/ADD-001-implementation-task-plan.md) — Draft task preparation
+- [ADD-001 implementation task plan](design/ADD-001-implementation-task-plan.md) — Prepared; six dependency-gated GitHub tasks
 
 ## Current decisions
 

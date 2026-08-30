@@ -8,7 +8,7 @@ sequenceDiagram
   participant Policy as Policy gateway (proposed)
   participant Executor as Execution orchestrator (proposed)
   participant ORSR as ORSR adapter / official service
-  participant Local as Local connector (proposed)
+  participant Local as Browser directory search (proposed)
   participant Audit as Authorization/audit store
 
   User->>Client: Start microphone and speak one request
@@ -47,16 +47,18 @@ sequenceDiagram
           Client-->>User: Explain denial; execute nothing
         else Authorized
           Policy->>Audit: Record authorization metadata
-          Policy->>Executor: Immutable structured request + idempotency key
+          Policy-->>Client: Authorized exact proposal + expiry
           alt ORSR company verification
+            Client->>Executor: Authorized structured request + idempotency key
             Executor->>ORSR: Minimum company name/IČO
             ORSR-->>Executor: Sourced zero/one/multiple match or error
-          else Approved-root contract search
-            Executor->>Local: Scoped read-only filename/metadata query
-            Local-->>Executor: Minimal matches or policy-denied/error
+            Executor->>Audit: Record status, versions, timing, provenance
+            Executor-->>Client: Result/error and non-executing related suggestions
+          else Session-scoped contract filename search
+            Client->>Local: User-selected folder + filename/metadata query
+            Local-->>Client: Minimal matches or browser permission/error
+            Client->>Audit: Record privacy-minimized local outcome metadata
           end
-          Executor->>Audit: Record status, versions, timing, provenance
-          Executor-->>Client: Result/error and non-executing related suggestions
           Client-->>User: Show outcome, source, limitations, human-review step
         end
       end
