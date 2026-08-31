@@ -162,6 +162,30 @@ def test_detect_document_kind_recognizes_employment_contract() -> None:
     assert document_kind == "employment_contract"
 
 
+def test_detect_document_kind_recognizes_sale_purchase_contract() -> None:
+    chat_api = _load_chat_api()
+
+    document_kind = chat_api._detect_document_kind(
+        [
+            "Kupno-predajna zmluva",
+            "Predávajúci: Jana Predajná",
+            "Kupujúci: Peter Kupujúci",
+            "Kúpna cena: 185 000 EUR",
+        ],
+        None,
+    )
+
+    assert document_kind == "sale_purchase"
+
+
+def test_template_kind_mapping_uses_sale_purchase_agreement() -> None:
+    chat_api = _load_chat_api()
+
+    template_kind = chat_api._template_kind_for_document_kind("sale_purchase")
+
+    assert template_kind == "sale_purchase_agreement"
+
+
 def test_extract_document_facts_from_employment_questionnaire() -> None:
     chat_api = _load_chat_api()
 

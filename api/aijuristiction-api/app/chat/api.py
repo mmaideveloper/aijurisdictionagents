@@ -7233,6 +7233,7 @@ def _resolve_document_export_disclaimer(
 def _template_kind_for_document_kind(document_kind: str) -> str | None:
     mapping = {
         "employment_contract": "employment_contract",
+        "sale_purchase": "sale_purchase_agreement",
         "rental_agreement": "rental_agreement",
         "share_transfer": "share_transfer_agreement",
         "easement_demand": "court_filing",
@@ -8971,6 +8972,7 @@ def _detect_document_kind(
     source_lines: List[str],
     case_update: dict[str, Any] | None,
 ) -> Literal[
+    "sale_purchase",
     "rental_agreement",
     "easement_demand",
     "share_transfer",
@@ -9055,7 +9057,7 @@ def _detect_document_kind(
         "druh pracovného pomeru",
     )
     if any(token in haystack for token in purchase_sale_tokens):
-        return "generic_case_document"
+        return "sale_purchase"
     if any(token in haystack for token in employment_contract_tokens):
         return "employment_contract"
     if any(token in haystack for token in payment_confirmation_tokens):
