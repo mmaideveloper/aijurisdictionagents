@@ -282,3 +282,46 @@ def test_build_document_asset_content_renders_employment_contract_template() -> 
     assert "clanok iv" in normalized
     assert "fiktiva digital solutions" in normalized
     assert "ai vyvojar / softverovy inzinier" in normalized
+
+
+def test_build_document_asset_content_renders_sale_purchase_template(tmp_path) -> None:
+    import app.document_templates.store as template_store_module
+
+    template_store_module._store = template_store_module.DocumentTemplateStore(
+        template_store_module.DocumentTemplateStoreConfig(
+            db_option="sqlite",
+            db_cloud="",
+            sqlite_path=tmp_path / "document_templates.sqlite3",
+        )
+    )
+    chat_api = _load_chat_api()
+
+    title, lines = chat_api._build_document_asset_content(
+        entry={"type": "contract"},
+        document_kind="sale_purchase",
+        facts={
+            "predavajuci": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
+            "kupujuci": "Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava",
+            "nehnutelnost": (
+                "byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad, zapísaný na LV č. 1234"
+            ),
+            "kupna_cena": "154 000 EUR",
+            "platobne_podmienky": "notárska úschova s uvoľnením po povolení vkladu",
+            "tarchy": "bez tiarch okrem zákonných obmedzení uvedených na LV",
+            "stav_nehnutelnosti": "v stave známom kupujúcemu po osobnej obhliadke",
+            "termin_odovzdania": "do 5 pracovných dní od povolenia vkladu",
+            "navrh_na_vklad_poda": "kupujúci",
+        },
+        country="SK",
+        language="sk-SK",
+        law_citation_lines=[],
+        fallback_index=1,
+    )
+
+    normalized = chat_api._canonicalize_document_text(" ".join(lines))
+
+    assert title == "Kupno-predajna zmluva"
+    assert "clanok i" in normalized
+    assert "clanok iv" in normalized
+    assert "154 000 eur" in normalized
+    assert "jan novak" in normalized
