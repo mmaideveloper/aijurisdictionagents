@@ -1375,6 +1375,16 @@ def test_mcp_search_laws_returns_broad_latest_results_with_metadata_summaries(
     assert all("verejných metadát" in item["summary"] for item in payload["results"])
 
 
+def test_reported_latest_law_question_is_a_broad_latest_request() -> None:
+    assert mcp_api._is_broad_latest_law_request(
+        query="chcem vediet ktory je posledny zakon schvaleny na slovensku a coho sa tyka",
+        sort="latest",
+        published_year=None,
+        law_year=None,
+        law_number=None,
+    )
+
+
 def test_mcp_get_law_text_caps_large_default_payload(monkeypatch, tmp_path: Path) -> None:
     _configure_env(monkeypatch, tmp_path)
     db_path = tmp_path / "laws.sqlite3"

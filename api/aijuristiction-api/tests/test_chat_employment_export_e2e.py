@@ -26,6 +26,7 @@ def _canonical_text(value: str) -> str:
 def _load_chat_api():
     stubbed_modules: dict[str, types.ModuleType] = {}
     original_modules = {name: sys.modules.get(name) for name in (
+        "app.chat.api",
         "app.chat.core_runtime",
         "app.chat.case_type_detection",
         "app.chat.country_services",
@@ -65,6 +66,7 @@ def _load_chat_api():
     intent_policy = types.ModuleType("app.chat.intent_policy_service")
     intent_policy.build_document_task_plan_note = lambda *args, **kwargs: ""
     intent_policy.is_document_modernization_request = lambda *args, **kwargs: False
+    intent_policy.is_legal_research_request = lambda *args, **kwargs: False
     stubbed_modules["app.chat.intent_policy_service"] = intent_policy
 
     mcp_law_context = types.ModuleType("app.chat.mcp_law_context")
@@ -164,6 +166,14 @@ def _load_chat_api():
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = module
+            parent_name, attribute_name = name.rsplit(".", 1)
+            parent = sys.modules.get(parent_name)
+            if parent is None:
+                continue
+            if module is None:
+                parent.__dict__.pop(attribute_name, None)
+            else:
+                setattr(parent, attribute_name, module)
 
 
 def test_employment_chat_export_renders_canonical_template_from_questionnaire(monkeypatch) -> None:

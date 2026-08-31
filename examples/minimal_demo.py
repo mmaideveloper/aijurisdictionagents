@@ -40,6 +40,11 @@ print(
     "and sanitized ordered audit events without external data or credentials."
 )
 print(
+    "latest_law_research_routing => standalone latest-law questions bypass ambiguous or waiting "
+    "document workflows and continue through cited JurisDigta MCP research; explicit document or "
+    "PDF preparation requests remain in orchestration."
+)
+print(
     "employment_contract_template => run python examples/employment_contract_preview_demo.py; "
     "the generated canonical Slovak fill-in PDF validates exact provenance, mandatory clause structure, "
     "distinct salary/payday wording, signature blocks, and a visible human-review warning without external data."

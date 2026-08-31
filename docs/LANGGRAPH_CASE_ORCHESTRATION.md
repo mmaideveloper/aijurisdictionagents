@@ -35,7 +35,16 @@ database by migration `0020_langgraph_case_workflows.sql`. Runtime database file
 
 The existing chat API invokes the same runtime when `AI_CASE_ORCHESTRATION_MODE=active` and the
 selected case type is in `AI_CASE_ORCHESTRATION_CASE_TYPES`. `legacy` is the rollback setting.
-Legal-research messages do not enter the document workflow and retain the established MCP path.
+Legal-research messages do not enter the document workflow and retain the established MCP path,
+including when the user says they "want to know" the latest law inside an existing document case.
+The runtime leaves any waiting case workflow unchanged while answering the standalone research
+question. Document orchestration still takes precedence when the same message explicitly asks to
+prepare, create, revise, or export an artifact such as a document, contract, draft, or PDF.
+
+For the real local regression, `scripts/prepare_issue_713_latest_law_e2e.py` seeds only isolated
+synthetic PostgreSQL records and writes the expected MCP source ID to an ignored manifest under
+`runs/e2e/issue-713-latest-law/`. Retain its sanitized manifest and final screenshot for at most
+seven days.
 
 ## GDPR and EU AI Act controls
 
