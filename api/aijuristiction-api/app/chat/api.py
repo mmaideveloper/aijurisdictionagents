@@ -43,6 +43,7 @@ from app.flow_packs.api import get_flow_pack_store
 from app.chat.intent_policy_service import (
     build_document_task_plan_note,
     is_document_modernization_request,
+    is_legal_research_request,
 )
 from app.chat.mcp_law_context import build_mcp_law_context
 from app.chat.mcp_status_context import build_mcp_status_context
@@ -1536,14 +1537,19 @@ def _run_direct_lawyer_turn(
         content=content,
         previous_messages=prior_messages,
     )
-    active_workflow_run = handle_active_chat_workflow_turn(
-        session_id=str(session_id),
-        case_id=(session.case_id or "").strip(),
-        user_id=(request_user_id or str(session.user_id or "")).strip()
-        or f"session:{session_id}",
-        jurisdiction=session.country,
-        language=session.language or "sk-SK",
-        request_text=content,
+    standalone_legal_research_requested = _is_standalone_legal_research_request(content)
+    active_workflow_run = (
+        None
+        if standalone_legal_research_requested
+        else handle_active_chat_workflow_turn(
+            session_id=str(session_id),
+            case_id=(session.case_id or "").strip(),
+            user_id=(request_user_id or str(session.user_id or "")).strip()
+            or f"session:{session_id}",
+            jurisdiction=session.country,
+            language=session.language or "sk-SK",
+            request_text=content,
+        )
     )
     if active_workflow_run is not None:
         routed_llm = _resolve_session_llm_route(
@@ -2724,12 +2730,20 @@ def _is_pdf_format_question(prompt: str) -> bool:
 
 
 def _user_requested_document_generation(*, content: str, previous_messages: list[Message]) -> bool:
+    if _is_standalone_legal_research_request(content):
+        return False
     normalized = _canonicalize_document_text(content)
     if _is_explicit_document_request(normalized):
         return True
     if not _is_affirmative_reply(normalized):
         return False
     return _has_unanswered_document_confirmation(previous_messages)
+
+
+def _is_standalone_legal_research_request(content: str) -> bool:
+    return is_legal_research_request(content) and not _is_explicit_document_request(
+        _canonicalize_document_text(content)
+    )
 
 
 def _is_explicit_document_request(normalized: str) -> bool:
@@ -2740,10 +2754,8 @@ def _is_explicit_document_request(normalized: str) -> bool:
         "draft",
         "template",
         "zmluv",
-        "zakon",
-        "zakonov",
-        "law",
-        "laws",
+        "navrh zakona",
+        "draft law",
         "predzalob",
         "predžalob",
         "vzor",

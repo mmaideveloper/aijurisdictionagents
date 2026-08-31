@@ -2900,6 +2900,13 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
     monkeypatch.setattr(
         chat_api,
+        "handle_active_chat_workflow_turn",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Standalone legal research must not resume the case workflow")
+        ),
+    )
+    monkeypatch.setattr(
+        chat_api,
         "prepare_country_direct_reply",
         lambda **_kwargs: SimpleNamespace(
             direct_reply=None,
@@ -2920,7 +2927,7 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     _user, lawyer, visible, events, route = chat_api._run_direct_lawyer_turn(
         session_id=session.id,
         session=session,
-        content="Daj mi posledny zakon v systeme?",
+        content="chcem vediet ktory je posledny zakon schvaleny na slovensku a coho sa tyka",
     )
 
     assert route is not None
@@ -2931,7 +2938,7 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     assert calls[0] == (
         "searchLaws",
         {
-            "query": "Daj mi posledny zakon v systeme?",
+            "query": "chcem vediet ktory je posledny zakon schvaleny na slovensku a coho sa tyka",
             "country_code": "SK",
             "limit": 1,
             "sort": "latest",
@@ -6986,6 +6993,32 @@ def test_explicit_slovak_document_update_request_is_recognized() -> None:
 
     assert _user_requested_document_generation(
         content="Pozri na dokument a oprav ho podla poslednych zmien zakona.",
+        previous_messages=[],
+    ) is True
+
+
+def test_latest_law_research_with_desire_word_is_not_document_generation() -> None:
+    from app.chat.api import _user_requested_document_generation
+
+    assert _user_requested_document_generation(
+        content="chcem vediet ktory je posledny zakon schvaleny na slovensku a coho sa tyka",
+        previous_messages=[],
+    ) is False
+    assert _user_requested_document_generation(
+        content="daj mi posledny zakon na slovensku a coho sa tyka",
+        previous_messages=[],
+    ) is False
+
+
+def test_explicit_law_based_document_request_remains_document_generation() -> None:
+    from app.chat.api import _user_requested_document_generation
+
+    assert _user_requested_document_generation(
+        content="Priprav mi dokument podľa posledného zákona.",
+        previous_messages=[],
+    ) is True
+    assert _user_requested_document_generation(
+        content="Priprav návrh zákona o syntetickom testovaní.",
         previous_messages=[],
     ) is True
 

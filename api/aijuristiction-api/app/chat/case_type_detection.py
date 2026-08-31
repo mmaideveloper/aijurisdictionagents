@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import hashlib
-import re
 from typing import TYPE_CHECKING, Any, Protocol
-import unicodedata
 from uuid import UUID
 
+from app.chat.intent_policy_service import is_legal_research_request
 from app.chat.models import Message, MessageRole, Session
 from app.document_templates.store import DocumentTemplateStore
 
@@ -57,14 +56,14 @@ def resolve_case_catalog_context(
 ) -> CaseCatalogContext:
     if not (session.case_id or session.user_id):
         return CaseCatalogContext()
+    if not document_generation_requested and _is_legal_research_request(current_content):
+        return CaseCatalogContext()
     required_methods = (
         "get_case_catalog_selection",
         "upsert_case_catalog_selection",
         "record_case_catalog_event",
     )
     if any(not callable(getattr(store, method_name, None)) for method_name in required_methods):
-        return CaseCatalogContext()
-    if not document_generation_requested and _is_legal_research_request(current_content):
         return CaseCatalogContext()
     session_key = str(session_id)
     has_processed_case_documents = _has_processed_case_documents(
@@ -156,31 +155,7 @@ def resolve_case_catalog_context(
 
 
 def _is_legal_research_request(value: str) -> bool:
-    normalized = unicodedata.normalize("NFKD", value.casefold())
-    canonical = "".join(char for char in normalized if not unicodedata.combining(char))
-    canonical = re.sub(r"\s+", " ", canonical).strip()
-    if re.search(r"\b(zakon\w*|law|laws)\b", canonical):
-        return True
-    return any(
-        marker in canonical
-        for marker in (
-            "pravny predpis",
-            "pravneho predpis",
-            "pravnych predpis",
-            "zakon c.",
-            "zakona c.",
-            "law no.",
-            "legal act",
-            "statute",
-            "sudne rozhodnut",
-            "sudnych rozhodnut",
-            "rozhodnutia sud",
-            "judikat",
-            "judikatur",
-            "case law",
-            "court decision",
-        )
-    )
+    return is_legal_research_request(value)
 
 
 def _detect_and_persist_case_type(

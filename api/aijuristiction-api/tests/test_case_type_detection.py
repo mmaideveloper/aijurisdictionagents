@@ -3,7 +3,12 @@ from __future__ import annotations
 import os
 from uuid import uuid4
 
-from app.chat.case_type_detection import _clarification_reply, _detection_trace, _is_legal_research_request
+from app.chat.case_type_detection import (
+    _clarification_reply,
+    _detection_trace,
+    _is_legal_research_request,
+    resolve_case_catalog_context,
+)
 from app.chat.models import Message, MessageRole, Session
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseCatalogSelection
@@ -22,6 +27,33 @@ def test_law_lookup_is_legal_research_not_document_case_detection() -> None:
 
 def test_document_drafting_request_is_not_misclassified_as_legal_research() -> None:
     assert not _is_legal_research_request("Priprav návrh na platenie výživného.")
+
+
+def test_latest_law_research_bypasses_ambiguous_case_catalog_selection() -> None:
+    class _FailIfUsedStore:
+        def __getattr__(self, name: str):
+            raise AssertionError(f"Case catalog store must not be used for legal research: {name}")
+
+    context = resolve_case_catalog_context(
+        session_id=uuid4(),
+        session=Session(
+            country="SK",
+            language="sk-SK",
+            user_id=uuid4(),
+            case_id="synthetic-payment-case",
+        ),
+        current_content=(
+            "chcem vediet ktory je posledny zakon schvaleny na slovensku a coho sa tyka"
+        ),
+        prior_messages=[],
+        route=object(),
+        store=_FailIfUsedStore(),
+        template_store=_FailIfUsedStore(),
+        document_generation_requested=False,
+    )
+
+    assert context.selection is None
+    assert context.direct_reply is None
 
 
 def test_detection_trace_preserves_first_message_identity_across_retry() -> None:
