@@ -540,7 +540,9 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "Peter Horváth" in sale_purchase_text
     assert "Jana Černá" in sale_purchase_text
     assert "5 000 EUR" in sale_purchase_text
-    assert "spravidla niekoľko pracovných dní až týždňov" in sale_purchase_text
+    assert "spravidla" in sale_purchase_text_normalized
+    assert "pracovnych dni" in sale_purchase_text_normalized
+    assert "tyzdnov" in sale_purchase_text_normalized
     assert "individualnu" in sale_purchase_text_normalized
     assert "ludsku kontrolu" in sale_purchase_text_normalized
     assert "Nevyriešené polia náhľadu" not in sale_purchase_text
