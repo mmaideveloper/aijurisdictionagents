@@ -630,18 +630,70 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Nehnutelnosti a najom",
             title="Najomna zmluva",
             template_kind="rental_agreement",
-            description="Seed metadata a pracovny body pre najomnu zmluvu.",
-            source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
+            description=(
+                "Kontrolovany kanonicky zaklad slovenskej najomnej zmluvy na byt s identifikaciou "
+                "zmluvnych stran, predmetom najmu, najomnym, kauciou, uzivacimi pravidlami, "
+                "odovzdanim bytu a skoncenim najmu. Pred podpisom vyzaduje doplnenie faktov a "
+                "individualnu kontrolu pravnikom alebo specialistom na nehnutelnosti."
+            ),
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/najomna-zmluva-vzor-2026/",
             body=(
-                "Najomna zmluva\n\n"
-                "Prenajimatel: {{landlord_identification}}\n"
-                "Najomca: {{tenant_identification}}\n"
-                "Predmet najmu: {{property_identification}}\n"
-                "Doba najmu: {{lease_term}}\n"
-                "Najomne: {{rent_terms}}\n"
-                "Kaucia: {{security_deposit}}\n"
-                "Ukoncenie najmu: {{termination_terms}}\n"
+                "NÁJOMNÁ ZMLUVA\n"
+                "uzatvorená podľa § 685 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"
+                "Prenajímateľ:\n"
+                "{{landlord_identification}}\n\n"
+                "Nájomca:\n"
+                "{{tenant_identification}}\n\n"
+                "(ďalej spolu aj ako „zmluvné strany“) uzatvárajú túto nájomnú zmluvu:\n\n"
+                "Článok I\n"
+                "PREDMET NÁJMU\n"
+                "1. Prenajímateľ prenecháva nájomcovi do dočasného užívania nehnuteľnosť: "
+                "{{property_identification}}.\n"
+                "2. Súčasťou odovzdania predmetu nájmu je vybavenie a stav opísaný takto: "
+                "{{handover_conditions}}.\n\n"
+                "Článok II\n"
+                "ÚČEL A DOBA NÁJMU\n"
+                "1. Predmet nájmu sa prenecháva na tento účel užívania: {{lease_purpose}}.\n"
+                "2. Nájom sa uzatvára {{lease_term}}.\n"
+                "3. Pravidlá užívania predmetu nájmu a obmedzenia: {{use_limitations}}.\n\n"
+                "Článok III\n"
+                "NÁJOMNÉ A PLATOBNÉ PODMIENKY\n"
+                "1. Nájomca sa zaväzuje platiť nájomné a úhrady za plnenia spojené s užívaním bytu "
+                "takto: {{rent_terms}}.\n"
+                "2. Spôsob úhrady, splatnosť a identifikácia platieb: {{payment_method}}.\n"
+                "3. Zmluvné strany sa dohodli na peňažnej zábezpeke (kaucii) vo výške "
+                "{{security_deposit}}.\n"
+                "4. Vyúčtovanie služieb a nedoplatkov/preplatkov: {{final_settlement_terms}}.\n\n"
+                "Článok IV\n"
+                "PRÁVA A POVINNOSTI ZMLUVNÝCH STRÁN\n"
+                "1. Prenajímateľ odovzdá predmet nájmu v stave spôsobilom na riadne užívanie a "
+                "umožní nájomcovi pokojný výkon nájomného práva.\n"
+                "2. Nájomca bude predmet nájmu užívať riadne, s odbornou starostlivosťou a bez "
+                "porušenia domového poriadku alebo práv tretích osôb.\n"
+                "3. Rozdelenie drobných opráv, údržby a oznamovacích povinností strán: "
+                "{{maintenance_and_repairs}}.\n"
+                "4. Pravidlá pre energie, služby a odpočty meračov: {{utilities_terms}}.\n\n"
+                "Článok V\n"
+                "SKONČENIE NÁJMU\n"
+                "1. Nájom zaniká spôsobmi ustanovenými zákonom alebo touto zmluvou.\n"
+                "2. Výpovedné, odstupné a odovzdávacie podmienky pri skončení nájmu: "
+                "{{termination_terms}}.\n"
+                "3. Pri skončení nájmu zmluvné strany spíšu odovzdávací protokol a vysporiadajú "
+                "vzájomné nároky bez zbytočného odkladu.\n\n"
+                "Článok VI\n"
+                "ZÁVEREČNÉ USTANOVENIA\n"
+                "1. Táto zmluva nadobúda účinnosť dňom podpisu oboma zmluvnými stranami, ak nie je "
+                "uvedené inak.\n"
+                "2. Zmeny a doplnenia tejto zmluvy možno vykonať iba písomnou dohodou zmluvných "
+                "strán.\n"
+                "3. Práva a povinnosti výslovne neupravené touto zmluvou sa spravujú Občianskym "
+                "zákonníkom a súvisiacimi právnymi predpismi Slovenskej republiky.\n"
+                "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, porozumeli jej obsahu a na "
+                "znak súhlasu ju podpisujú slobodne a vážne.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\n"
+                "Prenajímateľ: {{landlord_signatory_name}}\n"
+                "Nájomca: {{tenant_signatory_name}}\n"
             ),
             keywords=("najomna zmluva", "prenajom", "najom bytu", "najom"),
             flow_keys=("sk.civil.lease_advisory",),
@@ -650,19 +702,47 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "tenant_identification",
                 "property_identification",
                 "lease_term",
+                "lease_purpose",
                 "rent_terms",
+                "payment_method",
                 "security_deposit",
+                "utilities_terms",
+                "maintenance_and_repairs",
+                "handover_conditions",
+                "use_limitations",
+                "final_settlement_terms",
                 "termination_terms",
+                "signature_place",
+                "signature_date",
+                "landlord_signatory_name",
+                "tenant_signatory_name",
             ),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="AK Samec - Najomna zmluva",
+                    url="https://www.aksamec.sk/najomna-zmluva-vzor-2026/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="external_template_page",
+                    notes=(
+                        "Exact source page reviewed on 2026-08-31. Managed canonical body is source-aligned "
+                        "but maintained in-product for deterministic drafting and auditability."
+                    ),
+                ),
+                TemplateSourceReference(
+                    label="Obciansky zakonnik - najom bytu",
+                    url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1964/40/",
+                    publisher="Slov-Lex",
+                    source_kind="official_legislation",
+                    notes="Relevant legal basis for standard lease agreements under § 685 a nasl. Občianskeho zákonníka.",
                 ),
             ),
+            disclaimer_title="Dôležité upozornenie",
+            disclaimer_text=(
+                "Toto je vzorový právny návrh nájomnej zmluvy pripravený podľa všeobecnej slovenskej "
+                "úpravy nájmu bytu. Nie je právnym poradenstvom ani hotovou zmluvou. Pred podpisom "
+                "doplňte všetky údaje, skontrolujte osobitný režim nájmu a zabezpečte individuálnu ľudskú kontrolu."
+            ),
+            disclaimer_footer="Vzorový návrh – pred podpisom vyžaduje individuálnu ľudskú a právnu kontrolu.",
             is_enabled=True,
             is_deleted=False,
         ),
@@ -816,6 +896,8 @@ def _build_render_context(
         values.update(_employment_contract_render_values(values))
     if template_key == "sk.real_estate.sale_purchase" or template_kind == "sale_purchase_agreement":
         values.update(_sale_purchase_render_values(values))
+    if template_key == "sk.real_estate.lease_agreement" or template_kind == "rental_agreement":
+        values.update(_lease_agreement_render_values(values))
     return {
         key: value if value else _todo_marker(field_name=key, country=country, language=language)
         for key, value in values.items()
@@ -863,6 +945,33 @@ def _employment_contract_render_values(values: dict[str, str]) -> dict[str, str]
     return resolved
 
 
+def _lease_agreement_render_values(values: dict[str, str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for field_name, aliases in _LEASE_AGREEMENT_FIELD_ALIASES.items():
+        resolved[field_name] = _first_present(values, field_name, *aliases)
+    optional_defaults = {
+        "lease_purpose": "na riadne bývanie nájomcu a osôb, ktoré s ním budú bývať v súlade so zmluvou",
+        "payment_method": "bezhotovostným prevodom na účet prenajímateľa uvedený pri podpise alebo iným preukázateľným spôsobom dohodnutým stranami",
+        "security_deposit": "bez zloženej kaucie, ak sa strany písomne nedohodnú inak",
+        "utilities_terms": "podľa skutočnej spotreby a pravidelného vyúčtovania dodávateľov alebo správcu",
+        "maintenance_and_repairs": "nájomca znáša bežné drobné opravy a prenajímateľ zabezpečuje odstránenie podstatných vád, ak zákon alebo zmluva neustanovujú inak",
+        "handover_conditions": "stav bytu, vybavenie a odpočty meračov budú zachytené v odovzdávacom protokole",
+        "use_limitations": "bez písomného súhlasu prenajímateľa nemožno vykonávať podstatné stavebné úpravy ani prenechať byt do podnájmu, ak zákon alebo zmluva neustanovujú inak",
+        "final_settlement_terms": "najneskôr do 30 dní po skončení nájmu po doručení všetkých podkladov na vyúčtovanie",
+        "termination_terms": "podľa Občianskeho zákonníka, dohodnutých výpovedných dôvodov a písomného odovzdania bytu",
+        "signature_place": "miesto bude doplnené pred podpisom",
+        "signature_date": "dátum bude doplnený pred podpisom",
+    }
+    for field_name, default in optional_defaults.items():
+        if not resolved.get(field_name):
+            resolved[field_name] = default
+    if not resolved.get("landlord_signatory_name"):
+        resolved["landlord_signatory_name"] = resolved.get("landlord_identification", "")
+    if not resolved.get("tenant_signatory_name"):
+        resolved["tenant_signatory_name"] = resolved.get("tenant_identification", "")
+    return resolved
+
+
 def _sale_purchase_render_values(values: dict[str, str]) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for field_name, aliases in _SALE_PURCHASE_FIELD_ALIASES.items():
@@ -905,6 +1014,9 @@ def _missing_required_template_fields(
     elif template_key == "sk.real_estate.sale_purchase":
         resolved = _sale_purchase_render_values(raw_values)
         required_fields = _SALE_PURCHASE_REQUIRED_FIELDS
+    elif template_key == "sk.real_estate.lease_agreement":
+        resolved = _lease_agreement_render_values(raw_values)
+        required_fields = _LEASE_AGREEMENT_REQUIRED_FIELDS
     else:
         return []
     missing: list[str] = []
@@ -939,6 +1051,9 @@ def _template_follow_up_question(
     elif template_key == "sk.real_estate.sale_purchase":
         questions = _SALE_PURCHASE_FIELD_QUESTIONS
         english_label = "sale-purchase-agreement"
+    elif template_key == "sk.real_estate.lease_agreement":
+        questions = _LEASE_AGREEMENT_FIELD_QUESTIONS
+        english_label = "lease-agreement"
     else:
         return None
     if normalized_country == "SK" or normalized_language.startswith("sk"):
@@ -1067,6 +1182,141 @@ _EMPLOYMENT_CONTRACT_FIELD_ALIASES = {
     "signature_date": ("datum_uzatvorenia", "dátum_uzatvorenia", "signature_date"),
     "employer_signatory_name": ("za_zamestnavatela", "za_zamestnávateľa", "employer_signatory_name"),
     "employee_signatory_name": ("zamestnanec_podpis", "employee_signatory_name"),
+}
+
+_LEASE_AGREEMENT_REQUIRED_FIELDS = (
+    "landlord_identification",
+    "tenant_identification",
+    "property_identification",
+    "lease_term",
+    "rent_terms",
+)
+
+_LEASE_AGREEMENT_FIELD_QUESTIONS = {
+    "landlord_identification": "Kto je prenajímateľ a ako má byť v zmluve presne označený?",
+    "tenant_identification": "Kto je nájomca a ako má byť v zmluve presne označený?",
+    "property_identification": "Ako má byť presne označený predmet nájmu, vrátane adresy alebo identifikácie bytu?",
+    "lease_term": "Na akú dobu sa nájom uzatvára?",
+    "rent_terms": "Aká je výška nájomného a ako sa má platiť?",
+}
+
+_LEASE_AGREEMENT_FIELD_ALIASES = {
+    "landlord_identification": (
+        "prenajimatel",
+        "prenajímateľ",
+        "landlord",
+        "owner_identification",
+    ),
+    "tenant_identification": (
+        "najomca",
+        "nájomca",
+        "tenant",
+        "subtenant",
+        "podnajomnik",
+        "podnájomník",
+    ),
+    "property_identification": (
+        "predmet",
+        "predmet_najmu",
+        "predmet_nájmu",
+        "property_address",
+        "adresa_nehnutelnosti",
+        "adresa_nehnuteľnosti",
+        "property_identification",
+    ),
+    "lease_term": (
+        "doba",
+        "doba_najmu",
+        "doba_nájmu",
+        "lease_duration",
+        "term",
+    ),
+    "lease_purpose": (
+        "ucel_najmu",
+        "účel_nájmu",
+        "lease_purpose",
+        "purpose_of_use",
+    ),
+    "rent_terms": (
+        "najomne",
+        "nájomné",
+        "mesacne_najomne",
+        "mesačné_nájomné",
+        "rent",
+    ),
+    "payment_method": (
+        "payment_method",
+        "sposob_platby",
+        "spôsob_platby",
+        "splatnost_najomneho",
+        "splatnosť_nájomného",
+    ),
+    "security_deposit": (
+        "deposit",
+        "depozit",
+        "kaucia",
+        "security_deposit",
+    ),
+    "utilities_terms": (
+        "utilities_terms",
+        "sluzby",
+        "služby",
+        "energie",
+        "service_charges",
+    ),
+    "maintenance_and_repairs": (
+        "maintenance_and_repairs",
+        "opravy",
+        "udrzba",
+        "údržba",
+    ),
+    "handover_conditions": (
+        "handover_conditions",
+        "odovzdanie",
+        "odovzdavaci_protokol",
+        "odovzdávací_protokol",
+        "vybavenie_bytu",
+    ),
+    "use_limitations": (
+        "use_limitations",
+        "obmedzenia_uzivania",
+        "obmedzenia_užívania",
+        "podnajom",
+        "podnájom",
+    ),
+    "final_settlement_terms": (
+        "final_settlement_terms",
+        "vyuctovanie",
+        "vyúčtovanie",
+        "settlement_terms",
+    ),
+    "termination_terms": (
+        "termination_terms",
+        "notice",
+        "vypoved",
+        "výpoveď",
+        "vypovedna_lehota",
+        "výpovedná_lehota",
+    ),
+    "signature_place": (
+        "signature_place",
+        "miesto_podpisu",
+    ),
+    "signature_date": (
+        "signature_date",
+        "datum_podpisu",
+        "dátum_podpisu",
+    ),
+    "landlord_signatory_name": (
+        "landlord_signatory_name",
+        "prenajimatel_podpis",
+        "prenajímateľ_podpis",
+    ),
+    "tenant_signatory_name": (
+        "tenant_signatory_name",
+        "najomca_podpis",
+        "nájomca_podpis",
+    ),
 }
 
 _SALE_PURCHASE_REQUIRED_FIELDS = (
