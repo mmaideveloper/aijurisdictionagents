@@ -246,6 +246,7 @@ def _template_preview_facts() -> dict[str, str]:
         "company_seat": "Pribinova 10, 811 09 Bratislava",
         "transferor_name": "Peter Horváth, trvale bytom Kvetná 4, Žilina",
         "transferee_name": "Jana Černá, trvale bytom Horská 7, Košice",
+        "nehnutelnost": "Byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad, zapísaný na LV č. 1234",
         "transfer_share": "50 %",
         "transfer_price": "5 000 EUR",
         "estimated_timeline": "spravidla niekoľko pracovných dní až týždňov",

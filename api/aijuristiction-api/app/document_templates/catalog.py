@@ -477,16 +477,72 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Nehnutelnosti a najom",
             title="Kupno-predajna zmluva",
             template_kind="sale_purchase_agreement",
-            description="Seed metadata a pracovny body pre kupno-predajnu zmluvu.",
-            source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
+            description=(
+                "Kontrolovany kanonicky zaklad slovenskej kupno-predajnej zmluvy pre prevod "
+                "nehnutelnosti s identifikaciou stran, presnym opisom predmetu prevodu, kupnou "
+                "cenou, platobnym mechanizmom, vyhlaseniami predavajuceho, odovzdanim a navrhom "
+                "na vklad. Pred podpisom vyzaduje doplnenie faktov a individualnu kontrolu "
+                "pravnikom alebo specialistom na nehnutelnosti."
+            ),
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/kupna-zmluva-2026/",
             body=(
-                "Kupna zmluva\n\n"
-                "Predavajuci: {{seller_identification}}\n"
-                "Kupujuci: {{buyer_identification}}\n"
-                "Predmet kupy: {{subject_description}}\n"
-                "Kupna cena: {{purchase_price}}\n"
-                "Platobne podmienky: {{payment_terms}}\n"
+                "KÚPNA ZMLUVA\n"
+                "uzatvorená podľa § 588 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"
+                "Predávajúci:\n"
+                "{{seller_identification}}\n\n"
+                "Kupujúci:\n"
+                "{{buyer_identification}}\n\n"
+                "(ďalej spolu aj ako „zmluvné strany“) uzatvárajú túto kúpnu zmluvu:\n\n"
+                "Článok I\n"
+                "PREDMET PREVODU\n"
+                "1. Predávajúci prevádza na kupujúceho vlastnícke právo k tejto nehnuteľnosti: "
+                "{{subject_description}}.\n"
+                "2. Súčasťou prevodu sú aj príslušenstvo, súčasti a práva s nehnuteľnosťou "
+                "spojené v rozsahu: {{included_accessories}}.\n\n"
+                "Článok II\n"
+                "KÚPNA CENA A PLATOBNÉ PODMIENKY\n"
+                "1. Kúpna cena za predmet prevodu je dohodnutá vo výške {{purchase_price}}.\n"
+                "2. Spôsob úhrady, splatnosť a podmienky uvoľnenia kúpnej ceny: {{payment_terms}}.\n"
+                "3. Náklady spojené s úhradou kúpnej ceny, úschovou alebo vinkuláciou znášajú "
+                "strany takto: {{cost_allocation}}.\n\n"
+                "Článok III\n"
+                "VYHLÁSENIA ZMLUVNÝCH STRÁN\n"
+                "1. Predávajúci vyhlasuje, že je oprávnený s predmetom prevodu nakladať a že jeho "
+                "právny stav je opísaný takto: {{title_warranty}}.\n"
+                "2. Predávajúci vyhlasuje, že kupujúceho oboznámil so stavom nehnuteľnosti, vadami "
+                "a faktickým užívaním v tomto rozsahu: {{property_condition}}.\n"
+                "3. Kupujúci vyhlasuje, že sa so stavom predmetu prevodu oboznámil a nadobúda ho "
+                "za podmienok podľa tejto zmluvy.\n\n"
+                "Článok IV\n"
+                "ODOVZDANIE A PREVZATIE NEHNUTEĽNOSTI\n"
+                "1. Predávajúci odovzdá predmet prevodu kupujúcemu spôsobom a v lehote: "
+                "{{handover_terms}}.\n"
+                "2. O odovzdaní a prevzatí môže byť spísaný odovzdávací protokol, vrátane odpočtu "
+                "meračov a zoznamu odovzdanej dokumentácie.\n"
+                "3. Nebezpečenstvo škody a úžitky prechádzajú medzi stranami podľa tejto dohody: "
+                "{{risk_transfer}}.\n\n"
+                "Článok V\n"
+                "NÁVRH NA VKLAD A SÚČINNOSŤ\n"
+                "1. Zmluvné strany sa zaväzujú poskytnúť si súčinnosť potrebnú na povolenie vkladu "
+                "vlastníckeho práva do katastra nehnuteľností.\n"
+                "2. Návrh na vklad podá {{filing_party}} a správny poplatok znášajú strany takto: "
+                "{{filing_cost_terms}}.\n"
+                "3. Ak príslušný okresný úrad vyzve na odstránenie vád podania alebo zmluvy, "
+                "zmluvné strany poskytnú bezodkladnú súčinnosť na ich odstránenie.\n\n"
+                "Článok VI\n"
+                "ZÁVEREČNÉ USTANOVENIA\n"
+                "1. Vlastnícke právo prechádza na kupujúceho povolením vkladu do katastra "
+                "nehnuteľností, ak právny predpis neustanovuje inak.\n"
+                "2. Zmeny a doplnenia tejto zmluvy možno vykonať iba písomnou dohodou zmluvných "
+                "strán.\n"
+                "3. Práva a povinnosti výslovne neupravené touto zmluvou sa spravujú Občianskym "
+                "zákonníkom a súvisiacimi právnymi predpismi Slovenskej republiky.\n"
+                "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, porozumeli jej obsahu a na "
+                "znak súhlasu ju podpisujú slobodne a vážne.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\n"
+                "Predávajúci: {{seller_signatory_name}}\n"
+                "Kupujúci: {{buyer_signatory_name}}\n"
             ),
             keywords=("kupno predajna zmluva", "kupna zmluva", "predaj nehnutelnosti", "predaj"),
             flow_keys=("sk.contract.sale_purchase",),
@@ -496,16 +552,46 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "subject_description",
                 "purchase_price",
                 "payment_terms",
+                "included_accessories",
+                "cost_allocation",
+                "title_warranty",
+                "property_condition",
+                "handover_terms",
+                "risk_transfer",
+                "filing_party",
+                "filing_cost_terms",
+                "signature_place",
+                "signature_date",
+                "seller_signatory_name",
+                "buyer_signatory_name",
             ),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="AK Samec - Kupna zmluva",
+                    url="https://www.aksamec.sk/kupna-zmluva-2026/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="external_template_page",
+                    notes=(
+                        "Exact source page reviewed on 2026-08-31. Managed canonical body is source-aligned "
+                        "but maintained in-product for deterministic drafting and auditability."
+                    ),
+                ),
+                TemplateSourceReference(
+                    label="Obciansky zakonnik - kupna zmluva",
+                    url="https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1964/40/",
+                    publisher="Slov-Lex",
+                    source_kind="official_legislation",
+                    notes="Relevant legal basis for purchase agreements under § 588 a nasl. Občianskeho zákonníka.",
                 ),
             ),
+            disclaimer_title="Dôležité upozornenie",
+            disclaimer_text=(
+                "Toto je vzorový právny návrh kúpno-predajnej zmluvy pripravený podľa všeobecnej "
+                "slovenskej úpravy prevodu vlastníctva. Nie je právnym poradenstvom ani hotovou "
+                "zmluvou. Pred podpisom doplňte všetky údaje, overte list vlastníctva, ťarchy a "
+                "platobné zabezpečenie a zabezpečte individuálnu ľudskú kontrolu."
+            ),
+            disclaimer_footer="Vzorový návrh – pred podpisom vyžaduje individuálnu ľudskú a právnu kontrolu.",
             is_enabled=True,
             is_deleted=False,
         ),
@@ -808,6 +894,8 @@ def _build_render_context(
     )
     if template_key == "sk.employment.employment_contract" or template_kind == "employment_contract":
         values.update(_employment_contract_render_values(values))
+    if template_key == "sk.real_estate.sale_purchase" or template_kind == "sale_purchase_agreement":
+        values.update(_sale_purchase_render_values(values))
     if template_key == "sk.real_estate.lease_agreement" or template_kind == "rental_agreement":
         values.update(_lease_agreement_render_values(values))
     return {
@@ -884,6 +972,33 @@ def _lease_agreement_render_values(values: dict[str, str]) -> dict[str, str]:
     return resolved
 
 
+def _sale_purchase_render_values(values: dict[str, str]) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+    for field_name, aliases in _SALE_PURCHASE_FIELD_ALIASES.items():
+        resolved[field_name] = _first_present(values, *aliases, field_name)
+    optional_defaults = {
+        "included_accessories": "všetko príslušenstvo, súčasti a dokumentácia, ktoré patria k prevádzanej nehnuteľnosti, ak sa strany písomne nedohodnú inak",
+        "payment_terms": "bezhotovostným prevodom alebo cez notársku úschovu / vinkuláciu podľa samostatnej dohody strán",
+        "cost_allocation": "podľa osobitnej dohody strán; ak taká dohoda chýba, každá strana znáša svoje vlastné náklady",
+        "title_warranty": "podľa aktuálneho listu vlastníctva a vyhlásení predávajúceho pri podpise zmluvy",
+        "property_condition": "v stave známom kupujúcemu ku dňu podpisu tejto zmluvy",
+        "handover_terms": "na základe samostatného odovzdávacieho protokolu po splnení dohodnutých platobných a vkladových podmienok",
+        "risk_transfer": "podľa dohody strán uvedenej v odovzdávacom protokole alebo podľa všeobecne záväzných právnych predpisov",
+        "filing_party": "strana určená vzájomnou dohodou zmluvných strán",
+        "filing_cost_terms": "podľa dohody strán uvedenej pri podpise tejto zmluvy",
+        "signature_place": "miesto bude doplnené pred podpisom",
+        "signature_date": "dátum bude doplnený pred podpisom",
+    }
+    for field_name, default in optional_defaults.items():
+        if not resolved.get(field_name):
+            resolved[field_name] = default
+    if not resolved.get("seller_signatory_name"):
+        resolved["seller_signatory_name"] = resolved.get("seller_identification", "")
+    if not resolved.get("buyer_signatory_name"):
+        resolved["buyer_signatory_name"] = resolved.get("buyer_identification", "")
+    return resolved
+
+
 def _missing_required_template_fields(
     *,
     template_key: str,
@@ -896,6 +1011,9 @@ def _missing_required_template_fields(
     if template_key == "sk.employment.employment_contract":
         resolved = _employment_contract_render_values(raw_values)
         required_fields = _EMPLOYMENT_CONTRACT_REQUIRED_FIELDS
+    elif template_key == "sk.real_estate.sale_purchase":
+        resolved = _sale_purchase_render_values(raw_values)
+        required_fields = _SALE_PURCHASE_REQUIRED_FIELDS
     elif template_key == "sk.real_estate.lease_agreement":
         resolved = _lease_agreement_render_values(raw_values)
         required_fields = _LEASE_AGREEMENT_REQUIRED_FIELDS
@@ -930,6 +1048,9 @@ def _template_follow_up_question(
     if template_key == "sk.employment.employment_contract":
         questions = _EMPLOYMENT_CONTRACT_FIELD_QUESTIONS
         english_label = "employment-contract"
+    elif template_key == "sk.real_estate.sale_purchase":
+        questions = _SALE_PURCHASE_FIELD_QUESTIONS
+        english_label = "sale-purchase-agreement"
     elif template_key == "sk.real_estate.lease_agreement":
         questions = _LEASE_AGREEMENT_FIELD_QUESTIONS
         english_label = "lease-agreement"
@@ -1195,6 +1316,122 @@ _LEASE_AGREEMENT_FIELD_ALIASES = {
         "tenant_signatory_name",
         "najomca_podpis",
         "nájomca_podpis",
+    ),
+}
+
+_SALE_PURCHASE_REQUIRED_FIELDS = (
+    "seller_identification",
+    "buyer_identification",
+    "subject_description",
+    "purchase_price",
+)
+
+_SALE_PURCHASE_FIELD_QUESTIONS = {
+    "seller_identification": "Kto je predávajúci a ako má byť v zmluve presne označený?",
+    "buyer_identification": "Kto je kupujúci a ako má byť v zmluve presne označený?",
+    "subject_description": "Ako má byť presne označená prevádzaná nehnuteľnosť?",
+    "purchase_price": "Aká je dohodnutá kúpna cena?",
+}
+
+_SALE_PURCHASE_FIELD_ALIASES = {
+    "seller_identification": (
+        "seller_identification",
+        "predavajuci",
+        "predávajúci",
+        "transferor_name",
+        "seller_name",
+        "client_name",
+    ),
+    "buyer_identification": (
+        "buyer_identification",
+        "kupujuci",
+        "kupujúci",
+        "transferee_name",
+        "buyer_name",
+        "opponent_name",
+    ),
+    "subject_description": (
+        "subject_description",
+        "predmet_kupy",
+        "predmet_kúpy",
+        "nehnutelnost",
+        "nehnuteľnosť",
+        "property_identification",
+        "property_description",
+        "topic",
+    ),
+    "purchase_price": (
+        "kupna_cena",
+        "kúpna_cena",
+        "transfer_price",
+        "purchase_price",
+    ),
+    "payment_terms": (
+        "payment_terms",
+        "platobne_podmienky",
+        "platobné_podmienky",
+    ),
+    "included_accessories": (
+        "included_accessories",
+        "prislusenstvo",
+        "príslušenstvo",
+    ),
+    "cost_allocation": (
+        "cost_allocation",
+        "naklady_prevodu",
+        "náklady_prevodu",
+    ),
+    "title_warranty": (
+        "title_warranty",
+        "tarchy",
+        "ťarchy",
+        "pravny_stav",
+        "právny_stav",
+    ),
+    "property_condition": (
+        "property_condition",
+        "stav_nehnutelnosti",
+        "stav_nehnuteľnosti",
+    ),
+    "handover_terms": (
+        "handover_terms",
+        "odovzdanie",
+        "termin_odovzdania",
+        "termín_odovzdania",
+    ),
+    "risk_transfer": (
+        "risk_transfer",
+        "prechod_nebezpecenstva_skody",
+        "prechod_nebezpečenstva_škody",
+    ),
+    "filing_party": (
+        "filing_party",
+        "navrh_na_vklad_poda",
+        "návrh_na_vklad_podá",
+    ),
+    "filing_cost_terms": (
+        "filing_cost_terms",
+        "spravny_poplatok",
+        "správny_poplatok",
+    ),
+    "signature_place": (
+        "signature_place",
+        "miesto_podpisu",
+    ),
+    "signature_date": (
+        "signature_date",
+        "datum_podpisu",
+        "dátum_podpisu",
+    ),
+    "seller_signatory_name": (
+        "seller_signatory_name",
+        "predavajuci_podpis",
+        "predávajúci_podpis",
+    ),
+    "buyer_signatory_name": (
+        "buyer_signatory_name",
+        "kupujuci_podpis",
+        "kupujúci_podpis",
     ),
 }
 
