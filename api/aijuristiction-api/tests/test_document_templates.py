@@ -332,6 +332,8 @@ def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path:
     assert "Fiktíva Digital Solutions" in rendered_text
     assert "Lucia Vzorová" in rendered_text
     assert "AI vývojár" in rendered_text
+    assert "3 200 EUR brutto mesačne" in rendered_text
+    assert "brutto brutto" not in rendered_text
     assert rendered.missing_required_fields == []
     assert rendered.follow_up_question is None
 
@@ -414,6 +416,29 @@ def test_sale_purchase_template_reports_first_missing_required_field(tmp_path: P
     assert rendered.missing_required_fields == ["buyer_identification"]
     assert rendered.follow_up_question == "Kto je kupujúci a ako má byť v zmluve presne označený?"
     assert "buyer_identification" in rendered.unresolved_fields
+
+
+def test_employment_template_separates_variable_pay_from_payday(tmp_path: Path) -> None:
+    template = _build_store(tmp_path).get(
+        template_key="sk.employment.employment_contract", jurisdiction="SK"
+    )
+    rendered = render_template(
+        template=template,
+        facts={
+            "base_monthly_salary": "3 200 EUR brutto",
+            "variable_salary_component": "do 10 % základnej mesačnej mzdy",
+            "salary_payday": "najneskôr 15. deň kalendárneho mesiaca",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    rendered_text = "\n".join(rendered.lines)
+    assert "3 200 EUR brutto mesačne" in rendered_text
+    assert "brutto brutto" not in rendered_text
+    assert "Variabilná zložka mzdy a podmienky jej priznania: do 10 %" in rendered_text
+    assert "Výplatný termín: najneskôr 15. deň kalendárneho mesiaca" in rendered_text
+    assert "podmienky ich priznania a výplatný termín" not in rendered_text
 
 
 def test_employment_profile_defaults_fill_missing_identity_fields() -> None:
