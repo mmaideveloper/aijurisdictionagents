@@ -855,12 +855,14 @@ class DocumentTemplateStore:
             row = conn.execute(self._sql("SELECT COUNT(1) AS count FROM case_types")).fetchone()
         if row is not None and int(row["count"]) > 0:
             return
-        templates = self.list(include_deleted=False)
+        templates = self.list(include_deleted=False, latest_only=True)
         for item in build_default_case_types(templates):
             self.create_case_type(item)
 
     def _refresh_seeded_case_type_descriptions(self) -> None:
-        default_items = build_default_case_types(self.list(include_deleted=False))
+        default_items = build_default_case_types(
+            self.list(include_deleted=False, latest_only=True)
+        )
         if not default_items:
             return
         updates: list[tuple[str, str, str, str]] = []

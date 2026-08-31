@@ -152,6 +152,34 @@ def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_
     assert unchanged.version == 3
 
 
+def test_document_template_store_reseeds_case_types_from_latest_template_versions_only(
+    tmp_path: Path,
+) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    updated = store.update(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(description="Updated synthetic description"),
+    )
+    assert updated.version == 2
+
+    with sqlite3.connect(config.sqlite_path) as connection:
+        connection.execute("DELETE FROM case_type_templates")
+        connection.execute("DELETE FROM case_prompts")
+        connection.execute("DELETE FROM case_types")
+
+    reseeded = DocumentTemplateStore(config)
+    case_type_keys = [item.case_type_key for item in reseeded.list_case_types()]
+
+    assert len(case_type_keys) == len(set(case_type_keys))
+    assert case_type_keys.count("sk.employment.employment_contract") == 1
+
+
 def test_document_template_store_versions_legacy_empty_sale_purchase_seed_once(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
         db_option="sqlite",

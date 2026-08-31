@@ -73,6 +73,7 @@ Default behavior:
 - every seeded case type gets one generic reusable prompt
 - every seeded case type gets a richer default description covering typical use, required inputs, and the linked-template expectation
 - manually created case types can exist without any linked template
+- startup seeding and seeded-description refresh use only each template lineage's latest active version, so historical versions cannot create duplicate case-type keys on a clean PostgreSQL database
 - linked templates can be added later without reseeding the catalog
 
 ## Endpoints

@@ -559,3 +559,7 @@ print(
     "and the email includes a CTA plus a clickable fallback URL. Run "
     "`python examples/golden_case_602_email_preview.py` for the focused email sample."
 )
+print(
+    "case_type_seed_latest_only => API startup derives seeded case types from only the latest "
+    "active document-template version, keeping clean PostgreSQL initialization idempotent."
+)
