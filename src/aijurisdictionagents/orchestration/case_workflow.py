@@ -9,6 +9,12 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Interrupt, interrupt
 
+from .retrieval_policy import (
+    McpRetrievalPolicyError,
+    build_mcp_retrieval_request,
+    validate_mcp_retrieval_policy,
+)
+
 
 WorkflowStatus = Literal[
     "running",
@@ -165,7 +171,12 @@ class CaseWorkflowRuntime:
     ) -> None:
         self._services = services
         self._graphs = {
-            ("legal_document_workflow", 1): self._build_legal_document_graph(checkpointer),
+            ("legal_document_workflow", 1): self._build_legal_document_graph(
+                checkpointer, verify_before_retrieval=False
+            ),
+            ("legal_document_workflow", 2): self._build_legal_document_graph(
+                checkpointer, verify_before_retrieval=True
+            ),
             ("unsupported_or_human_review", 1): self._build_unsupported_graph(checkpointer),
         }
 
@@ -209,7 +220,12 @@ class CaseWorkflowRuntime:
         except KeyError as exc:
             raise ValueError(f"Unregistered graph: {graph_key}@{graph_version}") from exc
 
-    def _build_legal_document_graph(self, checkpointer: BaseCheckpointSaver[Any]) -> Any:
+    def _build_legal_document_graph(
+        self,
+        checkpointer: BaseCheckpointSaver[Any],
+        *,
+        verify_before_retrieval: bool,
+    ) -> Any:
         builder = StateGraph(CaseWorkflowState)
         builder.add_node("route_case_type", self._route_case_type)
         builder.add_node("load_flow_pack", self._load_flow_pack)
@@ -226,21 +242,38 @@ class CaseWorkflowRuntime:
         builder.add_node("finalize_or_escalate", self._finalize_or_escalate)
         builder.add_edge(START, "route_case_type")
         builder.add_edge("route_case_type", "load_flow_pack")
-        builder.add_conditional_edges(
-            "load_flow_pack",
-            self._after_flow_load,
-            {"retrieve": "retrieve_legal_requirements", "finalize": "finalize_or_escalate"},
-        )
-        builder.add_conditional_edges(
-            "retrieve_legal_requirements",
-            self._after_legal_retrieval,
-            {"verify": "verify_input", "finalize": "finalize_or_escalate"},
-        )
-        builder.add_conditional_edges(
-            "verify_input",
-            self._after_input_verification,
-            {"collect": "collect_missing_facts", "continue": "offer_optional_verification"},
-        )
+        if verify_before_retrieval:
+            builder.add_conditional_edges(
+                "load_flow_pack",
+                self._after_flow_load_for_verified_retrieval,
+                {"verify": "verify_input", "finalize": "finalize_or_escalate"},
+            )
+            builder.add_conditional_edges(
+                "verify_input",
+                self._after_input_verification_for_retrieval,
+                {"collect": "collect_missing_facts", "retrieve": "retrieve_legal_requirements"},
+            )
+            builder.add_conditional_edges(
+                "retrieve_legal_requirements",
+                self._after_legal_retrieval_for_verified_retrieval,
+                {"continue": "offer_optional_verification", "finalize": "finalize_or_escalate"},
+            )
+        else:
+            builder.add_conditional_edges(
+                "load_flow_pack",
+                self._after_flow_load,
+                {"retrieve": "retrieve_legal_requirements", "finalize": "finalize_or_escalate"},
+            )
+            builder.add_conditional_edges(
+                "retrieve_legal_requirements",
+                self._after_legal_retrieval,
+                {"verify": "verify_input", "finalize": "finalize_or_escalate"},
+            )
+            builder.add_conditional_edges(
+                "verify_input",
+                self._after_input_verification,
+                {"collect": "collect_missing_facts", "continue": "offer_optional_verification"},
+            )
         builder.add_edge("collect_missing_facts", "verify_input")
         builder.add_edge("offer_optional_verification", "execute_consented_tools")
         builder.add_edge("execute_consented_tools", "resolve_conflicts")
@@ -292,6 +325,23 @@ class CaseWorkflowRuntime:
                 event_status="blocked",
                 details={"reason": "invalid_required_facts_schema"},
             )
+        try:
+            validate_mcp_retrieval_policy(
+                definition.get("mcp_retrieval"),
+                case_type_key=state["case_type_key"],
+                jurisdiction=state.get("jurisdiction", ""),
+                strict=state.get("graph_version", 1) >= 2,
+            )
+        except McpRetrievalPolicyError as exc:
+            return _update(
+                state,
+                stage="load_flow_pack",
+                status="blocked",
+                escalation_reason=str(exc),
+                event_type="workflow_configuration_rejected",
+                event_status="blocked",
+                details={"reason": str(exc)},
+            )
         return _update(
             state,
             stage="load_flow_pack",
@@ -311,7 +361,18 @@ class CaseWorkflowRuntime:
     def _after_flow_load(state: CaseWorkflowState) -> str:
         return "finalize" if state.get("status") == "blocked" else "retrieve"
 
+    @staticmethod
+    def _after_flow_load_for_verified_retrieval(state: CaseWorkflowState) -> str:
+        return "finalize" if state.get("status") == "blocked" else "verify"
+
     def _retrieve_legal_requirements(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        request = build_mcp_retrieval_request(
+            policy=state.get("flow_definition", {}).get("mcp_retrieval"),
+            case_type_key=state["case_type_key"],
+            jurisdiction=state.get("jurisdiction", ""),
+            verified_facts=state.get("verified_facts", {}),
+            strict=state.get("graph_version", 1) >= 2,
+        )
         requirements, source_ids = self._services.retrieve_legal_requirements(state)
         policy = state.get("flow_definition", {}).get("mcp_retrieval", {})
         evidence_required = bool(policy.get("required", True))
@@ -325,7 +386,10 @@ class CaseWorkflowRuntime:
                 legal_source_ids=[],
                 event_type="legal_retrieval_failed",
                 event_status="human_review_required",
-                details={"reason": "required_legal_evidence_unavailable"},
+                details={
+                    "reason": "required_legal_evidence_unavailable",
+                    "retrieval_policy_id": request.policy_id,
+                },
             )
         return _update(
             state,
@@ -337,12 +401,18 @@ class CaseWorkflowRuntime:
             details={
                 "source_count": len(source_ids),
                 "source_ids": ",".join(source_ids[:10]),
+                "retrieval_policy_id": request.policy_id,
+                "matched_fact_count": len(request.matched_fact_keys),
             },
         )
 
     @staticmethod
     def _after_legal_retrieval(state: CaseWorkflowState) -> str:
         return "finalize" if state.get("status") == "human_review_required" else "verify"
+
+    @staticmethod
+    def _after_legal_retrieval_for_verified_retrieval(state: CaseWorkflowState) -> str:
+        return "finalize" if state.get("status") == "human_review_required" else "continue"
 
     def _verify_input(self, state: CaseWorkflowState) -> CaseWorkflowState:
         facts = {key: value.strip() for key, value in state.get("facts", {}).items() if value.strip()}
@@ -361,6 +431,10 @@ class CaseWorkflowRuntime:
     @staticmethod
     def _after_input_verification(state: CaseWorkflowState) -> str:
         return "collect" if state.get("missing_facts") else "continue"
+
+    @staticmethod
+    def _after_input_verification_for_retrieval(state: CaseWorkflowState) -> str:
+        return "collect" if state.get("missing_facts") else "retrieve"
 
     def _collect_missing_facts(self, state: CaseWorkflowState) -> CaseWorkflowState:
         missing = state.get("missing_facts", [])

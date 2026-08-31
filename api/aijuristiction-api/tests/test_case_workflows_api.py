@@ -4,6 +4,8 @@ from io import BytesIO
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
@@ -14,6 +16,7 @@ from app.ai_model_admin_api import AdminContext, require_ai_model_admin
 from app.case_workflows.models import WorkflowAssignmentRequest, WorkflowAssignmentResponse
 from app.case_workflows.service import (
     CaseWorkflowApplicationService,
+    ProductionCaseWorkflowServices,
     _normalize_generated_draft,
     get_case_workflow_service,
 )
@@ -25,6 +28,7 @@ from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
     DeterministicCaseWorkflowServices,
 )
+from aijurisdictionagents.schemas import Document
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 ADMIN_HEADERS = {**AUTH_HEADERS, "x-admin-api-key": "admin-secret"}
@@ -79,7 +83,7 @@ def _service(
     return service
 
 
-def test_default_assignment_preserves_legacy_v1_and_selects_compatible_v2(
+def test_default_assignment_preserves_legacy_versions_and_selects_policy_v3(
     tmp_path: Path,
 ) -> None:
     flow_path = tmp_path / "flows.sqlite3"
@@ -91,8 +95,8 @@ def test_default_assignment_preserves_legacy_v1_and_selects_compatible_v2(
     }
     with sqlite3.connect(flow_path) as connection:
         connection.execute(
-            "DELETE FROM flow_packs WHERE flow_key = ? AND version = ? AND jurisdiction = ?",
-            ("sk.civil.payment_confirmation", 2, "SK"),
+            "DELETE FROM flow_packs WHERE flow_key = ? AND version IN (?, ?) AND jurisdiction = ?",
+            ("sk.civil.payment_confirmation", 2, 3, "SK"),
         )
         connection.execute(
             "UPDATE flow_packs SET definition_json = ? "
@@ -111,16 +115,76 @@ def test_default_assignment_preserves_legacy_v1_and_selects_compatible_v2(
         case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
     )
 
-    assert assignment.flow_version == 2
+    assert assignment.graph_version == 2
+    assert assignment.flow_version == 3
     assert upgraded_store.get(
         flow_key="sk.civil.payment_confirmation", version=1, jurisdiction="SK"
     ).definition == legacy_definition
     assert isinstance(
         upgraded_store.get(
-            flow_key="sk.civil.payment_confirmation", version=2, jurisdiction="SK"
+            flow_key="sk.civil.payment_confirmation", version=3, jurisdiction="SK"
         ).definition.get("mcp_retrieval"),
         dict,
     )
+
+
+def test_production_retrieval_uses_policy_query_and_excludes_unmapped_identity(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_context(**kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            document=Document(
+                doc_id="synthetic-mcp-law",
+                path="synthetic-mcp-law.txt",
+                content="Synthetic legal requirement",
+            ),
+            processing_event={"details": {"document_ids": ["synthetic-law-1"]}},
+        )
+
+    monkeypatch.setattr("app.case_workflows.service.build_mcp_law_context", fake_context)
+    service = ProductionCaseWorkflowServices(api_store=cast(Any, object()))
+    requirements, source_ids = service.retrieve_legal_requirements(
+        cast(
+            Any,
+            {
+                "case_type_key": "sk.civil.payment_confirmation",
+                "jurisdiction": "SK",
+                "language": "sk-SK",
+                "graph_version": 2,
+                "verified_facts": {
+                    "payment_purpose": "splatenie pôžičky",
+                    "payer_identification": "Synthetic Person 12345",
+                },
+                "flow_definition": {
+                    "mcp_retrieval": {
+                        "schema_version": 1,
+                        "policy_id": "test.payment.requirements.v1",
+                        "case_type_keys": ["sk.civil.payment_confirmation"],
+                        "jurisdictions": ["SK"],
+                        "query_keys": ["payment_confirmation_legal_requirements"],
+                        "default_query": "potvrdenie",
+                        "fact_query_mappings": {
+                            "payment_purpose": {
+                                "pôžička": ["pôžička", "splatenie pôžičky"]
+                            }
+                        },
+                        "search_limit": 4,
+                        "text_limit": 2,
+                    }
+                },
+            },
+        )
+    )
+
+    assert captured["query"] == "pôžička"
+    assert "Synthetic Person" not in str(captured["query"])
+    assert captured["search_limit"] == 4
+    assert captured["text_limit"] == 2
+    assert requirements[0]["source_id"] == "synthetic-mcp-law"
+    assert source_ids == ["synthetic-law-1"]
 
 
 def test_every_enabled_slovak_case_type_has_a_valid_active_assignment(tmp_path: Path) -> None:

@@ -19,7 +19,12 @@ def _runtime() -> CaseWorkflowRuntime:
     )
 
 
-def _state(*, facts: dict[str, str] | None = None, graph_key: str = "legal_document_workflow"):
+def _state(
+    *,
+    facts: dict[str, str] | None = None,
+    graph_key: str = "legal_document_workflow",
+    graph_version: int = 1,
+):
     flow_key = (
         "sk.civil.payment_confirmation"
         if graph_key == "legal_document_workflow"
@@ -38,12 +43,27 @@ def _state(*, facts: dict[str, str] | None = None, graph_key: str = "legal_docum
         routing_confidence=0.99,
         routing_evidence=("synthetic deterministic match",),
         graph_key=graph_key,
-        graph_version=1,
+        graph_version=graph_version,
         flow_key=flow_key,
-        flow_version=1,
+        flow_version=3 if graph_version == 2 else 1,
         flow_definition={
             "required_facts": ["payer", "recipient", "amount"],
-            "mcp_retrieval": {"required": True},
+            "mcp_retrieval": (
+                {
+                    "schema_version": 1,
+                    "policy_id": "test.payment.requirements.v1",
+                    "required": True,
+                    "case_type_keys": ["sk.civil.payment_confirmation"],
+                    "jurisdictions": ["SK"],
+                    "query_keys": ["payment_confirmation_legal_requirements"],
+                    "default_query": "potvrdenie",
+                }
+                if graph_version == 2
+                else {
+                    "required": True,
+                    "query_keys": ["payment_confirmation_legal_requirements"],
+                }
+            ),
             "optional_tools": ["company_check"],
         },
         facts=facts,
@@ -100,6 +120,27 @@ def test_case_workflow_interrupts_and_resumes_without_losing_pinned_versions() -
     assert [event["event_type"] for event in resumed.state["events"]].count(
         "workflow_assignment_pinned"
     ) == 1
+
+
+def test_v2_verifies_facts_before_policy_driven_legal_retrieval() -> None:
+    outcome = _runtime().start(
+        _state(
+            graph_version=2,
+            facts={"payer": "A", "recipient": "B", "amount": "100 EUR"},
+        )
+    )
+
+    event_types = [event["event_type"] for event in outcome.state["events"]]
+    assert outcome.state["status"] == "completed"
+    assert event_types.index("input_validation_completed") < event_types.index(
+        "legal_requirements_retrieved"
+    )
+    retrieval_event = next(
+        event for event in outcome.state["events"] if event["event_type"] == "legal_requirements_retrieved"
+    )
+    assert retrieval_event["details"]["retrieval_policy_id"] == "test.payment.requirements.v1"
+    assert outcome.state["graph_version"] == 2
+    assert outcome.state["flow_version"] == 3
 
 
 def test_unsupported_case_type_fails_safe_to_human_review() -> None:

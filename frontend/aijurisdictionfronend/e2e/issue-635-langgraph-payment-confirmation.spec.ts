@@ -125,7 +125,9 @@ test("real local frontend executes persisted LangGraph interrupt/resume and revi
   const run = (await runResponse.json()) as Record<string, unknown>;
   expect(run.status).toBe("completed");
   expect(run.graph_key).toBe("legal_document_workflow");
+  expect(run.graph_version).toBe(2);
   expect(run.flow_key).toBe("sk.civil.payment_confirmation");
+  expect(run.flow_version).toBe(3);
   const eventsResponse = await request.get(
     `${apiBaseUrl}/v1/case-workflows/runs/${encodeURIComponent(String(run.workflow_run_id))}/events?user_id=${encodeURIComponent(input.user.userId)}`,
     { headers },
@@ -137,10 +139,10 @@ test("real local frontend executes persisted LangGraph interrupt/resume and revi
     "langgraph_run_started",
     "workflow_routed",
     "workflow_assignment_pinned",
-    "legal_requirements_retrieved",
     "input_validation_completed",
     "workflow_interrupted",
     "workflow_resumed",
+    "legal_requirements_retrieved",
     "output_validation_completed",
     "case_review_completed",
     "langgraph_run_completed",
@@ -149,6 +151,10 @@ test("real local frontend executes persisted LangGraph interrupt/resume and revi
   for (let index = 1; index < expectedEvents.length; index += 1) {
     expect(eventTypes.indexOf(expectedEvents[index]!)).toBeGreaterThan(eventTypes.indexOf(expectedEvents[index - 1]!));
   }
+  const retrievalEvent = events.find((event) => event.event_type === "legal_requirements_retrieved")!;
+  expect((retrievalEvent.details as Record<string, unknown>).retrieval_policy_id).toBe(
+    "sk.civil.payment_confirmation.legal_requirements.v1",
+  );
 
   const artifact = (run.artifacts as Array<Record<string, unknown>>)[0]!;
   expect(String(artifact.provider)).toBe(input.expectedProvider);
