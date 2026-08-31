@@ -139,3 +139,7 @@ observed node path, MCP source IDs, artifact IDs, and audit event IDs. It must a
 validation, final review, and completion/escalation events. Missing events, legacy routing, mocks,
 or unavailable prerequisites fail the test. Document scenarios also retain the PDF, first-page
 render, structural/text validation, and a stable final-state screenshot for at most seven days.
+When a flow exercises an external or registry tool, the manifest must additionally record the
+proposed and executed tool name, consent scope/text version/event ID, sanitized status and record
+count, and prove that the model received only flow-eligible definitions. Never retain raw tool
+inputs or records in the manifest.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import lru_cache
+import json
 import os
 from typing import Any, Sequence, cast
 import unicodedata
@@ -18,6 +20,7 @@ from app.case_workflows.models import (
 from app.case_workflows.registry import (
     LEGAL_DOCUMENT_GRAPH_VERSION,
     REGISTERED_GRAPHS,
+    VERIFIED_RETRIEVAL_GRAPH_VERSION,
     get_registered_graph,
 )
 from app.case_workflows.store import CaseWorkflowStore, WorkflowAssignmentNotFoundError
@@ -45,7 +48,15 @@ from aijurisdictionagents.orchestration.retrieval_policy import (
     build_mcp_retrieval_request,
     validate_mcp_retrieval_policy,
 )
+from aijurisdictionagents.orchestration.tool_policy import (
+    ToolPolicyError,
+    build_tool_inputs,
+    get_tool_policy,
+    validate_tool_policy,
+)
 from aijurisdictionagents.schemas import Document, Message
+from aijurisdictionagents.tools import ToolRegistry, build_default_tool_registry
+from aijurisdictionagents.tools.base import ToolDefinition
 
 
 class WorkflowConfigurationError(ValueError):
@@ -53,8 +64,91 @@ class WorkflowConfigurationError(ValueError):
 
 
 class ProductionCaseWorkflowServices:
-    def __init__(self, *, api_store: ApiDatabaseStore) -> None:
+    def __init__(
+        self,
+        *,
+        api_store: ApiDatabaseStore,
+        workflow_store: CaseWorkflowStore,
+        tool_registry: ToolRegistry | None = None,
+    ) -> None:
         self._api_store = api_store
+        self._workflow_store = workflow_store
+        self._tool_registry = tool_registry or build_default_tool_registry()
+
+    def available_tool_definitions(self) -> Sequence[ToolDefinition]:
+        return cast(Sequence[ToolDefinition], self._tool_registry.list_definitions())
+
+    def propose_optional_tools(
+        self, state: CaseWorkflowState, eligible_tools: Sequence[dict[str, Any]]
+    ) -> tuple[list[str], dict[str, str]]:
+        if not eligible_tools:
+            return [], {"status": "no_eligible_tools", "provider": "", "model": ""}
+        try:
+            route = get_routed_llm_client(
+                store=self._api_store,
+                user_id=state.get("user_id", ""),
+                task_type="tool_selection",
+                external_acknowledged=bool(
+                    state.get("external_provider_acknowledged", False)
+                ),
+            )
+            raw = route.client.complete(
+                "AIToolSelectionAgent",
+                (
+                    "Select the narrowest useful optional verification tool for the user's request. "
+                    "Use only the supplied eligible definitions. A proposal is not authorization. "
+                    "Return JSON only: {\"selected_tools\": [\"tool_name\"]} or an empty list. "
+                    "Select at most one tool and do not infer or reproduce personal data."
+                ),
+                [
+                    Message(
+                        role="user",
+                        agent_name="User",
+                        content=state.get("request_text", ""),
+                    )
+                ],
+                [
+                    Document(
+                        doc_id="eligible-workflow-tools",
+                        path="eligible-workflow-tools.json",
+                        content=json.dumps(list(eligible_tools), ensure_ascii=False),
+                    )
+                ],
+            )
+            payload = json.loads(_extract_json_object(raw))
+            raw_selected = payload.get("selected_tools", [])
+            selected = (
+                [str(item).strip() for item in raw_selected if str(item).strip()]
+                if isinstance(raw_selected, list)
+                else []
+            )
+            return selected[:1], {
+                "status": "model_proposed",
+                "provider": route.provider,
+                "model": route.model,
+                "route_type": route.route_type,
+            }
+        except Exception:
+            return [], {
+                "status": "selector_unavailable_fail_closed",
+                "provider": "",
+                "model": "",
+            }
+
+    def record_tool_consent(
+        self,
+        state: CaseWorkflowState,
+        *,
+        tool_name: str,
+        granted: bool,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._workflow_store.record_tool_consent(
+            state=state,
+            tool_name=tool_name,
+            granted=granted,
+            policy=policy,
+        )
 
     def retrieve_legal_requirements(
         self, state: CaseWorkflowState
@@ -64,7 +158,7 @@ class ProductionCaseWorkflowServices:
             case_type_key=state["case_type_key"],
             jurisdiction=state.get("jurisdiction", ""),
             verified_facts=state.get("verified_facts", {}),
-            strict=state.get("graph_version", 1) >= LEGAL_DOCUMENT_GRAPH_VERSION,
+            strict=state.get("graph_version", 1) >= VERIFIED_RETRIEVAL_GRAPH_VERSION,
         )
         context = build_mcp_law_context(
             query=request.query,
@@ -96,12 +190,77 @@ class ProductionCaseWorkflowServices:
     def execute_consented_tools(
         self, state: CaseWorkflowState, tool_names: Sequence[str]
     ) -> list[dict[str, Any]]:
-        del state
-        # Personal-data verification remains unavailable until task #389 consent policy is enforced.
-        return [
-            {"tool_name": name, "status": "disabled_pending_consent_governance", "verified": False}
-            for name in tool_names
-        ]
+        policies = validate_tool_policy(
+            state.get("flow_definition", {}).get("tool_policy"),
+            registry_definitions=self.available_tool_definitions(),
+            jurisdiction=state.get("jurisdiction", ""),
+            strict=True,
+        )
+        consent_by_tool = {
+            str(item.get("tool_name", "")): item
+            for item in state.get("tool_consents", [])
+            if isinstance(item, dict)
+        }
+        results: list[dict[str, Any]] = []
+        for tool_name in tool_names:
+            policy = get_tool_policy(policies, tool_name)
+            consent = consent_by_tool.get(tool_name, {})
+            consent_event_id = str(consent.get("consent_event_id", ""))
+            ledger = self._workflow_store.get_tool_consent(
+                consent_event_id=consent_event_id,
+                workflow_run_id=state["workflow_run_id"],
+                user_id=state.get("user_id", ""),
+            )
+            if (
+                policy is None
+                or ledger is None
+                or str(ledger.get("decision")) != "granted"
+                or str(ledger.get("tool_name")) != tool_name
+                or str(ledger.get("consent_scope")) != policy.consent_scope
+                or str(ledger.get("consent_text_version")) != policy.consent_text_version
+            ):
+                results.append(
+                    {
+                        "tool_name": tool_name,
+                        "status": "blocked_missing_policy_bound_consent",
+                        "verified": False,
+                    }
+                )
+                continue
+            idempotency_key = f"{state['workflow_run_id']}:{tool_name}:{consent_event_id}"
+            existing = self._workflow_store.get_tool_execution(
+                idempotency_key=idempotency_key
+            )
+            if existing is not None:
+                results.append(existing)
+                continue
+            inputs = build_tool_inputs(policy, state.get("verified_facts", {}))
+            execution = _run_tool_with_timeout(
+                registry=self._tool_registry,
+                tool_name=tool_name,
+                inputs=inputs,
+                timeout_seconds=policy.timeout_seconds,
+            )
+            summary = {
+                "tool_name": tool_name,
+                "status": execution["status"],
+                "verified": execution["verified"],
+                "record_count": execution["record_count"],
+                "provider": policy.provider,
+                "purpose": policy.purpose,
+                "consent_event_id": consent_event_id,
+                "consent_text_version": policy.consent_text_version,
+                "policy_provenance": f"{state['flow_key']}@{state['flow_version']}",
+            }
+            results.append(
+                self._workflow_store.record_tool_execution(
+                    state=state,
+                    tool_name=tool_name,
+                    consent_event_id=consent_event_id,
+                    result_summary=summary,
+                )
+            )
+        return results
 
     def draft_documents(
         self, state: CaseWorkflowState
@@ -245,9 +404,18 @@ class CaseWorkflowApplicationService:
                     flow.definition.get("mcp_retrieval"),
                     case_type_key=payload.case_type_key,
                     jurisdiction=payload.jurisdiction,
-                    strict=payload.graph_version >= LEGAL_DOCUMENT_GRAPH_VERSION,
+                    strict=payload.graph_version >= VERIFIED_RETRIEVAL_GRAPH_VERSION,
                 )
             except McpRetrievalPolicyError as exc:
+                raise WorkflowConfigurationError(str(exc)) from exc
+            try:
+                validate_tool_policy(
+                    flow.definition.get("tool_policy"),
+                    registry_definitions=self.runtime.available_tool_definitions(),
+                    jurisdiction=payload.jurisdiction,
+                    strict=payload.graph_version >= LEGAL_DOCUMENT_GRAPH_VERSION,
+                )
+            except ToolPolicyError as exc:
                 raise WorkflowConfigurationError(str(exc)) from exc
         if payload.graph_key == "unsupported_or_human_review" and bool(
             flow.definition.get("automated_finalization", True)
@@ -514,12 +682,16 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
         checkpointer.setup()
     else:
         checkpointer = InMemorySaver()
+    workflow_store = CaseWorkflowStore.from_env()
     runtime = CaseWorkflowRuntime(
-        services=ProductionCaseWorkflowServices(api_store=api_store),
+        services=ProductionCaseWorkflowServices(
+            api_store=api_store,
+            workflow_store=workflow_store,
+        ),
         checkpointer=cast(Any, checkpointer),
     )
     service = CaseWorkflowApplicationService(
-        store=CaseWorkflowStore.from_env(),
+        store=workflow_store,
         flow_store=get_flow_pack_store(),
         template_store=get_document_template_store(),
         runtime=runtime,
@@ -655,6 +827,38 @@ def _canonical_route_text(value: str) -> str:
     )
 
 
+def _extract_json_object(value: str) -> str:
+    content = value.strip()
+    start = content.find("{")
+    end = content.rfind("}")
+    return content[start : end + 1] if start >= 0 and end > start else "{}"
+
+
+def _run_tool_with_timeout(
+    *,
+    registry: ToolRegistry,
+    tool_name: str,
+    inputs: dict[str, str],
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workflow-tool")
+    future = executor.submit(registry.run, tool_name, **inputs)
+    try:
+        result = future.result(timeout=timeout_seconds)
+        return {
+            "status": "succeeded" if result.ok else "failed",
+            "verified": bool(result.ok and result.records),
+            "record_count": len(result.records),
+        }
+    except FutureTimeoutError:
+        future.cancel()
+        return {"status": "timed_out", "verified": False, "record_count": 0}
+    except Exception:
+        return {"status": "failed", "verified": False, "record_count": 0}
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def _normalize_generated_draft(value: str, *, verified_facts: dict[str, str]) -> str:
     """Remove placeholders and preserve every user-verified fact without inference."""
     lines = [line for line in value.splitlines() if "[" not in line and "]" not in line]
@@ -738,6 +942,23 @@ def _is_template_first_employment_request(
 def workflow_user_reply(run: WorkflowRunResponse, *, language: str) -> str:
     sk = not language.lower().startswith(("en", "de"))
     if run.status == "waiting_for_user":
+        if run.pending_action.get("type") == "tool_consent":
+            provider = str(run.pending_action.get("provider", "external provider"))
+            purpose = str(run.pending_action.get("purpose", "optional verification"))
+            fields = ", ".join(
+                str(item) for item in run.pending_action.get("permitted_data_fields", [])
+            )
+            return (
+                f"LangGraph navrhol voliteľnú kontrolu cez {provider}. Účel: {purpose} "
+                f"Údaje: {fields}. Súhlas platí iba pre tento beh. "
+                "Odpovedzte presne „Súhlasím“ alebo „Nesúhlasím“."
+                if sk
+                else (
+                    f"LangGraph proposed an optional check through {provider}. Purpose: {purpose} "
+                    f"Data: {fields}. Consent applies to this run only. "
+                    "Reply exactly 'Yes' or 'No'."
+                )
+            )
         field = str(run.pending_action.get("field", "required fact"))
         return (
             f"Workflow LangGraph potrebuje doplniť povinný údaj: {field}."
@@ -745,13 +966,27 @@ def workflow_user_reply(run: WorkflowRunResponse, *, language: str) -> str:
             else f"The LangGraph workflow needs the required fact: {field}."
         )
     if run.status == "completed":
+        completed_tools = [
+            f"{item.get('tool_name')} ({item.get('status')})"
+            for item in run.tool_results
+            if item.get("tool_name")
+        ]
+        tool_disclosure = (
+            ("\n\nLangGraph vykonal nástroj: " + ", ".join(completed_tools) + ".")
+            if completed_tools and sk
+            else (
+                "\n\nLangGraph executed tool: " + ", ".join(completed_tools) + "."
+                if completed_tools
+                else ""
+            )
+        )
         disclosure = (
             "\n\nNávrh bol pripravený s podporou AI, overený nakonfigurovanými kontrolami "
             "a pred právnym použitím vyžaduje ľudskú kontrolu."
             if sk
             else "\n\nThis AI-assisted draft passed the configured checks and requires human review before legal use."
         )
-        return f"{run.final_answer}{disclosure}".strip()
+        return f"{run.final_answer}{tool_disclosure}{disclosure}".strip()
     return (
         "Automatizovaný workflow bol bezpečne zastavený a vyžaduje ľudskú kontrolu."
         if sk

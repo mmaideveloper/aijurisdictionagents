@@ -116,5 +116,10 @@ and human oversight. For `legal_document_workflow@2`, `mcp_retrieval` must inclu
 `schema_version`, a stable `policy_id`, `case_type_keys`, `jurisdictions`, a reviewed `default_query`,
 bounded `search_limit`/`text_limit`, and optional `fact_query_mappings`. Fact mappings recognize
 only reviewed aliases and select one reviewed search query; they never append raw fact values.
+For `legal_document_workflow@3`, the immutable flow must also provide `tool_policy` schema version 1.
+Each allowlisted entry binds a registered tool name to its purpose, provider, required verified
+fact keys, input mapping, permitted data fields, jurisdiction, bounded timeout, consent scope, and
+consent-text version. The LLM sees only eligible definitions and can propose at most one tool;
+execution still requires an exact per-run ledger grant.
 Assignment validation rejects disabled, deleted, draft, incompatible, or unregistered graph/flow combinations.
 See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.

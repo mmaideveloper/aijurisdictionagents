@@ -10,6 +10,7 @@ from aijurisdictionagents.orchestration.case_workflow import (
     DeterministicCaseWorkflowServices,
     build_initial_case_workflow_state,
 )
+from aijurisdictionagents.tools import build_default_tool_registry
 
 
 def main() -> None:
@@ -20,6 +21,7 @@ def main() -> None:
         services=DeterministicCaseWorkflowServices(
             legal_requirements=({"content": "Synthetic § 569 requirement"},),
             legal_source_ids=("synthetic-law-569",),
+            tool_definitions=build_default_tool_registry().list_definitions(),
         ),
         checkpointer=InMemorySaver(),
     )
@@ -37,9 +39,9 @@ def main() -> None:
             routing_confidence=1.0,
             routing_evidence=["demo exact match"],
             graph_key="legal_document_workflow",
-            graph_version=2,
+            graph_version=3,
             flow_key="sk.civil.payment_confirmation",
-            flow_version=3,
+            flow_version=4,
             flow_definition={
                 "required_facts": ["payer", "recipient", "amount"],
                 "conditional_facts": [],
@@ -52,7 +54,24 @@ def main() -> None:
                     "query_keys": ["payment_confirmation_legal_requirements"],
                     "default_query": "potvrdenie",
                 },
-                "optional_tools": [],
+                "tool_policy": {
+                    "schema_version": 1,
+                    "policy_id": "demo.payment.tools.v1",
+                    "tools": [
+                        {
+                            "name": "registeradries_address_validate",
+                            "purpose": "Map the recipient address for this demo run.",
+                            "provider": "registeradries.sk mapping",
+                            "consent_scope": "demo.address.once",
+                            "consent_text_version": "workflow-tool-consent-v1",
+                            "required_fact_keys": ["recipient"],
+                            "input_mapping": {"address_text": "recipient"},
+                            "permitted_data_fields": ["recipient"],
+                            "jurisdictions": ["SK"],
+                            "timeout_seconds": 5,
+                        }
+                    ],
+                },
             },
         )
     )
@@ -61,10 +80,18 @@ def main() -> None:
         print(f"interrupt => {outcome.interrupts[0]['field']}")
         outcome = runtime.resume(
             graph_key="legal_document_workflow",
-            graph_version=2,
+            graph_version=3,
             workflow_run_id=run_id,
             value=value,
         )
+    assert outcome.interrupts[0]["type"] == "tool_consent"
+    print(f"interrupt => consent for {outcome.interrupts[0]['tool_name']}")
+    outcome = runtime.resume(
+        graph_key="legal_document_workflow",
+        graph_version=3,
+        workflow_run_id=run_id,
+        value="Súhlasím",
+    )
     print(f"status => {outcome.state['status']}")
     print(outcome.state["final_answer"])
     print("events => " + ", ".join(event["event_type"] for event in outcome.state["events"]))

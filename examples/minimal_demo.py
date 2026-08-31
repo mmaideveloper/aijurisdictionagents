@@ -36,8 +36,8 @@ print(
 )
 print(
     "langgraph_case_orchestration => run python examples/langgraph_case_workflow_demo.py; "
-    "the demo proves typed routing, pinned versions, interrupt/resume, deterministic review, "
-    "and sanitized ordered audit events without external data or credentials."
+    "the demo proves typed routing, pinned versions, interrupt/resume, constrained tool consent, "
+    "deterministic review, and sanitized ordered audit events without external data or credentials."
 )
 print(
     "latest_law_research_routing => standalone latest-law questions bypass ambiguous or waiting "

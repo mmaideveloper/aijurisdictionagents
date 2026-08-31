@@ -29,6 +29,8 @@ from aijurisdictionagents.orchestration.case_workflow import (
     DeterministicCaseWorkflowServices,
 )
 from aijurisdictionagents.schemas import Document
+from aijurisdictionagents.tools import ToolRegistry, build_default_tool_registry
+from aijurisdictionagents.tools.base import ToolDefinition, ToolResult
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 ADMIN_HEADERS = {**AUTH_HEADERS, "x-admin-api-key": "admin-secret"}
@@ -75,6 +77,7 @@ def _service(
             services=DeterministicCaseWorkflowServices(
                 legal_requirements=({"content": "Synthetic legal requirement"},),
                 legal_source_ids=("synthetic-law-1",),
+                tool_definitions=build_default_tool_registry().list_definitions(),
             ),
             checkpointer=InMemorySaver(),
         ),
@@ -83,7 +86,7 @@ def _service(
     return service
 
 
-def test_default_assignment_preserves_legacy_versions_and_selects_policy_v3(
+def test_default_assignment_preserves_legacy_versions_and_selects_consented_tools_v4(
     tmp_path: Path,
 ) -> None:
     flow_path = tmp_path / "flows.sqlite3"
@@ -115,8 +118,8 @@ def test_default_assignment_preserves_legacy_versions_and_selects_policy_v3(
         case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
     )
 
-    assert assignment.graph_version == 2
-    assert assignment.flow_version == 3
+    assert assignment.graph_version == 3
+    assert assignment.flow_version == 4
     assert upgraded_store.get(
         flow_key="sk.civil.payment_confirmation", version=1, jurisdiction="SK"
     ).definition == legacy_definition
@@ -145,7 +148,9 @@ def test_production_retrieval_uses_policy_query_and_excludes_unmapped_identity(
         )
 
     monkeypatch.setattr("app.case_workflows.service.build_mcp_law_context", fake_context)
-    service = ProductionCaseWorkflowServices(api_store=cast(Any, object()))
+    service = ProductionCaseWorkflowServices(
+        api_store=cast(Any, object()), workflow_store=cast(Any, object())
+    )
     requirements, source_ids = service.retrieve_legal_requirements(
         cast(
             Any,
@@ -185,6 +190,170 @@ def test_production_retrieval_uses_policy_query_and_excludes_unmapped_identity(
     assert captured["text_limit"] == 2
     assert requirements[0]["source_id"] == "synthetic-mcp-law"
     assert source_ids == ["synthetic-law-1"]
+
+
+class _CountingAddressTool:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @property
+    def definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="registeradries_address_validate",
+            purpose="Synthetic address validation",
+            input_fields=("address_text",),
+        )
+
+    def run(self, **kwargs: Any) -> ToolResult:
+        self.calls += 1
+        assert kwargs == {"address_text": "Testovacia 1, 811 01 Bratislava"}
+        return ToolResult(
+            tool_name=self.definition.name,
+            ok=True,
+            records=({"raw_personal_data": kwargs["address_text"]},),
+            message="Synthetic record mapped",
+        )
+
+
+def test_production_tool_execution_requires_ledger_sanitizes_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    workflow_store = CaseWorkflowStore(
+        CaseWorkflowStoreConfig(
+            db_option="local", db_cloud="", sqlite_path=tmp_path / "tool-ledger.sqlite3"
+        )
+    )
+    tool = _CountingAddressTool()
+    service = ProductionCaseWorkflowServices(
+        api_store=cast(Any, object()),
+        workflow_store=workflow_store,
+        tool_registry=ToolRegistry(_tools={tool.definition.name: tool}),
+    )
+    policy = {
+        "schema_version": 1,
+        "policy_id": "test.address.v1",
+        "tools": [
+            {
+                "name": tool.definition.name,
+                "purpose": "Validate a synthetic address",
+                "provider": "synthetic-register",
+                "consent_scope": "test.address.once",
+                "consent_text_version": "workflow-tool-consent-v1",
+                "required_fact_keys": ["recipient_identification"],
+                "input_mapping": {"address_text": "recipient_identification"},
+                "permitted_data_fields": ["recipient_identification"],
+                "jurisdictions": ["SK"],
+                "timeout_seconds": 5,
+            }
+        ],
+    }
+    state = cast(
+        Any,
+        {
+            "workflow_run_id": "synthetic-run-tool-1",
+            "correlation_id": "synthetic-correlation-tool-1",
+            "case_id": "synthetic-case-tool-1",
+            "user_id": "synthetic-user-tool-1",
+            "jurisdiction": "SK",
+            "flow_key": "test.flow",
+            "flow_version": 1,
+            "verified_facts": {
+                "recipient_identification": "Testovacia 1, 811 01 Bratislava"
+            },
+            "flow_definition": {"tool_policy": policy},
+            "tool_consents": [],
+        },
+    )
+    blocked = service.execute_consented_tools(state, [tool.definition.name])
+    assert blocked[0]["status"] == "blocked_missing_policy_bound_consent"
+    assert tool.calls == 0
+    consent = workflow_store.record_tool_consent(
+        state=state,
+        tool_name=tool.definition.name,
+        granted=True,
+        policy={
+            "provider": "synthetic-register",
+            "purpose": "Validate a synthetic address",
+            "consent_scope": "test.address.once",
+            "consent_text_version": "workflow-tool-consent-v1",
+            "permitted_data_fields": ["recipient_identification"],
+        },
+    )
+    state["tool_consents"] = [consent]
+
+    first = service.execute_consented_tools(state, [tool.definition.name])
+    second = service.execute_consented_tools(state, [tool.definition.name])
+
+    assert first == second
+    assert first[0]["status"] == "succeeded"
+    assert first[0]["record_count"] == 1
+    assert "records" not in first[0]
+    assert "raw_personal_data" not in str(first[0])
+    assert tool.calls == 1
+
+
+def test_model_tool_selector_receives_only_flow_eligible_definitions(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class _SelectorClient:
+        def complete(
+            self,
+            agent_name: str,
+            system_prompt: str,
+            conversation: Any,
+            documents: Any,
+        ) -> str:
+            captured["agent_name"] = agent_name
+            captured["system_prompt"] = system_prompt
+            captured["documents"] = documents
+            return '{"selected_tools":["registeradries_address_validate"]}'
+
+    monkeypatch.setattr(
+        "app.case_workflows.service.get_routed_llm_client",
+        lambda **kwargs: SimpleNamespace(
+            client=_SelectorClient(),
+            provider="azurefoundry-eu",
+            model="synthetic-model-route",
+            route_type="default",
+        ),
+    )
+    workflow_store = CaseWorkflowStore(
+        CaseWorkflowStoreConfig(
+            db_option="local", db_cloud="", sqlite_path=tmp_path / "selector.sqlite3"
+        )
+    )
+    service = ProductionCaseWorkflowServices(
+        api_store=cast(Any, object()), workflow_store=workflow_store
+    )
+    eligible = [
+        {
+            "name": "registeradries_address_validate",
+            "purpose": "Validate a recipient address",
+            "provider": "registeradries.sk mapping",
+            "input_fields": ["address_text"],
+            "required_fact_keys": ["recipient_identification"],
+        }
+    ]
+
+    selected, metadata = service.propose_optional_tools(
+        cast(
+            Any,
+            {
+                "user_id": "synthetic-user",
+                "request_text": "Validate the recipient address.",
+                "external_provider_acknowledged": True,
+            },
+        ),
+        eligible,
+    )
+
+    exposed = json.loads(captured["documents"][0].content)
+    assert selected == ["registeradries_address_validate"]
+    assert exposed == eligible
+    assert "obchodny_register_company_check" not in str(exposed)
+    assert metadata["provider"] == "azurefoundry-eu"
 
 
 def test_every_enabled_slovak_case_type_has_a_valid_active_assignment(tmp_path: Path) -> None:
@@ -246,6 +415,14 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
             )
             assert resumed.status_code == 200, resumed.text
             run = resumed.json()
+        assert run["pending_action"]["type"] == "tool_consent"
+        consented = client.post(
+            f"/v1/case-workflows/runs/{run['workflow_run_id']}/resume",
+            headers=AUTH_HEADERS,
+            json={"user_id": "synthetic-user-635", "value": "Súhlasím"},
+        )
+        assert consented.status_code == 200, consented.text
+        run = consented.json()
         assert run["status"] == "completed"
         assert run["review_decisions"]["output"] == "passed"
         assert run["review_decisions"]["case"] == "approved"
