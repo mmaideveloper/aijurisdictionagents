@@ -74,6 +74,29 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     }
     assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
 
+    lease = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
+    assert lease.source_url == "https://www.aksamec.sk/najomna-zmluva-vzor-2026/"
+    assert "§ 685 a nasl. zákona č. 40/1964 Zb." in lease.body
+    assert "Článok I" in lease.body
+    assert "Článok III" in lease.body
+    assert "Článok VI" in lease.body
+    assert "{{landlord_identification}}" in lease.body
+    assert "{{tenant_identification}}" in lease.body
+    assert "{{utilities_terms}}" in lease.body
+    assert "principal_identification" not in lease.placeholders
+    assert "landlord_identification" in lease.placeholders
+    assert "property_identification" in lease.placeholders
+    assert "termination_terms" in lease.placeholders
+    assert {reference.source_kind for reference in lease.source_refs} == {
+        "external_template_page",
+        "official_legislation",
+    }
+    assert {reference.url for reference in lease.source_refs} == {
+        "https://www.aksamec.sk/najomna-zmluva-vzor-2026/",
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1964/40/",
+    }
+    assert "ľudskú a právnu kontrolu" in lease.disclaimer_footer
+
 
 def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
@@ -103,6 +126,34 @@ def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_
     assert unchanged.version == 3
 
 
+def test_document_template_store_versions_legacy_empty_lease_seed_once(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    empty_version = store.update(
+        template_key="sk.real_estate.lease_agreement",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(body=""),
+    )
+    assert empty_version.version == 2
+
+    refreshed = DocumentTemplateStore(config).get(
+        template_key="sk.real_estate.lease_agreement",
+        jurisdiction="SK",
+    )
+    assert refreshed.version == 3
+    assert "Článok I" in refreshed.body
+
+    unchanged = DocumentTemplateStore(config).get(
+        template_key="sk.real_estate.lease_agreement",
+        jurisdiction="SK",
+    )
+    assert unchanged.version == 3
+
+
 def test_document_template_store_does_not_overwrite_non_empty_employment_body(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
         db_option="sqlite",
@@ -127,6 +178,32 @@ def test_document_template_store_does_not_overwrite_non_empty_employment_body(tm
     assert reloaded.version == 2
     assert reloaded.body == "CUSTOM PRACOVNA ZMLUVA\n\nČlánok I\nVlastné znenie."
     assert reloaded.source_url == "https://example.com/custom-pracovna-zmluva"
+
+
+def test_document_template_store_does_not_overwrite_non_empty_lease_body(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    customized = store.update(
+        template_key="sk.real_estate.lease_agreement",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(
+            body="CUSTOM NAJOMNA ZMLUVA\n\nČlánok I\nVlastné znenie.",
+            source_url="https://example.com/custom-najomna-zmluva",
+        ),
+    )
+    assert customized.version == 2
+
+    reloaded = DocumentTemplateStore(config).get(
+        template_key="sk.real_estate.lease_agreement",
+        jurisdiction="SK",
+    )
+    assert reloaded.version == 2
+    assert reloaded.body == "CUSTOM NAJOMNA ZMLUVA\n\nČlánok I\nVlastné znenie."
+    assert reloaded.source_url == "https://example.com/custom-najomna-zmluva"
 
 
 def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
@@ -163,6 +240,37 @@ def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path:
     assert rendered.follow_up_question is None
 
 
+def test_lease_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    template = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
+
+    rendered = render_template(
+        template=template,
+        facts={
+            "prenajimatel": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
+            "najomca": "Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava",
+            "adresa_nehnutelnosti": "Byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad",
+            "doba_najmu": "na dobu určitú od 01.05.2026 do 30.04.2027",
+            "najomne": "600 EUR mesačne, splatné do 5. dňa príslušného mesiaca",
+            "kaucia": "600 EUR",
+            "ucel_najmu": "na bývanie nájomcu",
+            "sluzby": "elektrina a plyn podľa spotreby, voda a správa podľa vyúčtovania",
+            "odovzdanie": "pri podpise odovzdávacieho protokolu s odpočtom meračov",
+            "vypovedna_lehota": "1 mesiac pri zmluve na dobu neurčitú, ak zákon neustanovuje inak",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    rendered_text = "\n".join(rendered.lines)
+    assert "Ján Novák" in rendered_text
+    assert "Mária Kováčová" in rendered_text
+    assert "Ludvíka Svobodu 2953/50" in rendered_text
+    assert "600 EUR mesačne" in rendered_text
+    assert rendered.missing_required_fields == []
+    assert rendered.follow_up_question is None
+
+
 def test_employment_template_reports_first_missing_required_field(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     template = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
@@ -191,6 +299,27 @@ def test_employment_template_reports_first_missing_required_field(tmp_path: Path
     assert rendered.missing_required_fields == ["start_date"]
     assert rendered.follow_up_question == "Aký je dohodnutý deň nástupu do práce?"
     assert "start_date" in rendered.unresolved_fields
+
+
+def test_lease_template_reports_first_missing_required_field(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    template = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
+
+    rendered = render_template(
+        template=template,
+        facts={
+            "prenajimatel": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
+            "adresa_nehnutelnosti": "Byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad",
+            "doba_najmu": "na dobu určitú od 01.05.2026 do 30.04.2027",
+            "najomne": "600 EUR mesačne, splatné do 5. dňa príslušného mesiaca",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert rendered.missing_required_fields == ["tenant_identification"]
+    assert rendered.follow_up_question == "Kto je nájomca a ako má byť v zmluve presne označený?"
+    assert "tenant_identification" in rendered.unresolved_fields
 
 
 def test_employment_profile_defaults_fill_missing_identity_fields() -> None:
@@ -353,13 +482,25 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     preview_text = "\n".join(
         page.extract_text() or "" for page in PdfReader(BytesIO(preview_response.content)).pages
     )
-    assert "Dolezite upozornenie" in preview_text
+    preview_text_normalized = _canonical_text(preview_text)
+    assert "dolezite upozornenie" in preview_text_normalized
     assert "JurisDigta" in preview_text
     assert "Skore overenia dokumentu: -" in preview_text
     assert "právny návrh" in preview_text
     assert "Poprad, Slovakia, 05801" in preview_text
     assert "Template preview" not in preview_text
     assert "sk.real_estate.lease_agreement" not in preview_text
+    assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in preview_text
+    assert "https://www.aksamec.sk/najomna-zmluva-vzor-2026/" not in preview_text
+    assert "PREDMET NÁJMU" in preview_text
+    assert "NÁJOMNÉ A PLATOBNÉ PODMIENKY" in preview_text
+    assert "Ján Novák" in preview_text
+    assert "Mária Kováčová" in preview_text
+    assert "ludvika svobodu 2953/50" in preview_text_normalized
+    assert "individualnu" in preview_text_normalized
+    assert "ludsku kontrolu" in preview_text_normalized
+    assert "Nevyriešené polia náhľadu" not in preview_text
+    assert "Prvá odporúčaná doplňujúca otázka" not in preview_text
 
     employment_preview = client.get(
         "/v1/document-templates/sk.employment.employment_contract/preview/pdf",

@@ -804,7 +804,8 @@ class DocumentTemplateStore:
         canonical_by_key = {
             item.template_key: item
             for item in build_default_document_templates()
-            if item.template_key == "sk.employment.employment_contract" and item.body.strip()
+            if item.template_key in {"sk.employment.employment_contract", "sk.real_estate.lease_agreement"}
+            and item.body.strip()
         }
         for template_key, canonical in canonical_by_key.items():
             try:
