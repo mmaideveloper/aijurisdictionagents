@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from io import BytesIO
 from pathlib import Path
+import sqlite3
 import unicodedata
 
 from fastapi import FastAPI
@@ -176,6 +178,76 @@ def test_document_template_store_versions_legacy_empty_sale_purchase_seed_once(t
         jurisdiction="SK",
     )
     assert unchanged.version == 3
+
+
+def test_document_template_store_upgrades_legacy_sale_purchase_seed_once(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    DocumentTemplateStore(config)
+    with sqlite3.connect(config.sqlite_path) as connection:
+        connection.execute(
+            """
+            UPDATE document_templates
+            SET source_url = ?, source_format = ?, body = ?, keywords_json = ?, placeholders_json = ?,
+                source_refs_json = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE template_key = ? AND jurisdiction = ? AND version = ?
+            """,
+            (
+                "https://www.aksamec.sk/vzory/",
+                "DOCX/PDF",
+                "Kupna zmluva\n\nPredavajuci: {{seller_identification}}\nKupujuci: {{buyer_identification}}\n",
+                json.dumps(
+                    ["kupno predajna zmluva", "kupna zmluva", "predaj nehnutelnosti", "predaj"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    [
+                        "seller_identification",
+                        "buyer_identification",
+                        "subject_description",
+                        "purchase_price",
+                        "payment_terms",
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                json.dumps(
+                    [
+                        {
+                            "label": "AK Samec vzory",
+                            "url": "https://www.aksamec.sk/vzory/",
+                            "publisher": "AK Samec",
+                            "source_kind": "external_template_index",
+                            "notes": "Seed URL dodana pouzivatelom.",
+                        }
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "sk.real_estate.sale_purchase",
+                "SK",
+                1,
+            ),
+        )
+        connection.commit()
+
+    refreshed = DocumentTemplateStore(config).get(
+        template_key="sk.real_estate.sale_purchase",
+        jurisdiction="SK",
+    )
+    assert refreshed.version == 2
+    assert refreshed.source_url == "https://www.aksamec.sk/kupna-zmluva-2026/"
+    assert "Článok I" in refreshed.body
+
+    unchanged = DocumentTemplateStore(config).get(
+        template_key="sk.real_estate.sale_purchase",
+        jurisdiction="SK",
+    )
+    assert unchanged.version == 2
 
 
 def test_document_template_store_does_not_overwrite_non_empty_employment_body(tmp_path: Path) -> None:

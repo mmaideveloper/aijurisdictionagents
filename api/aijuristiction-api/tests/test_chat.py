@@ -1245,6 +1245,77 @@ def test_document_export_title_uses_requested_legal_document_type() -> None:
     assert str(session_id) not in title
 
 
+def test_document_export_renders_sale_purchase_from_canonical_template(tmp_path) -> None:
+    import app.chat.api as chat_api
+    from app.chat.models import Message, MessageRole, SessionResult
+    import app.document_templates.store as template_store_module
+
+    template_store_module._store = template_store_module.DocumentTemplateStore(
+        template_store_module.DocumentTemplateStoreConfig(
+            db_option="sqlite",
+            db_cloud="",
+            sqlite_path=tmp_path / "document_templates.sqlite3",
+        )
+    )
+    session_id = uuid4()
+    messages = [
+        Message(
+            session_id=session_id,
+            role=MessageRole.USER,
+            agent_name="User",
+            content=(
+                "Priprav kupno-predajnu zmluvu.\n"
+                "Predávajúci: Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad.\n"
+                "Kupujúci: Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava.\n"
+                "Nehnuteľnosť: byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad, zapísaný na LV č. 1234.\n"
+                "Kúpna cena: 154 000 EUR.\n"
+                "Platobné podmienky: notárska úschova s uvoľnením po povolení vkladu.\n"
+                "Ťarchy: bez tiarch okrem zákonných obmedzení uvedených na LV.\n"
+                "Stav nehnuteľnosti: v stave známom kupujúcemu po osobnej obhliadke.\n"
+                "Termín odovzdania: do 5 pracovných dní od povolenia vkladu.\n"
+                "Návrh na vklad podá: kupujúci."
+            ),
+        )
+    ]
+    result = SessionResult(
+        final_recommendation="Pripravil som kupno-predajnu zmluvu podla zadanych udajov.",
+        judge_rationale="Direct lawyer reply prepared for session export.",
+        metadata={"document_ready": True},
+    )
+
+    title, lines = chat_api._build_document_export_content(
+        session_id=session_id,
+        messages=messages,
+        result=result,
+        country="SK",
+        language="sk-SK",
+    )
+
+    normalized_title = _canonical_text(title)
+    raw_lines = " ".join(lines)
+    normalized_lines = chat_api._canonicalize_document_text(" ".join(lines))
+    assert normalized_title == "kupno-predajna zmluva"
+    assert "Článok I" in raw_lines
+    assert "Článok IV" in raw_lines
+    assert "KÚPNA CENA A PLATOBNÉ PODMIENKY" in raw_lines
+    assert "154 000 eur" in normalized_lines
+
+
+def test_generated_sale_purchase_document_uses_legal_filename() -> None:
+    from app.chat.api import _generated_case_document_filename_for_storage
+
+    content = (
+        "Pripravim kupno-predajnu zmluvu na zaklade poskytnutych udajov.\n\n"
+        "**Kupno-predajna zmluva**\n\n"
+        "Článok I\n"
+        "Predávajúci prevádza vlastnícke právo na kupujúceho.\n"
+    )
+
+    filename = _generated_case_document_filename_for_storage(content, timestamp="20260831T104500Z")
+
+    assert filename == "kupno_predajna_zmluva_20260831T104500Z.pdf"
+
+
 def test_document_export_uses_user_profile_defaults_for_missing_party_data() -> None:
     from app.chat.api import _build_document_export_content
     from app.chat.models import Message, MessageRole, SessionResult

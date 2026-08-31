@@ -4242,6 +4242,8 @@ def _generated_case_document_legal_title(value: str) -> str:
     title = re.sub(r"\([^)]*(?:verzia|version|jazyk|language)[^)]*\)", "", value, flags=re.IGNORECASE)
     title = re.sub(r"\s+", " ", title.strip().strip("*#:- "))
     normalized = _canonicalize_document_text(title)
+    if _mentions_purchase_sale_document(normalized):
+        return "Kupno-predajna zmluva"
     if "power of attorney" in normalized:
         return "Power of Attorney"
     if "splnomocnenie" in normalized or "plnomocenstvo" in normalized:
@@ -6739,6 +6741,10 @@ def _looks_like_exportable_legal_document_body(content: str) -> bool:
 
 def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
     lowered = _canonicalize_document_text(title)
+    if document_kind == "sale_purchase" or any(
+        token in lowered for token in ("kupno", "predajn", "purchase agreement", "sale agreement")
+    ):
+        return "contract"
     if document_kind == "employment_contract" or any(
         token in lowered for token in ("pracovn", "employment contract", "zamestnan", "zakonnik prace")
     ):
@@ -6765,6 +6771,8 @@ def _fallback_document_entry_type(*, title: str, document_kind: str) -> str:
 
 
 def _fallback_document_entry_filename(title: str, *, document_kind: str, entry_type: str) -> str:
+    if document_kind == "sale_purchase":
+        return "Kupno_predajna_zmluva.pdf"
     if document_kind == "employment_contract":
         return "Pracovna_zmluva.pdf"
     if document_kind == "rental_agreement":
@@ -6886,6 +6894,15 @@ def _build_document_export_content(
             lines = _build_slovak_payment_confirmation_lines(facts)
             lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
             return title, _strip_duplicate_body_title(title=title, lines=lines)
+        if document_kind == "sale_purchase":
+            return _build_sale_purchase_document_asset_content(
+                entry={},
+                facts=facts,
+                country=country,
+                language=language,
+                law_citation_lines=law_citation_lines,
+                fallback_index=1,
+            )
         if document_kind == "employment_contract":
             return _build_employment_contract_document_asset_content(
                 entry={},
@@ -6922,6 +6939,15 @@ def _build_document_export_content(
         lines = _build_english_payment_confirmation_lines(facts)
         lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
         return title, _strip_duplicate_body_title(title=title, lines=lines)
+    if document_kind == "sale_purchase":
+        return _build_sale_purchase_document_asset_content(
+            entry={},
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+            fallback_index=1,
+        )
     if document_kind == "employment_contract":
         return _build_employment_contract_document_asset_content(
             entry={},
@@ -7106,6 +7132,8 @@ def _document_asset_filename(
         raw_name = str(entry.get("filename") or entry.get("path") or "").strip()
     candidate = Path(raw_name).name if raw_name else ""
     if not candidate:
+        if document_kind == "sale_purchase":
+            return "Kupno_predajna_zmluva.pdf"
         if document_kind == "employment_contract":
             return "Pracovna_zmluva.pdf"
         return fallback_filename
@@ -7169,7 +7197,7 @@ def _is_third_party_document(
     title: str,
     lines: list[str],
 ) -> bool:
-    if document_kind in {"rental_agreement", "share_transfer", "easement_demand", "employment_contract"}:
+    if document_kind in {"sale_purchase", "rental_agreement", "share_transfer", "easement_demand", "employment_contract"}:
         return True
     entry_type = _canonicalize_document_text(str((entry or {}).get("type") or ""))
     if entry_type in {"contract", "minutes", "articles", "registry_filing", "handover_protocol", "inventory"}:
@@ -7287,6 +7315,15 @@ def _build_document_asset_content(
             language=language,
             law_citation_lines=law_citation_lines,
         )
+    if document_kind == "sale_purchase":
+        return _build_sale_purchase_document_asset_content(
+            entry=entry,
+            facts=facts,
+            country=country,
+            language=language,
+            law_citation_lines=law_citation_lines,
+            fallback_index=fallback_index,
+        )
     if document_kind == "employment_contract":
         return _build_employment_contract_document_asset_content(
             entry=entry,
@@ -7326,6 +7363,9 @@ def _document_asset_title(
         stem = Path(raw_name).stem.replace("_", " ").replace("-", " ").strip()
         if stem:
             return stem
+    if document_kind == "sale_purchase":
+        prefers_slovak = (language or "").strip().lower().startswith("sk")
+        return "Kupno-predajna zmluva" if prefers_slovak else "Purchase Agreement"
     if document_kind == "employment_contract":
         prefers_slovak = (language or "").strip().lower().startswith("sk")
         return "Pracovna zmluva" if prefers_slovak else "Employment Contract"
@@ -7364,6 +7404,59 @@ def _build_employment_contract_document_asset_content(
         )
     lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
     return title, _strip_duplicate_body_title(title=title, lines=lines)
+
+
+def _build_sale_purchase_document_asset_content(
+    *,
+    entry: dict[str, Any],
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+    law_citation_lines: list[str],
+    fallback_index: int,
+) -> tuple[str, list[str]]:
+    title, lines = _render_sale_purchase_template(
+        facts=facts,
+        country=country,
+        language=language,
+    )
+    if not lines:
+        title = _document_asset_title(
+            entry=entry,
+            language=language,
+            fallback_index=fallback_index,
+            document_kind="sale_purchase",
+        )
+        prefers_slovak = country.strip().upper() == "SK" or (language or "").strip().lower().startswith("sk")
+        lines = (
+            _build_generic_slovak_case_document_lines(facts)
+            if prefers_slovak
+            else _build_generic_english_case_document_lines(facts)
+        )
+    lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+    return title, _strip_duplicate_body_title(title=title, lines=lines)
+
+
+def _render_sale_purchase_template(
+    *,
+    facts: dict[str, str],
+    country: str,
+    language: str | None,
+) -> tuple[str, list[str]]:
+    try:
+        template = get_document_template_store().get(
+            template_key="sk.real_estate.sale_purchase",
+            jurisdiction=country.strip().upper() or "SK",
+        )
+    except DocumentTemplateNotFoundError:
+        return "", []
+    rendered = render_template(
+        template=template,
+        facts=facts,
+        country=country,
+        language=language,
+    )
+    return template.title, rendered.lines
 
 
 def _render_employment_contract_template(

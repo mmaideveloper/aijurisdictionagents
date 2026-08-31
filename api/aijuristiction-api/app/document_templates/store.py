@@ -800,7 +800,12 @@ class DocumentTemplateStore:
             )
 
     def _refresh_empty_seeded_document_template_bodies(self) -> None:
-        """Version legacy metadata-only seeds without replacing managed template content."""
+        """Version legacy seeded templates without replacing later managed edits."""
+        legacy_seed_prefixes = {
+            "sk.real_estate.sale_purchase": (
+                "Kupna zmluva\n\nPredavajuci: {{seller_identification}}",
+            ),
+        }
         canonical_by_key = {
             item.template_key: item
             for item in build_default_document_templates()
@@ -816,16 +821,28 @@ class DocumentTemplateStore:
                 current = self.get(template_key=template_key, jurisdiction=canonical.jurisdiction)
             except DocumentTemplateNotFoundError:
                 continue
-            if current.body.strip():
+            body_missing = not current.body.strip()
+            legacy_seed_needs_upgrade = any(
+                current.body.strip().startswith(prefix)
+                for prefix in legacy_seed_prefixes.get(template_key, ())
+            )
+            if not body_missing and not legacy_seed_needs_upgrade:
                 continue
             self.update(
                 template_key=template_key,
                 jurisdiction=canonical.jurisdiction,
                 payload=DocumentTemplateUpdateRequest(
+                    language=canonical.language,
+                    category=canonical.category,
+                    title=canonical.title,
+                    template_kind=canonical.template_kind,
                     description=canonical.description,
                     source_format=canonical.source_format,
                     source_url=canonical.source_url,
                     body=canonical.body,
+                    keywords=list(canonical.keywords),
+                    flow_keys=list(canonical.flow_keys),
+                    placeholders=list(canonical.placeholders),
                     source_refs=list(canonical.source_refs),
                     disclaimer_title=canonical.disclaimer_title,
                     disclaimer_text=canonical.disclaimer_text,
