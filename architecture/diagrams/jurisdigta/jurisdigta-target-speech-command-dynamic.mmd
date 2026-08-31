@@ -1,0 +1,66 @@
+sequenceDiagram
+  autonumber
+  actor User
+  participant Client as JurisDigta client
+  participant STT as Speech recognition adapter
+  participant Intake as Request intake / intent router
+  participant Catalog as Capability catalog (proposed)
+  participant Policy as Policy gateway (proposed)
+  participant Executor as Execution orchestrator (proposed)
+  participant ORSR as ORSR adapter / official service
+  participant Local as Browser directory search (proposed)
+  participant Audit as Authorization/audit store
+
+  User->>Client: Start microphone and speak one request
+  Client->>STT: Active audio segment, locale, disclosed mode
+  alt Remote STT lacks applicable consent
+    STT-->>Client: Block remote upload; offer genuine local/typed fallback
+    Client-->>User: Explain fallback; execute nothing
+  else Recognition permitted
+    STT-->>Client: Transcript and confidence metadata
+    Client-->>User: Show editable transcript
+    User->>Client: Review/edit and submit normalized text
+    Client->>Intake: Reviewed text, context, correlation/idempotency key
+    alt Question
+      Intake-->>Client: Route through existing question/chat path
+      Client-->>User: Show reviewable answer and limitations
+    else Ambiguous or unsupported
+      Intake-->>Client: Clarification or unsupported result
+      Client-->>User: Ask focused question or offer typed/manual path
+    else Candidate command
+      Intake->>Catalog: Find eligible versioned capabilities
+      Catalog-->>Intake: Schema, destination, permissions, risk, confirmation policy
+      Intake-->>Client: Structured execution preview; no authority yet
+      Client-->>User: Show capability, data, destination, scope, side effects
+      alt User cancels or required scope is absent
+        User->>Client: Cancel / decline
+        Client->>Policy: Optional redacted cancellation event
+        Policy->>Audit: Record denial/cancellation metadata
+        Client-->>User: Keep or discard editable draft; execute nothing
+      else User confirms exact proposal
+        User->>Client: Confirm and grant required scope
+        Client->>Policy: Proposal, confirmation, scope, identity, versions
+        Policy->>Catalog: Revalidate capability and policy versions
+        alt Authorization invalid, expired, replayed, or changed
+          Policy->>Audit: Record redacted denial reason
+          Policy-->>Client: Denied; require new preview
+          Client-->>User: Explain denial; execute nothing
+        else Authorized
+          Policy->>Audit: Record authorization metadata
+          Policy-->>Client: Authorized exact proposal + expiry
+          alt ORSR company verification
+            Client->>Executor: Authorized structured request + idempotency key
+            Executor->>ORSR: Minimum company name/IČO
+            ORSR-->>Executor: Sourced zero/one/multiple match or error
+            Executor->>Audit: Record status, versions, timing, provenance
+            Executor-->>Client: Result/error and non-executing related suggestions
+          else Session-scoped contract filename search
+            Client->>Local: User-selected folder + filename/metadata query
+            Local-->>Client: Minimal matches or browser permission/error
+            Client->>Audit: Record privacy-minimized local outcome metadata
+          end
+          Client-->>User: Show outcome, source, limitations, human-review step
+        end
+      end
+    end
+  end

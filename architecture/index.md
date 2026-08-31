@@ -21,6 +21,22 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 - [System context](diagrams/jurisdigta/jurisdigta-current-context.mmd)
 - [Container view](diagrams/jurisdigta/jurisdigta-current-container.mmd)
 - [Diagram evidence](diagrams/jurisdigta/jurisdigta-current-evidence.md)
+- [Target governed speech-command container](diagrams/jurisdigta/jurisdigta-target-speech-command-container.mmd)
+- [Target governed speech-command dynamic flow](diagrams/jurisdigta/jurisdigta-target-speech-command-dynamic.mmd)
+- [Target governed speech-command evidence](diagrams/jurisdigta/jurisdigta-target-speech-command-evidence.md)
+
+## Current use cases
+
+- [UC-001: Submit questions and safely execute commands by speech](use-cases/UC-001-speech-input-and-safe-command-execution.md) — Draft
+
+## Current designs
+
+- [ADD-001: Governed speech question and command routing](design/ADD-001-governed-speech-command-routing.md) — Approved, conceptual target
+- [ADD-001 implementation task plan](design/ADD-001-implementation-task-plan.md) — Prepared; six dependency-gated GitHub tasks
+
+## Current decisions
+
+- [ADR-001: Route speech-derived commands only through policy-enforced registered capabilities](decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) — Accepted
 
 ## Workflow
 
