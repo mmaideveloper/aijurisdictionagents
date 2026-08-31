@@ -97,6 +97,30 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     }
     assert "ľudskú a právnu kontrolu" in lease.disclaimer_footer
 
+    sale_purchase = store.get(template_key="sk.real_estate.sale_purchase", jurisdiction="SK")
+    assert sale_purchase.source_url == "https://www.aksamec.sk/kupna-zmluva-2026/"
+    assert "§ 588 a nasl. zákona č. 40/1964 Zb." in sale_purchase.body
+    assert "Článok I" in sale_purchase.body
+    assert "Článok II" in sale_purchase.body
+    assert "Článok V" in sale_purchase.body
+    assert "{{seller_identification}}" in sale_purchase.body
+    assert "{{buyer_identification}}" in sale_purchase.body
+    assert "{{filing_party}}" in sale_purchase.body
+    assert "principal_identification" not in sale_purchase.placeholders
+    assert "seller_identification" in sale_purchase.placeholders
+    assert "buyer_identification" in sale_purchase.placeholders
+    assert "purchase_price" in sale_purchase.placeholders
+    assert "filing_cost_terms" in sale_purchase.placeholders
+    assert {reference.source_kind for reference in sale_purchase.source_refs} == {
+        "external_template_page",
+        "official_legislation",
+    }
+    assert {reference.url for reference in sale_purchase.source_refs} == {
+        "https://www.aksamec.sk/kupna-zmluva-2026/",
+        "https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/1964/40/",
+    }
+    assert "ľudskú a právnu kontrolu" in sale_purchase.disclaimer_footer
+
 
 def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
@@ -126,7 +150,7 @@ def test_document_template_store_versions_legacy_empty_employment_seed_once(tmp_
     assert unchanged.version == 3
 
 
-def test_document_template_store_versions_legacy_empty_lease_seed_once(tmp_path: Path) -> None:
+def test_document_template_store_versions_legacy_empty_sale_purchase_seed_once(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
         db_option="sqlite",
         db_cloud="",
@@ -134,21 +158,21 @@ def test_document_template_store_versions_legacy_empty_lease_seed_once(tmp_path:
     )
     store = DocumentTemplateStore(config)
     empty_version = store.update(
-        template_key="sk.real_estate.lease_agreement",
+        template_key="sk.real_estate.sale_purchase",
         jurisdiction="SK",
         payload=DocumentTemplateUpdateRequest(body=""),
     )
     assert empty_version.version == 2
 
     refreshed = DocumentTemplateStore(config).get(
-        template_key="sk.real_estate.lease_agreement",
+        template_key="sk.real_estate.sale_purchase",
         jurisdiction="SK",
     )
     assert refreshed.version == 3
     assert "Článok I" in refreshed.body
 
     unchanged = DocumentTemplateStore(config).get(
-        template_key="sk.real_estate.lease_agreement",
+        template_key="sk.real_estate.sale_purchase",
         jurisdiction="SK",
     )
     assert unchanged.version == 3
@@ -180,7 +204,7 @@ def test_document_template_store_does_not_overwrite_non_empty_employment_body(tm
     assert reloaded.source_url == "https://example.com/custom-pracovna-zmluva"
 
 
-def test_document_template_store_does_not_overwrite_non_empty_lease_body(tmp_path: Path) -> None:
+def test_document_template_store_does_not_overwrite_non_empty_sale_purchase_body(tmp_path: Path) -> None:
     config = DocumentTemplateStoreConfig(
         db_option="sqlite",
         db_cloud="",
@@ -188,22 +212,22 @@ def test_document_template_store_does_not_overwrite_non_empty_lease_body(tmp_pat
     )
     store = DocumentTemplateStore(config)
     customized = store.update(
-        template_key="sk.real_estate.lease_agreement",
+        template_key="sk.real_estate.sale_purchase",
         jurisdiction="SK",
         payload=DocumentTemplateUpdateRequest(
-            body="CUSTOM NAJOMNA ZMLUVA\n\nČlánok I\nVlastné znenie.",
-            source_url="https://example.com/custom-najomna-zmluva",
+            body="CUSTOM KUPNA ZMLUVA\n\nČlánok I\nVlastné znenie.",
+            source_url="https://example.com/custom-kupna-zmluva",
         ),
     )
     assert customized.version == 2
 
     reloaded = DocumentTemplateStore(config).get(
-        template_key="sk.real_estate.lease_agreement",
+        template_key="sk.real_estate.sale_purchase",
         jurisdiction="SK",
     )
     assert reloaded.version == 2
-    assert reloaded.body == "CUSTOM NAJOMNA ZMLUVA\n\nČlánok I\nVlastné znenie."
-    assert reloaded.source_url == "https://example.com/custom-najomna-zmluva"
+    assert reloaded.body == "CUSTOM KUPNA ZMLUVA\n\nČlánok I\nVlastné znenie."
+    assert reloaded.source_url == "https://example.com/custom-kupna-zmluva"
 
 
 def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
@@ -240,23 +264,22 @@ def test_employment_template_maps_structured_aliases_into_placeholders(tmp_path:
     assert rendered.follow_up_question is None
 
 
-def test_lease_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
+def test_sale_purchase_template_maps_structured_aliases_into_placeholders(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
-    template = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
+    template = store.get(template_key="sk.real_estate.sale_purchase", jurisdiction="SK")
 
     rendered = render_template(
         template=template,
         facts={
-            "prenajimatel": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
-            "najomca": "Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava",
-            "adresa_nehnutelnosti": "Byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad",
-            "doba_najmu": "na dobu určitú od 01.05.2026 do 30.04.2027",
-            "najomne": "600 EUR mesačne, splatné do 5. dňa príslušného mesiaca",
-            "kaucia": "600 EUR",
-            "ucel_najmu": "na bývanie nájomcu",
-            "sluzby": "elektrina a plyn podľa spotreby, voda a správa podľa vyúčtovania",
-            "odovzdanie": "pri podpise odovzdávacieho protokolu s odpočtom meračov",
-            "vypovedna_lehota": "1 mesiac pri zmluve na dobu neurčitú, ak zákon neustanovuje inak",
+            "predavajuci": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
+            "kupujuci": "Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava",
+            "nehnutelnost": "byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad, zapísaný na LV č. 1234",
+            "kupna_cena": "154 000 EUR",
+            "platobne_podmienky": "notárska úschova s uvoľnením po povolení vkladu",
+            "tarchy": "bez tiarch okrem zákonných obmedzení uvedených na LV",
+            "stav_nehnutelnosti": "v stave známom kupujúcemu po osobnej obhliadke",
+            "termin_odovzdania": "do 5 pracovných dní od povolenia vkladu",
+            "navrh_na_vklad_poda": "kupujúci",
         },
         country="SK",
         language="sk-SK",
@@ -266,7 +289,7 @@ def test_lease_template_maps_structured_aliases_into_placeholders(tmp_path: Path
     assert "Ján Novák" in rendered_text
     assert "Mária Kováčová" in rendered_text
     assert "Ludvíka Svobodu 2953/50" in rendered_text
-    assert "600 EUR mesačne" in rendered_text
+    assert "154 000 EUR" in rendered_text
     assert rendered.missing_required_fields == []
     assert rendered.follow_up_question is None
 
@@ -301,25 +324,24 @@ def test_employment_template_reports_first_missing_required_field(tmp_path: Path
     assert "start_date" in rendered.unresolved_fields
 
 
-def test_lease_template_reports_first_missing_required_field(tmp_path: Path) -> None:
+def test_sale_purchase_template_reports_first_missing_required_field(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
-    template = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
+    template = store.get(template_key="sk.real_estate.sale_purchase", jurisdiction="SK")
 
     rendered = render_template(
         template=template,
         facts={
-            "prenajimatel": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
-            "adresa_nehnutelnosti": "Byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad",
-            "doba_najmu": "na dobu určitú od 01.05.2026 do 30.04.2027",
-            "najomne": "600 EUR mesačne, splatné do 5. dňa príslušného mesiaca",
+            "predavajuci": "Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad",
+            "nehnutelnost": "byt č. 12 na adrese Ludvíka Svobodu 2953/50, Poprad, zapísaný na LV č. 1234",
+            "kupna_cena": "154 000 EUR",
         },
         country="SK",
         language="sk-SK",
     )
 
-    assert rendered.missing_required_fields == ["tenant_identification"]
-    assert rendered.follow_up_question == "Kto je nájomca a ako má byť v zmluve presne označený?"
-    assert "tenant_identification" in rendered.unresolved_fields
+    assert rendered.missing_required_fields == ["buyer_identification"]
+    assert rendered.follow_up_question == "Kto je kupujúci a ako má byť v zmluve presne označený?"
+    assert "buyer_identification" in rendered.unresolved_fields
 
 
 def test_employment_profile_defaults_fill_missing_identity_fields() -> None:
@@ -501,6 +523,28 @@ def test_document_template_api_crud_and_match_endpoints(tmp_path: Path) -> None:
     assert "ludsku kontrolu" in preview_text_normalized
     assert "Nevyriešené polia náhľadu" not in preview_text
     assert "Prvá odporúčaná doplňujúca otázka" not in preview_text
+
+    sale_purchase_preview = client.get(
+        "/v1/document-templates/sk.real_estate.sale_purchase/preview/pdf",
+        params={"jurisdiction": "SK"},
+    )
+    assert sale_purchase_preview.status_code == 200
+    sale_purchase_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(BytesIO(sale_purchase_preview.content)).pages
+    )
+    sale_purchase_text_normalized = _canonical_text(sale_purchase_text)
+    assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in sale_purchase_text
+    assert "https://www.aksamec.sk/kupna-zmluva-2026/" not in sale_purchase_text
+    assert "PREDMET PREVODU" in sale_purchase_text
+    assert "KÚPNA CENA A PLATOBNÉ PODMIENKY" in sale_purchase_text
+    assert "Peter Horváth" in sale_purchase_text
+    assert "Jana Černá" in sale_purchase_text
+    assert "5 000 EUR" in sale_purchase_text
+    assert "spravidla niekoľko pracovných dní až týždňov" in sale_purchase_text
+    assert "individualnu" in sale_purchase_text_normalized
+    assert "ludsku kontrolu" in sale_purchase_text_normalized
+    assert "Nevyriešené polia náhľadu" not in sale_purchase_text
+    assert "Prvá odporúčaná doplňujúca otázka" not in sale_purchase_text
 
     employment_preview = client.get(
         "/v1/document-templates/sk.employment.employment_contract/preview/pdf",
