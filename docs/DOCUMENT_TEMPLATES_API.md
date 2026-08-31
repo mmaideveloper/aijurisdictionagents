@@ -241,6 +241,9 @@ For Slovak templates and generated Slovak document exports, the renderer now add
 the first page and repeats a short disclaimer in the footer so the draft status is not easy to miss.
 
 The `sk.employment.employment_contract` preview is deliberately a canonical fill-in draft rather than legal advice.
+Employment salary rendering accepts values with or without the Slovak `brutto` qualifier, emits that qualifier only
+once, and labels variable compensation separately from the payday. The renderer also normalizes the same two legacy
+phrases in already-persisted canonical bodies, without replacing managed custom template content.
 Its source alignment was reviewed on August 28, 2026 against the exact AK Samec employment-contract guidance page and
 the official current Slov-Lex page for Act No. 311/2001 Coll., especially Sections 42–44. The body is original
 JurisDigta text: external template wording is not copied. Bracketed fields must be completed and the result must be

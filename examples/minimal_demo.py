@@ -42,7 +42,7 @@ print(
 print(
     "employment_contract_template => run python examples/employment_contract_preview_demo.py; "
     "the generated canonical Slovak fill-in PDF validates exact provenance, mandatory clause structure, "
-    "signature blocks, and a visible human-review warning without external data."
+    "distinct salary/payday wording, signature blocks, and a visible human-review warning without external data."
 )
 print(
     "api_test_isolation => focused tests patch imported dependencies with pytest monkeypatch; "

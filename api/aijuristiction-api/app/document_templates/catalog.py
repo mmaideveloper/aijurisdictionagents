@@ -171,7 +171,7 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "Článok IV\n"
                 "MZDOVÉ PODMIENKY\n"
                 "1. Zamestnancovi patrí základná zložka mzdy vo výške {{base_monthly_salary}} brutto mesačne.\n"
-                "2. Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín: {{variable_salary_component}} "
+                "2. Variabilná zložka mzdy a podmienky jej priznania: {{variable_salary_component}} "
                 "Výplatný termín: {{salary_payday}}. Spôsob vyplácania mzdy: {{salary_payment_method}}.\n\n"
                 "Článok V\n"
                 "PRACOVNÉ PODMIENKY\n"
@@ -780,6 +780,8 @@ def render_template(
         return value
 
     rendered = re.sub(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}", replace, template.body)
+    if template.template_key == "sk.employment.employment_contract":
+        rendered = _normalize_employment_contract_rendered_text(rendered)
     return RenderedTemplateResult(
         title=template.title,
         lines=[line.rstrip() for line in rendered.splitlines() if line.strip()],
@@ -997,6 +999,15 @@ def _sale_purchase_render_values(values: dict[str, str]) -> dict[str, str]:
     if not resolved.get("buyer_signatory_name"):
         resolved["buyer_signatory_name"] = resolved.get("buyer_identification", "")
     return resolved
+
+
+def _normalize_employment_contract_rendered_text(rendered: str) -> str:
+    """Keep current and already-persisted canonical salary clauses unambiguous."""
+    normalized = rendered.replace(
+        "Ďalšie zložky mzdy, podmienky ich priznania a výplatný termín:",
+        "Variabilná zložka mzdy a podmienky jej priznania:",
+    )
+    return re.sub(r"\bbrutto(?:\s+brutto)+\b", "brutto", normalized, flags=re.IGNORECASE)
 
 
 def _missing_required_template_fields(

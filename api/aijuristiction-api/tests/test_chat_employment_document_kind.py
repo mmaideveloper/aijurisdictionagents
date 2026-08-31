@@ -236,6 +236,8 @@ def test_extract_document_facts_from_employment_questionnaire() -> None:
     assert facts["employee_full_name"] == "Lucia Vzorová"
     assert facts["job_position"] == "AI vývojár / softvérový inžinier"
     assert facts["base_monthly_salary"] == "3 200 EUR brutto"
+    assert facts["variable_salary_component"] == "do 10 % základnej mesačnej mzdy"
+    assert facts["salary_payday"] == "najneskôr 15. deň kalendárneho mesiaca"
     assert facts["signature_place"] == "Košice"
 
 
@@ -261,6 +263,8 @@ def test_build_document_asset_content_renders_employment_contract_template() -> 
             "employment_term_description": "pracovný pomer na dobu neurčitú",
             "probation_period": "3 mesiace",
             "base_monthly_salary": "3 200 EUR brutto",
+            "variable_salary_component": "do 10 % základnej mesačnej mzdy",
+            "salary_payday": "najneskôr 15. deň kalendárneho mesiaca",
             "weekly_working_hours": "40 hodín",
             "working_time_distribution": "pondelok až piatok",
             "vacation_entitlement": "v rozsahu podľa Zákonníka práce",
@@ -282,6 +286,9 @@ def test_build_document_asset_content_renders_employment_contract_template() -> 
     assert "clanok iv" in normalized
     assert "fiktiva digital solutions" in normalized
     assert "ai vyvojar / softverovy inzinier" in normalized
+    assert "brutto brutto" not in normalized
+    assert "variabilna zlozka mzdy a podmienky jej priznania" in normalized
+    assert "vyplatny termin: najneskor 15. den kalendarneho mesiaca" in normalized
 
 
 def test_build_document_asset_content_renders_sale_purchase_template(tmp_path) -> None:

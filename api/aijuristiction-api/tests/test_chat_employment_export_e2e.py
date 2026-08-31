@@ -336,6 +336,8 @@ Lucia Vzorová
             assert expected in canonical
 
         for unexpected in (
+            "brutto brutto",
+            "podmienky ich priznania a vyplatny termin",
             "generovany dokument podla diskusie",
             "zhrnutie pripadu",
             "session id:",
