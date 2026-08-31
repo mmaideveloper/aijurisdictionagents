@@ -1,5 +1,13 @@
 # Post-deployment tests
 
+## Release-gate test isolation
+
+Focused API tests must patch attributes through pytest's `monkeypatch` fixture. They must not
+replace application or third-party packages in `sys.modules`, because those process-wide
+replacements can corrupt tests collected or executed later in the same CI process. The API
+release gate always runs the complete suite in one process and remains fail-closed for the exact
+deployment commit.
+
 Run these tests only after all required build, lint, type-check, unit/integration, E2E,
 and image checks have passed for the exact production commit. A post-deployment result never
 overrides the production build gate. The self-managed production workflow runs the required

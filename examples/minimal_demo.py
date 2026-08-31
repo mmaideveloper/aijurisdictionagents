@@ -45,6 +45,10 @@ print(
     "signature blocks, and a visible human-review warning without external data."
 )
 print(
+    "api_test_isolation => focused tests patch imported dependencies with pytest monkeypatch; "
+    "they never replace shared sys.modules entries, so the full API suite remains order-independent."
+)
+print(
     "model_routing_request_store => database migrations and schema initialization run at API "
     "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
 )
