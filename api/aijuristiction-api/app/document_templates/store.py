@@ -811,6 +811,10 @@ class DocumentTemplateStore:
             for item in build_default_document_templates()
             if item.template_key in {
                 "sk.employment.employment_contract",
+                "sk.employment.work_performance_agreement",
+                "sk.employment.termination_notice",
+                "sk.authorization.general_power_of_attorney",
+                "sk.authorization.special_power_of_attorney",
                 "sk.real_estate.lease_agreement",
                 "sk.real_estate.sale_purchase",
             }
