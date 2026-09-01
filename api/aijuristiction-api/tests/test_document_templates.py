@@ -614,6 +614,7 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
             reviewed_by="Synthetic reviewer",
             normalization_notes="Synthetic normalized metadata.",
             legal_basis_refs=["https://example.com/legal-basis"],
+            body_completeness_status="reviewed_full_body",
             body="Konzultacna zmluva medzi {{seller_identification}} a {{buyer_identification}}.",
             keywords=["konzultacna zmluva", "consulting agreement"],
             placeholders=["seller_identification", "buyer_identification"],
@@ -628,6 +629,7 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     assert created.source_review_status == "reviewed_full_body"
     assert created.reviewed_by == "Synthetic reviewer"
     assert created.legal_basis_refs == ("https://example.com/legal-basis",)
+    assert created.body_completeness_status == "reviewed_full_body"
 
     updated = store.update(
         template_key="sk.custom.consulting_agreement",
@@ -644,6 +646,7 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     assert updated.latest_version == 2
     assert updated.source_profile == "interactive_form_template"
     assert updated.legal_basis_refs == ("https://example.com/legal-basis",)
+    assert updated.body_completeness_status == "reviewed_full_body"
 
     first_version = store.get(template_key="sk.custom.consulting_agreement", jurisdiction="SK", version=1)
     assert first_version.newer_version_available is True

@@ -44,6 +44,7 @@ Notes:
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
 - template versions also retain source profile, capture/review metadata, normalization notes, and legal-basis reference URLs; these catalog fields contain no user facts or captured third-party body content
+- `body_completeness_status` explicitly distinguishes `metadata_only`, `partial_body`, and `reviewed_full_body` template versions for safe admin review and generation routing
 - `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
 - Sprint C also supplies reviewed canonical bodies for the work-performance agreement, employee-initiated employment termination notice, and general and special powers of attorney; each records an exact reviewed source URL and retains a human-review requirement for legal-risk use
 - Sprint C normalizes structured case, chat, and profile facts through template-specific aliases for those four templates. Their legally material fields are required before the template-first path can draft a final document; missing data is returned as a precise Slovak follow-up question rather than silently leaving an unresolved placeholder. The mapping is deterministic, does not infer facts, and preserves the template's visible source and human-review disclosure.
