@@ -274,20 +274,30 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Pracovne a personalne dokumenty",
             title="Dohoda o vykonani prace / o pracovnej cinnosti",
             template_kind="work_agreement",
-            description="Seed metadata pre dohodu o vykonani prace alebo pracovnej cinnosti.",
-            source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
-            body="",
+            description="Kontrolovaný vzor dohody o vykonaní práce; pred podpisom vyžaduje právnu kontrolu.",
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/dpp-dohoda-2026/",
+            body=(
+                "DOHODA O VYKONANÍ PRÁCE\nuzatvorená podľa § 226 zákona č. 311/2001 Z. z. Zákonník práce\n\n"
+                "Zamestnávateľ: {{employer_identification}}\nZamestnanec: {{employee_identification}}\n\n"
+                "Článok I\nPREDMET DOHODY\n1. Zamestnanec sa zaväzuje vykonať pracovnú úlohu: {{work_task}}.\n"
+                "2. Dohodnutý výsledok práce: {{work_result}}.\n\n"
+                "Článok II\nROZSAH A ČAS VYKONANIA PRÁCE\n1. Predpokladaný rozsah práce je {{work_hours}} hodín.\n"
+                "2. Práca bude vykonaná v období {{work_period}} na mieste {{place_of_work}}.\n\n"
+                "Článok III\nODMENA A ZÁVEREČNÉ USTANOVENIA\n1. Odmena za vykonanie práce je {{remuneration}}; splatnosť a spôsob úhrady: {{payment_terms}}.\n"
+                "2. Práva a povinnosti neupravené touto dohodou sa riadia Zákonníkom práce. Dohoda je vyhotovená v dvoch rovnopisoch.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\nZamestnávateľ: {{employer_signatory}}\nZamestnanec: {{employee_signatory}}\n"
+            ),
             keywords=("dohoda o vykonani prace", "dohoda o pracovnej cinnosti", "brigada"),
             flow_keys=(),
-            placeholders=(),
+            placeholders=("employer_identification", "employee_identification", "work_task", "work_result", "work_hours", "work_period", "place_of_work", "remuneration", "payment_terms", "signature_place", "signature_date", "employer_signatory", "employee_signatory"),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="AK Samec - Dohoda o vykonaní práce",
+                    url="https://www.aksamec.sk/dpp-dohoda-2026/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="external_template_page",
+                    notes="Exact source page reviewed on 2026-09-01; canonical body is maintained in-product.",
                 ),
             ),
             is_enabled=True,
@@ -301,20 +311,26 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Pracovne a personalne dokumenty",
             title="Vypoved z pracovneho pomeru",
             template_kind="employment_termination_notice",
-            description="Seed metadata pre vypoved z pracovneho pomeru.",
-            source_format="PDF",
-            source_url="https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/",
-            body="",
+            description="Kontrolovaný vzor výpovede zamestnanca s jasným prejavom vôle a doručením.",
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/vypoved-z-prace-vzor-2026/",
+            body=(
+                "VÝPOVEĎ Z PRACOVNÉHO POMERU\npodľa § 67 zákona č. 311/2001 Z. z. Zákonník práce\n\n"
+                "Zamestnanec: {{employee_identification}}\nZamestnávateľ: {{employer_identification}}\n\n"
+                "Týmto Vám dávam výpoveď z pracovného pomeru založeného pracovnou zmluvou zo dňa {{employment_contract_date}}, na pracovnej pozícii {{job_position}}.\n\n"
+                "Výpovedná doba plynie podľa Zákonníka práce; pracovný pomer sa skončí jej uplynutím. Výpoveď žiadam doručiť preukázateľným spôsobom.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\n{{employee_signatory}}\n"
+            ),
             keywords=("vypoved z pracovneho pomeru", "vypoved", "skoncenie pracovneho pomeru"),
             flow_keys=(),
-            placeholders=(),
+            placeholders=("employee_identification", "employer_identification", "employment_contract_date", "job_position", "signature_place", "signature_date", "employee_signatory"),
             source_refs=(
                 TemplateSourceReference(
-                    label="Vzory pre FO a PO",
-                    url="https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/",
-                    publisher="Ministerstvo spravodlivosti SR",
-                    source_kind="official_form_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    label="AK Samec - Výpoveď z práce",
+                    url="https://www.aksamec.sk/vypoved-z-prace-vzor-2026/",
+                    publisher="AK Samec",
+                    source_kind="external_template_page",
+                    notes="Exact source page reviewed on 2026-09-01; limited to an employee-initiated notice.",
                 ),
             ),
             is_enabled=True,
@@ -409,16 +425,15 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Plne moci a autorizacie",
             title="Plna moc vseobecna",
             template_kind="power_of_attorney",
-            description="Seed metadata a pracovny body pre vseobecnu plnu moc.",
-            source_format="DOCX/PDF",
-            source_url="https://www.aksamec.sk/vzory/",
+            description="Kontrolovaný všeobecný vzor plnej moci; rozsah treba primerane obmedziť konkrétnemu účelu.",
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/plna-moc-vzor-2026/",
             body=(
-                "Plna moc\n\n"
-                "Splnomocnitel: {{principal_identification}}\n"
-                "Splnomocnenec: {{agent_identification}}\n\n"
-                "Rozsah splnomocnenia: {{scope_of_authority}}\n"
-                "Platnost: {{validity_period}}\n\n"
-                "V {{signature_place}}, dna {{signature_date}}\n"
+                "PLNÁ MOC\nuzatvorená podľa § 31 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"
+                "Splnomocniteľ: {{principal_identification}}\nSplnomocnenec: {{agent_identification}}\n\n"
+                "Splnomocniteľ splnomocňuje splnomocnenca, aby ho v jeho mene zastupoval vo veciach: {{scope_of_authority}}.\n"
+                "Plná moc sa udeľuje na obdobie {{validity_period}} a možno ju odvolať v súlade so zákonom.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\nSplnomocniteľ: {{principal_signatory}}\n"
             ),
             keywords=("plna moc vseobecna", "splnomocnenie", "plna moc"),
             flow_keys=("sk.civil.power_of_attorney",),
@@ -428,15 +443,15 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "scope_of_authority",
                 "validity_period",
                 "signature_place",
-                "signature_date",
+                "signature_date", "principal_signatory",
             ),
             source_refs=(
                 TemplateSourceReference(
-                    label="AK Samec vzory",
-                    url="https://www.aksamec.sk/vzory/",
+                    label="AK Samec - Plná moc",
+                    url="https://www.aksamec.sk/plna-moc-vzor-2026/",
                     publisher="AK Samec",
-                    source_kind="external_template_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    source_kind="external_template_page",
+                    notes="Exact source page reviewed on 2026-09-01; canonical body retains a visible scope limitation.",
                 ),
             ),
             is_enabled=True,
@@ -450,20 +465,27 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             category="Plne moci a autorizacie",
             title="Plna moc specialna",
             template_kind="power_of_attorney",
-            description="Seed metadata pre specialnu plnu moc.",
-            source_format="PDF",
-            source_url="https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/",
-            body="",
+            description="Kontrolovaný osobitný vzor plnej moci pre presne vymedzený úkon.",
+            source_format="HTML/LAW",
+            source_url="https://www.aksamec.sk/splnomocnenie-vzor-2026/",
+            body=(
+                "OSOBITNÁ PLNÁ MOC\npodľa § 31 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"
+                "Splnomocniteľ: {{principal_identification}}\nSplnomocnenec: {{agent_identification}}\n\n"
+                "Splnomocniteľ udeľuje splnomocnencovi oprávnenie výlučne na tento úkon alebo tieto úkony: {{scope_of_authority}}.\n"
+                "Oprávnenie zahŕňa len úkony nevyhnutné na uvedený účel. Platnosť plnej moci: {{validity_period}}.\n"
+                "Ak právny predpis alebo povaha úkonu vyžaduje úradné osvedčenie podpisu, splnomocniteľ zabezpečí jeho osvedčenie pred použitím tejto plnej moci.\n\n"
+                "V {{signature_place}}, dňa {{signature_date}}\n\nSplnomocniteľ: {{principal_signatory}}\n"
+            ),
             keywords=("plna moc specialna", "specialne splnomocnenie", "plna moc"),
             flow_keys=("sk.civil.power_of_attorney",),
-            placeholders=("principal_identification", "agent_identification", "scope_of_authority"),
+            placeholders=("principal_identification", "agent_identification", "scope_of_authority", "validity_period", "signature_place", "signature_date", "principal_signatory"),
             source_refs=(
                 TemplateSourceReference(
-                    label="Vzory pre FO a PO",
-                    url="https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/",
-                    publisher="Ministerstvo spravodlivosti SR",
-                    source_kind="official_form_index",
-                    notes="Seed URL dodana pouzivatelom.",
+                    label="AK Samec - Špeciálne splnomocnenie",
+                    url="https://www.aksamec.sk/splnomocnenie-vzor-2026/",
+                    publisher="AK Samec",
+                    source_kind="external_template_page",
+                    notes="Exact source page reviewed on 2026-09-01; requires review of form and signature certification for the specific act.",
                 ),
             ),
             is_enabled=True,
