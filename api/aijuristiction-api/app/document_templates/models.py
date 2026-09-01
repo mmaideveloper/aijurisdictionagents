@@ -24,6 +24,12 @@ class DocumentTemplateBasePayload(BaseModel):
     description: str = Field(default="", max_length=2000)
     source_format: str = Field(min_length=2, max_length=32)
     source_url: str = Field(min_length=8, max_length=2000)
+    source_profile: str = Field(default="", max_length=64)
+    source_captured_at: datetime | None = None
+    source_review_status: str = Field(default="unreviewed", max_length=64)
+    reviewed_by: str = Field(default="", max_length=200)
+    normalization_notes: str = Field(default="", max_length=2000)
+    legal_basis_refs: list[str] = Field(default_factory=list)
     body: str = Field(default="", max_length=50000)
     keywords: list[str] = Field(default_factory=list)
     flow_keys: list[str] = Field(default_factory=list)
@@ -48,6 +54,12 @@ class DocumentTemplateUpdateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     source_format: str | None = Field(default=None, min_length=2, max_length=32)
     source_url: str | None = Field(default=None, min_length=8, max_length=2000)
+    source_profile: str | None = Field(default=None, max_length=64)
+    source_captured_at: datetime | None = None
+    source_review_status: str | None = Field(default=None, max_length=64)
+    reviewed_by: str | None = Field(default=None, max_length=200)
+    normalization_notes: str | None = Field(default=None, max_length=2000)
+    legal_basis_refs: list[str] | None = None
     body: str | None = Field(default=None, max_length=50000)
     keywords: list[str] | None = None
     flow_keys: list[str] | None = None
@@ -71,6 +83,12 @@ class DocumentTemplateDefinition(BaseModel):
     description: str = ""
     source_format: str
     source_url: str
+    source_profile: str = ""
+    source_captured_at: datetime | None = None
+    source_review_status: str = "unreviewed"
+    reviewed_by: str = ""
+    normalization_notes: str = ""
+    legal_basis_refs: tuple[str, ...] = ()
     body: str = ""
     keywords: tuple[str, ...] = ()
     flow_keys: tuple[str, ...] = ()
@@ -103,6 +121,12 @@ class DocumentTemplateResponse(BaseModel):
     description: str = ""
     source_format: str
     source_url: str
+    source_profile: str = ""
+    source_captured_at: datetime | None = None
+    source_review_status: str = "unreviewed"
+    reviewed_by: str = ""
+    normalization_notes: str = ""
+    legal_basis_refs: list[str]
     body: str = ""
     keywords: list[str]
     flow_keys: list[str]
@@ -136,6 +160,12 @@ class DocumentTemplateResponse(BaseModel):
             description=item.description,
             source_format=item.source_format,
             source_url=item.source_url,
+            source_profile=item.source_profile,
+            source_captured_at=item.source_captured_at,
+            source_review_status=item.source_review_status,
+            reviewed_by=item.reviewed_by,
+            normalization_notes=item.normalization_notes,
+            legal_basis_refs=list(item.legal_basis_refs),
             body=item.body,
             keywords=list(item.keywords),
             flow_keys=list(item.flow_keys),

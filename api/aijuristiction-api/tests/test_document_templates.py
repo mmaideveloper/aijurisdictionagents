@@ -609,6 +609,11 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
             description="Custom template",
             source_format="DOCX",
             source_url="https://example.com/consulting.docx",
+            source_profile="interactive_form_template",
+            source_review_status="reviewed_full_body",
+            reviewed_by="Synthetic reviewer",
+            normalization_notes="Synthetic normalized metadata.",
+            legal_basis_refs=["https://example.com/legal-basis"],
             body="Konzultacna zmluva medzi {{seller_identification}} a {{buyer_identification}}.",
             keywords=["konzultacna zmluva", "consulting agreement"],
             placeholders=["seller_identification", "buyer_identification"],
@@ -619,6 +624,10 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     assert created.title == "Konzultacna zmluva"
     assert created.version == 1
     assert created.is_latest_version is True
+    assert created.source_profile == "interactive_form_template"
+    assert created.source_review_status == "reviewed_full_body"
+    assert created.reviewed_by == "Synthetic reviewer"
+    assert created.legal_basis_refs == ("https://example.com/legal-basis",)
 
     updated = store.update(
         template_key="sk.custom.consulting_agreement",
@@ -633,6 +642,8 @@ def test_document_template_store_crud_lifecycle(tmp_path: Path) -> None:
     assert updated.is_enabled is False
     assert updated.version == 2
     assert updated.latest_version == 2
+    assert updated.source_profile == "interactive_form_template"
+    assert updated.legal_basis_refs == ("https://example.com/legal-basis",)
 
     first_version = store.get(template_key="sk.custom.consulting_agreement", jurisdiction="SK", version=1)
     assert first_version.newer_version_available is True
