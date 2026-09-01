@@ -16,6 +16,14 @@ python -m http.server 8000
 
 Then open `http://localhost:8000` in a browser.
 
+The homepage localized demo videos remain unchanged. The Slovak consumer
+advertisement is available only as the blog article
+`#article-pravna-pomoc-pre-kazdeho` and uses the workflow in
+`docs/marketing/JURISDIGTA_CONSUMER_VIDEO_PROMPT_SK.md`. Its end-card keeps the
+approved logo and `www.jurisdigta.eu` visible until the final frame. Publication
+still requires human review of legal claims, pricing/free-plan accuracy,
+spelling, logo fidelity, and music licensing.
+
 ## End-to-end branding check
 
 The Playwright test in `corporate-web/e2e/footer-title.spec.ts` verifies that

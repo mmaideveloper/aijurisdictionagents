@@ -1067,6 +1067,44 @@
     let activeLanguage = "sk";
     const articles = [
       {
+        slug: "pravna-pomoc-pre-kazdeho",
+        dateLabel: {
+          sk: "1. september 2026",
+          de: "1. September 2026",
+          en: "September 1, 2026"
+        },
+        title: {
+          sk: "Základná právna orientácia pre každého",
+          de: "Grundlegende rechtliche Orientierung für alle",
+          en: "Basic legal orientation for everyone"
+        },
+        summary: {
+          sk: "Krátke video o tom, ako JurisDigta pomáha porozumieť dokumentom a zorientovať sa v ďalšom postupe.",
+          de: "Ein kurzes Video darüber, wie JurisDigta beim Verständnis von Dokumenten und den nächsten Schritten hilft.",
+          en: "A short video showing how JurisDigta helps people understand documents and identify their next steps."
+        },
+        standfirst: {
+          sk: "Právny dokument nemusí zostať nezrozumiteľný. JurisDigta ponúka AI asistovanú základnú orientáciu a pomoc s dokumentmi v zrozumiteľnejšej podobe.",
+          de: "Ein rechtliches Dokument muss nicht unverständlich bleiben. JurisDigta bietet KI-gestützte Orientierung und Hilfe mit Dokumenten.",
+          en: "A legal document does not have to remain confusing. JurisDigta offers AI-assisted orientation and help with documents."
+        },
+        body: [
+          {
+            type: "video",
+            src: "assets/jurisdigta-pravna-pomoc-sk.mp4",
+            label: "Video: základná právna orientácia a pomoc s dokumentmi"
+          },
+          {
+            type: "p",
+            text: "JurisDigta pomáha bežným ľuďom urobiť prvý krok: nahrať alebo odfotiť dokument, získať zrozumiteľné zhrnutie a pripraviť si otázky či ďalší postup. Začať môžete bezplatne."
+          },
+          {
+            type: "note",
+            text: "AI pomoc nenahrádza právne poradenstvo. Dôležité rozhodnutia, podania a právne kroky overte s kvalifikovaným právnikom."
+          }
+        ]
+      },
+      {
         slug: "mcp-ai-assistants",
         dateLabel: {
           sk: "13. máj 2026",
@@ -1474,6 +1512,21 @@
           list.appendChild(listItem);
         });
         articleDetailContent.appendChild(list);
+        return;
+      }
+      if (block.type === "video") {
+        const video = document.createElement("video");
+        video.className = "article-video";
+        video.controls = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.setAttribute("aria-label", block.label || "JurisDigta video");
+        const source = document.createElement("source");
+        source.src = block.src;
+        source.type = "video/mp4";
+        video.appendChild(source);
+        articleDetailContent.appendChild(video);
         return;
       }
       const paragraph = document.createElement("p");

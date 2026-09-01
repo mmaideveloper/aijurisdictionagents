@@ -629,6 +629,16 @@ main {
   gap: 1rem;
 }
 
+.article-video {
+  display: block;
+  width: min(100%, 420px);
+  max-height: 75vh;
+  margin-inline: auto;
+  border-radius: 18px;
+  background: var(--navy);
+  box-shadow: 0 14px 34px rgba(4, 22, 52, 0.18);
+}
+
 .article-copy p,
 .article-copy ul,
 .article-copy h3 {
