@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -113,6 +114,9 @@ def build_mcp_law_context(
     ):
         return None
 
+    if _is_amendment_ranking_query(query):
+        return _build_amendment_ranking_context(query=query, language=language)
+
     if _should_search_court_decisions(query):
         if _is_latest_court_query(query):
             return _build_latest_court_context(
@@ -136,6 +140,92 @@ def build_mcp_law_context(
         max_chars_per_law=max_chars_per_law,
         language=language,
         web_search_approved=web_search_approved,
+    )
+
+
+def _is_amendment_ranking_query(query: str) -> bool:
+    normalized = _canonical(query)
+    ranking = any(
+        marker in normalized
+        for marker in (
+            "most incorrect",
+            "most amended",
+            "most amendments",
+            "most ammendments",
+            "most changed",
+            "most changes",
+            "najviac noveliz",
+        )
+    )
+    return ranking and any(marker in normalized for marker in ("law", "statute", "zakon", "pravny predpis"))
+
+
+def _build_amendment_ranking_context(*, query: str, language: str | None) -> McpLawContext:
+    years = [int(value) for value in re.findall(r"\b(?:19|20)\d{2}\b", query)]
+    year = years[0] if years else datetime.now(timezone.utc).year
+    try:
+        payload = _call_mcp_tool(
+            "rankLawsByAmendments",
+            {"country_code": "SK", "published_year": year, "amendment_year": year, "limit": 5},
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Internal MCP amendment ranking failed", exc_info=True)
+        return _unavailable_context(tool_calls=["rankLawsByAmendments"], language=language)
+    results = _tool_results(payload)
+    if not results:
+        return _empty_context(query=query, tool_calls=["rankLawsByAmendments"], language=language)
+    winner = results[0]
+    identifier = _bounded_display_text(winner.get("law_identifier_text"), max_chars=80)
+    title = _bounded_display_text(winner.get("title"), max_chars=300)
+    amendment_count = int(winner.get("amendment_count") or 0)
+    version_count = int(winner.get("version_count") or 0)
+    source_url = _bounded_display_text(winner.get("source_url"), max_chars=500)
+    if (language or "").lower().startswith("sk"):
+        reply = (
+            f"Podľa importovaných vzťahov v systéme JurisDigta je medzi zákonmi publikovanými v roku {year} "
+            f"najčastejšie novelizovaný {identifier} – {title}. V roku {year} má evidovaných "
+            f"{amendment_count} samostatných novelizačných predpisov a {version_count} uložených verzií.\n\n"
+            "Použitá metrika: počet odlišných novelizačných predpisov. Častosť novelizácie je iba analytický "
+            "ukazovateľ; nedokazuje, že zákon je nesprávny. Výsledok pokrýva iba importované vzťahy typu „mení“. "
+            f"Pred právnym použitím je potrebná ľudská kontrola.\n\nZdroj: {source_url}"
+        )
+    else:
+        reply = (
+            f"Based on imported JurisDigta relations, the most frequently amended law among laws published "
+            f"in {year} is {identifier} – {title}. During {year}, it has {amendment_count} distinct recorded "
+            f"amending acts and {version_count} stored versions.\n\nMetric: distinct amending acts. Amendment frequency "
+            "is only an analytical proxy and does not prove that a law is incorrect. Coverage is limited to "
+            f"imported relations classified as ‘amends’; human review is required.\n\nSource: {source_url}"
+        )
+    citation = {
+        "source_type": "law",
+        "source_id": str(winner.get("document_id") or ""),
+        "source_url": source_url,
+        "title": title,
+        "citation_label": identifier,
+        "law_number": identifier,
+        "retrieval_tool": "JurisDigta MCP rankLawsByAmendments",
+    }
+    return McpLawContext(
+        prompt_note="Deterministic MCP amendment ranking applied.",
+        document=None,
+        processing_event={
+            "stage": "mcp_law_analytics",
+            "message": _mcp_contact_notice(language),
+            "details": {
+                "tool_calls": ["rankLawsByAmendments"],
+                "result_count": len(results),
+                "metric": "distinct_amending_acts",
+                "published_year": year,
+                "amendment_year": year,
+                "human_review_required": True,
+                "proxy_disclosure": payload.get("proxy_disclosure"),
+                "coverage": payload.get("coverage"),
+                "citations": [citation],
+                "user_visible": True,
+            },
+        },
+        grounded_latest_laws_reply=reply,
     )
 
 

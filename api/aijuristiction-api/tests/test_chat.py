@@ -8975,6 +8975,54 @@ def test_processing_status_message_is_localized_by_country_or_language() -> None
     assert _processing_status_message(country="US", language="en-US") == "Processing..."
 
 
+def test_mcp_law_context_returns_grounded_2025_amendment_ranking(monkeypatch) -> None:
+    from app.chat import mcp_law_context
+
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_call(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append((name, arguments))
+        return {
+            "status": "ok",
+            "proxy_disclosure": "Amendment frequency does not prove incorrectness.",
+            "coverage": {"complete": False},
+            "results": [
+                {
+                    "document_id": "synthetic-2025-42",
+                    "law_identifier_text": "42/2025 Z. z.",
+                    "title": "Synthetic analytical law",
+                    "source_url": "https://example.test/42-2025",
+                    "amendment_count": 4,
+                    "version_count": 6,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(mcp_law_context, "_call_mcp_tool", fake_call)
+
+    context = mcp_law_context.build_mcp_law_context(
+        query="What is the most incorrect recent law with most amendments from 2025?",
+        country="SK",
+        language="en-US",
+    )
+
+    assert context is not None
+    assert calls == [
+        (
+            "rankLawsByAmendments",
+            {"country_code": "SK", "published_year": 2025, "amendment_year": 2025, "limit": 5},
+        )
+    ]
+    assert context.grounded_latest_laws_reply is not None
+    assert "42/2025 Z. z." in context.grounded_latest_laws_reply
+    assert "4 distinct recorded amending acts" in context.grounded_latest_laws_reply
+    assert "does not prove that a law is incorrect" in context.grounded_latest_laws_reply
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["metric"] == "distinct_amending_acts"
+    assert details["citations"][0]["source_id"] == "synthetic-2025-42"
+
+
 def test_orsr_tool_messages_are_localized_by_country_or_language() -> None:
     from app.chat.country_services.slovakia import (
         _orsr_tool_result_found_message,

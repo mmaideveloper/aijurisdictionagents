@@ -45,6 +45,11 @@ print(
     "PDF preparation requests remain in orchestration."
 )
 print(
+    "law_amendment_analytics => run python examples/law_analytics_demo.py --year 2025; "
+    "JurisDigta MCP ranks laws by distinct imported amending acts, keeps version counts separate, "
+    "and discloses that amendment frequency is a proxy requiring human legal review."
+)
+print(
     "employment_contract_template => run python examples/employment_contract_preview_demo.py; "
     "the generated canonical Slovak fill-in PDF validates exact provenance, mandatory clause structure, "
     "distinct salary/payday wording, signature blocks, and a visible human-review warning without external data."
