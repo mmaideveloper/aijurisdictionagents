@@ -418,6 +418,86 @@ def test_sale_purchase_template_maps_structured_aliases_into_placeholders(tmp_pa
     assert rendered.follow_up_question is None
 
 
+def test_sprint_c_templates_map_structured_facts_without_unresolved_fields(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    cases = (
+        (
+            "sk.employment.work_performance_agreement",
+            {
+                "employer_name": "Fiktíva Digital Solutions, s. r. o.",
+                "employee_name": "Lucia Vzorová",
+                "task_description": "testovanie integračných rozhraní",
+                "result_description": "odovzdaný protokol z testovania",
+                "expected_hours": "40",
+                "performance_period": "od 1. októbra do 15. októbra 2026",
+                "workplace": "Košice",
+                "agreed_remuneration": "800 EUR brutto",
+                "payment_method": "prevodom do 15 dní po odovzdaní práce",
+                "miesto_uzatvorenia": "Košice",
+                "datum_uzatvorenia": "15. septembra 2026",
+                "employer_representative": "Ing. Martin Vzorový, konateľ",
+            },
+            "odovzdaný protokol z testovania",
+        ),
+        (
+            "sk.employment.termination_notice",
+            {
+                "employee_full_name": "Lucia Vzorová",
+                "company_name": "Fiktíva Digital Solutions, s. r. o.",
+                "contract_date": "15. septembra 2024",
+                "job_title": "AI vývojár",
+                "miesto_podpisu": "Košice",
+                "datum_podpisu": "15. septembra 2026",
+            },
+            "15. septembra 2024",
+        ),
+        (
+            "sk.authorization.special_power_of_attorney",
+            {
+                "principal_name": "Lucia Vzorová",
+                "authorized_person": "Ing. Martin Vzorový",
+                "authorization_scope": "podanie žiadosti o výpis z obchodného registra",
+                "validity": "do 31. decembra 2026",
+                "miesto_podpisu": "Košice",
+                "datum_podpisu": "15. septembra 2026",
+            },
+            "podanie žiadosti o výpis z obchodného registra",
+        ),
+    )
+
+    for template_key, facts, expected_text in cases:
+        template = store.get(template_key=template_key, jurisdiction="SK")
+        rendered = render_template(template=template, facts=facts, country="SK", language="sk-SK")
+
+        assert expected_text in "\n".join(rendered.lines)
+        assert rendered.unresolved_fields == []
+        assert rendered.missing_required_fields == []
+        assert rendered.follow_up_question is None
+
+
+def test_special_power_of_attorney_reports_precise_missing_required_fact(tmp_path: Path) -> None:
+    template = _build_store(tmp_path).get(
+        template_key="sk.authorization.special_power_of_attorney", jurisdiction="SK"
+    )
+
+    rendered = render_template(
+        template=template,
+        facts={
+            "principal_name": "Lucia Vzorová",
+            "authorized_person": "Ing. Martin Vzorový",
+            "validity": "do 31. decembra 2026",
+            "miesto_podpisu": "Košice",
+            "datum_podpisu": "15. septembra 2026",
+        },
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert rendered.missing_required_fields == ["scope_of_authority"]
+    assert rendered.follow_up_question == "Aký presný rozsah oprávnenia sa má splnomocnencovi udeliť?"
+    assert "scope_of_authority" in rendered.unresolved_fields
+
+
 def test_employment_template_reports_first_missing_required_field(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     template = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
