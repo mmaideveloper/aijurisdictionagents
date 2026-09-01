@@ -200,10 +200,10 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, source_profile, source_captured_at, source_review_status,
-                        reviewed_by, normalization_notes, legal_basis_refs_json, body, keywords_json, flow_keys_json,
+                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, body, keywords_json, flow_keys_json,
                         placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
                         version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -224,6 +224,7 @@ class DocumentTemplateStore:
                     payload.reviewed_by.strip(),
                     payload.normalization_notes.strip(),
                     json.dumps(payload.legal_basis_refs, ensure_ascii=False, sort_keys=True),
+                    payload.body_completeness_status.strip(),
                     payload.body,
                     json.dumps(payload.keywords, ensure_ascii=False, sort_keys=True),
                     json.dumps(payload.flow_keys, ensure_ascii=False, sort_keys=True),
@@ -280,6 +281,7 @@ class DocumentTemplateStore:
             "reviewed_by": (payload.reviewed_by if payload.reviewed_by is not None else current.reviewed_by).strip(),
             "normalization_notes": (payload.normalization_notes if payload.normalization_notes is not None else current.normalization_notes).strip(),
             "legal_basis_refs_json": json.dumps(payload.legal_basis_refs if payload.legal_basis_refs is not None else list(current.legal_basis_refs), ensure_ascii=False, sort_keys=True),
+            "body_completeness_status": (payload.body_completeness_status if payload.body_completeness_status is not None else current.body_completeness_status).strip(),
             "body": payload.body if payload.body is not None else current.body,
             "keywords_json": json.dumps(payload.keywords if payload.keywords is not None else list(current.keywords), ensure_ascii=False, sort_keys=True),
             "flow_keys_json": json.dumps(payload.flow_keys if payload.flow_keys is not None else list(current.flow_keys), ensure_ascii=False, sort_keys=True),
@@ -318,10 +320,10 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, source_profile, source_captured_at, source_review_status,
-                        reviewed_by, normalization_notes, legal_basis_refs_json, body, keywords_json, flow_keys_json,
+                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, body, keywords_json, flow_keys_json,
                         placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
                         version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -348,6 +350,7 @@ class DocumentTemplateStore:
                     updated["reviewed_by"],
                     updated["normalization_notes"],
                     updated["legal_basis_refs_json"],
+                    updated["body_completeness_status"],
                     updated["body"],
                     updated["keywords_json"],
                     updated["flow_keys_json"],
@@ -1031,6 +1034,7 @@ class DocumentTemplateStore:
             reviewed_by=str(row.get("reviewed_by") or ""),
             normalization_notes=str(row.get("normalization_notes") or ""),
             legal_basis_refs=tuple(_parse_json_array(row.get("legal_basis_refs_json"))),
+            body_completeness_status=str(row.get("body_completeness_status") or "metadata_only"),
             body=str(row["body"] or ""),
             keywords=tuple(_parse_json_array(row.get("keywords_json"))),
             flow_keys=tuple(_parse_json_array(row.get("flow_keys_json"))),

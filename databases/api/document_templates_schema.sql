@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS document_templates (
     reviewed_by TEXT NOT NULL DEFAULT '',
     normalization_notes TEXT NOT NULL DEFAULT '',
     legal_basis_refs_json TEXT NOT NULL DEFAULT '[]',
+    body_completeness_status TEXT NOT NULL DEFAULT 'metadata_only',
     body TEXT NOT NULL DEFAULT '',
     keywords_json TEXT NOT NULL,
     flow_keys_json TEXT NOT NULL,
