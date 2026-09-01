@@ -33,7 +33,11 @@ from app.document_templates.store import (
     get_document_template_store,
 )
 from app.document_templates.catalog import render_template
-from app.document_templates.models import DocumentTemplateCreateRequest, TemplateSourceReference
+from app.document_templates.models import (
+    DocumentTemplateCreateRequest,
+    DocumentTemplateDefinition,
+    TemplateSourceReference,
+)
 from app.flow_packs.store import FlowPackNotFoundError, FlowPackStore
 from aijurisdictionagents.agents import (
     AICaseTypeDetectionAgent,
@@ -285,19 +289,7 @@ class ProductionCaseWorkflowServices:
         template_first_draft = _render_template_first_employment_draft(state)
         if template_first_draft is not None:
             answer, template = template_first_draft
-            return answer, [
-                {
-                    "artifact_id": f"{state['workflow_run_id']}:draft",
-                    "artifact_type": "legal_document_draft",
-                    "status": "draft",
-                    "provider": "managed_template",
-                    "model": "",
-                    "route_type": "template_first",
-                    "template_key": template.template_key,
-                    "template_version": template.version,
-                    "template_title": template.title,
-                }
-            ]
+            return answer, [_template_draft_artifact(state=state, template=template)]
         route = get_routed_llm_client(
             store=self._api_store,
             user_id=state.get("user_id", ""),
@@ -1077,6 +1069,35 @@ def _render_template_first_employment_draft(
     if not rendered.lines or rendered.missing_required_fields:
         return None
     return "\n".join(rendered.lines).strip(), template
+
+
+def _template_draft_artifact(
+    *, state: CaseWorkflowState, template: DocumentTemplateDefinition
+) -> dict[str, Any]:
+    """Capture a stable, fact-free source snapshot with the final template artifact."""
+    return {
+        "artifact_id": f"{state['workflow_run_id']}:draft",
+        "artifact_type": "legal_document_draft",
+        "status": "draft",
+        "provider": "managed_template",
+        "model": "",
+        "route_type": "template_first",
+        "template_key": template.template_key,
+        "template_version": template.version,
+        "template_id": template.template_id,
+        "template_lineage_key": template.lineage_key,
+        "template_title": template.title,
+        "template_source_url": template.source_url,
+        "template_source_references": [
+            source.model_dump(mode="json") for source in template.source_refs
+        ],
+        "human_review_required": True,
+        "human_review_disclosure": {
+            "title": template.disclaimer_title,
+            "text": template.disclaimer_text,
+            "footer": template.disclaimer_footer,
+        },
+    }
 
 
 def _is_template_first_employment_request(
