@@ -33,6 +33,93 @@ api_client = TestClient(api_app)
 mcp_client = TestClient(mcp_app)
 
 
+def test_rank_laws_by_amendments_returns_separate_deterministic_metrics(monkeypatch) -> None:
+    captured: list[tuple[str, tuple[object, ...]]] = []
+
+    class FakeLawsSession:
+        param = "?"
+
+        def __init__(self, *, statement_timeout_ms: int) -> None:
+            assert statement_timeout_ms == mcp_api._LEGAL_SEARCH_TIMEOUT_MS
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+        def query_all(self, query: str, params: tuple[object, ...]) -> list[tuple[object, ...]]:
+            captured.append((query, params))
+            return [
+                (
+                    "synthetic-2025-42",
+                    2025,
+                    42,
+                    "42/2025 Z. z.",
+                    "Synthetic analytical law",
+                    "https://example.test/42-2025",
+                    "2025-03-01",
+                    "2025-04-01",
+                    4,
+                    6,
+                    "2025-11-15",
+                )
+            ]
+
+    monkeypatch.setattr(mcp_api, "_LawsQuerySession", FakeLawsSession)
+
+    result = mcp_api._tool_rank_laws_by_amendments(
+        {"published_year": 2025, "amendment_year": 2025, "limit": 3}
+    )
+
+    assert captured[0][1] == (2025, "SK", 2025, 3)
+    assert "COUNT(DISTINCT source_d.document_id)" in captured[0][0]
+    assert result["metric"] == "distinct_amending_acts"
+    assert result["coverage"]["complete"] is False
+    assert result["results"][0]["amendment_count"] == 4
+    assert result["results"][0]["version_count"] == 6
+    assert "does not prove" in result["proxy_disclosure"]
+
+
+def test_rank_laws_by_amendments_tool_contract_discloses_proxy() -> None:
+    tools = {tool["name"]: tool for tool in mcp_api._mcp_tools()}
+
+    schema = tools["rankLawsByAmendments"]
+    assert schema["inputSchema"]["required"] == ["published_year"]
+    assert "not a finding" in schema["description"]
+
+
+def test_get_law_history_keeps_versions_and_relations_separate(monkeypatch) -> None:
+    class FakeLawsSession:
+        param = "?"
+
+        def __init__(self, *, statement_timeout_ms: int) -> None:
+            assert statement_timeout_ms == mcp_api._LEGAL_SEARCH_TIMEOUT_MS
+
+        def __enter__(self):
+            self.call = 0
+            return self
+
+        def __exit__(self, _exc_type, _exc, _tb) -> None:
+            return None
+
+        def query_all(self, _query: str, params: tuple[object, ...]) -> list[tuple[object, ...]]:
+            assert params == ("law-42",)
+            self.call += 1
+            if self.call == 1:
+                return [("v1", "token-1", "2025-01-01", "2025-01-01", "42/2025", "Law", "https://example.test")]
+            return [("amends", "1/2024", "Target", "https://example.test/target", "2025-01-01")]
+
+    monkeypatch.setattr(mcp_api, "_LawsQuerySession", FakeLawsSession)
+
+    result = mcp_api._tool_get_law_history({"document_id": "law-42"})
+
+    assert result["version_count"] == 1
+    assert result["versions"][0]["version_id"] == "v1"
+    assert result["relations"][0]["relation_type"] == "amends"
+    assert result["coverage"]["complete"] is False
+
+
 def test_postgres_laws_query_session_sets_parameterized_statement_timeout(monkeypatch) -> None:
     executed: list[tuple[str, tuple[object, ...]]] = []
 

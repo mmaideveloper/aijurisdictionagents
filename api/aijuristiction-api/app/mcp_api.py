@@ -76,6 +76,8 @@ MCP_SERVER_INSTRUCTIONS = (
     "getLegalSearchStatus, then fetch getLegalSearchResult. "
     "When current legal text, citations, law numbers, sections, paragraphs, or effective dates are needed, "
     "call searchLaws and then getLawText for the relevant documents. "
+    "For analytical amendment-frequency questions, call rankLawsByAmendments and disclose that the "
+    "metric is a proxy rather than proof that a law is incorrect. Use getLawHistory to explain a result. "
     "Answer with the law name or number, relevant sections or paragraphs, and a plain-language explanation. "
     "If the legal conclusion depends on facts or amendment/effective-date status, say so explicitly."
 )
@@ -1596,6 +1598,8 @@ def _call_tool(name: str, arguments: dict[str, Any], *, user_id: str = "internal
         "getStatistics": _tool_get_statistics,
         "searchLegalSources": _tool_search_legal_sources,
         "searchLaws": _tool_search_laws,
+        "rankLawsByAmendments": _tool_rank_laws_by_amendments,
+        "getLawHistory": _tool_get_law_history,
         "getLawText": _tool_get_law_text,
         "searchCourtDecisions": _tool_search_court_decisions,
         "getCourtDecision": _tool_get_court_decision,
@@ -1608,6 +1612,165 @@ def _call_tool(name: str, arguments: dict[str, Any], *, user_id: str = "internal
         logger.warning("mcp_tool_unknown tool=%s", name)
         raise HTTPException(status_code=404, detail=f"Unknown MCP tool: {name}")
     return handler(arguments)
+
+
+def _tool_rank_laws_by_amendments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Rank published laws by distinct amending acts recorded by the collector."""
+    country_code = str(arguments.get("country_code", "SK")).strip().upper() or "SK"
+    published_year = _bounded_int(
+        arguments.get("published_year"), default=datetime.now(timezone.utc).year, minimum=1900, maximum=9999
+    )
+    amendment_year = _bounded_int(
+        arguments.get("amendment_year"), default=published_year, minimum=1900, maximum=9999
+    )
+    limit = _bounded_int(arguments.get("limit"), default=5, minimum=1, maximum=20)
+    with _LawsQuerySession(statement_timeout_ms=_LEGAL_SEARCH_TIMEOUT_MS) as laws:
+        rows = laws.query_all(
+            f"""
+            WITH latest_metadata AS (
+                SELECT law_metadata_id, document_id, version_id, law_identifier_text,
+                       title, publication_date, effective_from
+                FROM (
+                    SELECT m.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY m.document_id
+                               ORDER BY m.effective_from DESC, m.version_id DESC
+                           ) AS row_number
+                    FROM law_metadata AS m
+                ) AS ranked
+                WHERE row_number = 1
+            )
+            SELECT d.document_id, d.law_year, d.law_number,
+                   m.law_identifier_text, m.title, d.source_url,
+                   m.publication_date, m.effective_from,
+                   COUNT(DISTINCT source_d.document_id) AS amendment_count,
+                   (SELECT COUNT(*) FROM law_versions AS versions
+                    WHERE versions.document_id = d.document_id) AS version_count,
+                   MAX(CASE WHEN source_d.document_id IS NOT NULL
+                            THEN source_m.publication_date END) AS latest_amendment_date
+            FROM law_documents AS d
+            JOIN latest_metadata AS m ON m.document_id = d.document_id
+            LEFT JOIN law_metadata_relations AS relation
+              ON relation.relation_type = 'amends'
+             AND UPPER(relation.target_country_code) = UPPER(d.country_code)
+             AND relation.target_collection_code = d.collection_code
+             AND relation.target_law_year = d.law_year
+             AND relation.target_law_number = d.law_number
+            LEFT JOIN law_metadata AS source_m
+              ON source_m.law_metadata_id = relation.law_metadata_id
+            LEFT JOIN law_documents AS source_d
+              ON source_d.document_id = source_m.document_id
+             AND source_d.law_year = {laws.param}
+            WHERE UPPER(d.country_code) = {laws.param}
+              AND d.law_year = {laws.param}
+            GROUP BY d.document_id, d.law_year, d.law_number,
+                     m.law_identifier_text, m.title, d.source_url,
+                     m.publication_date, m.effective_from
+            ORDER BY amendment_count DESC, d.law_number DESC
+            LIMIT {laws.param}
+            """,
+            (amendment_year, country_code, published_year, limit),
+        )
+    results = [
+        {
+            "rank": index,
+            "document_id": str(row[0]),
+            "law_year": int(row[1]),
+            "law_number": int(row[2]),
+            "law_identifier_text": str(row[3]),
+            "title": str(row[4]),
+            "source_url": str(row[5]),
+            "publication_date": str(row[6]),
+            "effective_from": str(row[7]),
+            "amendment_count": int(row[8]),
+            "version_count": int(row[9]),
+            "latest_amendment_date": str(row[10]) if row[10] is not None else None,
+        }
+        for index, row in enumerate(rows, start=1)
+    ]
+    return {
+        "status": "ok",
+        "country_code": country_code,
+        "metric": "distinct_amending_acts",
+        "published_year": published_year,
+        "amendment_year": amendment_year,
+        "population": "laws_published_in_year",
+        "proxy_disclosure": (
+            "Amendment frequency is a user-selected analytical proxy and does not prove that a law is incorrect."
+        ),
+        "human_review_required": True,
+        "coverage": {
+            "source": "JurisDigta imported Slov-Lex metadata relations",
+            "complete": False,
+            "limitation": "Counts include only imported relations classified as amends.",
+        },
+        "results": results,
+    }
+
+
+def _tool_get_law_history(arguments: dict[str, Any]) -> dict[str, Any]:
+    document_id = str(arguments.get("document_id") or "").strip()
+    if not document_id:
+        raise HTTPException(status_code=400, detail="document_id is required")
+    with _LawsQuerySession(statement_timeout_ms=_LEGAL_SEARCH_TIMEOUT_MS) as laws:
+        versions = laws.query_all(
+            f"""
+            SELECT v.version_id, v.version_token, v.effective_from,
+                   m.publication_date, COALESCE(m.law_identifier_text, ''),
+                   COALESCE(m.title, d.official_name), d.source_url
+            FROM law_documents AS d
+            JOIN law_versions AS v ON v.document_id = d.document_id
+            LEFT JOIN law_metadata AS m ON m.version_id = v.version_id
+            WHERE d.document_id = {laws.param}
+            ORDER BY v.effective_from, v.version_token
+            """,
+            (document_id,),
+        )
+        relations = laws.query_all(
+            f"""
+            SELECT relation.relation_type, relation.target_law_identifier_text,
+                   relation.target_title, relation.target_url,
+                   source_m.publication_date
+            FROM law_metadata AS source_m
+            JOIN law_metadata_relations AS relation
+              ON relation.law_metadata_id = source_m.law_metadata_id
+            WHERE source_m.document_id = {laws.param}
+            ORDER BY source_m.publication_date, relation.ordinal
+            """,
+            (document_id,),
+        )
+    return {
+        "status": "ok",
+        "document_id": document_id,
+        "version_count": len(versions),
+        "versions": [
+            {
+                "version_id": str(row[0]),
+                "version_token": str(row[1]),
+                "effective_from": str(row[2]),
+                "publication_date": str(row[3]) if row[3] is not None else None,
+                "law_identifier_text": str(row[4]),
+                "title": str(row[5]),
+                "source_url": str(row[6]),
+            }
+            for row in versions
+        ],
+        "relations": [
+            {
+                "relation_type": str(row[0]),
+                "target_law_identifier_text": str(row[1]),
+                "target_title": str(row[2]),
+                "target_url": str(row[3]),
+                "publication_date": str(row[4]) if row[4] is not None else None,
+            }
+            for row in relations
+        ],
+        "human_review_required": True,
+        "coverage": {
+            "complete": False,
+            "limitation": "History includes only versions and relations imported by JurisDigta.",
+        },
+    }
 
 
 def _tool_start_legal_search(arguments: dict[str, Any], *, user_id: str) -> dict[str, Any]:
@@ -3419,6 +3582,38 @@ def _mcp_tools() -> list[dict[str, Any]]:
                     "offset": {"type": "integer", "minimum": 0, "default": 0},
                     "include_summaries": {"type": "boolean", "default": False},
                 },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "rankLawsByAmendments",
+            "description": (
+                "Deterministically rank Slovak laws published in a selected year by the number of "
+                "distinct amending acts recorded for a selected amendment year. Amendment frequency "
+                "is an analytical proxy, not a finding that a law is legally incorrect."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["published_year"],
+                "properties": {
+                    "country_code": {"type": "string", "default": "SK"},
+                    "published_year": {"type": "integer", "minimum": 1900, "maximum": 9999},
+                    "amendment_year": {"type": "integer", "minimum": 1900, "maximum": 9999},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "getLawHistory",
+            "description": (
+                "Return imported versions and legal relations for one law document. Use it to explain "
+                "an analytical ranking; the result is evidence metadata and requires human review."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "required": ["document_id"],
+                "properties": {"document_id": {"type": "string", "minLength": 1}},
                 "additionalProperties": False,
             },
         },
