@@ -15,7 +15,11 @@ from app.case_workflows.models import (
     WorkflowRunResponse,
     WorkflowStartRequest,
 )
-from app.case_workflows.registry import REGISTERED_GRAPHS, get_registered_graph
+from app.case_workflows.registry import (
+    LEGAL_DOCUMENT_GRAPH_VERSION,
+    REGISTERED_GRAPHS,
+    get_registered_graph,
+)
 from app.case_workflows.store import CaseWorkflowStore, WorkflowAssignmentNotFoundError
 from app.chat.mcp_law_context import build_mcp_law_context
 from app.document_templates.store import (
@@ -36,6 +40,11 @@ from aijurisdictionagents.orchestration.case_workflow import (
     ReviewDisposition,
     build_initial_case_workflow_state,
 )
+from aijurisdictionagents.orchestration.retrieval_policy import (
+    McpRetrievalPolicyError,
+    build_mcp_retrieval_request,
+    validate_mcp_retrieval_policy,
+)
 from aijurisdictionagents.schemas import Document, Message
 
 
@@ -50,12 +59,19 @@ class ProductionCaseWorkflowServices:
     def retrieve_legal_requirements(
         self, state: CaseWorkflowState
     ) -> tuple[list[dict[str, Any]], list[str]]:
+        request = build_mcp_retrieval_request(
+            policy=state.get("flow_definition", {}).get("mcp_retrieval"),
+            case_type_key=state["case_type_key"],
+            jurisdiction=state.get("jurisdiction", ""),
+            verified_facts=state.get("verified_facts", {}),
+            strict=state.get("graph_version", 1) >= LEGAL_DOCUMENT_GRAPH_VERSION,
+        )
         context = build_mcp_law_context(
-            query="pôžička",
+            query=request.query,
             country=state.get("jurisdiction", "SK"),
             language=state.get("language", "sk-SK"),
-            search_limit=5,
-            text_limit=3,
+            search_limit=request.search_limit,
+            text_limit=request.text_limit,
             force=True,
         )
         if context is None or context.document is None:
@@ -224,8 +240,15 @@ class CaseWorkflowApplicationService:
             required_facts = flow.definition.get("required_facts")
             if not isinstance(required_facts, list):
                 raise WorkflowConfigurationError("Flow pack has no valid required_facts list")
-            if not isinstance(flow.definition.get("mcp_retrieval"), dict):
-                raise WorkflowConfigurationError("Flow pack has no MCP retrieval policy")
+            try:
+                validate_mcp_retrieval_policy(
+                    flow.definition.get("mcp_retrieval"),
+                    case_type_key=payload.case_type_key,
+                    jurisdiction=payload.jurisdiction,
+                    strict=payload.graph_version >= LEGAL_DOCUMENT_GRAPH_VERSION,
+                )
+            except McpRetrievalPolicyError as exc:
+                raise WorkflowConfigurationError(str(exc)) from exc
         if payload.graph_key == "unsupported_or_human_review" and bool(
             flow.definition.get("automated_finalization", True)
         ):
@@ -317,13 +340,12 @@ class CaseWorkflowApplicationService:
             if not case_type.is_enabled:
                 continue
             try:
-                self.store.get_active_assignment(
+                existing = self.store.get_active_assignment(
                     case_type_key=case_type.case_type_key,
                     jurisdiction=case_type.jurisdiction,
                 )
-                continue
             except WorkflowAssignmentNotFoundError:
-                pass
+                existing = None
             linked_flow_keys = [
                 key for template in case_type.templates for key in template.flow_keys
             ]
@@ -331,18 +353,38 @@ class CaseWorkflowApplicationService:
                 linked_flow_keys, case_type.jurisdiction
             )
             graph_key = "legal_document_workflow" if chosen else "unsupported_or_human_review"
+            graph_version = (
+                LEGAL_DOCUMENT_GRAPH_VERSION
+                if chosen and case_type.case_type_key == "sk.civil.payment_confirmation"
+                else 1
+            )
             flow_key, flow_version = chosen or ("sk.system.unsupported_or_human_review", 1)
+            if existing is not None:
+                desired = (
+                    existing.graph_key == graph_key
+                    and existing.graph_version == graph_version
+                    and existing.flow_key == flow_key
+                    and existing.flow_version == flow_version
+                )
+                if desired:
+                    continue
+                may_upgrade_seed = (
+                    case_type.case_type_key == "sk.civil.payment_confirmation"
+                    and existing.created_by in {"system_seed", "system_seed_upgrade"}
+                )
+                if not may_upgrade_seed:
+                    continue
             self.assign(
                 WorkflowAssignmentRequest(
                     case_type_key=case_type.case_type_key,
                     jurisdiction=case_type.jurisdiction,
                     graph_key=graph_key,
-                    graph_version=1,
+                    graph_version=graph_version,
                     flow_key=flow_key,
                     flow_version=flow_version,
                     confirmation=True,
                 ),
-                actor="system_seed",
+                actor="system_seed_upgrade" if existing is not None else "system_seed",
             )
 
     def _ensure_payment_confirmation_case_type(self) -> None:

@@ -422,4 +422,41 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
         "sk.civil.payment_confirmation@2"
     ]
     packs.append(payment_confirmation_v2)
+    payment_confirmation_v3 = deepcopy(payment_confirmation_v2)
+    payment_confirmation_v3["version"] = 3
+    payment_confirmation_v3["definition"]["mcp_retrieval"] = {
+        "schema_version": 1,
+        "policy_id": "sk.civil.payment_confirmation.legal_requirements.v1",
+        "required": True,
+        "case_type_keys": ["sk.civil.payment_confirmation"],
+        "jurisdictions": ["SK"],
+        "query_keys": ["payment_confirmation_legal_requirements"],
+        "default_query": "potvrdenie",
+        "fact_query_mappings": {
+            "payment_purpose": {
+                "pôžička": [
+                    "pôžička",
+                    "pôžičky",
+                    "pozicka",
+                    "pozicky",
+                    "splatenie pôžičky",
+                ],
+                "faktúra": [
+                    "faktúra",
+                    "faktúry",
+                    "faktura",
+                    "faktury",
+                    "úhrada faktúry",
+                ],
+                "kúpna cena": ["kúpna cena", "kúpnej ceny", "kupna cena", "kupnej ceny"],
+            }
+        },
+        "search_limit": 5,
+        "text_limit": 3,
+        "failure_policy": "human_review_required",
+    }
+    payment_confirmation_v3["definition"]["prompt_references"] = [
+        "sk.civil.payment_confirmation@3"
+    ]
+    packs.append(payment_confirmation_v3)
     return packs

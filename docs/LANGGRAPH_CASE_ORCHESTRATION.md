@@ -1,8 +1,8 @@
 # LangGraph case orchestration
 
 JurisDigta uses a registered, versioned LangGraph runtime for guided legal cases. The first
-active reference is `sk.civil.payment_confirmation@2` on
-`legal_document_workflow@1`; all other enabled Slovak case types receive an explicit
+active reference is `sk.civil.payment_confirmation@3` on
+`legal_document_workflow@2`; all other enabled Slovak case types receive an explicit
 `unsupported_or_human_review@1` assignment until their legal configuration is reviewed.
 
 ## Runtime contract
@@ -12,11 +12,18 @@ changes apply only to new runs. Python graph code is selected only from the revi
 `app/case_workflows/registry.py`; administrators cannot submit executable code, arbitrary nodes,
 or transitions.
 
-The legal-document graph routes and pins configuration, retrieves current requirements through
-JurisDigta MCP, validates facts, interrupts for one missing fact at a time, executes only consented
+The legal-document graph routes and pins configuration, validates facts, interrupts for one
+missing fact at a time, retrieves current requirements through JurisDigta MCP, executes only consented
 allowlisted tools, blocks conflicts, drafts, runs output and GDPR/safety checks, performs final
 case review, and completes or escalates. MCP/model/tool failures remain visible and cannot become
 fabricated success. `LANGGRAPH_STRICT_MSGPACK=true` prevents permissive checkpoint serialization.
+
+Graph v2 performs required-fact validation before retrieval. Its immutable flow policy supplies a
+reviewed `policy_id`, allowed case types and jurisdictions, bounded MCP limits, a reviewed default
+query, and optional mappings from verified fact aliases to reviewed legal-search queries. Raw fact values are
+never appended to the query. Unknown or instruction-like values are omitted, and an invalid policy
+blocks the run. Audit events record the policy identifier, source IDs, and matched-fact count—not the
+query or personal facts. Graph v1 remains registered only so existing pinned runs can resume.
 
 PostgreSQL production checkpoints use `PostgresSaver`; local deterministic tests use
 `InMemorySaver`. Run metadata and append-only sanitized audit events are stored in the API
@@ -67,10 +74,11 @@ validated commit with `case_orchestration_mode=legacy`; never change a running c
 versions. A retired flow version cannot be republished, and a published version cannot be edited.
 
 Deployments can contain the legacy `sk.civil.payment_confirmation@1` definition created before
-the MCP retrieval policy became mandatory. Startup preserves that published version, seeds the
-compatible `@2` definition, and assigns new cases to the newest enabled version that satisfies
-the legal-document workflow contract. Existing runs and assignments remain pinned to their
-original immutable version.
+the MCP retrieval policy became mandatory and the compatible `@2` definition with query keys.
+Startup preserves both published versions, seeds policy-driven `@3`, and upgrades only the active
+system-seeded assignment for new cases to graph v2/flow v3. Existing workflow runs remain pinned
+to their original graph and flow versions, while administrator-created assignments are not
+silently replaced.
 
 Run the deterministic example:
 

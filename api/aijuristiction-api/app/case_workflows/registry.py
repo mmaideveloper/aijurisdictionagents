@@ -3,6 +3,9 @@ from __future__ import annotations
 from app.case_workflows.models import RegisteredGraphResponse
 
 
+LEGAL_DOCUMENT_GRAPH_VERSION = 2
+
+
 _LEGAL_DOCUMENT_NODES = (
     "route_case_type",
     "load_flow_pack",
@@ -23,6 +26,13 @@ REGISTERED_GRAPHS: tuple[RegisteredGraphResponse, ...] = (
     RegisteredGraphResponse(
         graph_key="legal_document_workflow",
         graph_version=1,
+        node_names=_LEGAL_DOCUMENT_NODES,
+        supports_interrupt_resume=True,
+        supports_automated_finalization=True,
+    ),
+    RegisteredGraphResponse(
+        graph_key="legal_document_workflow",
+        graph_version=LEGAL_DOCUMENT_GRAPH_VERSION,
         node_names=_LEGAL_DOCUMENT_NODES,
         supports_interrupt_resume=True,
         supports_automated_finalization=True,

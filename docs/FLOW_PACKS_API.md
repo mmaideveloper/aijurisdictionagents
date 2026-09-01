@@ -112,5 +112,9 @@ python examples/minimal_demo.py
 
 Executable case packs additionally declare required/conditional facts, MCP query/failure policy,
 prompt references, templates, allowlisted tools, consent purpose, validation gates, escalation,
-and human oversight. Assignment validation rejects disabled, deleted, draft, incompatible, or
-unregistered graph/flow combinations. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.
+and human oversight. For `legal_document_workflow@2`, `mcp_retrieval` must include
+`schema_version`, a stable `policy_id`, `case_type_keys`, `jurisdictions`, a reviewed `default_query`,
+bounded `search_limit`/`text_limit`, and optional `fact_query_mappings`. Fact mappings recognize
+only reviewed aliases and select one reviewed search query; they never append raw fact values.
+Assignment validation rejects disabled, deleted, draft, incompatible, or unregistered graph/flow combinations.
+See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.

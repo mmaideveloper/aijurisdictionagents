@@ -37,13 +37,21 @@ def main() -> None:
             routing_confidence=1.0,
             routing_evidence=["demo exact match"],
             graph_key="legal_document_workflow",
-            graph_version=1,
+            graph_version=2,
             flow_key="sk.civil.payment_confirmation",
-            flow_version=1,
+            flow_version=3,
             flow_definition={
                 "required_facts": ["payer", "recipient", "amount"],
                 "conditional_facts": [],
-                "mcp_retrieval": {"required": True},
+                "mcp_retrieval": {
+                    "schema_version": 1,
+                    "policy_id": "demo.payment.requirements.v1",
+                    "required": True,
+                    "case_type_keys": ["sk.civil.payment_confirmation"],
+                    "jurisdictions": ["SK"],
+                    "query_keys": ["payment_confirmation_legal_requirements"],
+                    "default_query": "potvrdenie",
+                },
                 "optional_tools": [],
             },
         )
@@ -53,7 +61,7 @@ def main() -> None:
         print(f"interrupt => {outcome.interrupts[0]['field']}")
         outcome = runtime.resume(
             graph_key="legal_document_workflow",
-            graph_version=1,
+            graph_version=2,
             workflow_run_id=run_id,
             value=value,
         )
