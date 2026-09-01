@@ -13,6 +13,7 @@ Generic architecture skills are maintained separately in [AI Architect Toolkit](
 - `start-mobile-app`: project-native Flutter mobile launcher
 - `laws-collector`: starts and verifies the local laws collector worker loop
 - `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
+- `youtube-shorts-upload`: stages a local or HTTPS video, validates Short eligibility when media probing is available, and guides a confirmed, privacy-aware YouTube Studio publication
 
 The repository-local `idea-task` and `prepare-task` are JurisDigta adapters. The external toolkit provides `architecture-change`, `generate-bdr`, `generate-use-case`, `generate-add`, `generate-c4`, `generate-adr`, and `review-architecture-conformance`.
 
@@ -34,6 +35,16 @@ Each skill lives under `skills/<name>/` and contains:
 - `SKILL.md`: trigger metadata and workflow instructions
 - `agents/openai.yaml`: UI metadata for Codex skill chips
 - `scripts/`: optional executable helpers when the workflow needs deterministic startup logic
+
+### YouTube Shorts upload
+
+Prepare an HTTPS-hosted video from the repository root:
+
+```powershell
+.\skills\youtube-shorts-upload\scripts\prepare_youtube_short.ps1 -VideoUrl "https://www.jurisdigta.eu/assets/jurisdigta-pravna-pomoc-sk.mp4"
+```
+
+The helper stages the file below ignored `runs/youtube-shorts-upload/`, reports its hash and optional `ffprobe` metadata, and never overwrites different content. Invoke `$youtube-shorts-upload` to continue in YouTube Studio. The workflow keeps the upload private until the developer confirms the final title, disclosures, and visibility immediately before publication.
 
 ## Sync To Another Computer
 
