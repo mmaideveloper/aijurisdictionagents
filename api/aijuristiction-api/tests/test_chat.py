@@ -2900,9 +2900,9 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     monkeypatch.setattr(chat_api, "_warn_if_flow_pack_missing", lambda **_kwargs: None)
     monkeypatch.setattr(
         chat_api,
-        "handle_active_chat_workflow_turn",
+        "route_primary_chat_workflow_turn",
         lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("Standalone legal research must not resume the case workflow")
+            AssertionError("Primary LangGraph routing must be stubbed for this focused test")
         ),
     )
     monkeypatch.setattr(

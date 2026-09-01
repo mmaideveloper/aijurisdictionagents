@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any, Sequence
 
 from ..llm import LLMClient
@@ -40,6 +41,7 @@ class AICaseTypeDetectionAgent:
         request_text: str,
         country: str,
         candidates: Sequence[CaseTypeCandidate],
+        verified_facts: Mapping[str, str] | None = None,
     ) -> CaseTypeDetectionResult:
         if not candidates:
             return CaseTypeDetectionResult(
@@ -74,13 +76,20 @@ class AICaseTypeDetectionAgent:
             }
             for item in candidates
         ]
+        minimized_facts = {
+            str(key).strip()[:100]: " ".join(str(value).split())[:500]
+            for key, value in sorted((verified_facts or {}).items())[:50]
+            if str(key).strip() and str(value).strip()
+        }
+        verified_fact_text = json.dumps(minimized_facts, ensure_ascii=False, indent=2)
         conversation = [
             Message(
                 role="user",
                 agent_name="User",
                 content=(
                     f"Country/jurisdiction: {country.strip().upper() or 'unknown'}\n"
-                    f"First user message:\n{request_text.strip()}"
+                    f"Current user question:\n{request_text.strip()[:12000]}\n\n"
+                    f"Verified case facts only:\n{verified_fact_text}"
                 ),
             )
         ]
@@ -104,8 +113,10 @@ _CASE_TYPE_DETECTION_PROMPT = """
 You are AICaseTypeDetectionAgent for JurisDigta.
 
 Task:
-- Classify the user's first message into one of the provided case types only.
+- Classify the current user question, using only the supplied verified facts as context, into one
+  of the provided case types.
 - Use only the supplied candidate catalog. Do not invent new case types.
+- Never infer a case type from unverified personal data or unavailable conversation history.
 - Prefer the candidate whose legal workflow and requested outcome fit best.
 - If the request is too ambiguous, return status "ambiguous".
 - If none of the candidates fit, return status "no_match".

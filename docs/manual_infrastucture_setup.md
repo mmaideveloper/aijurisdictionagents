@@ -729,8 +729,9 @@ The self-managed production deployment script performs the Ollama install, priva
 ### LangGraph case-orchestration rollout
 
 - Owner: JurisDigta production application administrator and legal workflow reviewer.
-- Set protected `prod` variable `JURISDIGTA_CASE_ORCHESTRATION_CASE_TYPES` to the reviewed
-  comma-separated allowlist; initially use only `sk.civil.payment_confirmation`.
+- Do not configure a production case-type environment allowlist. Active mode discovers only active,
+  validated assignments backed by enabled, published immutable flow packs. Publish and assign a new
+  dedicated flow only after its legal, privacy, human-oversight, and real E2E review succeeds.
 - Dispatch `Self-Managed Prod Deploy` with `case_orchestration_mode=active` only after the exact
   commit's build, API, frontend, migration, and real local E2E gates pass.
 - Validate PostgreSQL migrations, `langgraph_checkpoints*`, `case_workflow_*` tables, API health,
