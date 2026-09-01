@@ -134,6 +134,15 @@ The homepage switches the Jurisdigta avatar video per language:
 
 The video container constrains height to prevent oversized display on large screens.
 
+The localized homepage demo assets remain unchanged. The reviewed 9:16 Slovak
+consumer advertisement is published only inside the article route
+`#article-pravna-pomoc-pre-kazdeho` as
+`assets/jurisdigta-pravna-pomoc-sk.mp4`. Its final card repeats the approved
+JurisDigta logo and `www.jurisdigta.eu` through the last frame. The reusable
+brief, generation prompts, deterministic CapCut steps, and privacy/compliance
+checklist are documented in
+`../docs/marketing/JURISDIGTA_CONSUMER_VIDEO_PROMPT_SK.md`.
+
 ## Minimal runnable example
 
 Repo default: `python examples/minimal_demo.py`
