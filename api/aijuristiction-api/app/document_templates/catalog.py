@@ -887,6 +887,7 @@ def _build_render_context(
     template_kind: str,
 ) -> dict[str, str]:
     values = {key: str(value).strip() for key, value in facts.items() if str(value).strip()}
+    raw_values = dict(values)
     values.update(
         {
             "landlord_identification": _value(values, "prenajimatel"),
@@ -922,6 +923,12 @@ def _build_render_context(
         values.update(_sale_purchase_render_values(values))
     if template_key == "sk.real_estate.lease_agreement" or template_kind == "rental_agreement":
         values.update(_lease_agreement_render_values(values))
+    if template_key == "sk.employment.work_performance_agreement" or template_kind == "work_agreement":
+        values.update(_work_agreement_render_values(raw_values))
+    if template_key == "sk.employment.termination_notice" or template_kind == "employment_termination_notice":
+        values.update(_employment_termination_render_values(raw_values))
+    if template_key in _POWER_OF_ATTORNEY_TEMPLATE_KEYS or template_kind == "power_of_attorney":
+        values.update(_power_of_attorney_render_values(raw_values))
     return {
         key: value if value else _todo_marker(field_name=key, country=country, language=language)
         for key, value in values.items()
@@ -1023,6 +1030,33 @@ def _sale_purchase_render_values(values: dict[str, str]) -> dict[str, str]:
     return resolved
 
 
+def _work_agreement_render_values(values: dict[str, str]) -> dict[str, str]:
+    return {
+        field_name: _first_present(values, field_name, *aliases)
+        for field_name, aliases in _WORK_AGREEMENT_FIELD_ALIASES.items()
+    }
+
+
+def _employment_termination_render_values(values: dict[str, str]) -> dict[str, str]:
+    resolved = {
+        field_name: _first_present(values, field_name, *aliases)
+        for field_name, aliases in _EMPLOYMENT_TERMINATION_FIELD_ALIASES.items()
+    }
+    if not resolved.get("employee_signatory"):
+        resolved["employee_signatory"] = resolved.get("employee_identification", "")
+    return resolved
+
+
+def _power_of_attorney_render_values(values: dict[str, str]) -> dict[str, str]:
+    resolved = {
+        field_name: _first_present(values, field_name, *aliases)
+        for field_name, aliases in _POWER_OF_ATTORNEY_FIELD_ALIASES.items()
+    }
+    if not resolved.get("principal_signatory"):
+        resolved["principal_signatory"] = resolved.get("principal_identification", "")
+    return resolved
+
+
 def _normalize_employment_contract_rendered_text(rendered: str) -> str:
     """Keep current and already-persisted canonical salary clauses unambiguous."""
     normalized = rendered.replace(
@@ -1050,6 +1084,15 @@ def _missing_required_template_fields(
     elif template_key == "sk.real_estate.lease_agreement":
         resolved = _lease_agreement_render_values(raw_values)
         required_fields = _LEASE_AGREEMENT_REQUIRED_FIELDS
+    elif template_key == "sk.employment.work_performance_agreement":
+        resolved = _work_agreement_render_values(raw_values)
+        required_fields = _WORK_AGREEMENT_REQUIRED_FIELDS
+    elif template_key == "sk.employment.termination_notice":
+        resolved = _employment_termination_render_values(raw_values)
+        required_fields = _EMPLOYMENT_TERMINATION_REQUIRED_FIELDS
+    elif template_key in _POWER_OF_ATTORNEY_TEMPLATE_KEYS:
+        resolved = _power_of_attorney_render_values(raw_values)
+        required_fields = _POWER_OF_ATTORNEY_REQUIRED_FIELDS
     else:
         return []
     missing: list[str] = []
@@ -1087,6 +1130,15 @@ def _template_follow_up_question(
     elif template_key == "sk.real_estate.lease_agreement":
         questions = _LEASE_AGREEMENT_FIELD_QUESTIONS
         english_label = "lease-agreement"
+    elif template_key == "sk.employment.work_performance_agreement":
+        questions = _WORK_AGREEMENT_FIELD_QUESTIONS
+        english_label = "work-agreement"
+    elif template_key == "sk.employment.termination_notice":
+        questions = _EMPLOYMENT_TERMINATION_FIELD_QUESTIONS
+        english_label = "employment-termination-notice"
+    elif template_key in _POWER_OF_ATTORNEY_TEMPLATE_KEYS:
+        questions = _POWER_OF_ATTORNEY_FIELD_QUESTIONS
+        english_label = "power-of-attorney"
     else:
         return None
     if normalized_country == "SK" or normalized_language.startswith("sk"):
@@ -1215,6 +1267,110 @@ _EMPLOYMENT_CONTRACT_FIELD_ALIASES = {
     "signature_date": ("datum_uzatvorenia", "dátum_uzatvorenia", "signature_date"),
     "employer_signatory_name": ("za_zamestnavatela", "za_zamestnávateľa", "employer_signatory_name"),
     "employee_signatory_name": ("zamestnanec_podpis", "employee_signatory_name"),
+}
+
+_WORK_AGREEMENT_REQUIRED_FIELDS = (
+    "employer_identification",
+    "employee_identification",
+    "work_task",
+    "work_result",
+    "work_hours",
+    "work_period",
+    "place_of_work",
+    "remuneration",
+    "payment_terms",
+    "signature_place",
+    "signature_date",
+)
+
+_WORK_AGREEMENT_FIELD_QUESTIONS = {
+    "employer_identification": "Kto je zamestnávateľ a ako má byť v dohode presne označený?",
+    "employee_identification": "Kto je zamestnanec a ako má byť v dohode presne označený?",
+    "work_task": "Akú konkrétnu pracovnú úlohu má zamestnanec vykonať?",
+    "work_result": "Aký konkrétny výsledok práce sa má odovzdať?",
+    "work_hours": "Aký je predpokladaný rozsah práce v hodinách?",
+    "work_period": "V akom období sa má práca vykonať?",
+    "place_of_work": "Kde sa má práca vykonávať?",
+    "remuneration": "Aká je dohodnutá odmena za vykonanie práce?",
+    "payment_terms": "Aká je splatnosť a spôsob úhrady odmeny?",
+    "signature_place": "V akom mieste sa dohoda uzatvára?",
+    "signature_date": "Aký je dátum uzatvorenia dohody?",
+}
+
+_WORK_AGREEMENT_FIELD_ALIASES = {
+    "employer_identification": ("employer_name", "employer", "zamestnavatel", "zamestnávateľ", "company_name"),
+    "employee_identification": ("employee_name", "employee_full_name", "meno_a_priezvisko", "client_name"),
+    "work_task": ("task_description", "job_description", "druh_prace", "druh_práce", "work_description"),
+    "work_result": ("result_description", "expected_result", "work_result"),
+    "work_hours": ("hours", "expected_hours", "work_hours"),
+    "work_period": ("period", "work_period", "performance_period", "term"),
+    "place_of_work": ("workplace", "miesto_vykonu_prace", "miesto_výkonu_práce", "place_of_work"),
+    "remuneration": ("payment_amount", "agreed_remuneration", "remuneration", "odmena"),
+    "payment_terms": ("payment_method", "payment_terms", "sposob_uhrady", "spôsob_úhrady"),
+    "signature_place": ("miesto_uzatvorenia", "miesto_podpisu", "signature_place"),
+    "signature_date": ("datum_uzatvorenia", "datum_podpisu", "dátum_podpisu", "signature_date"),
+    "employer_signatory": ("employer_signatory", "employer_representative", "za_zamestnavatela", "za_zamestnávateľa"),
+    "employee_signatory": ("employee_signatory", "employee_full_name", "employee_name", "meno_a_priezvisko"),
+}
+
+_EMPLOYMENT_TERMINATION_REQUIRED_FIELDS = (
+    "employee_identification",
+    "employer_identification",
+    "employment_contract_date",
+    "job_position",
+    "signature_place",
+    "signature_date",
+)
+
+_EMPLOYMENT_TERMINATION_FIELD_QUESTIONS = {
+    "employee_identification": "Kto dáva výpoveď a ako má byť vo výpovedi presne označený?",
+    "employer_identification": "Komu je výpoveď určená a ako má byť zamestnávateľ presne označený?",
+    "employment_contract_date": "Kedy bola uzatvorená pracovná zmluva, z ktorej sa dáva výpoveď?",
+    "job_position": "Aká pracovná pozícia je uvedená v pracovnej zmluve?",
+    "signature_place": "V akom mieste sa výpoveď podpisuje?",
+    "signature_date": "Aký je dátum podpisu výpovede?",
+}
+
+_EMPLOYMENT_TERMINATION_FIELD_ALIASES = {
+    "employee_identification": ("employee_name", "employee_full_name", "meno_a_priezvisko", "client_name"),
+    "employer_identification": ("employer_name", "employer", "zamestnavatel", "zamestnávateľ", "company_name"),
+    "employment_contract_date": ("contract_date", "employment_start_date", "employment_contract_date", "datum_pracovnej_zmluvy"),
+    "job_position": ("position", "job_title", "pracovna_pozicia", "pracovná_pozícia"),
+    "signature_place": ("miesto_podpisu", "miesto_uzatvorenia", "signature_place"),
+    "signature_date": ("datum_podpisu", "dátum_podpisu", "signature_date"),
+    "employee_signatory": ("employee_signatory", "employee_full_name", "employee_name", "meno_a_priezvisko"),
+}
+
+_POWER_OF_ATTORNEY_TEMPLATE_KEYS = frozenset(
+    {"sk.authorization.general_power_of_attorney", "sk.authorization.special_power_of_attorney"}
+)
+
+_POWER_OF_ATTORNEY_REQUIRED_FIELDS = (
+    "principal_identification",
+    "agent_identification",
+    "scope_of_authority",
+    "validity_period",
+    "signature_place",
+    "signature_date",
+)
+
+_POWER_OF_ATTORNEY_FIELD_QUESTIONS = {
+    "principal_identification": "Kto je splnomocniteľ a ako má byť v plnej moci presne označený?",
+    "agent_identification": "Kto je splnomocnenec a ako má byť v plnej moci presne označený?",
+    "scope_of_authority": "Aký presný rozsah oprávnenia sa má splnomocnencovi udeliť?",
+    "validity_period": "Na aké obdobie sa plná moc udeľuje?",
+    "signature_place": "V akom mieste sa plná moc podpisuje?",
+    "signature_date": "Aký je dátum podpisu plnej moci?",
+}
+
+_POWER_OF_ATTORNEY_FIELD_ALIASES = {
+    "principal_identification": ("principal_name", "client_identification", "client_name", "splnomocnitel", "splnomocniteľ"),
+    "agent_identification": ("agent_name", "authorized_person", "opponent_name", "splnomocnenec"),
+    "scope_of_authority": ("authorization_scope", "scope_of_authority", "topic", "urceny_pravny_ukon", "určený_právny_úkon"),
+    "validity_period": ("validity", "duration", "validity_period", "scheduled_for"),
+    "signature_place": ("miesto_podpisu", "miesto_uzatvorenia", "signature_place"),
+    "signature_date": ("datum_podpisu", "dátum_podpisu", "signature_date"),
+    "principal_signatory": ("principal_signatory", "principal_name", "client_name", "splnomocnitel", "splnomocniteľ"),
 }
 
 _LEASE_AGREEMENT_REQUIRED_FIELDS = (
