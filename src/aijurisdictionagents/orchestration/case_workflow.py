@@ -9,10 +9,18 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Interrupt, interrupt
 
+from aijurisdictionagents.tools.base import ToolDefinition
+
 from .retrieval_policy import (
     McpRetrievalPolicyError,
     build_mcp_retrieval_request,
     validate_mcp_retrieval_policy,
+)
+from .tool_policy import (
+    ToolPolicyError,
+    eligible_tool_definitions,
+    get_tool_policy,
+    validate_tool_policy,
 )
 
 
@@ -64,6 +72,8 @@ class CaseWorkflowState(TypedDict, total=False):
     legal_source_ids: list[str]
     offered_checks: list[str]
     consented_checks: list[str]
+    tool_consents: list[dict[str, Any]]
+    tool_selection: dict[str, Any]
     tool_results: list[dict[str, Any]]
     artifacts: list[dict[str, Any]]
     review_decisions: dict[str, str]
@@ -77,6 +87,21 @@ class CaseWorkflowState(TypedDict, total=False):
 
 
 class CaseWorkflowServices(Protocol):
+    def available_tool_definitions(self) -> Sequence[ToolDefinition]: ...
+
+    def propose_optional_tools(
+        self, state: CaseWorkflowState, eligible_tools: Sequence[dict[str, Any]]
+    ) -> tuple[list[str], dict[str, str]]: ...
+
+    def record_tool_consent(
+        self,
+        state: CaseWorkflowState,
+        *,
+        tool_name: str,
+        granted: bool,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
     def retrieve_legal_requirements(
         self, state: CaseWorkflowState
     ) -> tuple[list[dict[str, Any]], list[str]]: ...
@@ -102,6 +127,33 @@ class DeterministicCaseWorkflowServices:
 
     legal_requirements: tuple[dict[str, Any], ...] = ()
     legal_source_ids: tuple[str, ...] = ()
+    tool_definitions: tuple[ToolDefinition, ...] = ()
+
+    def available_tool_definitions(self) -> Sequence[ToolDefinition]:
+        return self.tool_definitions
+
+    def propose_optional_tools(
+        self, state: CaseWorkflowState, eligible_tools: Sequence[dict[str, Any]]
+    ) -> tuple[list[str], dict[str, str]]:
+        del state
+        selected = [str(eligible_tools[0]["name"])] if eligible_tools else []
+        return selected, {"provider": "deterministic", "model": "deterministic"}
+
+    def record_tool_consent(
+        self,
+        state: CaseWorkflowState,
+        *,
+        tool_name: str,
+        granted: bool,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "consent_event_id": f"{state['workflow_run_id']}:{tool_name}:consent",
+            "tool_name": tool_name,
+            "decision": "granted" if granted else "denied",
+            "consent_scope": str(policy["consent_scope"]),
+            "consent_text_version": str(policy["consent_text_version"]),
+        }
 
     def retrieve_legal_requirements(
         self, state: CaseWorkflowState
@@ -177,11 +229,19 @@ class CaseWorkflowRuntime:
             ("legal_document_workflow", 2): self._build_legal_document_graph(
                 checkpointer, verify_before_retrieval=True
             ),
+            ("legal_document_workflow", 3): self._build_legal_document_graph(
+                checkpointer,
+                verify_before_retrieval=True,
+                consented_tool_execution=True,
+            ),
             ("unsupported_or_human_review", 1): self._build_unsupported_graph(checkpointer),
         }
 
     def registered_graphs(self) -> tuple[tuple[str, int], ...]:
         return tuple(sorted(self._graphs))
+
+    def available_tool_definitions(self) -> Sequence[ToolDefinition]:
+        return self._services.available_tool_definitions()
 
     def start(self, state: CaseWorkflowState) -> CaseWorkflowOutcome:
         _validate_initial_state(state)
@@ -225,6 +285,7 @@ class CaseWorkflowRuntime:
         checkpointer: BaseCheckpointSaver[Any],
         *,
         verify_before_retrieval: bool,
+        consented_tool_execution: bool = False,
     ) -> Any:
         builder = StateGraph(CaseWorkflowState)
         builder.add_node("route_case_type", self._route_case_type)
@@ -232,7 +293,12 @@ class CaseWorkflowRuntime:
         builder.add_node("retrieve_legal_requirements", self._retrieve_legal_requirements)
         builder.add_node("verify_input", self._verify_input)
         builder.add_node("collect_missing_facts", self._collect_missing_facts)
-        builder.add_node("offer_optional_verification", self._offer_optional_verification)
+        offer_node = (
+            self._offer_consented_tool_verification
+            if consented_tool_execution
+            else self._offer_optional_verification
+        )
+        builder.add_node("offer_optional_verification", offer_node)
         builder.add_node("execute_consented_tools", self._execute_consented_tools)
         builder.add_node("resolve_conflicts", self._resolve_conflicts)
         builder.add_node("draft_documents", self._draft_documents)
@@ -333,6 +399,23 @@ class CaseWorkflowRuntime:
                 strict=state.get("graph_version", 1) >= 2,
             )
         except McpRetrievalPolicyError as exc:
+            return _update(
+                state,
+                stage="load_flow_pack",
+                status="blocked",
+                escalation_reason=str(exc),
+                event_type="workflow_configuration_rejected",
+                event_status="blocked",
+                details={"reason": str(exc)},
+            )
+        try:
+            validate_tool_policy(
+                definition.get("tool_policy"),
+                registry_definitions=self._services.available_tool_definitions(),
+                jurisdiction=state.get("jurisdiction", ""),
+                strict=state.get("graph_version", 1) >= 3,
+            )
+        except ToolPolicyError as exc:
             return _update(
                 state,
                 stage="load_flow_pack",
@@ -474,6 +557,84 @@ class CaseWorkflowRuntime:
             offered_checks=offered,
             event_type="optional_verification_offered",
             details={"check_count": len(offered)},
+        )
+
+    def _offer_consented_tool_verification(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        policies = validate_tool_policy(
+            state.get("flow_definition", {}).get("tool_policy"),
+            registry_definitions=self._services.available_tool_definitions(),
+            jurisdiction=state.get("jurisdiction", ""),
+            strict=True,
+        )
+        eligible = eligible_tool_definitions(
+            policies,
+            registry_definitions=self._services.available_tool_definitions(),
+            verified_facts=state.get("verified_facts", {}),
+        )
+        selected, selection_metadata = self._services.propose_optional_tools(state, eligible)
+        eligible_names = {str(item["name"]) for item in eligible}
+        selected_names = [name for name in selected if name in eligible_names][:1]
+        if not selected_names:
+            return _update(
+                state,
+                stage="offer_optional_verification",
+                status="running",
+                offered_checks=[],
+                consented_checks=[],
+                tool_consents=[],
+                tool_selection=selection_metadata,
+                event_type="optional_verification_not_selected",
+                details={"eligible_count": len(eligible)},
+            )
+
+        tool_name = selected_names[0]
+        policy = get_tool_policy(policies, tool_name)
+        if policy is None:  # defensive: selected_names was constrained above
+            raise ToolPolicyError("selected_tool_policy_missing")
+        response = interrupt(
+            {
+                "type": "tool_consent",
+                "workflow_run_id": state["workflow_run_id"],
+                "tool_name": tool_name,
+                "purpose": policy.purpose,
+                "provider": policy.provider,
+                "permitted_data_fields": list(policy.permitted_data_fields),
+                "consent_scope": policy.consent_scope,
+                "consent_text_version": policy.consent_text_version,
+                "message": (
+                    f"Allow {policy.provider} to process the listed verified data for "
+                    f"this workflow run only? Reply 'Súhlasím' or 'Nesúhlasím'."
+                ),
+            }
+        )
+        granted = _explicit_tool_consent(response, tool_name=tool_name, policy=policy)
+        policy_payload = {
+            "purpose": policy.purpose,
+            "provider": policy.provider,
+            "consent_scope": policy.consent_scope,
+            "consent_text_version": policy.consent_text_version,
+            "permitted_data_fields": list(policy.permitted_data_fields),
+        }
+        consent = self._services.record_tool_consent(
+            state,
+            tool_name=tool_name,
+            granted=granted,
+            policy=policy_payload,
+        )
+        return _update(
+            state,
+            stage="offer_optional_verification",
+            status="running",
+            offered_checks=selected_names,
+            consented_checks=selected_names if granted else [],
+            tool_consents=[consent],
+            tool_selection=selection_metadata,
+            event_type="tool_consent_recorded",
+            details={
+                "tool_name": tool_name,
+                "decision": "granted" if granted else "denied",
+                "consent_text_version": policy.consent_text_version,
+            },
         )
 
     def _execute_consented_tools(self, state: CaseWorkflowState) -> CaseWorkflowState:
@@ -657,6 +818,8 @@ def build_initial_case_workflow_state(
         offered_checks=[],
         consented_checks=list(consented_checks),
         tool_results=[],
+        tool_consents=[],
+        tool_selection={},
         artifacts=[],
         review_decisions={},
         stage="created",
@@ -706,7 +869,10 @@ def _update(
     **changes: Any,
 ) -> CaseWorkflowState:
     events = list(state.get("events", []))
-    sequence = _next_event_sequence(events, resuming=event_type == "workflow_resumed")
+    sequence = _next_event_sequence(
+        events,
+        resuming=event_type in {"workflow_resumed", "tool_consent_recorded"},
+    )
     event = WorkflowEvent(
         event_id=f"{state['workflow_run_id']}:{sequence:03d}:{event_type}",
         event_type=event_type,
@@ -769,5 +935,27 @@ def _next_event_sequence(
     events: Sequence[WorkflowEvent], *, resuming: bool = False
 ) -> int:
     """Account for interrupt events emitted outside LangGraph checkpoint state."""
-    completed_interrupts = sum(event["event_type"] == "workflow_resumed" for event in events)
+    completed_interrupts = sum(
+        event["event_type"] in {"workflow_resumed", "tool_consent_recorded"}
+        for event in events
+    )
     return len(events) + 1 + completed_interrupts + int(resuming)
+
+
+def _explicit_tool_consent(
+    response: Any, *, tool_name: str, policy: Any
+) -> bool:
+    """Accept only an unambiguous, policy-bound affirmative for this run."""
+
+    if isinstance(response, Mapping):
+        if str(response.get("tool_name", "")).strip() != tool_name:
+            return False
+        if (
+            str(response.get("consent_text_version", "")).strip()
+            != policy.consent_text_version
+        ):
+            return False
+        value = str(response.get("decision", "")).strip().casefold()
+    else:
+        value = str(response).strip().casefold()
+    return value in {"grant", "granted", "consent", "súhlasím", "suhlasim", "yes"}

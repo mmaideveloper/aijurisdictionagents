@@ -283,6 +283,7 @@ class CaseWorkflowStore:
             pending_action=dict(state.get("pending_action", {})),
             final_answer=str(state.get("final_answer", "")),
             artifacts=list(state.get("artifacts", [])),
+            tool_results=list(state.get("tool_results", [])),
             review_decisions=dict(state.get("review_decisions", {})),
             escalation_reason=str(state.get("escalation_reason", "")),
             created_at=_datetime(str(row["created_at"])),
@@ -330,9 +331,148 @@ class CaseWorkflowStore:
             ).fetchall()
         return [_event(_row(row)) for row in rows]
 
+    def record_tool_consent(
+        self,
+        *,
+        state: CaseWorkflowState,
+        tool_name: str,
+        granted: bool,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Append one policy-bound decision; retries return the original event."""
+
+        consent_event_id = (
+            f"{state['workflow_run_id']}:{tool_name}:"
+            f"{policy['consent_text_version']}"
+        )
+        now = _utc_now()
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    INSERT INTO workflow_tool_consent_events(
+                        consent_event_id, workflow_run_id, correlation_id, case_id, user_id,
+                        tool_name, consent_scope, consent_text_version, decision, provider,
+                        purpose, permitted_data_fields_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(consent_event_id) DO NOTHING
+                    """
+                ),
+                (
+                    consent_event_id,
+                    state["workflow_run_id"],
+                    state["correlation_id"],
+                    state.get("case_id", ""),
+                    state.get("user_id", ""),
+                    tool_name,
+                    str(policy["consent_scope"]),
+                    str(policy["consent_text_version"]),
+                    "granted" if granted else "denied",
+                    str(policy["provider"]),
+                    str(policy["purpose"]),
+                    json.dumps(policy["permitted_data_fields"], ensure_ascii=False),
+                    now,
+                ),
+            )
+            row = conn.execute(
+                self._sql(
+                    "SELECT * FROM workflow_tool_consent_events WHERE consent_event_id = ?"
+                ),
+                (consent_event_id,),
+            ).fetchone()
+            conn.commit()
+        if row is None:
+            raise RuntimeError("Tool consent event was not persisted")
+        event = _row(row)
+        return {
+            "consent_event_id": str(event["consent_event_id"]),
+            "tool_name": str(event["tool_name"]),
+            "decision": str(event["decision"]),
+            "consent_scope": str(event["consent_scope"]),
+            "consent_text_version": str(event["consent_text_version"]),
+        }
+
+    def get_tool_consent(
+        self, *, consent_event_id: str, workflow_run_id: str, user_id: str
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                self._sql(
+                    "SELECT * FROM workflow_tool_consent_events "
+                    "WHERE consent_event_id = ? AND workflow_run_id = ? AND user_id = ?"
+                ),
+                (consent_event_id, workflow_run_id, user_id),
+            ).fetchone()
+        return _row(row) if row is not None else None
+
+    def get_tool_execution(self, *, idempotency_key: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                self._sql(
+                    "SELECT * FROM workflow_tool_execution_events WHERE idempotency_key = ?"
+                ),
+                (idempotency_key,),
+            ).fetchone()
+        if row is None:
+            return None
+        event = _row(row)
+        return cast(dict[str, Any], json.loads(str(event["result_summary_json"])))
+
+    def record_tool_execution(
+        self,
+        *,
+        state: CaseWorkflowState,
+        tool_name: str,
+        consent_event_id: str,
+        result_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        idempotency_key = f"{state['workflow_run_id']}:{tool_name}:{consent_event_id}"
+        existing = self.get_tool_execution(idempotency_key=idempotency_key)
+        if existing is not None:
+            return existing
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    INSERT INTO workflow_tool_execution_events(
+                        execution_event_id, idempotency_key, consent_event_id,
+                        workflow_run_id, case_id, user_id, tool_name, status,
+                        result_summary_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(idempotency_key) DO NOTHING
+                    """
+                ),
+                (
+                    str(uuid4()),
+                    idempotency_key,
+                    consent_event_id,
+                    state["workflow_run_id"],
+                    state.get("case_id", ""),
+                    state.get("user_id", ""),
+                    tool_name,
+                    str(result_summary.get("status", "failed")),
+                    json.dumps(result_summary, ensure_ascii=False, sort_keys=True),
+                    _utc_now(),
+                ),
+            )
+            conn.commit()
+        return self.get_tool_execution(idempotency_key=idempotency_key) or result_summary
+
     def delete_case_workflows(self, *, case_id: str, user_id: str) -> int:
         """Delete case-scoped workflow state/checkpoints after authorized case deletion."""
         with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    "DELETE FROM workflow_tool_execution_events WHERE case_id = ? AND user_id = ?"
+                ),
+                (case_id, user_id),
+            )
+            conn.execute(
+                self._sql(
+                    "DELETE FROM workflow_tool_consent_events WHERE case_id = ? AND user_id = ?"
+                ),
+                (case_id, user_id),
+            )
             rows = conn.execute(
                 self._sql(
                     "SELECT workflow_run_id FROM case_workflow_runs WHERE case_id = ? AND user_id = ?"

@@ -459,4 +459,61 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
         "sk.civil.payment_confirmation@3"
     ]
     packs.append(payment_confirmation_v3)
+    payment_confirmation_v4 = deepcopy(payment_confirmation_v3)
+    payment_confirmation_v4["version"] = 4
+    payment_confirmation_v4["definition"]["tool_policy"] = {
+        "schema_version": 1,
+        "policy_id": "sk.civil.payment_confirmation.optional_verification.v1",
+        "max_selected_tools": 1,
+        "tools": [
+            {
+                "name": "obchodny_register_company_check",
+                "purpose": "Verify the recipient company identity before drafting the confirmation.",
+                "provider": "Obchodný register SR",
+                "consent_scope": "payment_confirmation.company_identity_check",
+                "consent_text_version": "workflow-tool-consent-v1",
+                "required_fact_keys": ["recipient_identification"],
+                "input_mapping": {
+                    "company_name_or_registration": "recipient_identification"
+                },
+                "permitted_data_fields": ["recipient_identification"],
+                "jurisdictions": ["SK"],
+                "timeout_seconds": 20,
+            },
+            {
+                "name": "registeradries_address_validate",
+                "purpose": "Validate the recipient address format before drafting the confirmation.",
+                "provider": "registeradries.sk mapping",
+                "consent_scope": "payment_confirmation.recipient_address_check",
+                "consent_text_version": "workflow-tool-consent-v1",
+                "required_fact_keys": ["recipient_identification"],
+                "input_mapping": {"address_text": "recipient_identification"},
+                "permitted_data_fields": ["recipient_identification"],
+                "jurisdictions": ["SK"],
+                "timeout_seconds": 5,
+            },
+            {
+                "name": "dovera_debtor_check",
+                "purpose": "Check the recipient against the public Dôvera debtor list when requested.",
+                "provider": "Dôvera public debtor list",
+                "consent_scope": "payment_confirmation.recipient_debtor_check",
+                "consent_text_version": "workflow-tool-consent-v1",
+                "required_fact_keys": ["recipient_identification"],
+                "input_mapping": {"search_query": "recipient_identification"},
+                "permitted_data_fields": ["recipient_identification"],
+                "jurisdictions": ["SK"],
+                "timeout_seconds": 20,
+            },
+        ],
+    }
+    payment_confirmation_v4["definition"]["allowed_tools"] = [
+        item["name"] for item in payment_confirmation_v4["definition"]["tool_policy"]["tools"]
+    ]
+    payment_confirmation_v4["definition"]["optional_tools"] = list(
+        payment_confirmation_v4["definition"]["allowed_tools"]
+    )
+    payment_confirmation_v4["definition"]["prompt_references"] = [
+        "sk.civil.payment_confirmation@4"
+    ]
+    packs.append(payment_confirmation_v4)
     return packs
