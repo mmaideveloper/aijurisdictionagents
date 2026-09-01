@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
       case_orchestration_mode:
-        description: "Case workflow rollout mode (active is allowlisted to configured case types)"
+        description: "Orchestration mode (active uses primary LangGraph with registry-discovered published flows)"
         required: true
         type: choice
         options:

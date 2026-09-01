@@ -92,6 +92,8 @@ The chat API uses primary routing when `AI_CASE_ORCHESTRATION_MODE=active`; `leg
 rollback setting. Legal-research messages enter the primary router, receive no dedicated document
 flow match, and continue through the established cited MCP research executor. Document orchestration
 takes precedence only when a registered published flow confidently matches the requested outcome.
+The production workflow describes `active` with this registry-driven contract; it does not imply or
+accept a separate static case-type allowlist.
 
 For the real local regression, `scripts/prepare_issue_713_latest_law_e2e.py` seeds only isolated
 synthetic PostgreSQL records and writes the expected MCP source ID to an ignored manifest under
