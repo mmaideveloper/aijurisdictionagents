@@ -16,6 +16,7 @@ import { useAuth } from "../auth/webAuth";
 import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
 import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
+import { assistantAgentDisplayName, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
 import { useLanguage } from "../components/LanguageProvider";
 import { normalizeCaseRole, type CaseRole } from "./caseRoles";
 
@@ -751,7 +752,7 @@ const mapApiRole = (role: ApiCaseHistoryMessage["role"], agentName: string | nul
   if (role === "system") {
     return "System";
   }
-  return agentName?.trim() || "AI Lawyer";
+  return assistantAgentDisplayName(agentName, "AI Lawyer");
 };
 
 const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocumentRecord => ({
@@ -875,7 +876,9 @@ const mapApiCase = (
       id: message.communication_id,
       createdAt: message.created_at,
       actor: mapApiRole(message.role, message.agent_name),
-      message: message.content,
+      message: message.role === "assistant"
+        ? normalizeAssistantPresentationText(message.content)
+        : message.content,
       citations: (message.citations ?? []).map(mapApiCitation)
     })),
     selectedRole: "AI Lawyer",
@@ -1267,8 +1270,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return {
         sessionId,
-        assistantActor: assistantMessage.agent_name?.trim() || "AI Assistant",
-        assistantMessage: assistantMessage.content
+        assistantActor: assistantAgentDisplayName(assistantMessage.agent_name, "AI Assistant"),
+        assistantMessage: normalizeAssistantPresentationText(assistantMessage.content)
       };
     },
     [storedCases, ensureCaseSessionId]

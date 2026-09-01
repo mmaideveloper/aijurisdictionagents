@@ -251,6 +251,9 @@ const RefreshCaseDataConsumer: React.FC = () => {
       <div data-testid="case-meta">{cases[0]?.workspace.meta ?? ""}</div>
       <div data-testid="document-count">{documents.length}</div>
       <div data-testid="latest-document">{documents[0]?.originalFilename ?? ""}</div>
+      <div data-testid="latest-interaction-actor">
+        {cases[0]?.interactionHistory.at(-1)?.actor ?? ""}
+      </div>
       <div data-testid="latest-interaction">{cases[0]?.interactionHistory.at(-1)?.message ?? ""}</div>
     </div>
   );
@@ -508,8 +511,8 @@ describe("CaseProvider", () => {
         {
           communication_id: "message-2",
           role: "assistant",
-          content: "I prepared the draft.",
-          agent_name: "AI Lawyer",
+          content: "Balík dokumentov&#x20;je pripravený.",
+          agent_name: "LangGraphPrimaryRouter",
           created_at: "2026-06-22T10:02:00.000Z"
         }
       ],
@@ -560,6 +563,9 @@ describe("CaseProvider", () => {
     expect(screen.getByTestId("document-count").textContent).toBe("1");
     expect(screen.getByTestId("case-meta").textContent).toBe("1 legal document / 2 messages");
     expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
+    expect(screen.getByTestId("latest-interaction-actor").textContent).toBe("AI Orchestrator Agent");
+    expect(screen.getByTestId("latest-interaction").textContent).toContain("Balík dokumentov je pripravený.");
+    expect(screen.getByTestId("latest-interaction").textContent).not.toContain("&#x20;");
     expect(screen.getByTestId("latest-interaction").textContent).toContain("Generated document:");
     expect(screen.getByTestId("latest-interaction").textContent).toContain(
       "/app/documents/view?caseId=case-api&docId=doc-generated"

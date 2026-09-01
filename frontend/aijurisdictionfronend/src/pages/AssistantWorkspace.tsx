@@ -26,6 +26,7 @@ import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
+import { AI_ORCHESTRATOR_AGENT_LABEL, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 const EMPTY_CASE_CITATIONS: CaseCitation[] = [];
@@ -506,7 +507,7 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
 
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
-  const presentation = parseAssistantMessagePresentation(text);
+  const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
   const conversationalText = presentation.conversationalText
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
@@ -824,6 +825,9 @@ const CaseMessageActor: React.FC<{ fallback: string }> = ({ fallback }) => {
     return typeof custom?.actor === "string" ? custom.actor : null;
   });
 
+  if (actor && /^LangGraph(?:[A-Za-z0-9_.:-]*)?$/i.test(actor.trim())) {
+    return <>{AI_ORCHESTRATOR_AGENT_LABEL}</>;
+  }
   const isInternalActor = actor !== null && /^(?:LawyerSlovakia|[A-Za-z]+Slovakia|AI Lawyer|You(?: \(.+\))?)$/i.test(actor);
   return <>{actor && !isInternalActor ? actor : fallback}</>;
 };
