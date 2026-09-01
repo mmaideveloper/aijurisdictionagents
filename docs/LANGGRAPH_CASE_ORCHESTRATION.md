@@ -1,9 +1,29 @@
 # LangGraph case orchestration
 
-JurisDigta uses a registered, versioned LangGraph runtime for guided legal cases. The first
-active reference is `sk.civil.payment_confirmation@4` on
+JurisDigta uses LangGraph as the primary chat orchestrator and a registered, versioned runtime for
+guided legal cases. The first active reference is `sk.civil.payment_confirmation@4` on
 `legal_document_workflow@3`; all other enabled Slovak case types receive an explicit
 `unsupported_or_human_review@1` assignment until their legal configuration is reviewed.
+
+Every normal chat question enters `PrimaryLangGraphRouter`. Its classifier receives only the
+current question, verified facts, and candidates derived from active assignments backed by enabled,
+published immutable flow packs. A unique high-confidence match enters the dedicated case graph;
+an ambiguous or low-confidence result asks one clarification question; and no match follows the
+generic LangGraph route. There is no environment-maintained case-type allowlist and the model cannot
+invent a candidate key.
+
+```mermaid
+flowchart TD
+    Q[Current question] --> P[Primary LangGraph router]
+    V[Verified facts only] --> P
+    R[Active assignments + published flow packs] --> P
+    P --> C{Constrained classification}
+    C -->|unique high confidence| D[Dedicated JurisDigta case graph]
+    C -->|low confidence or ambiguous| A[Ask one clarification question]
+    C -->|no registered match| G[Generic LangGraph route]
+    D --> T[Consent, tools, validation, human oversight]
+    A --> P
+```
 
 ## Runtime contract
 
@@ -68,13 +88,12 @@ database by migrations `0020_langgraph_case_workflows.sql` and
 - `POST /runs`, `POST /runs/{id}/resume`, `GET /runs/{id}`, and `GET /runs/{id}/events` expose the
   shared web/mobile/chat-simulator workflow state.
 
-The existing chat API invokes the same runtime when `AI_CASE_ORCHESTRATION_MODE=active` and the
-selected case type is in `AI_CASE_ORCHESTRATION_CASE_TYPES`. `legacy` is the rollback setting.
-Legal-research messages do not enter the document workflow and retain the established MCP path,
-including when the user says they "want to know" the latest law inside an existing document case.
-The runtime leaves any waiting case workflow unchanged while answering the standalone research
-question. Document orchestration still takes precedence when the same message explicitly asks to
-prepare, create, revise, or export an artifact such as a document, contract, draft, or PDF.
+The chat API uses primary routing when `AI_CASE_ORCHESTRATION_MODE=active`; `legacy` is the emergency
+rollback setting. Legal-research messages enter the primary router, receive no dedicated document
+flow match, and continue through the established cited MCP research executor. Document orchestration
+takes precedence only when a registered published flow confidently matches the requested outcome.
+The production workflow describes `active` with this registry-driven contract; it does not imply or
+accept a separate static case-type allowlist.
 
 For the real local regression, `scripts/prepare_issue_713_latest_law_e2e.py` seeds only isolated
 synthetic PostgreSQL records and writes the expected MCP source ID to an ignored manifest under
@@ -94,8 +113,9 @@ If model prose omits a user-verified value, the workflow appends that exact valu
 verified-data section before validation. It never infers or fills an absent value.
 
 Case deletion removes associated workflow run state, consent/execution ledger rows, audit events,
-and checkpoints with the parent case. Keep the active allowlist limited to reviewed flows; widening it requires the same
-privacy, legal, and real-path E2E review used for the payment-confirmation reference flow.
+and checkpoints with the parent case. Publishing and assigning another dedicated flow requires the
+same privacy, legal, and real-path E2E review used for the payment-confirmation reference flow; the
+primary router discovers it automatically after activation.
 
 ## Operations and rollback
 

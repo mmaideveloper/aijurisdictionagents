@@ -6,6 +6,12 @@ from .case_workflow import (
     build_initial_case_workflow_state,
 )
 from .orchestrator import Orchestrator
+from .primary_router import (
+    PrimaryClassification,
+    PrimaryLangGraphRouter,
+    PrimaryRouteCandidate,
+    PrimaryRouteDecision,
+)
 
 __all__ = [
     "CaseWorkflowOutcome",
@@ -13,7 +19,9 @@ __all__ = [
     "CaseWorkflowState",
     "DeterministicCaseWorkflowServices",
     "Orchestrator",
+    "PrimaryClassification",
+    "PrimaryLangGraphRouter",
+    "PrimaryRouteCandidate",
+    "PrimaryRouteDecision",
     "build_initial_case_workflow_state",
 ]
-
-__all__ = ["Orchestrator"]

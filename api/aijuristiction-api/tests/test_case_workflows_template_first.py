@@ -1,7 +1,7 @@
 from typing import Any
 
 from app.case_workflows import service
-from app.document_templates.models import DocumentTemplateDefinition
+from app.document_templates.models import DocumentTemplateDefinition, TemplateSourceReference
 from app.document_templates.store import DocumentTemplateNotFoundError
 
 
@@ -35,6 +35,18 @@ class _FakeTemplateStore:
                 "weekly_working_hours", "employer_seat", "employer_ico",
                 "employer_representative", "job_description",
             ),
+            source_refs=(
+                TemplateSourceReference(
+                    label="Reviewed test source",
+                    url="https://example.test/reviewed-source",
+                    publisher="Test publisher",
+                    source_kind="external_template_page",
+                    notes="Synthetic source metadata for provenance testing.",
+                ),
+            ),
+            disclaimer_title="Dôležité upozornenie",
+            disclaimer_text="Pred podpisom je povinná ľudská kontrola.",
+            disclaimer_footer="Vzorový návrh – vyžaduje ľudskú kontrolu.",
         )
 
     def find_best_match(
@@ -98,3 +110,32 @@ def test_template_first_test_keeps_real_shared_modules_available() -> None:
 
     assert callable(ApiDatabaseStore.from_env)
     assert CaseDocument.__module__ == "aijurisdictionagents.api_db.store"
+
+
+def test_template_draft_artifact_persists_fact_free_provenance() -> None:
+    template = _FakeTemplateStore().get(
+        template_key="sk.employment.employment_contract", jurisdiction="SK"
+    )
+
+    artifact = service._template_draft_artifact(
+        state={"workflow_run_id": "workflow-123", "verified_facts": {"client_name": "Lucia Vzorová"}},
+        template=template,
+    )
+
+    assert artifact["artifact_id"] == "workflow-123:draft"
+    assert artifact["template_key"] == "sk.employment.employment_contract"
+    assert artifact["template_version"] == 1
+    assert artifact["template_source_url"] == "https://example.test/pracovna-zmluva"
+    assert artifact["template_source_references"] == [
+        {
+            "label": "Reviewed test source",
+            "url": "https://example.test/reviewed-source",
+            "publisher": "Test publisher",
+            "source_kind": "external_template_page",
+            "notes": "Synthetic source metadata for provenance testing.",
+        }
+    ]
+    assert artifact["human_review_required"] is True
+    assert artifact["human_review_disclosure"]["footer"] == "Vzorový návrh – vyžaduje ľudskú kontrolu."
+    assert "verified_facts" not in artifact
+    assert "Lucia Vzorová" not in str(artifact)

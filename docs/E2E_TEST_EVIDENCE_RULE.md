@@ -143,3 +143,12 @@ When a flow exercises an external or registry tool, the manifest must additional
 proposed and executed tool name, consent scope/text version/event ID, sanitized status and record
 count, and prove that the model received only flow-eligible definitions. Never retain raw tool
 inputs or records in the manifest.
+
+Primary-router scenarios must additionally prove that an unrelated question emits the generic
+LangGraph route without creating a dedicated workflow run, then that a matching question in the
+same synthetic case selects an active assignment backed by an enabled, published flow pack. Record
+the constrained route evidence, provider/model, selected case type, pinned graph/flow, MCP source
+IDs, workflow event IDs, and a final user-visible screenshot. Do not retain the classifier prompt,
+raw conversation history, or personal facts. `scripts/prepare_issue_720_primary_langgraph_e2e.py`
+and `frontend/aijurisdictionfronend/e2e/issue-720-primary-langgraph-orchestrator.spec.ts` are the
+reference local acceptance path.

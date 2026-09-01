@@ -122,4 +122,7 @@ fact keys, input mapping, permitted data fields, jurisdiction, bounded timeout, 
 consent-text version. The LLM sees only eligible definitions and can propose at most one tool;
 execution still requires an exact per-run ledger grant.
 Assignment validation rejects disabled, deleted, draft, incompatible, or unregistered graph/flow combinations.
+When orchestration mode is active, the primary LangGraph router automatically discovers active
+dedicated assignments backed by enabled, published versions. No separate production case-type
+allowlist must be synchronized with the registry.
 See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.

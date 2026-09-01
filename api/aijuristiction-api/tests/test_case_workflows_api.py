@@ -19,6 +19,7 @@ from app.case_workflows.service import (
     ProductionCaseWorkflowServices,
     _normalize_generated_draft,
     get_case_workflow_service,
+    route_primary_chat_workflow_turn,
 )
 from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
 from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
@@ -129,6 +130,113 @@ def test_default_assignment_preserves_legacy_versions_and_selects_consented_tool
         ).definition.get("mcp_retrieval"),
         dict,
     )
+
+
+def test_primary_router_candidates_come_from_active_published_dedicated_assignments(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+
+    candidates = service.list_primary_route_candidates(jurisdiction="SK")
+
+    assert [item.case_type_key for item in candidates] == [
+        "sk.civil.payment_confirmation"
+    ]
+    candidate = candidates[0]
+    assert candidate.graph_key == "legal_document_workflow"
+    assert candidate.flow_key == "sk.civil.payment_confirmation"
+    assert "potvrdenie o zaplatení" in candidate.keywords
+
+    with sqlite3.connect(tmp_path / "flows.sqlite3") as connection:
+        connection.execute(
+            "UPDATE flow_packs SET lifecycle_state = 'draft' "
+            "WHERE flow_key = ? AND version = ? AND jurisdiction = ?",
+            (candidate.flow_key, candidate.flow_version, "SK"),
+        )
+
+    assert service.list_primary_route_candidates(jurisdiction="SK") == ()
+
+
+class _PrimaryRouterLLM:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self._payload = payload
+        self.conversations: list[Any] = []
+
+    def complete(self, _agent: str, _prompt: str, conversation: list[Any], _documents: list[Any]) -> str:
+        self.conversations.append(conversation)
+        return json.dumps(self._payload)
+
+
+def test_primary_chat_router_starts_registered_flow_without_static_allowlist(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    service = _service(tmp_path)
+    llm = _PrimaryRouterLLM(
+        {
+            "status": "matched",
+            "selected_case_type_key": "sk.civil.payment_confirmation",
+            "confidence": 0.94,
+            "second_confidence": 0.1,
+            "clarification_question": "",
+            "rationale": "The requested outcome is a payment confirmation.",
+        }
+    )
+    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
+    monkeypatch.delenv("AI_CASE_ORCHESTRATION_CASE_TYPES", raising=False)
+    monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
+
+    result = route_primary_chat_workflow_turn(
+        session_id="primary-session",
+        case_id="primary-case",
+        user_id="synthetic-user",
+        jurisdiction="SK",
+        language="sk-SK",
+        request_text="Priprav potvrdenie o prijatí platby.",
+        llm_client=llm,
+        verified_facts={"payment_purpose": "synthetic purpose"},
+    )
+
+    assert result is not None
+    assert result.decision.route == "dedicated_flow"
+    assert result.workflow_run is not None
+    assert result.workflow_run.case_type_key == "sk.civil.payment_confirmation"
+    detection_text = llm.conversations[0][0].content
+    assert "Current user question" in detection_text
+    assert "synthetic purpose" in detection_text
+    assert "conversation history" not in detection_text.lower()
+
+
+def test_primary_chat_router_asks_instead_of_guessing_low_confidence_flow(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    service = _service(tmp_path)
+    llm = _PrimaryRouterLLM(
+        {
+            "status": "ambiguous",
+            "selected_case_type_key": "sk.civil.payment_confirmation",
+            "confidence": 0.55,
+            "second_confidence": 0.48,
+            "clarification_question": "Chcete pripraviť potvrdenie o prijatí platby?",
+            "rationale": "The request is incomplete.",
+        }
+    )
+    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
+    monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
+
+    result = route_primary_chat_workflow_turn(
+        session_id="ambiguous-session",
+        case_id="ambiguous-case",
+        user_id="synthetic-user",
+        jurisdiction="SK",
+        language="sk-SK",
+        request_text="Potrebujem nejaké potvrdenie.",
+        llm_client=llm,
+    )
+
+    assert result is not None
+    assert result.decision.route == "clarification"
+    assert result.workflow_run is None
+    assert result.decision.clarification_question == "Chcete pripraviť potvrdenie o prijatí platby?"
 
 
 def test_production_retrieval_uses_policy_query_and_excludes_unmapped_identity(

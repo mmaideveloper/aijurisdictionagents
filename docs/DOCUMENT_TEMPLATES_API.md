@@ -44,6 +44,9 @@ Notes:
 - templates can exist with metadata-only seed rows first (`body` can stay empty)
 - later updates can attach a full template body and richer source references
 - `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
+- Sprint C also supplies reviewed canonical bodies for the work-performance agreement, employee-initiated employment termination notice, and general and special powers of attorney; each records an exact reviewed source URL and retains a human-review requirement for legal-risk use
+- Sprint C normalizes structured case, chat, and profile facts through template-specific aliases for those four templates. Their legally material fields are required before the template-first path can draft a final document; missing data is returned as a precise Slovak follow-up question rather than silently leaving an unresolved placeholder. The mapping is deterministic, does not infer facts, and preserves the template's visible source and human-review disclosure.
+- Every template-first workflow draft now persists a fact-free provenance snapshot with its final artifact: template key, immutable template version and lineage, primary source URL, reviewed source references, and the stored human-review disclosure. This makes the exact managed template source retrievable with the output while avoiding a second copy of user facts or document content.
 - as of August 29, 2026, the chat export path treats `employment_contract` as a first-class document kind and routes
   detected Slovak employment-contract exports through the managed template instead of the generic memo formatter
 - the legal-document workflow `draft_documents` node now uses a template-first strategy for `Pracovna zmluva` when
@@ -319,7 +322,8 @@ python examples/minimal_demo.py
 
 The payment-confirmation reference case links template
 `sk.civil.payment_confirmation` to flow `sk.civil.payment_confirmation@4` on
-`legal_document_workflow@3`. The LangGraph run pins
+`legal_document_workflow@3`. The primary LangGraph router discovers this active published
+assignment without a static case-type allowlist. The dedicated LangGraph run pins
 that relationship, fills only verified facts, blocks unresolved placeholders, records MCP source
 IDs, and requires human review disclosure before use. Admin Case Catalog shows the active graph,
 flow lifecycle/version, validation result, and assignment history.

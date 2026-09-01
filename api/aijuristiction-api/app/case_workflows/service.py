@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from dataclasses import dataclass
 from functools import lru_cache
 import json
 import os
 from typing import Any, Sequence, cast
-import unicodedata
 from uuid import uuid4
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -32,9 +33,17 @@ from app.document_templates.store import (
     get_document_template_store,
 )
 from app.document_templates.catalog import render_template
-from app.document_templates.models import DocumentTemplateCreateRequest, TemplateSourceReference
+from app.document_templates.models import (
+    DocumentTemplateCreateRequest,
+    DocumentTemplateDefinition,
+    TemplateSourceReference,
+)
 from app.flow_packs.store import FlowPackNotFoundError, FlowPackStore
-from aijurisdictionagents.agents import create_lawyer_agent
+from aijurisdictionagents.agents import (
+    AICaseTypeDetectionAgent,
+    CaseTypeCandidate,
+    create_lawyer_agent,
+)
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 from aijurisdictionagents.orchestration.case_workflow import (
@@ -42,6 +51,12 @@ from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowState,
     ReviewDisposition,
     build_initial_case_workflow_state,
+)
+from aijurisdictionagents.orchestration.primary_router import (
+    PrimaryClassification,
+    PrimaryLangGraphRouter,
+    PrimaryRouteCandidate,
+    PrimaryRouteDecision,
 )
 from aijurisdictionagents.orchestration.retrieval_policy import (
     McpRetrievalPolicyError,
@@ -61,6 +76,12 @@ from aijurisdictionagents.tools.base import ToolDefinition
 
 class WorkflowConfigurationError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class PrimaryChatRouteResult:
+    decision: PrimaryRouteDecision
+    workflow_run: WorkflowRunResponse | None = None
 
 
 class ProductionCaseWorkflowServices:
@@ -268,19 +289,7 @@ class ProductionCaseWorkflowServices:
         template_first_draft = _render_template_first_employment_draft(state)
         if template_first_draft is not None:
             answer, template = template_first_draft
-            return answer, [
-                {
-                    "artifact_id": f"{state['workflow_run_id']}:draft",
-                    "artifact_type": "legal_document_draft",
-                    "status": "draft",
-                    "provider": "managed_template",
-                    "model": "",
-                    "route_type": "template_first",
-                    "template_key": template.template_key,
-                    "template_version": template.version,
-                    "template_title": template.title,
-                }
-            ]
+            return answer, [_template_draft_artifact(state=state, template=template)]
         route = get_routed_llm_client(
             store=self._api_store,
             user_id=state.get("user_id", ""),
@@ -393,7 +402,7 @@ class CaseWorkflowApplicationService:
             )
         except FlowPackNotFoundError as exc:
             raise WorkflowConfigurationError(str(exc)) from exc
-        if not flow.is_enabled or flow.is_deleted:
+        if not flow.is_enabled or flow.is_deleted or flow.lifecycle_state != "published":
             raise WorkflowConfigurationError("Flow-pack version is not executable")
         if payload.graph_key == "legal_document_workflow":
             required_facts = flow.definition.get("required_facts")
@@ -422,6 +431,60 @@ class CaseWorkflowApplicationService:
         ):
             raise WorkflowConfigurationError("Safe fallback flow cannot enable finalization")
         return "valid", "Graph, case type, and immutable flow version are compatible"
+
+    def list_primary_route_candidates(
+        self, *, jurisdiction: str
+    ) -> tuple[PrimaryRouteCandidate, ...]:
+        """Expose only executable dedicated flows to the primary LangGraph router."""
+        normalized_jurisdiction = jurisdiction.strip().upper()
+        candidates: list[PrimaryRouteCandidate] = []
+        for assignment in self.store.list_assignments(jurisdiction=normalized_jurisdiction):
+            if (
+                not assignment.is_active
+                or assignment.validation_status != "valid"
+                or assignment.graph_key == "unsupported_or_human_review"
+            ):
+                continue
+            try:
+                case_type = self.template_store.get_case_type(
+                    case_type_key=assignment.case_type_key,
+                    jurisdiction=normalized_jurisdiction,
+                )
+                flow = self.flow_store.get(
+                    flow_key=assignment.flow_key,
+                    version=assignment.flow_version,
+                    jurisdiction=normalized_jurisdiction,
+                )
+            except (CaseTypeNotFoundError, FlowPackNotFoundError):
+                continue
+            if (
+                not case_type.is_enabled
+                or case_type.is_deleted
+                or not flow.is_enabled
+                or flow.is_deleted
+                or flow.lifecycle_state != "published"
+            ):
+                continue
+            intent = flow.definition.get("intent", {})
+            raw_keywords = intent.get("keywords", []) if isinstance(intent, dict) else []
+            flow_keywords = (
+                tuple(str(item).strip() for item in raw_keywords if str(item).strip())
+                if isinstance(raw_keywords, list)
+                else ()
+            )
+            candidates.append(
+                PrimaryRouteCandidate(
+                    case_type_key=case_type.case_type_key,
+                    case_type_name=case_type.name,
+                    description=case_type.description or flow.description,
+                    keywords=tuple(dict.fromkeys((*case_type.keywords, *flow_keywords))),
+                    graph_key=assignment.graph_key,
+                    graph_version=assignment.graph_version,
+                    flow_key=assignment.flow_key,
+                    flow_version=assignment.flow_version,
+                )
+            )
+        return tuple(sorted(candidates, key=lambda item: item.case_type_key))
 
     def assign(
         self, payload: WorkflowAssignmentRequest, *, actor: str
@@ -714,25 +777,22 @@ def handle_chat_workflow_turn(
     case_type_key: str,
     routing_confidence: float,
     request_text: str,
+    routing_evidence: Sequence[str] = ("existing_case_catalog_selection",),
     external_provider_acknowledged: bool = False,
 ) -> WorkflowRunResponse | None:
     mode = os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower()
-    enabled_case_types = {
-        item.strip()
-        for item in os.getenv(
-            "AI_CASE_ORCHESTRATION_CASE_TYPES", "sk.civil.payment_confirmation"
-        ).split(",")
-        if item.strip()
-    }
-    if mode != "active" or case_type_key not in enabled_case_types:
+    if mode != "active":
         return None
     service = get_case_workflow_service()
+    candidates = service.list_primary_route_candidates(jurisdiction=jurisdiction)
+    if case_type_key not in {item.case_type_key for item in candidates}:
+        return None
     prior = service.store.get_latest_run_for_session(session_id=session_id, user_id=user_id)
     if prior is None and case_id:
         prior = service.store.get_latest_run_for_case(case_id=case_id, user_id=user_id)
     if prior is not None and prior.status == "waiting_for_user":
         return service.resume(prior.workflow_run_id, user_id=user_id, value=request_text)
-    if prior is not None and prior.status in {"running", "completed"}:
+    if prior is not None and prior.status == "running":
         return prior
     return service.start(
         WorkflowStartRequest(
@@ -744,10 +804,142 @@ def handle_chat_workflow_turn(
             case_type_key=case_type_key,
             request_text=request_text,
             routing_confidence=routing_confidence,
-            routing_evidence=["existing_case_catalog_selection"],
+            routing_evidence=[str(item)[:200] for item in routing_evidence][:10],
             external_provider_acknowledged=external_provider_acknowledged,
         )
     )
+
+
+def route_primary_chat_workflow_turn(
+    *,
+    session_id: str,
+    case_id: str,
+    user_id: str,
+    jurisdiction: str,
+    language: str,
+    request_text: str,
+    llm_client: Any,
+    verified_facts: Mapping[str, str] | None = None,
+    external_provider_acknowledged: bool = False,
+) -> PrimaryChatRouteResult | None:
+    """Run the default chat route through a constrained LangGraph router."""
+    if os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower() != "active":
+        return None
+    service = get_case_workflow_service()
+    prior = service.store.get_latest_run_for_session(session_id=session_id, user_id=user_id)
+    if prior is None and case_id:
+        prior = service.store.get_latest_run_for_case(case_id=case_id, user_id=user_id)
+    if prior is not None and prior.status in {"waiting_for_user", "running"}:
+        active_run = handle_chat_workflow_turn(
+            session_id=session_id,
+            case_id=case_id,
+            user_id=user_id,
+            jurisdiction=jurisdiction,
+            language=language,
+            case_type_key=prior.case_type_key,
+            routing_confidence=1.0,
+            request_text=request_text,
+            routing_evidence=("primary_langgraph_router", "active_workflow_resume"),
+            external_provider_acknowledged=external_provider_acknowledged,
+        )
+        return PrimaryChatRouteResult(
+            decision=PrimaryRouteDecision(
+                route="dedicated_flow",
+                selected_case_type_key=prior.case_type_key,
+                confidence=1.0,
+                confidence_gap=1.0,
+                clarification_question="",
+                evidence=("primary_langgraph_router", "active_workflow_resume"),
+            ),
+            workflow_run=active_run,
+        )
+
+    candidates = service.list_primary_route_candidates(jurisdiction=jurisdiction)
+    route_facts = dict(verified_facts or {})
+    if not route_facts and prior is not None and prior.case_id == case_id:
+        prior_state = service.store.get_run_state(prior.workflow_run_id, user_id=user_id)
+        raw_verified = prior_state.get("verified_facts", {})
+        if isinstance(raw_verified, dict):
+            route_facts = {
+                str(key): str(value)
+                for key, value in raw_verified.items()
+                if str(key).strip() and str(value).strip()
+            }
+
+    def classify(
+        question: str,
+        minimized_facts: Mapping[str, str],
+        available: Sequence[PrimaryRouteCandidate],
+    ) -> PrimaryClassification:
+        result = AICaseTypeDetectionAgent(llm_client).detect(
+            request_text=question,
+            country=jurisdiction,
+            candidates=[
+                CaseTypeCandidate(
+                    case_type_id=item.case_type_key,
+                    case_type_key=item.case_type_key,
+                    name=item.case_type_name,
+                    description=item.description,
+                    keywords=item.keywords,
+                    has_prompt=True,
+                    template_titles=(item.flow_key,),
+                )
+                for item in available
+            ],
+            verified_facts=minimized_facts,
+        )
+        return PrimaryClassification(
+            status=cast(Any, result.status),
+            selected_case_type_key=result.selected_case_type_key,
+            confidence=result.confidence,
+            second_case_type_key=result.second_case_type_key,
+            second_confidence=result.second_confidence,
+            clarification_question=result.clarification_question,
+            rationale=result.rationale,
+        )
+
+    decision = PrimaryLangGraphRouter(classifier=classify).route(
+        question=request_text,
+        verified_facts=route_facts,
+        candidates=candidates,
+    )
+    selected_run: WorkflowRunResponse | None = None
+    if decision.route == "dedicated_flow" and decision.selected_case_type_key:
+        selected_run = handle_chat_workflow_turn(
+            session_id=session_id,
+            case_id=case_id,
+            user_id=user_id,
+            jurisdiction=jurisdiction,
+            language=language,
+            case_type_key=decision.selected_case_type_key,
+            routing_confidence=decision.confidence,
+            request_text=request_text,
+            routing_evidence=decision.evidence,
+            external_provider_acknowledged=external_provider_acknowledged,
+        )
+        if selected_run is None:
+            decision = PrimaryRouteDecision(
+                route="generic",
+                selected_case_type_key=None,
+                confidence=decision.confidence,
+                confidence_gap=decision.confidence_gap,
+                clarification_question="",
+                evidence=("primary_langgraph_router", "dedicated_flow_unavailable_fail_closed"),
+            )
+    if decision.route == "clarification" and not decision.clarification_question:
+        decision = PrimaryRouteDecision(
+            route="clarification",
+            selected_case_type_key=None,
+            confidence=decision.confidence,
+            confidence_gap=decision.confidence_gap,
+            clarification_question=(
+                "Prosím, spresnite, aký právny výsledok alebo dokument chcete pripraviť."
+                if not language.lower().startswith(("en", "de"))
+                else "Please clarify which legal outcome or document you want to prepare."
+            ),
+            evidence=decision.evidence,
+        )
+    return PrimaryChatRouteResult(decision=decision, workflow_run=selected_run)
 
 
 def handle_active_chat_workflow_turn(
@@ -760,22 +952,15 @@ def handle_active_chat_workflow_turn(
     request_text: str,
     external_provider_acknowledged: bool = False,
 ) -> WorkflowRunResponse | None:
-    """Resume an active run or deterministically route a new allowlisted chat request."""
+    """Backward-compatible active-run resume; new routing uses the primary graph."""
     mode = os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower()
     if mode != "active":
         return None
-    enabled_case_types = {
-        item.strip()
-        for item in os.getenv(
-            "AI_CASE_ORCHESTRATION_CASE_TYPES", "sk.civil.payment_confirmation"
-        ).split(",")
-        if item.strip()
-    }
     service = get_case_workflow_service()
     prior = service.store.get_latest_run_for_session(session_id=session_id, user_id=user_id)
     if prior is None and case_id:
         prior = service.store.get_latest_run_for_case(case_id=case_id, user_id=user_id)
-    if prior is not None and prior.case_type_key in enabled_case_types:
+    if prior is not None and prior.status in {"waiting_for_user", "running"}:
         return handle_chat_workflow_turn(
             session_id=session_id,
             case_id=case_id,
@@ -787,44 +972,7 @@ def handle_active_chat_workflow_turn(
             request_text=request_text,
             external_provider_acknowledged=external_provider_acknowledged,
         )
-    normalized_request = _canonical_route_text(request_text)
-    candidates = [
-        item
-        for item in service.template_store.list_case_types(
-            include_deleted=False, jurisdiction=jurisdiction
-        )
-        if item.is_enabled and item.case_type_key in enabled_case_types
-    ]
-    matches = [
-        item
-        for item in candidates
-        if any(
-            _canonical_route_text(term) in normalized_request
-            for term in (*item.keywords, item.name)
-            if _canonical_route_text(term)
-        )
-    ]
-    if len(matches) != 1:
-        return None
-    case_type = matches[0]
-    return handle_chat_workflow_turn(
-        session_id=session_id,
-        case_id=case_id,
-        user_id=user_id,
-        jurisdiction=jurisdiction,
-        language=language,
-        case_type_key=case_type.case_type_key,
-        routing_confidence=1.0,
-        request_text=request_text,
-        external_provider_acknowledged=external_provider_acknowledged,
-    )
-
-
-def _canonical_route_text(value: str) -> str:
-    decomposed = unicodedata.normalize("NFKD", value.casefold())
-    return " ".join(
-        "".join(char for char in decomposed if not unicodedata.combining(char)).split()
-    )
+    return None
 
 
 def _extract_json_object(value: str) -> str:
@@ -921,6 +1069,35 @@ def _render_template_first_employment_draft(
     if not rendered.lines or rendered.missing_required_fields:
         return None
     return "\n".join(rendered.lines).strip(), template
+
+
+def _template_draft_artifact(
+    *, state: CaseWorkflowState, template: DocumentTemplateDefinition
+) -> dict[str, Any]:
+    """Capture a stable, fact-free source snapshot with the final template artifact."""
+    return {
+        "artifact_id": f"{state['workflow_run_id']}:draft",
+        "artifact_type": "legal_document_draft",
+        "status": "draft",
+        "provider": "managed_template",
+        "model": "",
+        "route_type": "template_first",
+        "template_key": template.template_key,
+        "template_version": template.version,
+        "template_id": template.template_id,
+        "template_lineage_key": template.lineage_key,
+        "template_title": template.title,
+        "template_source_url": template.source_url,
+        "template_source_references": [
+            source.model_dump(mode="json") for source in template.source_refs
+        ],
+        "human_review_required": True,
+        "human_review_disclosure": {
+            "title": template.disclaimer_title,
+            "text": template.disclaimer_text,
+            "footer": template.disclaimer_footer,
+        },
+    }
 
 
 def _is_template_first_employment_request(

@@ -75,8 +75,7 @@ def _load_chat_api():
     stubbed_modules["app.chat.result_metadata"] = result_metadata
 
     service_module = types.ModuleType("app.case_workflows.service")
-    service_module.handle_active_chat_workflow_turn = lambda *args, **kwargs: None
-    service_module.handle_chat_workflow_turn = lambda *args, **kwargs: None
+    service_module.route_primary_chat_workflow_turn = lambda *args, **kwargs: None
     service_module.workflow_user_reply = lambda *args, **kwargs: None
     stubbed_modules["app.case_workflows.service"] = service_module
 
