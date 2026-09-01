@@ -52,8 +52,7 @@ from app.chat.output_validation import AILawyerOutputMessageValidationAgent, Law
 from app.chat.repository import InMemoryChatRepository
 from app.chat.result_metadata import build_session_result_metadata
 from app.case_workflows.service import (
-    handle_active_chat_workflow_turn,
-    handle_chat_workflow_turn,
+    route_primary_chat_workflow_turn,
     workflow_user_reply,
 )
 from app.document_templates.disclaimers import resolve_disclaimer_from_templates
@@ -1537,11 +1536,16 @@ def _run_direct_lawyer_turn(
         content=content,
         previous_messages=prior_messages,
     )
-    standalone_legal_research_requested = _is_standalone_legal_research_request(content)
-    active_workflow_run = (
-        None
-        if standalone_legal_research_requested
-        else handle_active_chat_workflow_turn(
+    primary_routed_llm = None
+    primary_route = None
+    if os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower() == "active":
+        primary_routed_llm = _resolve_session_llm_route(
+            session=session,
+            task_type="chat_reply",
+            request_user_id=request_user_id,
+            request_user_email=request_user_email,
+        )
+        primary_route = route_primary_chat_workflow_turn(
             session_id=str(session_id),
             case_id=(session.case_id or "").strip(),
             user_id=(request_user_id or str(session.user_id or "")).strip()
@@ -1549,15 +1553,11 @@ def _run_direct_lawyer_turn(
             jurisdiction=session.country,
             language=session.language or "sk-SK",
             request_text=content,
+            llm_client=primary_routed_llm.client,
+            verified_facts={},
         )
-    )
-    if active_workflow_run is not None:
-        routed_llm = _resolve_session_llm_route(
-            session=session,
-            task_type="chat_reply",
-            request_user_id=request_user_id,
-            request_user_email=request_user_email,
-        )
+    if primary_route is not None and primary_route.workflow_run is not None:
+        active_workflow_run = primary_route.workflow_run
         workflow_reply = workflow_user_reply(
             active_workflow_run, language=session.language or "sk-SK"
         )
@@ -1575,11 +1575,13 @@ def _run_direct_lawyer_turn(
             task_type="langgraph_case_workflow",
             source="chat.langgraph_case_workflow",
             model_used=active_workflow_run.status == "completed",
-            route=routed_llm,
+            route=primary_routed_llm,
         )
         processing_event: dict[str, object] = {
             "type": "langgraph_case_workflow",
+            "stage": "dedicated_case_workflow",
             "status": active_workflow_run.status,
+            "message": "LangGraph selected a registered dedicated case workflow.",
             "details": {
                 "workflow_run_id": active_workflow_run.workflow_run_id,
                 "graph_key": active_workflow_run.graph_key,
@@ -1588,13 +1590,67 @@ def _run_direct_lawyer_turn(
                 "flow_version": active_workflow_run.flow_version,
             },
         }
+        if processing_event_callback is not None:
+            processing_event_callback(processing_event)
         return (
             persisted_user,
             persisted_lawyer,
             _user_visible_text(persisted_lawyer.content),
             [processing_event],
-            routed_llm,
+            primary_routed_llm,
         )
+    if primary_route is not None and primary_route.decision.route == "clarification":
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id,
+            session=session,
+            content=primary_route.decision.clarification_question,
+            agent_name="LangGraphPrimaryRouter",
+            allow_document_generation=False,
+        )
+        _record_case_ai_model_audit(
+            session=session,
+            question=persisted_user,
+            answer=persisted_lawyer,
+            task_type="langgraph_primary_router",
+            source="chat.langgraph_primary_router",
+            model_used=True,
+            route=primary_routed_llm,
+        )
+        clarification_event: dict[str, object] = {
+            "type": "langgraph_primary_router",
+            "stage": "primary_routing",
+            "status": "clarification",
+            "message": "LangGraph needs one clarification before selecting a dedicated flow.",
+            "details": {
+                "confidence": primary_route.decision.confidence,
+                "confidence_gap": primary_route.decision.confidence_gap,
+                "evidence": list(primary_route.decision.evidence),
+            },
+        }
+        if processing_event_callback is not None:
+            processing_event_callback(clarification_event)
+        return (
+            persisted_user,
+            persisted_lawyer,
+            _user_visible_text(persisted_lawyer.content),
+            [clarification_event],
+            primary_routed_llm,
+        )
+    if primary_route is not None:
+        primary_event: dict[str, object] = {
+            "type": "langgraph_primary_router",
+            "stage": "primary_routing",
+            "status": primary_route.decision.route,
+            "message": "LangGraph selected the safe conversation path.",
+            "details": {
+                "confidence": primary_route.decision.confidence,
+                "confidence_gap": primary_route.decision.confidence_gap,
+                "evidence": list(primary_route.decision.evidence),
+            },
+        }
+        processing_events.append(primary_event)
+        if processing_event_callback is not None:
+            processing_event_callback(primary_event)
     preparation = prepare_country_direct_reply(
         session=session,
         messages=history,
@@ -1606,7 +1662,7 @@ def _run_direct_lawyer_turn(
         build_share_transfer_lines=_build_slovak_share_transfer_lines,
         processing_event_callback=processing_event_callback,
     )
-    processing_events = list(preparation.processing_events)
+    processing_events.extend(preparation.processing_events)
     if preparation.direct_reply is not None:
         _LOGGER.info(
             "Chat route selected",
@@ -1641,16 +1697,17 @@ def _run_direct_lawyer_turn(
             task_type="chat_direct_reply",
             source="chat.direct_reply",
             model_used=False,
+            route=primary_routed_llm,
         )
         return (
             persisted_user,
             persisted_lawyer,
             _user_visible_text(persisted_lawyer.content),
             processing_events,
-            None,
+            primary_routed_llm,
         )
 
-    routed_llm = _resolve_session_llm_route(
+    routed_llm = primary_routed_llm or _resolve_session_llm_route(
         session=session,
         task_type="chat_reply",
         request_user_id=request_user_id,
@@ -1689,17 +1746,21 @@ def _run_direct_lawyer_turn(
             routed_llm,
         )
 
-    case_catalog_context = resolve_case_catalog_context(
-        session_id=session_id,
-        session=session,
-        current_content=content,
-        prior_messages=prior_messages,
-        route=routed_llm,
-        store=_get_store(),
-        template_store=get_document_template_store(),
-        document_generation_requested=document_generation_requested,
+    case_catalog_context = (
+        None
+        if primary_route is not None
+        else resolve_case_catalog_context(
+            session_id=session_id,
+            session=session,
+            current_content=content,
+            prior_messages=prior_messages,
+            route=routed_llm,
+            store=_get_store(),
+            template_store=get_document_template_store(),
+            document_generation_requested=document_generation_requested,
+        )
     )
-    if case_catalog_context.direct_reply is not None:
+    if case_catalog_context is not None and case_catalog_context.direct_reply is not None:
         persisted_lawyer = _persist_direct_assistant_message(
             session_id=session_id,
             session=session,
@@ -1723,61 +1784,6 @@ def _run_direct_lawyer_turn(
             processing_events,
             routed_llm,
         )
-    if (
-        case_catalog_context.selection is not None
-        and case_catalog_context.selection.case_type_key
-    ):
-        workflow_run = handle_chat_workflow_turn(
-            session_id=str(session_id),
-            case_id=(session.case_id or "").strip(),
-            user_id=(request_user_id or str(session.user_id or "")).strip()
-            or f"session:{session_id}",
-            jurisdiction=session.country,
-            language=session.language or "sk-SK",
-            case_type_key=case_catalog_context.selection.case_type_key,
-            routing_confidence=case_catalog_context.selection.confidence_score,
-            request_text=content,
-        )
-        if workflow_run is not None:
-            workflow_reply = workflow_user_reply(
-                workflow_run, language=session.language or "sk-SK"
-            )
-            persisted_lawyer = _persist_direct_assistant_message(
-                session_id=session_id,
-                session=session,
-                content=workflow_reply,
-                agent_name="LangGraphCaseWorkflow",
-                allow_document_generation=workflow_run.status == "completed",
-            )
-            _record_case_ai_model_audit(
-                session=session,
-                question=persisted_user,
-                answer=persisted_lawyer,
-                task_type="langgraph_case_workflow",
-                source="chat.langgraph_case_workflow",
-                model_used=workflow_run.status == "completed",
-                route=routed_llm,
-            )
-            processing_events.append(
-                {
-                    "type": "langgraph_case_workflow",
-                    "status": workflow_run.status,
-                    "details": {
-                        "workflow_run_id": workflow_run.workflow_run_id,
-                        "graph_key": workflow_run.graph_key,
-                        "graph_version": workflow_run.graph_version,
-                        "flow_key": workflow_run.flow_key,
-                        "flow_version": workflow_run.flow_version,
-                    },
-                }
-            )
-            return (
-                persisted_user,
-                persisted_lawyer,
-                _user_visible_text(persisted_lawyer.content),
-                processing_events,
-                routed_llm,
-            )
     lawyer = create_lawyer_agent(routed_llm.client, session.country)
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
@@ -1832,7 +1838,7 @@ def _run_direct_lawyer_turn(
             )
         if preparation.prompt_note:
             prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
-    if case_catalog_context.prompt_note:
+    if case_catalog_context is not None and case_catalog_context.prompt_note:
         prompt_override = f"{prompt_override}\n\n{case_catalog_context.prompt_note}"
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
@@ -1862,7 +1868,8 @@ def _run_direct_lawyer_turn(
 
     all_documents = list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
-    all_documents.extend(case_catalog_context.template_documents)
+    if case_catalog_context is not None:
+        all_documents.extend(case_catalog_context.template_documents)
     all_documents.extend(case_documents)
     uploaded_contract_note = _build_uploaded_document_contract_confirmation_note(
         content=content,

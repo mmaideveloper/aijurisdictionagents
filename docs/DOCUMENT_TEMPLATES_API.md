@@ -319,7 +319,8 @@ python examples/minimal_demo.py
 
 The payment-confirmation reference case links template
 `sk.civil.payment_confirmation` to flow `sk.civil.payment_confirmation@4` on
-`legal_document_workflow@3`. The LangGraph run pins
+`legal_document_workflow@3`. The primary LangGraph router discovers this active published
+assignment without a static case-type allowlist. The dedicated LangGraph run pins
 that relationship, fills only verified facts, blocks unresolved placeholders, records MCP source
 IDs, and requires human review disclosure before use. Admin Case Catalog shows the active graph,
 flow lifecycle/version, validation result, and assignment history.

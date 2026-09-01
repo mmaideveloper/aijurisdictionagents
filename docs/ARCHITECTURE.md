@@ -93,10 +93,12 @@ See `docs/SEQUENCE.md` for a high-level sequence diagram.
 
 ## Durable case orchestration
 
-Guided cases can now execute through a typed LangGraph state machine with persisted checkpoints,
-sanitized ordered events, and independent input/output/privacy/final-review gates. The case
-catalog routes the request, a persisted assignment pins a reviewed graph and immutable flow-pack
-version, and JurisDigta MCP supplies current legal requirements. Graph v2 verifies required facts
+Every normal chat question first enters a typed primary LangGraph router. It classifies only against
+active dedicated assignments backed by enabled, published immutable flow packs, using the current
+question and verified facts. High-confidence matches enter the pinned case graph, low-confidence or
+ambiguous matches ask for clarification, and no match delegates to the generic LangGraph route.
+Guided cases use persisted checkpoints, sanitized ordered events, and independent
+input/output/privacy/final-review gates. JurisDigta MCP supplies current legal requirements. Graph v2 verifies required facts
 before retrieval and constructs a bounded query only from reviewed immutable policy terms plus
 allowlisted verified-fact aliases; raw personal facts and unrestricted model-generated queries are
 excluded. The legacy orchestrator remains
