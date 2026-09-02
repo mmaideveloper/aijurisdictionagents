@@ -54,6 +54,13 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "sk.justice.fees.exemption_fo" in keys
     assert "sk.justice.company_registry.initial_registration" in keys
 
+    official_form = store.get(template_key="sk.justice.fees.exemption_fo", jurisdiction="SK")
+    assert official_form.source_profile == "official_governed_form"
+    assert official_form.source_review_status == "reviewed_metadata_only"
+    assert official_form.body_completeness_status == "metadata_only"
+    assert official_form.body == ""
+    assert "JurisDigta z nej negeneruje náhradné úplné podanie" in official_form.disclaimer_text
+
     employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
     assert employment.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
     assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body
