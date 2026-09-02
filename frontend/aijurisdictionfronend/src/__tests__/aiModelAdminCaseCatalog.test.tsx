@@ -149,6 +149,13 @@ describe("AIModelAdmin case catalog", () => {
           description: "Template for employment claims.",
           source_format: "html",
           source_url: "https://example.test/templates/employment-claim",
+          source_profile: "law_firm_article_template",
+          source_captured_at: "2026-08-16T08:00:00Z",
+          source_review_status: "reviewed_full_body",
+          reviewed_by: "Synthetic reviewer",
+          normalization_notes: "Synthetic QA metadata.",
+          legal_basis_refs: [],
+          body_completeness_status: "reviewed_full_body",
           body: "",
           keywords: ["employment", "claim"],
           flow_keys: [],
@@ -276,6 +283,9 @@ describe("AIModelAdmin case catalog", () => {
     await user.click(screen.getByRole("button", { name: "adminCaseCatalogTemplatesTitle" }));
     expect(screen.getByText("Employment claim")).toBeDefined();
     expect(screen.getByText("v2")).toBeDefined();
+    expect(screen.getByText("reviewed full body")).toBeDefined();
+    expect(screen.getByText("law_firm_article_template")).toBeDefined();
+    expect(screen.getByText("adminCaseCatalogReviewed: Synthetic reviewer")).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "adminCaseCatalogPromptsTitle" }));
     const promptDetails = screen.getByText("adminCaseCatalogViewPrompt").closest("details");
