@@ -285,6 +285,19 @@ def _template_preview_facts() -> dict[str, str]:
 
 
 def _metadata_only_preview_lines(template: DocumentTemplateDefinition) -> list[str]:
+    if template.source_profile == "official_governed_form":
+        return [
+            template.title,
+            "",
+            "Toto je identifikácia oficiálneho formulára, nie vygenerovaný právny návrh.",
+            "JurisDigta úmyselne nevytvára náhradné úplné znenie ani podanie z metadát formulára.",
+            "Použite aktuálny formulár z oficiálneho zdroja a pred podaním zabezpečte individuálnu právnu kontrolu.",
+            "",
+            f"Oficiálny zdroj: {template.source_url}",
+            f"Formát zdroja: {template.source_format}",
+            f"Typ formulára: {template.template_kind}",
+        ]
+
     lines = [
         template.title,
         "",

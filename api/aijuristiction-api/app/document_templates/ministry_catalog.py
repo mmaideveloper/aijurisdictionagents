@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from app.document_templates.models import DocumentTemplateDefinition, TemplateSourceReference
 
 _MINISTRY_PAGE_URL = "https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/"
@@ -455,6 +457,15 @@ def _entry(
         description=description,
         source_format=source_format,
         source_url=_MINISTRY_PAGE_URL,
+        source_profile="official_governed_form",
+        source_captured_at=datetime(2026, 8, 14, tzinfo=timezone.utc),
+        source_review_status="reviewed_metadata_only",
+        reviewed_by="JurisDigta official-form source review",
+        normalization_notes=(
+            "Official Ministry form catalog entry. The managed catalog preserves identification and source "
+            "provenance only; it must not be expanded into a clause-complete generated document."
+        ),
+        body_completeness_status="metadata_only",
         body="",
         keywords=keywords,
         flow_keys=(),
@@ -468,6 +479,13 @@ def _entry(
                 notes="Priama polozka zo stranky k 2026-08-14; bez importu z externych subkatalogov.",
             ),
         ),
+        disclaimer_title="Oficiálny formulár vyžaduje kontrolu",
+        disclaimer_text=(
+            "Táto položka identifikuje oficiálny formulár Ministerstva spravodlivosti SR. "
+            "JurisDigta z nej negeneruje náhradné úplné podanie ani zmluvu. Použite aktuálny "
+            "oficiálny formulár zo zdroja a pred podaním zabezpečte individuálnu právnu kontrolu."
+        ),
+        disclaimer_footer="Oficiálny formulár: overte aktuálnu verziu a zabezpečte ľudskú právnu kontrolu.",
         is_enabled=True,
         is_deleted=False,
     )
