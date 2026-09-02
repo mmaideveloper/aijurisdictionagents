@@ -182,6 +182,9 @@ Custom project skills:
 - `frontend-api` at `skills/frontend-api/SKILL.md`
   - Purpose: alias skill to start frontend wired to API using the same launcher.
   - Script: `.\skills\start-frontend-api\scripts\start_frontend_api.ps1`
+- `youtube-shorts-upload` at `skills/youtube-shorts-upload/SKILL.md`
+  - Purpose: prepare, validate, upload, and publish a local or HTTPS-hosted video as a YouTube Short with privacy, copyright, AI-disclosure, and final-publication confirmation gates.
+  - Script: `.\skills\youtube-shorts-upload\scripts\prepare_youtube_short.ps1`
 
 Deployment info:
 Created new domain juridigta.eu

@@ -1,0 +1,4 @@
+interface:
+  display_name: "YouTube Shorts Upload"
+  short_description: "Prepare and publish compliant YouTube Shorts"
+  default_prompt: "Use $youtube-shorts-upload to prepare and upload a video as a YouTube Short."
