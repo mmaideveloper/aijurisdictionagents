@@ -943,13 +943,32 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCaseLoadError(null);
       try {
         const apiCases = await listCases(user.userId);
-        const casesWithHistory = await Promise.all(
-          apiCases.map((item) => loadApiCaseWithHistory(user.userId, item))
-        );
         if (isCancelled) {
           return;
         }
-        setStoredCases(casesWithHistory);
+        setStoredCases(apiCases.map((item) => mapApiCase(item)));
+        setIsLoadingCases(false);
+
+        void Promise.all(
+          apiCases.map(async (item) => {
+            const hydratedCase = await loadApiCaseWithHistory(user.userId, item);
+            if (isCancelled) {
+              return;
+            }
+            setStoredCases((previous) =>
+              previous.map((caseItem) =>
+                caseItem.id === hydratedCase.id
+                  ? {
+                      ...hydratedCase,
+                      selectedRole: caseItem.selectedRole,
+                      selectedMode: caseItem.selectedMode,
+                      selectedCommunicationMode: caseItem.selectedCommunicationMode
+                    }
+                  : caseItem
+              )
+            );
+          })
+        );
       } catch (error) {
         if (isCancelled) {
           return;
