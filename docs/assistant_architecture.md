@@ -32,10 +32,13 @@ For generated legal-document drafts, the live assistant stream and the hydrated 
 
 The frontend publishes authorized case summaries as soon as the case-list request completes. It hydrates each case history in the background without blocking `/case/{case_id}` selection, so an authenticated deep link remains responsive even when another case has a slow or long history. Background hydration preserves any role, mode, or communication-mode choice made while the history request is in flight.
 
+Authenticated `/case/{case_id}` links use the same assistant chrome as `/app/assistant`, including the case sidebar. This keeps the active case title and controls visible and avoids rendering the public footer inside a legal workspace.
+
 Minimal runnable verification from `frontend/aijurisdictionfronend`:
 
 ```powershell
 npm test -- --run src/__tests__/caseProvider.test.tsx
+npm test -- --run src/__tests__/pageLayout.test.tsx
 ```
 
 Legal-source citations carry retrieval provenance. JurisDigta MCP/vector results use source score `1.0` and retrieval tools such as `JurisDigta MCP searchLaws` or `JurisDigta MCP searchCourtDecisions`. If the system vector DB has no reliable legal source, `AIWebSearchAgent` legal fallback remains blocked until explicit user approval exists for the external web-search scope. Approved fallback citations use source score `0.9`, `source_type=web`, and must render a visible warning that the source came from official web search rather than the JurisDigta system vector DB.
