@@ -154,9 +154,9 @@ test('production MCP law grounding is preserved through Azure Foundry gpt-5-mini
       caseId = String(createdCase.case_id ?? '');
       expect(caseId).not.toBe('');
 
+      await waitForSyntheticCasePersistence(request, userId, caseId, caseTitle);
       await seedFrontendSession(page, userId, cell.email);
-      await page.goto(`${frontendBaseUrl}/app/assistant`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-      await page.getByText(caseTitle, { exact: true }).click({ timeout: 60_000 });
+      await openSyntheticCaseInFrontend(page, caseId, caseTitle);
       await expect(page.locator('.assistant-model-disclosure')).toContainText(
         new RegExp(escapeRegex(cell.expectedModel), 'i'),
         { timeout: 60_000 },
@@ -340,10 +340,11 @@ test('production remains stable when a synthetic case requests the latest five l
     });
     expect(caseResponse.status()).toBe(201);
     caseId = String(((await caseResponse.json()) as Record<string, unknown>).case_id ?? '');
+    expect(caseId).not.toBe('');
 
+    await waitForSyntheticCasePersistence(request, userId, caseId, caseTitle);
     await seedFrontendSession(page, userId, cell!.email);
-    await page.goto(`${frontendBaseUrl}/app/assistant`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-    await page.getByText(caseTitle, { exact: true }).click({ timeout: 60_000 });
+    await openSyntheticCaseInFrontend(page, caseId, caseTitle);
     await page.locator('.assistant-composer__input').fill(submittedQuestion);
     await page.locator('.assistant-composer__send').click();
     const assistantMessage = page.locator('.assistant-message').last();
@@ -646,6 +647,56 @@ async function removePriorSyntheticCases(request: APIRequestContext, userId: str
       );
     }
   }
+}
+
+async function waitForSyntheticCasePersistence(
+  request: APIRequestContext,
+  userId: string,
+  caseId: string,
+  caseTitle: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(
+          `${apiBaseUrl}/v1/cases?user_id=${encodeURIComponent(userId)}`,
+          { headers: apiHeaders() },
+        );
+        if (!response.ok()) {
+          return `case-list-api-${response.status()}`;
+        }
+        const cases = (await response.json()) as Array<{ case_id?: string; title?: string }>;
+        return cases.some((item) => String(item.case_id ?? '') === caseId && String(item.title ?? '') === caseTitle)
+          ? 'persisted'
+          : `case-not-listed-${cases.length}`;
+      },
+      {
+        message: `Synthetic case ${caseId} was created but did not become visible through the authorized case-list API`,
+        timeout: 30_000,
+        intervals: [500, 1_000, 2_000],
+      },
+    )
+    .toBe('persisted');
+}
+
+async function openSyntheticCaseInFrontend(page: Page, caseId: string, caseTitle: string): Promise<void> {
+  const caseUrl = `${frontendBaseUrl}/case/${encodeURIComponent(caseId)}`;
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto(caseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+    try {
+      await expect(page.getByText(caseTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator('.assistant-composer__input')).toBeVisible({ timeout: 20_000 });
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  throw new Error(
+    `Synthetic case ${caseId} is persisted but was not rendered by the frontend after three direct deep-link attempts: ${lastError}`,
+  );
 }
 
 async function seedFrontendSession(page: Page, userId: string, email: string): Promise<void> {
