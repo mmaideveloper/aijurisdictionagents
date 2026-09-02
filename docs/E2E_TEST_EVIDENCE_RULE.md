@@ -28,6 +28,12 @@ personal data must not be copied into the test databases. Tag database rows and 
 a unique test-run identifier, remove them after the test where practical, and apply the retention
 requirements below.
 
+When an E2E scenario creates a synthetic case through the API and then opens it in the browser, it
+must first confirm that the authorized case-list API returns the created case. The browser should use
+the case deep link and may retry bounded reloads while the UI hydrates. A failure must distinguish a
+missing persisted case from a case that the frontend did not render; do not mask either condition by
+using a longer unbounded UI timeout.
+
 ### MCP and legal-retrieval scenarios
 
 For a change involving MCP or legal retrieval, final acceptance must prove the complete chain:
