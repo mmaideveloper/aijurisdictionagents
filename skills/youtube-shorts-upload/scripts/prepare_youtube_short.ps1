@@ -37,7 +37,49 @@ try {
         }
 
         $temporaryPath = Join-Path $resolvedOutputDirectory (".download-{0}{1}" -f ([Guid]::NewGuid().ToString("N")), $extension)
-        Invoke-WebRequest -Uri $uri -OutFile $temporaryPath
+        $httpClient = [System.Net.Http.HttpClient]::new()
+        $response = $null
+        $inputStream = $null
+        $outputStream = $null
+        try {
+            $response = $httpClient.GetAsync(
+                $uri,
+                [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
+            ).GetAwaiter().GetResult()
+            $null = $response.EnsureSuccessStatusCode()
+
+            if ($response.RequestMessage.RequestUri.Scheme -ne "https") {
+                throw "The video download redirected to a non-HTTPS URL."
+            }
+
+            $contentLength = $response.Content.Headers.ContentLength
+            if ($contentLength -and $contentLength -gt $MaxBytes) {
+                throw "The remote video is $contentLength bytes, exceeding the configured limit of $MaxBytes bytes."
+            }
+
+            $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $outputStream = [System.IO.File]::Open(
+                $temporaryPath,
+                [System.IO.FileMode]::CreateNew,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::None
+            )
+            $buffer = [byte[]]::new(81920)
+            $downloadedBytes = 0L
+            while (($bytesRead = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $downloadedBytes += $bytesRead
+                if ($downloadedBytes -gt $MaxBytes) {
+                    throw "The remote video exceeded the configured limit of $MaxBytes bytes during download."
+                }
+                $outputStream.Write($buffer, 0, $bytesRead)
+            }
+        }
+        finally {
+            if ($outputStream) { $outputStream.Dispose() }
+            if ($inputStream) { $inputStream.Dispose() }
+            if ($response) { $response.Dispose() }
+            $httpClient.Dispose()
+        }
         $sourceFile = Get-Item -LiteralPath $temporaryPath
     }
     else {
