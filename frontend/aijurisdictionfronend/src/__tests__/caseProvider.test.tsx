@@ -98,7 +98,7 @@ const seedStoredCase = () => {
 };
 
 const CaseConsumer: React.FC = () => {
-  const { cases, documents, createCase, activeCase, hasSelectedCase } = useCases();
+  const { cases, documents, createCase, activeCase, hasSelectedCase, isLoadingCases } = useCases();
 
   return (
     <div>
@@ -128,6 +128,7 @@ const CaseConsumer: React.FC = () => {
       <div data-testid="active-case">{activeCase?.title ?? ""}</div>
       <div data-testid="latest-role">{cases[0]?.selectedRole ?? ""}</div>
       <div data-testid="has-selected-case">{String(hasSelectedCase)}</div>
+      <div data-testid="is-loading-cases">{String(isLoadingCases)}</div>
     </div>
   );
 };
@@ -284,6 +285,47 @@ describe("CaseProvider", () => {
 
     expect(screen.getByTestId("case-count").textContent).toBe("0");
     expect(screen.getByTestId("document-count").textContent).toBe("0");
+  });
+
+  it("publishes API case summaries before slow histories finish hydrating", async () => {
+    authState.isAuthenticated = true;
+    authState.user = {
+      userId: "user-1",
+      email: "client@example.test",
+      name: "Client"
+    };
+    vi.mocked(listCases).mockResolvedValue([
+      {
+        case_id: "case-api",
+        user_id: "user-1",
+        company_id: null,
+        title: "Deep-linked API case",
+        status: "in_progress",
+        created_at: "2026-09-02T10:00:00.000Z",
+        updated_at: "2026-09-02T10:00:00.000Z"
+      }
+    ]);
+    let resolveHistory: ((history: Awaited<ReturnType<typeof getCaseHistory>>) => void) | undefined;
+    vi.mocked(getCaseHistory).mockReturnValue(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      })
+    );
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <CaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("latest-case").textContent).toBe("Deep-linked API case"));
+    expect(screen.getByTestId("is-loading-cases").textContent).toBe("false");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
+
+    resolveHistory?.({ messages: [], has_more: false, documents: [], citations: [] });
+    await waitFor(() => expect(screen.getByTestId("case-count").textContent).toBe("1"));
   });
 
   it("stores created fallback cases without counting uploaded files as generated legal documents", async () => {

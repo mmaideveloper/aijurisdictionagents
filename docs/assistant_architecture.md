@@ -30,6 +30,14 @@ The Playwright scenario `frontend/aijurisdictionfronend/e2e/issue-608-mcp-case-c
 
 For generated legal-document drafts, the live assistant stream and the hydrated case-history path must converge on the same user-visible output. If the stream finishes with a progress sentence but the refreshed case history contains a formatted document preview or generated-document action, the frontend shows the hydrated preview/action immediately and keeps the same preview/action after reload. This prevents users from seeing terminal PDF-progress text when the generated document is already persisted.
 
+The frontend publishes authorized case summaries as soon as the case-list request completes. It hydrates each case history in the background without blocking `/case/{case_id}` selection, so an authenticated deep link remains responsive even when another case has a slow or long history. Background hydration preserves any role, mode, or communication-mode choice made while the history request is in flight.
+
+Minimal runnable verification from `frontend/aijurisdictionfronend`:
+
+```powershell
+npm test -- --run src/__tests__/caseProvider.test.tsx
+```
+
 Legal-source citations carry retrieval provenance. JurisDigta MCP/vector results use source score `1.0` and retrieval tools such as `JurisDigta MCP searchLaws` or `JurisDigta MCP searchCourtDecisions`. If the system vector DB has no reliable legal source, `AIWebSearchAgent` legal fallback remains blocked until explicit user approval exists for the external web-search scope. Approved fallback citations use source score `0.9`, `source_type=web`, and must render a visible warning that the source came from official web search rather than the JurisDigta system vector DB.
 
 ## Quality Target
