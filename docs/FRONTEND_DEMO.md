@@ -56,6 +56,25 @@ The browser does not call MCP tools directly. Production execution must go throu
 Browser -> Assistant Gateway -> auth/consent/policy -> case store + document ingestion -> MCP/tools -> answer
 ```
 
+### Assistant presentation safety
+
+The assistant UI treats API and model output as plain React text. Numeric character
+references such as `&#x20;` are converted to their Unicode character before display,
+so an encoded space cannot leak into a document-package response. The conversion
+does not inject or render HTML; React escaping remains active to prevent script or
+markup execution.
+
+Internal `LangGraph...` agent identifiers and audit event types remain unchanged
+for traceability. The user-facing assistant history, live processing text, and role
+label display them as `AI Orchestrator Agent`.
+
+Minimal focused example and regression check:
+
+```powershell
+cd frontend/aijurisdictionfronend
+npm test -- src/__tests__/assistantPresentation.test.ts
+```
+
 Default frontend endpoint:
 
 ```text

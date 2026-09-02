@@ -42,6 +42,12 @@ print(
     "review, and sanitized ordered audit events without external data or credentials."
 )
 print(
+    "assistant_presentation => internal LangGraph identifiers stay audit-visible while the frontend "
+    "shows AI Orchestrator Agent and safely converts numeric character references such as &#x20; to "
+    "plain Unicode text without enabling HTML rendering; run the focused frontend Vitest example "
+    "documented in docs/FRONTEND_DEMO.md."
+)
+print(
     "latest_law_research_routing => standalone latest-law questions bypass ambiguous or waiting "
     "document workflows and continue through cited JurisDigta MCP research; explicit document or "
     "PDF preparation requests remain in orchestration."
