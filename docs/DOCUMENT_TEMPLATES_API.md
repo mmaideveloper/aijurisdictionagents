@@ -120,6 +120,7 @@ The admin UI intentionally shows only generic catalog metadata plus stored reusa
 - stored generic prompt text per case type
 
 The view does not expose user-specific case data, uploaded documents, chat history, or provider secrets.
+It also shows read-only template QA signals for completeness, source profile, source-capture time, and legal-review status so operators can identify metadata-only or unreviewed templates before use.
 
 ## Match behavior
 

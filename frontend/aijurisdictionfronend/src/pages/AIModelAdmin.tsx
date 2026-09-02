@@ -1503,6 +1503,10 @@ const AIModelAdmin: React.FC = () => {
                         t("adminCaseCatalogCategory"),
                         t("adminCaseCatalogTemplateKind"),
                         t("adminCaseCatalogVersion"),
+                        t("adminCaseCatalogCompleteness"),
+                        t("adminCaseCatalogSourceProfile"),
+                        t("adminCaseCatalogSourceCaptured"),
+                        t("adminCaseCatalogLegalReview"),
                         t("adminCaseCatalogStoredAt"),
                         t("adminStatus")
                       ]}
@@ -1514,6 +1518,12 @@ const AIModelAdmin: React.FC = () => {
                         item.category,
                         item.template_kind,
                         `v${item.version}`,
+                        (item.body_completeness_status ?? "metadata_only").replaceAll("_", " "),
+                        item.source_profile || t("adminNotConfigured"),
+                        item.source_captured_at ?? t("adminNotConfigured"),
+                        item.source_review_status === "reviewed_full_body"
+                          ? `${t("adminCaseCatalogReviewed")}${item.reviewed_by ? `: ${item.reviewed_by}` : ""}`
+                          : (item.source_review_status ?? "unreviewed").replaceAll("_", " "),
                         item.stored_at ?? item.created_at ?? t("adminNotConfigured"),
                         item.is_enabled
                           ? item.newer_version_available

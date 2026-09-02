@@ -223,6 +223,13 @@ export interface DocumentTemplateCatalogItem {
   description: string;
   source_format: string;
   source_url: string;
+  source_profile?: string;
+  source_captured_at?: string | null;
+  source_review_status?: string;
+  reviewed_by?: string;
+  normalization_notes?: string;
+  legal_basis_refs?: string[];
+  body_completeness_status?: string;
   body: string;
   keywords: string[];
   flow_keys: string[];
