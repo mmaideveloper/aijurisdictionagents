@@ -32,7 +32,16 @@ When an E2E scenario creates a synthetic case through the API and then opens it 
 must first confirm that the authorized case-list API returns the created case. The browser should use
 the case deep link and may retry bounded reloads while the UI hydrates. A failure must distinguish a
 missing persisted case from a case that the frontend did not render; do not mask either condition by
-using a longer unbounded UI timeout.
+using a longer unbounded UI timeout. A case title may legitimately appear in both the case-list control
+and selected-case details, so visibility assertions must select one deterministic occurrence rather
+than fail Playwright strict mode merely because both authorized UI surfaces render the same title.
+
+Minimal runnable verification, with the documented production E2E environment already configured:
+
+```powershell
+cd api/aijuristiction-api/e2e-playwright
+npx playwright test tests/issue-646-prod-mcp-laws.spec.ts --grep "production MCP law grounding"
+```
 
 ### MCP and legal-retrieval scenarios
 

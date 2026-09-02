@@ -686,7 +686,7 @@ async function openSyntheticCaseInFrontend(page: Page, caseId: string, caseTitle
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await page.goto(caseUrl, { waitUntil: 'domcontentloaded', timeout: 120_000 });
     try {
-      await expect(page.getByText(caseTitle, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(caseTitle, { exact: true }).first()).toBeVisible({ timeout: 20_000 });
       await expect(page.locator('.assistant-composer__input')).toBeVisible({ timeout: 20_000 });
       return;
     } catch (error) {
