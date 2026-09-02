@@ -7,8 +7,12 @@ import { isAgentHost } from "../routing";
 
 export const PageLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { pathname } = useLocation();
+  const isCaseDeepLink = pathname.startsWith("/case/");
   const hasAssistantLayout =
-    (pathname === "/" && isAgentHost()) || pathname === "/app/assistant" || pathname === "/app/chat";
+    (pathname === "/" && isAgentHost()) ||
+    pathname === "/app/assistant" ||
+    pathname === "/app/chat" ||
+    isCaseDeepLink;
 
   if (hasAssistantLayout) {
     return (
