@@ -36,6 +36,7 @@ from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
+from app.chat.context_management import session_context_manager
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.case_type_detection import resolve_case_catalog_context
 from app.chat.country_services import prepare_country_direct_reply
@@ -1784,7 +1785,13 @@ def _run_direct_lawyer_turn(
             processing_events,
             routed_llm,
         )
-    lawyer = create_lawyer_agent(routed_llm.client, session.country)
+    bounded_llm = session_context_manager.bounded_client(
+        session_id=session_id,
+        client=routed_llm.client,
+        provider=str(getattr(routed_llm, "provider", "unknown")),
+        model=str(getattr(routed_llm, "model", "unknown")),
+    )
+    lawyer = create_lawyer_agent(bounded_llm, session.country)
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
     _LOGGER.info(
@@ -2475,7 +2482,12 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 max_discussion_minutes=payload.max_discussion_minutes,
                 user_response_provider=user_response_provider,
                 message_callback=message_callback,
-                llm_client=stream_route.client,
+                llm_client=session_context_manager.bounded_client(
+                    session_id=session_id,
+                    client=stream_route.client,
+                    provider=str(getattr(stream_route, "provider", "unknown")),
+                    model=str(getattr(stream_route, "model", "unknown")),
+                ),
             )
             persisted_messages = _repository.list_messages(session_id)
             metadata = build_session_result_metadata(

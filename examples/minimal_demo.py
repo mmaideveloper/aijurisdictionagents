@@ -31,6 +31,12 @@ print(
 )
 
 print(
+    "chat_context_management => MAX_SESSION_CHAT_MESSAGE=10 keeps the latest individual "
+    "user/assistant messages verbatim and summarizes older turns in memory; full stored history "
+    "remains available, and summarization never silently changes the configured model provider."
+)
+
+print(
     "env_profiles => run scripts/sync_env_profile.ps1 -Mode Audit -Profile codex-agent -Strict; "
     "only key names/statuses are reported and secret values remain redacted."
 )
