@@ -880,6 +880,11 @@ class ApiDatabaseStore:
             self._ensure_ai_model_routing_schema(conn)
             self._seed_subscription_plans(conn)
             self._seed_ai_model_routing(conn)
+        # Imported lazily to avoid a module cycle while keeping every configured
+        # database (including local SQLite demos) on the compliance baseline.
+        from ..compliance import ComplianceService
+
+        ComplianceService(self).initialize()
 
     def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
         with self._connect() as conn:
@@ -2743,6 +2748,19 @@ class ApiDatabaseStore:
                 VALUES (?, ?, 'free', 'paid', ?, NULL, '[]', ?, ?)
                 """,
                 (str(uuid.uuid4()), user_id, now, now, now),
+            )
+        if data_processing_consent_at and data_processing_consent_version:
+            from ..compliance import CONSENT_SCOPE_DATA_PROCESSING, ComplianceService
+
+            ComplianceService(self).record_consent(
+                user_id=user_id,
+                scope=CONSENT_SCOPE_DATA_PROCESSING,
+                notice_version=data_processing_consent_version,
+                granted=True,
+                source="registration",
+                country=normalized_country or "",
+                purpose="account_and_case_processing",
+                captured_at=data_processing_consent_at,
             )
         return User(
             user_id=user_id,

@@ -757,6 +757,7 @@ def _message_payload(message: Message) -> dict[str, object]:
         "agent_name": visible_message.agent_name,
         "content": visible_message.content,
         "created_at": visible_message.created_at.isoformat(),
+        "metadata": visible_message.metadata,
     }
     generated_document_urls = list(
         dict.fromkeys(
@@ -2229,6 +2230,12 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         legal_source_citations=_legal_source_citations_from_processing_events(processing_events),
     )
     _repository.set_result(session_id, session_result)
+    _record_ai_response_compliance_event(
+        session=session,
+        result=session_result,
+        route=routed_llm,
+        source="chat.reply",
+    )
     persisted_citations = _persist_case_citations_for_answer(
         session=session,
         question=_persisted_user,
@@ -2236,7 +2243,12 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
         result=session_result,
     )
 
-    return _message_for_user(persisted_lawyer).model_copy(update={"citations": persisted_citations})
+    return _message_for_user(persisted_lawyer).model_copy(
+        update={
+            "citations": persisted_citations,
+            "metadata": {"ai_transparency": session_result.metadata["ai_transparency"]},
+        }
+    )
 
 
 @router.get("/sessions/{session_id}/messages", response_model=List[Message])
@@ -2496,6 +2508,7 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                 final_recommendation=result.final_recommendation,
                 base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
                 routed_model_name=stream_route.model if stream_route is not None else None,
+                routed_model_provider=stream_route.provider if stream_route is not None else None,
             )
             session_result = SessionResult(
                 final_recommendation=result.final_recommendation,
@@ -2508,6 +2521,12 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
             )
             _persist_session_history_document_if_needed(session=session, session_id=session_id)
             _repository.set_result(session_id, session_result)
+            _record_ai_response_compliance_event(
+                session=session,
+                result=session_result,
+                route=stream_route,
+                source="chat.stream",
+            )
             event_queue.put(("result", session_result.model_dump(mode="json")))
             event_queue.put(("done", {"session_id": str(session_id)}))
         except Exception as exc:  # noqa: BLE001
@@ -3456,6 +3475,7 @@ def _build_direct_reply_result(
             "legal_source_citations": legal_source_citations or [],
         },
         routed_model_name=route.model if route is not None else None,
+        routed_model_provider=str(getattr(route, "provider", "unresolved")) if route is not None else None,
     )
     return SessionResult(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
@@ -4483,6 +4503,58 @@ def _message_for_user(message: Message) -> Message:
     return message.model_copy(update={"content": visible_content})
 
 
+def _record_ai_response_compliance_event(
+    *,
+    session: Session,
+    result: SessionResult,
+    route: RoutedLLMClient | None,
+    source: str,
+) -> None:
+    user_id = str(session.user_id or "").strip()
+    if not user_id and session.case_id:
+        try:
+            candidate_store = _get_store()
+            if isinstance(candidate_store, ApiDatabaseStore):
+                user_id = candidate_store.get_case(case_id=session.case_id).user_id
+        except (KeyError, RuntimeError):
+            user_id = ""
+    if not user_id:
+        return
+    store = _get_store()
+    if not isinstance(store, ApiDatabaseStore):
+        return
+    transparency = result.metadata.get("ai_transparency", {})
+    provider = (
+        str(transparency.get("model_provider", "unresolved"))
+        if isinstance(transparency, dict)
+        else "unresolved"
+    )
+    model = (
+        str(transparency.get("model_name", "unresolved"))
+        if isinstance(transparency, dict)
+        else "unresolved"
+    )
+    try:
+        from aijurisdictionagents.compliance import ComplianceService
+
+        ComplianceService(store).record_event(
+            user_id=user_id,
+            event_type="ai_response",
+            action="generate",
+            outcome="completed",
+            metadata={
+                "provider": provider,
+                "model": model,
+                "route_type": route.route_type if route is not None else "deterministic",
+                "source_count": len(result.citations),
+                "human_review_required": True,
+                "response_source": source,
+            },
+        )
+    except Exception:  # noqa: BLE001 - compliance logging must not expose or replace the response
+        _LOGGER.exception("Failed to record privacy-minimized AI response compliance event")
+
+
 def _persist_case_citations_for_answer(
     *,
     session: Session,
@@ -5138,6 +5210,7 @@ def export_session_document_pdf(session_id: UUID, document_index: int) -> Respon
         generated_at=generated_at,
         footer_line=footer_line,
         verification_score=_document_verification_score(result),
+        ai_transparency=result.metadata.get("ai_transparency"),
     )
 
 
@@ -5250,6 +5323,7 @@ def export_session_result(
             generated_at=generated_at,
             footer_line=footer_line,
             verification_score=_document_verification_score(result),
+            ai_transparency=result.metadata.get("ai_transparency"),
         )
     else:
         title, lines = _build_summary_export_content(
@@ -5343,6 +5417,7 @@ def _document_export_asset_response(
     generated_at: str,
     footer_line: str,
     verification_score: str | None,
+    ai_transparency: object = None,
 ) -> Response:
     pdf_content = _build_professional_document_pdf(
         title=asset.title,
@@ -5357,10 +5432,41 @@ def _document_export_asset_response(
         verification_score=verification_score,
         disclaimer=asset.disclaimer,
     )
+    headers = {"Content-Disposition": f'attachment; filename="{asset.filename}"'}
+    if isinstance(ai_transparency, dict):
+        headers.update(
+            {
+                "X-AI-Generated": str(bool(ai_transparency.get("ai_generated"))).lower(),
+                "X-AI-Model-Provider": str(ai_transparency.get("model_provider", "unresolved")),
+                "X-AI-Model-Name": str(ai_transparency.get("model_name", "unresolved")),
+                "X-Human-Review-Recommended": str(
+                    bool(ai_transparency.get("human_review_recommended"))
+                ).lower(),
+            }
+        )
+    user_id = str(session.user_id or "").strip()
+    store = _get_store()
+    if user_id and isinstance(store, ApiDatabaseStore):
+        try:
+            from aijurisdictionagents.compliance import ComplianceService
+
+            ComplianceService(store).record_event(
+                user_id=user_id,
+                event_type="ai_document",
+                action="export",
+                outcome="completed",
+                metadata={
+                    "provider": headers.get("X-AI-Model-Provider", "unresolved"),
+                    "model": headers.get("X-AI-Model-Name", "unresolved"),
+                    "human_review_required": True,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Failed to record privacy-minimized document export event")
     return Response(
         content=pdf_content,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
+        headers=headers,
     )
 
 

@@ -67,6 +67,14 @@ def get_routed_llm_client(
     external_acknowledged: bool = False,
     selected_model_profile_id: str | None = None,
 ) -> RoutedLLMClient:
+    if user_id and isinstance(store, ApiDatabaseStore):
+        from aijurisdictionagents.compliance import ComplianceService
+
+        if ComplianceService(store).is_processing_restricted(user_id=user_id):
+            raise ModelRouteUnavailable(
+                "Processing is restricted for this user; model execution is blocked.",
+                status_code=423,
+            )
     if _explicit_mock_mode():
         plan = _free_plan()
         route = AIModelRouteSelection(
@@ -92,6 +100,17 @@ def get_routed_llm_client(
 
     plan = store.get_effective_subscription_plan(user_id=user_id) if user_id else _free_plan()
     subscription = store.get_effective_user_subscription(user_id=user_id) if user_id else None
+
+    if user_id and isinstance(store, ApiDatabaseStore):
+        from aijurisdictionagents.compliance import (
+            CONSENT_SCOPE_EXTERNAL_MODEL,
+            ComplianceService,
+        )
+
+        external_acknowledged = ComplianceService(store).has_active_consent(
+            user_id=user_id,
+            scope=CONSENT_SCOPE_EXTERNAL_MODEL,
+        )
 
     normalized_selected_profile_id = (selected_model_profile_id or "").strip()
     if normalized_selected_profile_id:
@@ -120,6 +139,11 @@ def get_routed_llm_client(
 
     provider = route.provider
     profile = route.model_profile
+    if provider.is_external and not external_acknowledged:
+        raise ModelRouteUnavailable(
+            "External model routing requires active, versioned user consent.",
+            status_code=403,
+        )
     provider_type = provider.provider_type.strip().lower()
     model = profile.deployment_name.strip() or profile.model_code.strip()
     model_parameters = merge_model_parameters(
