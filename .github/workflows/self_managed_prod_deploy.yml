@@ -298,6 +298,105 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Run required MCP court-decision post-deployment E2E
+        id: prod_mcp_court_decisions_e2e
+        env:
+          API_BASE_URL: ${{ env.JURISDIGTA_WEB_API_BASE_URL }}
+          FRONTEND_BASE_URL: ${{ env.JURISDIGTA_WEB_PUBLIC_BASE_URL }}
+          MCP_PUBLIC_BASE_URL: ${{ env.JURISDIGTA_MCP_PUBLIC_BASE_URL }}
+          ISSUE_647_TIMEOUT_MS: "300000"
+          NODE_OPTIONS: "--use-system-ca"
+          PW_START_API: "0"
+        run: |
+          set -euo pipefail
+          evidence_root="$GITHUB_WORKSPACE/runs/e2e/issue-647-prod-mcp-court-decisions/$(date -u +%Y%m%dT%H%M%SZ)"
+          mkdir -p "$evidence_root"
+          echo "evidence_root=$evidence_root" >> "$GITHUB_OUTPUT"
+
+          window_enabled=0
+          cleanup() {
+            original_status=$?
+            trap - EXIT INT TERM
+            set +e
+            if [ "$window_enabled" -eq 1 ]; then
+              sudo -n python3 "$GITHUB_WORKSPACE/scripts/server/configure_mcp_oauth_e2e_window.py" \
+                disable \
+                --env-file "$JURISDIGTA_ENV_FILE"
+              cleanup_status=$?
+            else
+              cleanup_status=0
+            fi
+            if [ -d "$evidence_root" ]; then
+              sudo -n chown -R "$(id -u):$(id -g)" "$evidence_root"
+              ownership_status=$?
+              if [ "$ownership_status" -ne 0 ] && [ "$cleanup_status" -eq 0 ]; then
+                cleanup_status=$ownership_status
+              fi
+            fi
+            unset JURISDIGTA_E2E_TEST_USER_PASSWORD
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo "Failed to close the synthetic MCP OAuth E2E window"
+              exit "$cleanup_status"
+            fi
+            exit "$original_status"
+          }
+          trap cleanup EXIT INT TERM
+
+          JURISDIGTA_E2E_TEST_USER_PASSWORD="$(
+            sudo -n awk -F= '
+              $1 == "JURISDIGTA_E2E_TEST_USER_PASSWORD" {
+                sub(/^[^=]*=/, ""); value=$0
+              }
+              END { print value }
+            ' "$JURISDIGTA_ENV_FILE"
+          )"
+          if [ -z "$JURISDIGTA_E2E_TEST_USER_PASSWORD" ] || [ "$JURISDIGTA_E2E_TEST_USER_PASSWORD" = "unknown-variable" ]; then
+            echo "JURISDIGTA_E2E_TEST_USER_PASSWORD is unresolved on the production server"
+            exit 1
+          fi
+          export JURISDIGTA_E2E_TEST_USER_PASSWORD
+
+          docker exec \
+            -e JURISDIGTA_E2E_TEST_USER_PASSWORD="$JURISDIGTA_E2E_TEST_USER_PASSWORD" \
+            jurisdigta-api \
+            python /workspace/scripts/provision_e2e_users.py --paid-model gpt-5-mini
+
+          sudo -n python3 "$GITHUB_WORKSPACE/scripts/server/configure_mcp_oauth_e2e_window.py" \
+            enable \
+            --env-file "$JURISDIGTA_ENV_FILE" \
+            --window-minutes 45 \
+            --approved-email mcp-claude-test-paid@jurisdigta.eu
+          window_enabled=1
+
+          ISSUE_647_DEPLOYED_COMMIT_SHA="$(git -C "$JURISDIGTA_DEPLOY_ROOT/app" rev-parse HEAD)"
+          export ISSUE_647_DEPLOYED_COMMIT_SHA
+          docker run --rm --init --ipc=host \
+            --env API_BASE_URL \
+            --env FRONTEND_BASE_URL \
+            --env MCP_PUBLIC_BASE_URL \
+            --env ISSUE_647_TIMEOUT_MS \
+            --env ISSUE_647_DEPLOYED_COMMIT_SHA \
+            --env JURISDIGTA_E2E_TEST_USER_PASSWORD \
+            --env PW_START_API \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$evidence_root:/evidence" \
+            --workdir /workspace/api/aijuristiction-api/e2e-playwright \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            node node_modules/@playwright/test/cli.js test \
+            tests/issue-647-prod-mcp-court-decisions.spec.ts \
+            --config=playwright.config.ts \
+            --reporter=list \
+            --output=/evidence
+
+      - name: Upload MCP court-decision post-deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-647-prod-mcp-court-decisions-${{ github.run_id }}
+          path: ${{ steps.prod_mcp_court_decisions_e2e.outputs.evidence_root || 'runs/e2e/issue-647-prod-mcp-court-decisions/no-evidence' }}
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Verify public MCP Claude connector compatibility
         run: |
           python_bin=""

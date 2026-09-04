@@ -538,8 +538,9 @@ Minimal workflow validation after setup:
 1. Run `Self-Managed Prod Deploy` with `repo_ref=main`.
 2. Confirm the workflow summary lists the expected host, ref, and local ports.
 3. Confirm the required `issue-646-prod-mcp-laws-<run_id>` artifact contains one Azure Foundry `gpt-5-mini` final-state screenshot and a sanitized result manifest. The workflow must fail if Azure Foundry `gpt-5-mini` fails, falls back, or lacks the matching MCP citation. Qwen is intentionally not invoked by this automatic gate.
-4. Confirm `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` in `/srv/jurisdigta/secrets/jurisdigta.env` after the job and that `jurisdigta-mcp` is healthy. The cleanup trap must run on success, failure, timeout, and cancellation.
-5. Confirm the document processor image and cron wrapper exist on the server:
+4. Confirm the required `issue-647-prod-mcp-court-decisions-<run_id>` artifact contains one Azure Foundry EU `gpt-5-mini` final-state screenshot and a sanitized result manifest for exactly five latest court decisions. The workflow must fail on fallback, raw/internal output, an unqualified latest claim when date quality is unsafe, fewer than five matching MCP citations, or generic web-search substitution. Qwen is not invoked.
+5. Confirm `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED=false` in `/srv/jurisdigta/secrets/jurisdigta.env` after the job and that `jurisdigta-mcp` is healthy. Both cleanup traps must run on success, failure, timeout, and cancellation.
+6. Confirm the document processor image and cron wrapper exist on the server:
 
 ```bash
 docker image inspect jurisdigta-document-processor:local >/dev/null
@@ -550,7 +551,7 @@ curl -fsS http://127.0.0.1:11434/api/tags || curl -fsS "http://$(docker network 
 curl -fsS http://127.0.0.1:11434/v1/models || curl -fsS "http://$(docker network inspect aijuristiction-api_default --format '{{(index .IPAM.Config 0).Gateway}}'):11434/v1/models"
 ```
 
-6. From outside the server, validate the Cloudflare Tunnel routes:
+7. From outside the server, validate the Cloudflare Tunnel routes:
 
 ```bash
 curl -fsS https://api.jurisdigta.eu/health
@@ -726,6 +727,7 @@ That means:
   emergency rollback.
 - `Self-Managed Prod Deploy` configures Python 3.13 and installs the pinned `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` packages before its Playwright gate; this keeps generated-PDF evidence validation aligned with `web_build_deploy`
 - `Self-Managed Prod Deploy` runs the issue #646 Azure Foundry `gpt-5-mini` MCP law check after the server deploy, uploads seven-day evidence, and fails the workflow when that real-model route fails. Qwen is excluded from this automatic gate. There is no equivalent automatic test-environment step because this workflow targets only the protected self-managed `prod` Environment.
+- `Self-Managed Prod Deploy` then runs the issue #647 Azure Foundry EU `gpt-5-mini` MCP court-decision check, verifies five latest metadata-only results against the five persisted UI citations, uploads separate seven-day evidence, and fails closed on model fallback, `internal_raw`, undisclosed unsafe date ordering, incomplete results, or web-search substitution. Qwen is excluded.
 - `Self-Managed Prod Deploy` builds `jurisdigta-document-processor:local`, starts API with `DOCUMENT_PROCESSOR_OPTION=azure`, and installs `/srv/jurisdigta/ops/run_document_processor.sh` when `JURISDIGTA_INSTALL_DOCUMENT_PROCESSOR_CRON=1`
 
 ## 15. Quick Validation Checklist
