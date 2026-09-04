@@ -730,7 +730,7 @@ That means:
 
 ## 15. Quick Validation Checklist
 
-The `Validate architecture use case` workflow is repository validation only. Its `use_case_id` dispatch input does not select `test` or `prod`, and it requires no GitHub Environment variables or secrets. It uses read-only repository contents and a commit-pinned reusable workflow from `mmaideveloper/aiarchitecttoolkit`.
+The `Validate architecture documents` workflow is repository validation only. It runs automatically when pull requests or `main` pushes change `architecture/**`, and its manual `use_case_id` input validates one synthetic use case in detail. It does not select `test` or `prod` and requires no GitHub Environment variables or secrets. It uses read-only repository contents and a commit-pinned toolkit from `mmaideveloper/aiarchitecttoolkit`.
 
 After setup, verify:
 
