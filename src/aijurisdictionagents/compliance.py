@@ -162,7 +162,6 @@ class ComplianceService:
                     BEGIN SELECT RAISE(ABORT, 'compliance_events is append-only'); END
                     """,
                 )
-            conn.commit()
 
     def record_consent(
         self,
