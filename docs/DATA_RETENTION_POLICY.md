@@ -13,7 +13,7 @@ date must be documented outside user-authored content.
 | Soft-deleted case messages, uploads, generated files, extracted text, vectors, and citations | 30 days after case deletion | Database content and local artifacts hard-deleted by the retention job |
 | Active case content | While the case/account is active or a documented legal basis requires it | User/operator deletion workflow; plan write windows do not silently erase active legal files |
 | AI model usage audit | 365 days | Privacy-minimized rows deleted by the retention job |
-| Consent and DSAR evidence | While required to prove compliance or resolve a claim | Append-only decisions; direct content is never stored in compliance events |
+| Consent and Data Subject Access Request (DSAR) evidence | While required to prove compliance or resolve a claim | Privacy-preserving audit proof of the request and outcome; exported personal data and direct content are never stored in compliance events |
 | Hash-chained compliance events | Six years unless legal/privacy owner approves a shorter period | Append-only during the evidence period; no raw prompts, documents, secrets, or direct identifiers |
 | Application logs and telemetry | 7 days by the configured Loki/monitoring policy | Infrastructure retention; labels must remain aggregate and redacted |
 | Database/backups | 7 days for the declared Azure PostgreSQL server; other environments require an approved recovery window | `infra/bicep/main.bicep` configures `backupRetentionDays: 7`; DSAR erasure propagates when a backup is restored |

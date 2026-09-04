@@ -1,4 +1,19 @@
-# Consent, DSAR, retention, and AI-transparency controls
+# Consent, Data Subject Access Request (DSAR), retention, and AI-transparency controls
+
+## Terminology
+
+**DSAR** means **Data Subject Access Request**. Strictly, it is a request by a data subject to
+exercise the GDPR right of access to their personal data. In JurisDigta, the DSAR workflow is also
+the operational entry point for closely related data-subject-rights actions, including machine-readable
+export, restriction of processing, erasure, and anonymization. Each action remains explicitly typed and
+audited so that these distinct rights are not treated as legally interchangeable.
+
+**DSAR evidence** is the privacy-preserving audit proof that a request was handled correctly. It may
+record a request identifier, action type, timestamps, pseudonymous subject reference, expected and
+observed record counts, outcome, deployed commit, and cleanup status. It must not contain the exported
+personal data itself, real customer or case data, prompts, credentials, tokens, cookies, or connection
+strings. Production E2E evidence must use a dedicated synthetic canary account and deterministic
+synthetic records.
 
 Issue #389 introduces a central compliance boundary shared by API database backends.
 
