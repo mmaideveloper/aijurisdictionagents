@@ -24,11 +24,18 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --index-url https://download.pytorch.org/whl/cpu "torch>=2.3,<2.8" && \
     python -c "import numpy, torch; print(f'numpy=={numpy.__version__}'); print(f'torch=={torch.__version__}')" > /tmp/runtime-constraints.txt && \
     printf '%s\n' \
-      'opentelemetry-exporter-otlp==1.40.0' \
-      'opentelemetry-exporter-otlp-proto-common==1.40.0' \
-      'opentelemetry-exporter-otlp-proto-grpc==1.40.0' \
-      'opentelemetry-exporter-otlp-proto-http==1.40.0' \
-      'opentelemetry-proto==1.40.0' \
+      'azure-monitor-opentelemetry==1.8.9' \
+      'azure-monitor-opentelemetry-exporter==1.0.0b56' \
+      'opentelemetry-api==1.43.0' \
+      'opentelemetry-sdk==1.43.0' \
+      'opentelemetry-exporter-otlp==1.43.0' \
+      'opentelemetry-exporter-otlp-proto-common==1.43.0' \
+      'opentelemetry-exporter-otlp-proto-grpc==1.43.0' \
+      'opentelemetry-exporter-otlp-proto-http==1.43.0' \
+      'opentelemetry-proto==1.43.0' \
+      'opentelemetry-instrumentation==0.64b0' \
+      'opentelemetry-instrumentation-fastapi==0.64b0' \
+      'opentelemetry-semantic-conventions==0.64b0' \
       'onnxruntime==1.27.0' \
       'opencv-python==4.13.0.92' >> /tmp/runtime-constraints.txt && \
     pip install --no-cache-dir --retries "$PIP_RETRIES" --timeout "$PIP_DEFAULT_TIMEOUT" --index-url https://pypi.org/simple --extra-index-url https://download.pytorch.org/whl/cpu --constraint /tmp/runtime-constraints.txt -e . && \

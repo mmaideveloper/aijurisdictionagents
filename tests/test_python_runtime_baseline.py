@@ -49,6 +49,26 @@ def test_local_and_container_runtimes_use_python_313() -> None:
     assert "python:3.12" not in monitoring
 
 
+def test_api_container_pins_one_compatible_telemetry_family() -> None:
+    dockerfile = (REPO_ROOT / "api" / "aijuristiction-api" / "Dockerfile").read_text(
+        encoding="utf-8"
+    )
+    expected_constraints = (
+        "azure-monitor-opentelemetry==1.8.9",
+        "azure-monitor-opentelemetry-exporter==1.0.0b56",
+        "opentelemetry-api==1.43.0",
+        "opentelemetry-sdk==1.43.0",
+        "opentelemetry-exporter-otlp==1.43.0",
+        "opentelemetry-instrumentation==0.64b0",
+        "opentelemetry-instrumentation-fastapi==0.64b0",
+        "opentelemetry-semantic-conventions==0.64b0",
+    )
+
+    for constraint in expected_constraints:
+        assert constraint in dockerfile
+    assert "opentelemetry-exporter-otlp==1.40.0" not in dockerfile
+
+
 def test_github_workflows_use_python_313() -> None:
     workflow_dir = REPO_ROOT / ".github" / "workflows"
     declarations: list[tuple[Path, str]] = []
