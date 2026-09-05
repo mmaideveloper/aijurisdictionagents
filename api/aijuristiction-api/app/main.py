@@ -314,6 +314,18 @@ async def startup_log() -> None:
         _purge_expired_debug_events_loop(workflow_service.store),
         name="session-debug-retention",
     )
+    if os.getenv("INTERNAL_MCP_STARTUP_PROBE_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        from app.chat.mcp_law_context import probe_internal_mcp_readiness
+
+        raw_attempts = os.getenv("INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS", "30").strip()
+        attempts = 30 if raw_attempts in {"", "unknown-variable"} else int(raw_attempts)
+        probe_internal_mcp_readiness(attempts=attempts)
+        logger.info("internal_mcp_startup_probe status=ready")
     law_snapshot = get_law_knowledge_snapshot(None)
     logger.info(
         (

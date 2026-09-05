@@ -4,6 +4,7 @@ import {
   createSessionCorrelationId,
   setActiveSessionCorrelationId
 } from "./correlation";
+import type { PresentationBlock } from "../presentation";
 
 const DEFAULT_API_BASE_URL =
   "https://api-juris-dev.victoriousdesert-e45eec11.westeurope.azurecontainerapps.io";
@@ -34,6 +35,7 @@ export type ChatMessage = {
   agent_name: string | null;
   created_at: string;
   citations?: Array<Record<string, unknown>>;
+  presentation?: PresentationBlock;
 };
 
 export type EffectiveModelRoute = {

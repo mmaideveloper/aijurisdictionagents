@@ -50,7 +50,7 @@ def _state(
         graph_key=graph_key,
         graph_version=graph_version,
         flow_key=flow_key,
-        flow_version=3 if graph_version == 2 else 1,
+        flow_version={1: 1, 2: 3, 3: 4, 4: 5}.get(graph_version, 1),
         flow_definition={
             "required_facts": ["payer", "recipient", "amount"],
             "mcp_retrieval": (
@@ -63,13 +63,36 @@ def _state(
                     "query_keys": ["payment_confirmation_legal_requirements"],
                     "default_query": "potvrdenie",
                 }
-                if graph_version == 2
+                if graph_version >= 2
                 else {
                     "required": True,
                     "query_keys": ["payment_confirmation_legal_requirements"],
                 }
             ),
             "optional_tools": ["company_check"],
+            "tool_policy": (
+                {
+                    "schema_version": 1,
+                    "tools": [],
+                }
+                if graph_version >= 3
+                else None
+            ),
+            "presentation_policy": (
+                {
+                    "schema_version": 1,
+                    "policy_id": "test.presentation.v1",
+                    "default_renderer": "document_preview",
+                    "renderers": [
+                        {"renderer_id": "document_preview", "version": 1},
+                        {"renderer_id": "sanitized_json", "version": 1},
+                        {"renderer_id": "text", "version": 1},
+                    ],
+                    "user_overrides": ["document_preview", "sanitized_json", "text"],
+                }
+                if graph_version >= 4
+                else None
+            ),
         },
         facts=facts,
     )
@@ -147,6 +170,25 @@ def test_v2_verifies_facts_before_policy_driven_legal_retrieval() -> None:
     assert retrieval_event["details"]["retrieval_policy_id"] == "test.payment.requirements.v1"
     assert outcome.state["graph_version"] == 2
     assert outcome.state["flow_version"] == 3
+
+
+def test_v4_selects_flow_assigned_presentation_without_exposing_case_data_to_trace() -> None:
+    state = _state(
+        graph_version=4,
+        facts={"payer": "Synthetic A", "recipient": "Synthetic B", "amount": "100 EUR"},
+    )
+    state["request_text"] = "Priprav potvrdenie a zobraz výsledok ako JSON."
+
+    outcome = _runtime().start(state)
+
+    assert outcome.state["status"] == "completed"
+    assert outcome.state["presentation"]["renderer_id"] == "sanitized_json"
+    assert outcome.state["presentation"]["selection"]["reason_code"] == "explicit_user_format"
+    event = next(
+        item for item in outcome.state["events"] if item["event_type"] == "presentation_selected"
+    )
+    assert event["details"]["renderer_id"] == "sanitized_json"
+    assert "Synthetic A" not in str(event)
 
 
 def test_unsupported_case_type_fails_safe_to_human_review() -> None:

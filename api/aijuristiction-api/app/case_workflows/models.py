@@ -98,6 +98,7 @@ class WorkflowRunResponse(BaseModel):
     final_answer: str = ""
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     tool_results: list[dict[str, Any]] = Field(default_factory=list)
+    presentation: dict[str, Any] = Field(default_factory=dict)
     review_decisions: dict[str, str] = Field(default_factory=dict)
     escalation_reason: str = ""
     termination_reason: Literal[

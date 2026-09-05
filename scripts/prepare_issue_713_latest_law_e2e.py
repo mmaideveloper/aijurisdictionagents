@@ -20,6 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_DOCUMENT_ID = "issue-713-latest-law"
 SYNTHETIC_IDENTIFIER = "713/2026 Z. z."
 SYNTHETIC_TITLE = "Syntetický zákon o transparentnom testovaní právnych asistentov"
+SYNTHETIC_CONTENT = (
+    "§ 1 Predmet syntetickej úpravy. Tento výhradne testovací predpis upravuje transparentnosť, "
+    "auditné záznamy a povinný ľudský dohľad pri testovaní právnych AI asistentov. "
+    "Nejde o produkčný právny obsah ani právne poradenstvo."
+)
 
 
 def main() -> int:
@@ -153,16 +158,39 @@ def _seed_synthetic_latest_law(connection: str) -> None:
             )
             cursor.execute(
                 """
+                INSERT INTO source_artifacts (
+                    artifact_id, document_id, version_id, source_system, artifact_kind,
+                    source_url, checksum, content_text, content_blob, content_bytes,
+                    http_etag, http_last_modified, should_redownload, verification_status,
+                    download_error, fetched_at, last_checked_at
+                ) VALUES (
+                    'issue-713-source-html-v1', %s, 'issue-713-latest-law-v1',
+                    'synthetic-e2e', 'html',
+                    'https://static.slov-lex.sk/static/SK/ZZ/2026/713/20260829.html',
+                    'issue713htmlchecksum', %s, NULL, %s, '', '', FALSE,
+                    'synthetic_verified', '', %s, %s
+                )
+                """,
+                (
+                    SYNTHETIC_DOCUMENT_ID,
+                    SYNTHETIC_CONTENT,
+                    len(SYNTHETIC_CONTENT.encode("utf-8")),
+                    stored_at,
+                    stored_at,
+                ),
+            )
+            cursor.execute(
+                """
                 INSERT INTO law_provisions (
                     provision_id, version_id, anchor, heading, body_text, ordinal, created_at
                 ) VALUES (
                     'issue-713-provision-1', 'issue-713-latest-law-v1', '§ 1',
                     'Predmet syntetickej úpravy',
-                    'Syntetický E2E právny zdroj upravuje transparentné testovanie právnych AI asistentov, auditné záznamy a povinný ľudský dohľad. Nejde o produkčný právny obsah.',
+                    %s,
                     1, %s
                 )
                 """,
-                (stored_at,),
+                (SYNTHETIC_CONTENT, stored_at),
             )
         conn.commit()
 

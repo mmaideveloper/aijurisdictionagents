@@ -18,6 +18,15 @@ from .retrieval_policy import (
     build_mcp_retrieval_request,
     validate_mcp_retrieval_policy,
 )
+from .presentation import (
+    PresentationPolicyError,
+    build_presentation_block,
+    eligible_presentation_definitions,
+    presentation_result_shape,
+    requested_renderer,
+    select_presentation_renderer,
+    validate_presentation_policy,
+)
 from .tool_policy import (
     ToolPolicyError,
     eligible_tool_definitions,
@@ -98,6 +107,8 @@ class CaseWorkflowState(TypedDict, total=False):
     tool_consents: list[dict[str, Any]]
     tool_selection: dict[str, Any]
     tool_results: list[dict[str, Any]]
+    presentation_selection: dict[str, Any]
+    presentation: dict[str, Any]
     artifacts: list[dict[str, Any]]
     review_decisions: dict[str, str]
     stage: str
@@ -143,6 +154,10 @@ class CaseWorkflowServices(Protocol):
     def execute_consented_tools(
         self, state: CaseWorkflowState, tool_names: Sequence[str]
     ) -> list[dict[str, Any]]: ...
+
+    def propose_presentation_tool(
+        self, state: CaseWorkflowState, eligible_renderers: Sequence[dict[str, Any]]
+    ) -> tuple[str | None, dict[str, str]]: ...
 
     def draft_documents(
         self, state: CaseWorkflowState
@@ -203,6 +218,13 @@ class DeterministicCaseWorkflowServices:
             {"tool_name": name, "status": "not_configured", "verified": False}
             for name in tool_names
         ]
+
+    def propose_presentation_tool(
+        self, state: CaseWorkflowState, eligible_renderers: Sequence[dict[str, Any]]
+    ) -> tuple[str | None, dict[str, str]]:
+        del state
+        selected = str(eligible_renderers[0]["renderer_id"]) if eligible_renderers else None
+        return selected, {"status": "deterministic", "provider": "", "model": ""}
 
     def draft_documents(
         self, state: CaseWorkflowState
@@ -267,6 +289,12 @@ class CaseWorkflowRuntime:
                 checkpointer,
                 verify_before_retrieval=True,
                 consented_tool_execution=True,
+            ),
+            ("legal_document_workflow", 4): self._build_legal_document_graph(
+                checkpointer,
+                verify_before_retrieval=True,
+                consented_tool_execution=True,
+                presentation_selection=True,
             ),
             ("unsupported_or_human_review", 1): self._build_unsupported_graph(checkpointer),
         }
@@ -373,6 +401,7 @@ class CaseWorkflowRuntime:
         *,
         verify_before_retrieval: bool,
         consented_tool_execution: bool = False,
+        presentation_selection: bool = False,
     ) -> Any:
         builder = StateGraph(CaseWorkflowState)
         builder.add_node("route_case_type", self._route_case_type)
@@ -392,6 +421,8 @@ class CaseWorkflowRuntime:
         builder.add_node("verify_output", self._verify_output)
         builder.add_node("verify_safety_and_gdpr", self._verify_safety_and_gdpr)
         builder.add_node("review_case", self._review_case)
+        if presentation_selection:
+            builder.add_node("select_presentation", self._select_presentation)
         builder.add_node("finalize_or_escalate", self._finalize_or_escalate)
         builder.add_edge(START, "route_case_type")
         builder.add_edge("route_case_type", "load_flow_pack")
@@ -442,7 +473,11 @@ class CaseWorkflowRuntime:
         builder.add_edge("draft_documents", "verify_output")
         builder.add_edge("verify_output", "verify_safety_and_gdpr")
         builder.add_edge("verify_safety_and_gdpr", "review_case")
-        builder.add_edge("review_case", "finalize_or_escalate")
+        if presentation_selection:
+            builder.add_edge("review_case", "select_presentation")
+            builder.add_edge("select_presentation", "finalize_or_escalate")
+        else:
+            builder.add_edge("review_case", "finalize_or_escalate")
         builder.add_edge("finalize_or_escalate", END)
         return builder.compile(checkpointer=checkpointer)
 
@@ -507,6 +542,21 @@ class CaseWorkflowRuntime:
                 strict=state.get("graph_version", 1) >= 3,
             )
         except ToolPolicyError as exc:
+            return _update(
+                state,
+                stage="load_flow_pack",
+                status="blocked",
+                escalation_reason=str(exc),
+                event_type="workflow_configuration_rejected",
+                event_status="blocked",
+                details={"reason": str(exc)},
+            )
+        try:
+            validate_presentation_policy(
+                definition.get("presentation_policy"),
+                strict=state.get("graph_version", 1) >= 4,
+            )
+        except PresentationPolicyError as exc:
             return _update(
                 state,
                 stage="load_flow_pack",
@@ -862,6 +912,91 @@ class CaseWorkflowRuntime:
             details={"disposition": disposition, "reason": reason},
         )
 
+    def _select_presentation(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        policy = validate_presentation_policy(
+            state.get("flow_definition", {}).get("presentation_policy"),
+            strict=True,
+        )
+        if policy is None:  # pragma: no cover - strict validation guarantees a policy
+            raise PresentationPolicyError("presentation_policy_missing")
+        tool_results = [
+            item for item in state.get("tool_results", []) if isinstance(item, Mapping)
+        ]
+        artifacts = [
+            item for item in state.get("artifacts", []) if isinstance(item, Mapping)
+        ]
+        result_shape = presentation_result_shape(
+            final_answer=state.get("final_answer", ""),
+            tool_results=tool_results,
+            artifacts=artifacts,
+            status=state.get("status", "running"),
+        )
+        proposal: str | None = None
+        proposal_metadata: dict[str, str] = {"status": "explicit_or_default"}
+        if requested_renderer(state.get("request_text", "")) is None:
+            proposal, proposal_metadata = self._services.propose_presentation_tool(
+                state,
+                eligible_presentation_definitions(policy, result_shape=result_shape),
+            )
+        selection = select_presentation_renderer(
+            policy,
+            request_text=state.get("request_text", ""),
+            result_shape=result_shape,
+            proposed_renderer=proposal,
+        )
+        language = state.get("language", "").lower()
+        if language.startswith("de"):
+            human_review_notice = (
+                "Vor der rechtlichen Verwendung ist eine menschliche Prüfung erforderlich."
+            )
+            tool_notice_prefix = "Verwendete geprüfte Werkzeuge"
+        elif language.startswith("en"):
+            human_review_notice = "Human review is required before legal use."
+            tool_notice_prefix = "Reviewed tools used"
+        else:
+            human_review_notice = (
+                "Návrh vyžaduje ľudskú kontrolu pred právnym použitím."
+            )
+            tool_notice_prefix = "Použité kontrolované nástroje"
+        tool_summaries = [
+            f"{str(item.get('tool_name', 'unknown'))[:100]} "
+            f"({str(item.get('status', 'unknown'))[:50]})"
+            for item in tool_results[: policy.max_items]
+        ]
+        notices = [human_review_notice]
+        if tool_summaries:
+            notices.append(f"{tool_notice_prefix}: {', '.join(tool_summaries)}.")
+        presentation = build_presentation_block(
+            policy=policy,
+            selection=selection,
+            final_answer=state.get("final_answer", ""),
+            tool_results=tool_results,
+            artifacts=artifacts,
+            citations=state.get("legal_source_ids", []),
+            notices=notices,
+            title=state.get("flow_key", "Result"),
+        )
+        return _update(
+            state,
+            stage="select_presentation",
+            status=state.get("status", "running"),
+            presentation_selection={
+                "renderer_id": selection.renderer.renderer_id,
+                "renderer_version": selection.renderer.version,
+                "reason_code": selection.reason_code,
+                "selector_status": proposal_metadata.get("status", ""),
+            },
+            presentation=presentation,
+            event_type="presentation_selected",
+            event_status="selected",
+            details={
+                "renderer_id": selection.renderer.renderer_id,
+                "renderer_version": selection.renderer.version,
+                "reason_code": selection.reason_code,
+                "result_shape": result_shape,
+            },
+        )
+
     def _finalize_or_escalate(self, state: CaseWorkflowState) -> CaseWorkflowState:
         final_status: WorkflowStatus
         if state.get("status") in {"blocked", "human_review_required"}:
@@ -949,6 +1084,8 @@ def build_initial_case_workflow_state(
         tool_results=[],
         tool_consents=[],
         tool_selection={},
+        presentation_selection={},
+        presentation={},
         artifacts=[],
         review_decisions={},
         stage="created",

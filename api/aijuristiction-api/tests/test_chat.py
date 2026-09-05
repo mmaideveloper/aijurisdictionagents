@@ -1,6 +1,7 @@
 import json
 import base64
 from io import BytesIO
+import logging
 from pathlib import Path
 import re
 import sqlite3
@@ -10,6 +11,7 @@ from uuid import UUID, uuid4
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
+import httpx
 from pypdf import PdfReader
 import pytest
 
@@ -2874,6 +2876,175 @@ def test_mcp_law_context_prefers_remote_mcp_endpoint(monkeypatch) -> None:
         "http://jurisdigta-mcp:8070/mcp",
     ]
     assert "§ 588 text" in context.prompt_note
+
+
+def test_internal_mcp_remote_call_retries_transient_connectivity_without_logging_secrets(
+    monkeypatch, caplog
+) -> None:
+    from app.chat import mcp_law_context
+
+    calls = 0
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "result": {
+                    "content": [
+                        {"type": "text", "text": json.dumps({"api_version": "1.2.3"})}
+                    ]
+                }
+            }
+
+    class _FakeClient:
+        def __init__(self, timeout: float) -> None:
+            assert timeout == 2.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, *, json: dict[str, object], headers: dict[str, str]):
+            nonlocal calls
+            calls += 1
+            assert headers["X-JurisDigta-Internal-MCP-Secret"] == "never-log-this-secret"
+            assert headers["X-Request-ID"] == headers["X-Correlation-ID"]
+            if calls < 3:
+                raise httpx.ConnectError("synthetic startup delay")
+            return _FakeResponse()
+
+    monkeypatch.setenv("INTERNAL_MCP_SHARED_SECRET", "never-log-this-secret")
+    monkeypatch.setenv("INTERNAL_MCP_REQUEST_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("INTERNAL_MCP_RETRY_ATTEMPTS", "3")
+    monkeypatch.setenv("INTERNAL_MCP_RETRY_BACKOFF_SECONDS", "0")
+    monkeypatch.setattr(mcp_law_context.httpx, "Client", _FakeClient)
+    caplog.set_level(logging.INFO, logger=mcp_law_context.__name__)
+
+    payload = mcp_law_context._call_remote_mcp_tool(
+        remote_base_url="http://internal-service.invalid:8070",
+        name="getVersion",
+        arguments={},
+    )
+
+    assert payload["api_version"] == "1.2.3"
+    assert calls == 3
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "failure_category=connectivity" in logs
+    assert "status=ok attempt=3" in logs
+    assert "never-log-this-secret" not in logs
+    assert "internal-service.invalid" not in logs
+
+
+def test_internal_mcp_authentication_failure_is_terminal(monkeypatch, caplog) -> None:
+    from app.chat import mcp_law_context
+
+    calls = 0
+
+    class _FakeClient:
+        def __init__(self, timeout: float) -> None:
+            assert timeout == 10.0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def post(self, url: str, *, json: dict[str, object], headers: dict[str, str]):
+            nonlocal calls
+            calls += 1
+            request = httpx.Request("POST", url)
+            response = httpx.Response(401, request=request)
+            raise httpx.HTTPStatusError("synthetic auth rejection", request=request, response=response)
+
+    monkeypatch.setenv("INTERNAL_MCP_SHARED_SECRET", "never-log-this-secret")
+    monkeypatch.setenv("INTERNAL_MCP_RETRY_ATTEMPTS", "3")
+    monkeypatch.setattr(mcp_law_context.httpx, "Client", _FakeClient)
+    caplog.set_level(logging.INFO, logger=mcp_law_context.__name__)
+
+    with pytest.raises(mcp_law_context.InternalMcpUnavailableError) as exc_info:
+        mcp_law_context._call_remote_mcp_tool(
+            remote_base_url="http://internal-service.invalid:8070",
+            name="getVersion",
+            arguments={},
+        )
+
+    assert calls == 1
+    assert exc_info.value.category == "authentication"
+    assert exc_info.value.attempts == 1
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "status=terminal_failure" in logs
+    assert "status=retryable_failure" not in logs
+    assert "never-log-this-secret" not in logs
+    assert "internal-service.invalid" not in logs
+
+
+def test_internal_mcp_missing_secret_fails_before_network(monkeypatch) -> None:
+    from app.chat import mcp_law_context
+
+    monkeypatch.delenv("INTERNAL_MCP_SHARED_SECRET", raising=False)
+    monkeypatch.delenv("MCP_API_JWT_SECRET", raising=False)
+
+    with pytest.raises(mcp_law_context.InternalMcpUnavailableError) as exc_info:
+        mcp_law_context._call_remote_mcp_tool(
+            remote_base_url="http://internal-service.invalid:8070",
+            name="getVersion",
+            arguments={},
+        )
+
+    assert exc_info.value.category == "auth_configuration"
+    assert exc_info.value.attempts == 0
+
+
+def test_internal_mcp_persistent_failure_returns_structured_user_visible_state(monkeypatch) -> None:
+    from app.chat import mcp_law_context
+
+    monkeypatch.setattr(
+        mcp_law_context,
+        "_call_mcp_tool",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            mcp_law_context.InternalMcpUnavailableError(category="timeout", attempts=3)
+        ),
+    )
+
+    context = mcp_law_context.build_mcp_law_context(
+        query="Zobraz posledné súdne rozhodnutia.",
+        country="SK",
+        language="sk-SK",
+    )
+
+    assert context is not None
+    details = context.processing_event["details"]
+    assert isinstance(details, dict)
+    assert details["status"] == "unavailable"
+    assert details["failure_category"] == "timeout"
+    assert details["user_visible"] is True
+    assert "temporarily unavailable" in context.prompt_note
+
+
+def test_internal_mcp_readiness_executes_metadata_only_get_version(monkeypatch) -> None:
+    from app.chat import mcp_law_context
+
+    captured: dict[str, object] = {}
+
+    def fake_remote_call(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"api_version": "1.2.3"}
+
+    monkeypatch.setenv("INTERNAL_MCP_BASE_URL", "http://internal-service.invalid:8070")
+    monkeypatch.setattr(mcp_law_context, "_call_remote_mcp_tool", fake_remote_call)
+
+    payload = mcp_law_context.probe_internal_mcp_readiness(attempts=7)
+
+    assert payload["api_version"] == "1.2.3"
+    assert captured["name"] == "getVersion"
+    assert captured["arguments"] == {}
+    assert captured["attempts"] == 7
+
 
 def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context

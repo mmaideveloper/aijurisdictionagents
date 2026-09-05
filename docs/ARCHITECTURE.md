@@ -118,4 +118,8 @@ before retrieval and constructs a bounded query only from reviewed immutable pol
 allowlisted verified-fact aliases; raw personal facts and unrestricted model-generated queries are
 excluded. The legacy orchestrator remains
 available as a fail-closed rollout fallback. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md` and
-`docs/ADR-635-LANGGRAPH-CASE-ORCHESTRATION.md`.
+`docs/ADR-635-LANGGRAPH-CASE-ORCHESTRATION.md`. Graph v4 adds flow-assigned presentation tools:
+explicit supported user format requests take precedence, otherwise a data-blind model proposal is
+validated against immutable policy and result shape. Clients render the versioned data contract
+with trusted components and never execute model-generated HTML. See
+`docs/ADR-755-LANGGRAPH-PRESENTATION-TOOLS.md`.

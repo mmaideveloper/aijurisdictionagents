@@ -22,6 +22,15 @@ Chat result metadata now normalizes JurisDigta law lookup results into durable c
 
 `POST /v1/chat/sessions/{session_id}/reply` returns assistant messages with `citations[]` when structured legal sources are available. `GET /v1/cases/{case_id}/history` returns the same answer-level `citations[]` on each assistant/system history message plus a case-level aggregate list. `GET /v1/cases/{case_id}/citations` returns the authorized aggregate list for the active case citation panel.
 
+Dedicated graph-v4 replies may also include `presentation`, a schema-v1 typed block persisted with
+the assistant case communication and returned identically by live SSE and case history. The block
+contains a reviewed renderer ID/version, bounded data, readable fallback text, citations, notices,
+and privacy-minimized selection metadata. Explicit supported user format requests override model
+recommendations. Otherwise the model sees only flow-assigned renderer metadata and result shape;
+policy validates its proposal. The frontend renders trusted React components and rejects unknown or
+oversized blocks. It never treats assistant or tool data as HTML. Explicit JSON requests receive
+sanitized user-visible JSON; unrestricted tool responses remain authorized debug data only.
+
 The frontend renders per-answer citations below assistant answers and a deduplicated case citation list in the right configuration panel. Empty states stay explicit when no reliable citation exists or lookup was inconclusive.
 
 PostgreSQL-backed MCP law queries configure their transaction-local statement timeout with parameterized `set_config`. PostgreSQL does not accept a bound placeholder in `SET LOCAL statement_timeout`, so using `set_config` keeps the timeout value parameter-safe and prevents law retrieval from failing before citation metadata can be persisted. The focused API regression test protects this database-session contract.

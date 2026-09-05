@@ -76,6 +76,12 @@ print(
     "documented in docs/FRONTEND_DEMO.md."
 )
 print(
+    "flow_assigned_presentation_tools => graph v4 honors supported explicit user formats, otherwise "
+    "validates a data-blind model proposal against immutable flow policy; the API returns bounded "
+    "schema-v1 data for trusted client components, visible citations/tool status, and readable text "
+    "fallback without executing model-generated HTML or exposing raw tool payloads."
+)
+print(
     "latest_law_research_routing => standalone latest-law questions bypass ambiguous or waiting "
     "document workflows and continue through cited JurisDigta MCP research; explicit document or "
     "PDF preparation requests remain in orchestration."
@@ -98,6 +104,11 @@ print(
 print(
     "api_test_isolation => focused tests patch imported dependencies with pytest monkeypatch; "
     "they never replace shared sys.modules entries, so the full API suite remains order-independent."
+)
+print(
+    "internal_mcp_readiness => production accepts traffic only after an authenticated "
+    "metadata-only getVersion JSON-RPC probe succeeds from inside the API container; "
+    "only transient failures are retried and telemetry excludes secrets and customer content."
 )
 print(
     "model_routing_request_store => database migrations and schema initialization run at API "

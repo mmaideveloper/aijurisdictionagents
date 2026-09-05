@@ -304,7 +304,12 @@ const Home: React.FC = () => {
           content: normalized,
           communicationMode
         });
-        addInteraction(activeCase.id, response.assistantActor, response.assistantMessage);
+        addInteraction(
+          activeCase.id,
+          response.assistantActor,
+          response.assistantMessage,
+          response.presentation
+        );
         await loadCaseData(activeCase.id);
         return true;
       } catch (error) {

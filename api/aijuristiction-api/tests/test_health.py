@@ -1,5 +1,8 @@
-from fastapi.testclient import TestClient
+import asyncio
 from types import SimpleNamespace
+
+from fastapi.testclient import TestClient
+import pytest
 
 import app.main as app_main
 from app.main import app
@@ -23,6 +26,77 @@ class _UnhealthyStore:
         raise RuntimeError(
             "password authentication failed for postgresql://user:secret-token@example/db"
         )
+
+
+class _StartupStore:
+    db_option = "local"
+    db_cloud = ""
+    uses_postgres = False
+
+    def initialize(self) -> None:
+        return None
+
+
+class _StartupWorkflowStore:
+    def purge_expired_debug_events(self) -> int:
+        return 0
+
+
+def _startup_workflow_service() -> SimpleNamespace:
+    return SimpleNamespace(store=_StartupWorkflowStore())
+
+
+def _startup_law_snapshot() -> SimpleNamespace:
+    return SimpleNamespace(
+        last_law_update_date=None,
+        last_law_update_source=None,
+        last_collector_run_at=None,
+        last_processed_law=None,
+    )
+
+
+def test_startup_runs_enabled_internal_mcp_probe_after_existing_initialization(monkeypatch) -> None:
+    calls: list[tuple[str, int | None]] = []
+
+    def load_workflow_service() -> SimpleNamespace:
+        calls.append(("workflow", None))
+        return _startup_workflow_service()
+
+    monkeypatch.setattr(app_main.ApiDatabaseStore, "from_env", lambda: _StartupStore())
+    monkeypatch.setattr(app_main, "get_case_workflow_service", load_workflow_service)
+    monkeypatch.setattr(app_main, "get_law_knowledge_snapshot", lambda _country: _startup_law_snapshot())
+    monkeypatch.setattr(
+        "app.chat.mcp_law_context.probe_internal_mcp_readiness",
+        lambda *, attempts=None: calls.append(("probe", attempts)),
+    )
+    monkeypatch.setenv("INTERNAL_MCP_STARTUP_PROBE_ENABLED", "true")
+    monkeypatch.setenv("INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS", "4")
+
+    asyncio.run(app_main.startup_log())
+
+    assert calls == [("workflow", None), ("probe", 4)]
+
+
+def test_startup_fails_closed_when_internal_mcp_probe_fails(monkeypatch) -> None:
+    from app.chat.mcp_law_context import InternalMcpUnavailableError
+
+    monkeypatch.setattr(app_main.ApiDatabaseStore, "from_env", lambda: _StartupStore())
+    monkeypatch.setattr(app_main, "get_case_workflow_service", _startup_workflow_service)
+    monkeypatch.setattr(app_main, "get_law_knowledge_snapshot", lambda _country: _startup_law_snapshot())
+    monkeypatch.setattr(
+        "app.chat.mcp_law_context.probe_internal_mcp_readiness",
+        lambda *, attempts=None: (_ for _ in ()).throw(
+            InternalMcpUnavailableError(category="connectivity", attempts=attempts or 0)
+        ),
+    )
+    monkeypatch.setenv("INTERNAL_MCP_STARTUP_PROBE_ENABLED", "true")
+    monkeypatch.setenv("INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS", "2")
+
+    with pytest.raises(InternalMcpUnavailableError) as exc_info:
+        asyncio.run(app_main.startup_log())
+
+    assert exc_info.value.category == "connectivity"
+    assert exc_info.value.attempts == 2
 
 
 def test_health_endpoint(monkeypatch) -> None:

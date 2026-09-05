@@ -516,4 +516,33 @@ def build_default_slovak_flow_packs() -> list[dict[str, Any]]:
         "sk.civil.payment_confirmation@4"
     ]
     packs.append(payment_confirmation_v4)
+    payment_confirmation_v5 = deepcopy(payment_confirmation_v4)
+    payment_confirmation_v5["version"] = 5
+    payment_confirmation_v5["definition"]["presentation_policy"] = {
+        "schema_version": 1,
+        "policy_id": "sk.civil.payment_confirmation.presentation.v1",
+        "default_renderer": "document_preview",
+        "renderers": [
+            {"renderer_id": "document_preview", "version": 1},
+            {"renderer_id": "result_card", "version": 1},
+            {"renderer_id": "key_value_table", "version": 1},
+            {"renderer_id": "data_table", "version": 1},
+            {"renderer_id": "notice", "version": 1},
+            {"renderer_id": "sanitized_json", "version": 1},
+            {"renderer_id": "text", "version": 1},
+        ],
+        "user_overrides": [
+            "document_preview",
+            "result_card",
+            "key_value_table",
+            "data_table",
+            "notice",
+            "sanitized_json",
+            "text",
+        ],
+        "max_items": 20,
+        "max_string_length": 12000,
+        "max_payload_bytes": 128000,
+    }
+    packs.append(payment_confirmation_v5)
     return packs
