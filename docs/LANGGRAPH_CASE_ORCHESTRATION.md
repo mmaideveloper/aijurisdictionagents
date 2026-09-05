@@ -85,8 +85,32 @@ database by migrations `0020_langgraph_case_workflows.sql` and
 - Admin-only `POST /assignments/validate` validates graph, case type, flow lifecycle, schema, and
   compatibility.
 - Admin-only `POST /assignments` requires explicit `confirmation=true` when replacing a default.
-- `POST /runs`, `POST /runs/{id}/resume`, `GET /runs/{id}`, and `GET /runs/{id}/events` expose the
-  shared web/mobile/chat-simulator workflow state.
+- `POST /runs`, `POST /runs/{id}/resume`, `POST /runs/{id}/cancel`, `GET /runs/{id}`, and
+  `GET /runs/{id}/events` expose the shared web/mobile/chat-simulator workflow state.
+
+## Termination contract
+
+Every case workflow persists a `termination_policy`, separate `input_attempt_count`,
+`quality_revision_count`, and `technical_retry_count` values, no-progress state, execution and
+optional session deadlines, and a stable `termination_reason`. The supported terminal reasons are
+`quality_approved`, `human_review_required`, `revision_budget_exhausted`,
+`input_attempts_exhausted`, `no_progress`, `privacy_blocked`, `provenance_missing`,
+`user_cancelled`, `session_expired`, `deadline_exceeded`, and `operational_failure`.
+
+The default policy allows three invalid input attempts, three quality revisions, three technical
+retries, and two identical consecutive failures. It applies a 15-minute execution deadline and a
+48-step LangGraph recursion backstop. Reviewed flow definitions may adjust bounded values through
+`termination_policy`; runtime normalization caps them to safe ranges. Quality revisions never
+consume the technical retry budget. Reflection code can use `record_quality_revision_failure`,
+while infrastructure retry code can use `record_technical_retry_failure`.
+
+Privacy, consent, mandatory legal-risk, and provenance failures bypass autonomous retries.
+`GraphRecursionError` is converted to `operational_failure` and human review. Cancellation is
+idempotent, and deadline/session expiry is checked before start or resume. Each terminal path emits
+exactly one `workflow_terminated` event with only its reason and aggregate counters—never output,
+prompt, credentials, or case facts. The application projection stores the same reason via migration
+`0024_langgraph_termination_policy.sql`; repeated or concurrent persistence is deduplicated by the
+stable terminal event ID.
 
 The chat API uses primary routing when `AI_CASE_ORCHESTRATION_MODE=active`; `legacy` is the emergency
 rollback setting. Legal-research messages enter the primary router, receive no dedicated document

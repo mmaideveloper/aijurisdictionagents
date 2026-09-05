@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS case_workflow_runs (
     flow_version INTEGER NOT NULL,
     status TEXT NOT NULL,
     current_stage TEXT NOT NULL,
+    termination_reason TEXT NOT NULL DEFAULT '',
     state_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

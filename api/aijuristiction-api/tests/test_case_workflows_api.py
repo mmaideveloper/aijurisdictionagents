@@ -532,6 +532,7 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
         assert consented.status_code == 200, consented.text
         run = consented.json()
         assert run["status"] == "completed"
+        assert run["termination_reason"] == "quality_approved"
         assert run["review_decisions"]["output"] == "passed"
         assert run["review_decisions"]["case"] == "approved"
         artifact_id = run["artifacts"][0]["artifact_id"]
@@ -566,10 +567,51 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
             "input_validation_completed",
             "output_validation_completed",
             "case_review_completed",
-            "langgraph_run_completed",
+            "workflow_terminated",
         ):
             assert required in event_types
         assert event_types.index("workflow_interrupted") < event_types.index("workflow_resumed")
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_api_cancel_is_persisted_and_does_not_duplicate_terminal_event(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    app.dependency_overrides[get_case_workflow_service] = lambda: service
+    client = TestClient(app)
+    try:
+        start = client.post(
+            "/v1/case-workflows/runs",
+            headers=AUTH_HEADERS,
+            json={
+                "case_id": "synthetic-cancel-case",
+                "session_id": "synthetic-cancel-session",
+                "user_id": "synthetic-cancel-user",
+                "jurisdiction": "SK",
+                "case_type_key": "sk.civil.payment_confirmation",
+                "request_text": "Prepare a synthetic payment confirmation.",
+                "facts": {},
+            },
+        )
+        assert start.status_code == 201
+        workflow_run_id = start.json()["workflow_run_id"]
+
+        for _ in range(2):
+            response = client.post(
+                f"/v1/case-workflows/runs/{workflow_run_id}/cancel",
+                headers=AUTH_HEADERS,
+                json={"user_id": "synthetic-cancel-user"},
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "blocked"
+            assert response.json()["termination_reason"] == "user_cancelled"
+
+        events = client.get(
+            f"/v1/case-workflows/runs/{workflow_run_id}/events",
+            headers=AUTH_HEADERS,
+            params={"user_id": "synthetic-cancel-user"},
+        ).json()["items"]
+        assert [item["event_type"] for item in events].count("workflow_terminated") == 1
     finally:
         app.dependency_overrides.clear()
 

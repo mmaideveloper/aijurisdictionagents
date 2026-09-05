@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Any, Literal, Protocol, TypedDict, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Interrupt, interrupt
 
@@ -32,6 +34,27 @@ WorkflowStatus = Literal[
     "blocked",
 ]
 ReviewDisposition = Literal["approved", "revisions_required", "human_review_required"]
+TerminationReason = Literal[
+    "quality_approved",
+    "human_review_required",
+    "revision_budget_exhausted",
+    "input_attempts_exhausted",
+    "no_progress",
+    "privacy_blocked",
+    "provenance_missing",
+    "user_cancelled",
+    "session_expired",
+    "deadline_exceeded",
+    "operational_failure",
+]
+
+TERMINAL_STATUSES = frozenset({"completed", "human_review_required", "blocked"})
+DEFAULT_INPUT_ATTEMPT_LIMIT = 3
+DEFAULT_QUALITY_REVISION_LIMIT = 3
+DEFAULT_TECHNICAL_RETRY_LIMIT = 3
+DEFAULT_NO_PROGRESS_LIMIT = 2
+DEFAULT_RECURSION_LIMIT = 48
+DEFAULT_EXECUTION_TIMEOUT_SECONDS = 900
 
 
 class WorkflowEvent(TypedDict):
@@ -82,6 +105,17 @@ class CaseWorkflowState(TypedDict, total=False):
     pending_action: dict[str, Any]
     final_answer: str
     escalation_reason: str
+    termination_reason: TerminationReason | Literal[""]
+    started_at: str
+    execution_deadline_at: str
+    session_expires_at: str
+    termination_policy: dict[str, int]
+    input_attempt_count: int
+    quality_revision_count: int
+    technical_retry_count: int
+    consecutive_no_progress_count: int
+    last_failure_category: str
+    last_output_fingerprint: str
     retry_count: int
     events: list[WorkflowEvent]
 
@@ -246,10 +280,16 @@ class CaseWorkflowRuntime:
     def start(self, state: CaseWorkflowState) -> CaseWorkflowOutcome:
         _validate_initial_state(state)
         graph = self._graph(state["graph_key"], state["graph_version"])
-        result = graph.invoke(
-            state,
-            config={"configurable": {"thread_id": state["workflow_run_id"]}},
-        )
+        deadline_reason = _deadline_termination_reason(state)
+        if deadline_reason:
+            return CaseWorkflowOutcome(
+                state=_terminate(state, reason=deadline_reason, stage="preflight"), interrupts=()
+            )
+        config = self._invoke_config(state)
+        try:
+            result = graph.invoke(state, config=config)
+        except GraphRecursionError:
+            return self._recursion_failure(graph=graph, config=config, fallback=state)
         return _outcome(result)
 
     def resume(
@@ -259,13 +299,35 @@ class CaseWorkflowRuntime:
         graph_version: int,
         workflow_run_id: str,
         value: str | Mapping[str, str],
+        state: CaseWorkflowState | None = None,
     ) -> CaseWorkflowOutcome:
         graph = self._graph(graph_key, graph_version)
-        result = graph.invoke(
-            Command(resume=dict(value) if isinstance(value, Mapping) else value),
-            config={"configurable": {"thread_id": workflow_run_id}},
-        )
+        if state is None:
+            snapshot = graph.get_state({"configurable": {"thread_id": workflow_run_id}})
+            state = cast(CaseWorkflowState, dict(snapshot.values))
+        if _is_terminal(state):
+            return CaseWorkflowOutcome(state=state, interrupts=())
+        deadline_reason = _deadline_termination_reason(state)
+        if deadline_reason:
+            return CaseWorkflowOutcome(
+                state=_terminate(state, reason=deadline_reason, stage="resume_preflight"),
+                interrupts=(),
+            )
+        config = self._invoke_config(state)
+        try:
+            result = graph.invoke(
+                Command(resume=dict(value) if isinstance(value, Mapping) else value),
+                config=config,
+            )
+        except GraphRecursionError:
+            return self._recursion_failure(graph=graph, config=config, fallback=state)
         return _outcome(result)
+
+    @staticmethod
+    def terminate(
+        state: CaseWorkflowState, *, reason: TerminationReason, stage: str = "external_control"
+    ) -> CaseWorkflowOutcome:
+        return CaseWorkflowOutcome(state=_terminate(state, reason=reason, stage=stage), interrupts=())
 
     def get_state(
         self, *, graph_key: str, graph_version: int, workflow_run_id: str
@@ -279,6 +341,31 @@ class CaseWorkflowRuntime:
             return self._graphs[(graph_key, graph_version)]
         except KeyError as exc:
             raise ValueError(f"Unregistered graph: {graph_key}@{graph_version}") from exc
+
+    @staticmethod
+    def _invoke_config(state: CaseWorkflowState) -> dict[str, Any]:
+        return {
+            "configurable": {"thread_id": state["workflow_run_id"]},
+            "recursion_limit": _policy_value(
+                state, "recursion_limit", DEFAULT_RECURSION_LIMIT, minimum=4, maximum=500
+            ),
+        }
+
+    @staticmethod
+    def _recursion_failure(
+        *, graph: Any, config: Mapping[str, Any], fallback: CaseWorkflowState
+    ) -> CaseWorkflowOutcome:
+        state = fallback
+        try:
+            snapshot = graph.get_state(config)
+            if snapshot.values:
+                state = cast(CaseWorkflowState, {**fallback, **dict(snapshot.values)})
+        except Exception:  # pragma: no cover - preserve the original controlled failure
+            pass
+        return CaseWorkflowOutcome(
+            state=_terminate(state, reason="operational_failure", stage="recursion_limit"),
+            interrupts=(),
+        )
 
     def _build_legal_document_graph(
         self,
@@ -340,7 +427,11 @@ class CaseWorkflowRuntime:
                 self._after_input_verification,
                 {"collect": "collect_missing_facts", "continue": "offer_optional_verification"},
             )
-        builder.add_edge("collect_missing_facts", "verify_input")
+        builder.add_conditional_edges(
+            "collect_missing_facts",
+            self._after_missing_fact_collection,
+            {"verify": "verify_input", "finalize": "finalize_or_escalate"},
+        )
         builder.add_edge("offer_optional_verification", "execute_consented_tools")
         builder.add_edge("execute_consented_tools", "resolve_conflicts")
         builder.add_conditional_edges(
@@ -465,6 +556,7 @@ class CaseWorkflowRuntime:
                 stage="retrieve_legal_requirements",
                 status="human_review_required",
                 escalation_reason="required_legal_evidence_unavailable",
+                termination_reason="provenance_missing",
                 legal_requirements=requirements,
                 legal_source_ids=[],
                 event_type="legal_retrieval_failed",
@@ -538,14 +630,48 @@ class CaseWorkflowRuntime:
         facts = dict(state.get("facts", {}))
         if value:
             facts[field_name] = value
+        attempts = state.get("input_attempt_count", 0) + int(not value)
+        failure_category = f"missing_fact:{field_name}" if not value else ""
+        no_progress = (
+            state.get("consecutive_no_progress_count", 0) + 1
+            if failure_category and state.get("last_failure_category") == failure_category
+            else int(bool(failure_category))
+        )
+        changes: dict[str, Any] = {
+            "facts": facts,
+            "input_attempt_count": attempts,
+            "consecutive_no_progress_count": no_progress,
+            "last_failure_category": failure_category,
+        }
+        updated_state = cast(CaseWorkflowState, {**state, **changes})
+        if attempts >= _policy_value(
+            state, "input_attempt_limit", DEFAULT_INPUT_ATTEMPT_LIMIT, minimum=1, maximum=20
+        ):
+            return _terminate(
+                updated_state,
+                reason="input_attempts_exhausted",
+                stage="collect_missing_facts",
+            )
+        if no_progress >= _policy_value(
+            state, "no_progress_limit", DEFAULT_NO_PROGRESS_LIMIT, minimum=2, maximum=20
+        ):
+            return _terminate(
+                updated_state,
+                reason="no_progress",
+                stage="collect_missing_facts",
+            )
         return _update(
             state,
             stage="collect_missing_facts",
             status="running",
-            facts=facts,
+            **changes,
             event_type="workflow_resumed",
             details={"provided_field": field_name, "value_recorded": bool(value)},
         )
+
+    @staticmethod
+    def _after_missing_fact_collection(state: CaseWorkflowState) -> str:
+        return "finalize" if _is_terminal(state) else "verify"
 
     def _offer_optional_verification(self, state: CaseWorkflowState) -> CaseWorkflowState:
         optional_tools = state.get("flow_definition", {}).get("optional_tools", [])
@@ -711,6 +837,7 @@ class CaseWorkflowRuntime:
             stage="verify_safety_and_gdpr",
             status="running" if passed else "blocked",
             escalation_reason=state.get("escalation_reason", "") if passed else reason,
+            termination_reason="" if passed else "privacy_blocked",
             review_decisions=decisions,
             event_type="privacy_safety_validation_completed",
             event_status="passed" if passed else "blocked",
@@ -743,28 +870,23 @@ class CaseWorkflowRuntime:
             final_status = "completed"
         else:
             final_status = "human_review_required"
-        return _update(
-            state,
-            stage="finalize_or_escalate",
-            status=final_status,
-            event_type=(
-                "langgraph_run_completed"
-                if final_status == "completed"
-                else "langgraph_run_escalated"
-            ),
-            event_status=final_status,
-            details={"final_status": final_status},
-        )
+        reason = cast(TerminationReason | Literal[""], state.get("termination_reason", ""))
+        if not reason:
+            if final_status == "completed":
+                reason = "quality_approved"
+            elif state.get("escalation_reason") == "required_legal_evidence_unavailable":
+                reason = "provenance_missing"
+            elif final_status == "blocked":
+                reason = "operational_failure"
+            else:
+                reason = "human_review_required"
+        return _terminate(state, reason=reason, stage="finalize_or_escalate")
 
     def _require_human_review(self, state: CaseWorkflowState) -> CaseWorkflowState:
-        return _update(
-            state,
+        return _terminate(
+            cast(CaseWorkflowState, {**state, "escalation_reason": "case_type_not_automated"}),
+            reason="human_review_required",
             stage="require_human_review",
-            status="human_review_required",
-            escalation_reason="case_type_not_automated",
-            event_type="workflow_finalized",
-            event_status="human_review_required",
-            details={"reason": "case_type_not_automated"},
         )
 
 
@@ -789,9 +911,16 @@ def build_initial_case_workflow_state(
     facts: Mapping[str, str] | None = None,
     consented_checks: Sequence[str] = (),
     external_provider_acknowledged: bool = False,
+    execution_deadline_at: str | None = None,
+    session_expires_at: str | None = None,
 ) -> CaseWorkflowState:
+    started_at = datetime.now(timezone.utc)
+    policy = _normalized_termination_policy(flow_definition.get("termination_policy"))
+    deadline = execution_deadline_at or (
+        started_at + timedelta(seconds=policy["execution_timeout_seconds"])
+    ).isoformat()
     return CaseWorkflowState(
-        schema_version=1,
+        schema_version=2,
         workflow_run_id=workflow_run_id,
         correlation_id=correlation_id,
         case_id=case_id,
@@ -827,6 +956,17 @@ def build_initial_case_workflow_state(
         pending_action={},
         final_answer="",
         escalation_reason="",
+        termination_reason="",
+        started_at=started_at.isoformat(),
+        execution_deadline_at=deadline,
+        session_expires_at=session_expires_at or "",
+        termination_policy=policy,
+        input_attempt_count=0,
+        quality_revision_count=0,
+        technical_retry_count=0,
+        consecutive_no_progress_count=0,
+        last_failure_category="",
+        last_output_fingerprint="",
         retry_count=0,
         events=[
             WorkflowEvent(
@@ -838,6 +978,196 @@ def build_initial_case_workflow_state(
                 details={"thread_id": workflow_run_id},
             )
         ],
+    )
+
+
+def record_quality_revision_failure(
+    state: CaseWorkflowState, *, failure_category: str, output: str
+) -> CaseWorkflowState:
+    """Apply the reusable bounded/no-progress contract for a reflection failure."""
+
+    category = failure_category.strip()[:100] or "unspecified_quality_failure"
+    fingerprint = sha256(output.encode("utf-8")).hexdigest()
+    revision_count = state.get("quality_revision_count", 0) + 1
+    no_progress = (
+        state.get("consecutive_no_progress_count", 0) + 1
+        if state.get("last_failure_category") == category
+        and state.get("last_output_fingerprint") == fingerprint
+        else 1
+    )
+    updated = cast(
+        CaseWorkflowState,
+        {
+            **state,
+            "quality_revision_count": revision_count,
+            "consecutive_no_progress_count": no_progress,
+            "last_failure_category": category,
+            "last_output_fingerprint": fingerprint,
+        },
+    )
+    if category in {"privacy", "consent", "legal_risk", "privacy_or_consent"}:
+        return _terminate(updated, reason="privacy_blocked", stage="reflection")
+    if category in {"provenance", "provenance_missing"}:
+        return _terminate(updated, reason="provenance_missing", stage="reflection")
+    if revision_count >= _policy_value(
+        state,
+        "quality_revision_limit",
+        DEFAULT_QUALITY_REVISION_LIMIT,
+        minimum=1,
+        maximum=20,
+    ):
+        return _terminate(updated, reason="revision_budget_exhausted", stage="reflection")
+    if no_progress >= _policy_value(
+        state, "no_progress_limit", DEFAULT_NO_PROGRESS_LIMIT, minimum=2, maximum=20
+    ):
+        return _terminate(updated, reason="no_progress", stage="reflection")
+    delta = _update(
+        updated,
+        stage="reflection",
+        status="running",
+        event_type="quality_revision_requested",
+        details={"failure_category": category, "quality_revision_count": revision_count},
+    )
+    return cast(CaseWorkflowState, {**updated, **delta})
+
+
+def record_technical_retry_failure(
+    state: CaseWorkflowState, *, failure_category: str
+) -> CaseWorkflowState:
+    """Count infrastructure retries separately from quality revisions."""
+
+    category = failure_category.strip()[:100] or "unspecified_operational_failure"
+    retry_count = state.get("technical_retry_count", 0) + 1
+    updated = cast(
+        CaseWorkflowState,
+        {
+            **state,
+            "technical_retry_count": retry_count,
+            "retry_count": retry_count,
+            "last_failure_category": category,
+        },
+    )
+    if retry_count >= _policy_value(
+        state, "technical_retry_limit", DEFAULT_TECHNICAL_RETRY_LIMIT, minimum=0, maximum=20
+    ):
+        return _terminate(updated, reason="operational_failure", stage="technical_retry")
+    delta = _update(
+        updated,
+        stage="technical_retry",
+        status="running",
+        event_type="technical_retry_scheduled",
+        details={"failure_category": category, "technical_retry_count": retry_count},
+    )
+    return cast(CaseWorkflowState, {**updated, **delta})
+
+
+def _normalized_termination_policy(raw: Any) -> dict[str, int]:
+    source = raw if isinstance(raw, Mapping) else {}
+    defaults = {
+        "input_attempt_limit": DEFAULT_INPUT_ATTEMPT_LIMIT,
+        "quality_revision_limit": DEFAULT_QUALITY_REVISION_LIMIT,
+        "technical_retry_limit": DEFAULT_TECHNICAL_RETRY_LIMIT,
+        "no_progress_limit": DEFAULT_NO_PROGRESS_LIMIT,
+        "recursion_limit": DEFAULT_RECURSION_LIMIT,
+        "execution_timeout_seconds": DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+    }
+    limits = {
+        "input_attempt_limit": (1, 20),
+        "quality_revision_limit": (1, 20),
+        "technical_retry_limit": (0, 20),
+        "no_progress_limit": (2, 20),
+        "recursion_limit": (4, 500),
+        "execution_timeout_seconds": (1, 86_400),
+    }
+    normalized: dict[str, int] = {}
+    for key, default in defaults.items():
+        value = source.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int):
+            value = default
+        minimum, maximum = limits[key]
+        normalized[key] = max(minimum, min(maximum, value))
+    return normalized
+
+
+def _policy_value(
+    state: CaseWorkflowState,
+    key: str,
+    default: int,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    value = state.get("termination_policy", {}).get(key, default)
+    if isinstance(value, bool) or not isinstance(value, int):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _deadline_termination_reason(state: CaseWorkflowState) -> TerminationReason | None:
+    now = datetime.now(timezone.utc)
+    for key, reason in (
+        ("session_expires_at", "session_expired"),
+        ("execution_deadline_at", "deadline_exceeded"),
+    ):
+        raw = str(state.get(key, "")).strip()
+        if not raw:
+            continue
+        try:
+            timestamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return "operational_failure"
+        if now >= timestamp:
+            return cast(TerminationReason, reason)
+    return None
+
+
+def _is_terminal(state: CaseWorkflowState) -> bool:
+    return bool(state.get("termination_reason")) and state.get("status") in TERMINAL_STATUSES
+
+
+def _terminate(
+    state: CaseWorkflowState, *, reason: TerminationReason, stage: str
+) -> CaseWorkflowState:
+    if any(event["event_type"] == "workflow_terminated" for event in state.get("events", [])):
+        return state
+    if reason == "quality_approved":
+        status: WorkflowStatus = "completed"
+    elif reason in {"privacy_blocked", "user_cancelled", "session_expired", "deadline_exceeded"}:
+        status = "blocked"
+    else:
+        status = "human_review_required"
+    events = list(state.get("events", []))
+    events.append(
+        WorkflowEvent(
+            event_id=f"{state['workflow_run_id']}:999:workflow_terminated",
+            event_type="workflow_terminated",
+            stage=stage,
+            status=status,
+            created_at=datetime.now(timezone.utc).isoformat(),
+            details={
+                "termination_reason": reason,
+                "input_attempt_count": state.get("input_attempt_count", 0),
+                "quality_revision_count": state.get("quality_revision_count", 0),
+                "technical_retry_count": state.get("technical_retry_count", 0),
+            },
+        )
+    )
+    return cast(
+        CaseWorkflowState,
+        {
+            **state,
+            "stage": stage,
+            "status": status,
+            "termination_reason": reason,
+            "escalation_reason": "" if reason == "quality_approved" else state.get(
+                "escalation_reason", ""
+            )
+            or reason,
+            "pending_action": {},
+            "events": events,
+        },
     )
 
 
