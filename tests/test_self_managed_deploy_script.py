@@ -53,6 +53,18 @@ def test_deploy_applies_court_decision_schema_migrations() -> None:
     assert "python /workspace/scripts/databases/apply_db_migrations.py --project court-decision-collector" in script
 
 
+def test_deploy_fails_closed_on_authenticated_internal_mcp_tool_probe() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'log "validating authenticated API-to-MCP tool path"' in script
+    assert "docker exec jurisdigta-api python -c" in script
+    assert "probe_internal_mcp_readiness" in script
+    api_block = _docker_run_block(script, "--name jurisdigta-api")
+    assert '-e INTERNAL_MCP_STARTUP_PROBE_ENABLED="${INTERNAL_MCP_STARTUP_PROBE_ENABLED:-true}"' in api_block
+    assert '-e INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS="${INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS:-30}"' in api_block
+    assert "x-jurisdigta-internal-mcp-secret" not in script.lower()
+
+
 def test_deploy_installs_ollama_and_pulls_default_model() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 

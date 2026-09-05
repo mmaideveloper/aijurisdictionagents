@@ -1847,6 +1847,7 @@ def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp
         "/mcp?code=secret-code&state=public-state",
         headers={
             "authorization": "Bearer secret-bearer-token",
+            "x-jurisdigta-internal-mcp-secret": "secret-internal-mcp-value",
             "x-mcp-api-key": "secret-api-key",
             "x-request-id": "wire-test-request",
         },
@@ -1877,8 +1878,10 @@ def test_mcp_wire_logging_records_redacted_request_and_response(monkeypatch, tmp
     assert "mcp_wire_request request_id=wire-test-request" in joined_logs
     assert "mcp_wire_response request_id=wire-test-request" in joined_logs
     assert '"authorization": "[redacted]"' in joined_logs
+    assert '"x-jurisdigta-internal-mcp-secret": "[redacted]"' in joined_logs
     assert '"x-mcp-api-key": "[redacted]"' in joined_logs
     assert "secret-bearer-token" not in joined_logs
+    assert "secret-internal-mcp-value" not in joined_logs
     assert "secret-api-key" not in joined_logs
     assert "secret-code" not in joined_logs
     assert "secret-pass" not in joined_logs

@@ -300,6 +300,18 @@ async def startup_log() -> None:
     # Seed reviewed case-workflow assignments and initialize durable LangGraph checkpoints
     # before case-type detection serves the first request.
     get_case_workflow_service()
+    if os.getenv("INTERNAL_MCP_STARTUP_PROBE_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        from app.chat.mcp_law_context import probe_internal_mcp_readiness
+
+        raw_attempts = os.getenv("INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS", "30").strip()
+        attempts = 30 if raw_attempts in {"", "unknown-variable"} else int(raw_attempts)
+        probe_internal_mcp_readiness(attempts=attempts)
+        logger.info("internal_mcp_startup_probe status=ready")
     law_snapshot = get_law_knowledge_snapshot(None)
     logger.info(
         (

@@ -6,7 +6,9 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -86,6 +88,16 @@ _OFFICIAL_LEGAL_SOURCE_HOSTS = (
     "ustavnysud.sk",
 )
 _INTERNAL_MCP_SECRET_HEADER = "X-JurisDigta-Internal-MCP-Secret"
+_TRANSIENT_MCP_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+class InternalMcpUnavailableError(RuntimeError):
+    """Privacy-safe failure raised when the internal MCP service is unavailable."""
+
+    def __init__(self, *, category: str, attempts: int) -> None:
+        super().__init__(f"Internal MCP unavailable ({category}) after {attempts} attempt(s)")
+        self.category = category
+        self.attempts = attempts
 
 
 @dataclass(frozen=True)
@@ -168,9 +180,13 @@ def _build_amendment_ranking_context(*, query: str, language: str | None) -> Mcp
             "rankLawsByAmendments",
             {"country_code": "SK", "published_year": year, "amendment_year": year, "limit": 5},
         )
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning("Internal MCP amendment ranking failed", exc_info=True)
-        return _unavailable_context(tool_calls=["rankLawsByAmendments"], language=language)
+    except Exception as exc:  # noqa: BLE001
+        _log_internal_mcp_failure(tool_name="rankLawsByAmendments", exc=exc)
+        return _unavailable_context(
+            tool_calls=["rankLawsByAmendments"],
+            language=language,
+            failure_category=_failure_category(exc),
+        )
     results = _tool_results(payload)
     if not results:
         return _empty_context(query=query, tool_calls=["rankLawsByAmendments"], language=language)
@@ -247,9 +263,13 @@ def _build_latest_court_context(
     try:
         payload = _call_mcp_tool("searchCourtDecisions", arguments)
         decisions = _tool_results(payload)[:limit]
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning("Internal MCP latest court-decision lookup failed", exc_info=True)
-        return _unavailable_context(tool_calls=["searchCourtDecisions"], language=language)
+    except Exception as exc:  # noqa: BLE001
+        _log_internal_mcp_failure(tool_name="searchCourtDecisions", exc=exc)
+        return _unavailable_context(
+            tool_calls=["searchCourtDecisions"],
+            language=language,
+            failure_category=_failure_category(exc),
+        )
     if not decisions:
         fallback = _official_web_fallback_context(
             query=query,
@@ -310,9 +330,13 @@ def _build_laws_only_context(
         search_payload = _call_mcp_tool("searchLaws", search_arguments)
         laws = _tool_results(search_payload)
         law_texts = [_law_text_payload(result=result, max_chars=max_chars_per_law) for result in laws[:text_limit]]
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning("Internal MCP law context lookup failed", exc_info=True)
-        return _unavailable_context(tool_calls=["searchLaws"], language=language)
+    except Exception as exc:  # noqa: BLE001
+        _log_internal_mcp_failure(tool_name="searchLaws", exc=exc)
+        return _unavailable_context(
+            tool_calls=["searchLaws"],
+            language=language,
+            failure_category=_failure_category(exc),
+        )
 
     if not laws:
         fallback = _official_web_fallback_context(
@@ -392,9 +416,13 @@ def _build_combined_legal_context(
         laws = _tool_results_from_key(search_payload, "laws")
         court_decisions = _tool_results_from_key(search_payload, "court_decisions")[:search_limit]
         law_texts = [_law_text_payload(result=result, max_chars=max_chars_per_law) for result in laws[:text_limit]]
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning("Internal MCP combined legal source lookup failed", exc_info=True)
-        return _unavailable_context(tool_calls=["searchLegalSources"], language=language)
+    except Exception as exc:  # noqa: BLE001
+        _log_internal_mcp_failure(tool_name="searchLegalSources", exc=exc)
+        return _unavailable_context(
+            tool_calls=["searchLegalSources"],
+            language=language,
+            failure_category=_failure_category(exc),
+        )
 
     if not laws and not court_decisions:
         fallback = _official_web_fallback_context(
@@ -617,7 +645,13 @@ def _remote_mcp_base_url() -> str:
     return raw_value.rstrip("/")
 
 
-def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _call_remote_mcp_tool(
+    *,
+    remote_base_url: str,
+    name: str,
+    arguments: dict[str, Any],
+    attempts: int | None = None,
+) -> dict[str, Any]:
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -627,37 +661,158 @@ def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[st
             "arguments": arguments,
         },
     }
-    headers = {"Content-Type": "application/json"}
+    request_id = str(uuid4())
+    headers = {
+        "Content-Type": "application/json",
+        "X-Request-ID": request_id,
+        "X-Correlation-ID": request_id,
+    }
     internal_secret = _internal_mcp_shared_secret()
-    if internal_secret:
-        headers[_INTERNAL_MCP_SECRET_HEADER] = internal_secret
-    with httpx.Client(timeout=10.0) as client:
-        response = client.post(
-            f"{remote_base_url}/mcp",
-            json=payload,
-            headers=headers,
-        )
-        response.raise_for_status()
-        envelope = response.json()
+    if not internal_secret:
+        raise InternalMcpUnavailableError(category="auth_configuration", attempts=0)
+    headers[_INTERNAL_MCP_SECRET_HEADER] = internal_secret
+    max_attempts = _positive_attempts(attempts) if attempts is not None else _env_int(
+        "INTERNAL_MCP_RETRY_ATTEMPTS", 3
+    )
+    timeout_seconds = _env_float("INTERNAL_MCP_REQUEST_TIMEOUT_SECONDS", 10.0, allow_zero=False)
+    backoff_seconds = _env_float("INTERNAL_MCP_RETRY_BACKOFF_SECONDS", 1.0, allow_zero=True)
+    last_category = "unknown"
+
+    for attempt in range(1, max_attempts + 1):
+        started = time.perf_counter()
+        try:
+            with httpx.Client(timeout=timeout_seconds) as client:
+                response = client.post(
+                    f"{remote_base_url}/mcp",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                envelope = response.json()
+                decoded = _decode_mcp_envelope(envelope=envelope, tool_name=name)
+            _LOGGER.info(
+                "internal_mcp_tool_call tool=%s status=ok attempt=%d duration_ms=%d "
+                "request_id=%s correlation_id=%s",
+                name,
+                attempt,
+                int((time.perf_counter() - started) * 1000),
+                request_id,
+                request_id,
+            )
+            return decoded
+        except Exception as exc:  # noqa: BLE001
+            last_category = _failure_category(exc)
+            retryable = _is_retryable_failure(exc)
+            status = "retryable_failure" if retryable else "terminal_failure"
+            _LOGGER.warning(
+                "internal_mcp_tool_call tool=%s status=%s attempt=%d duration_ms=%d "
+                "failure_category=%s request_id=%s correlation_id=%s",
+                name,
+                status,
+                attempt,
+                int((time.perf_counter() - started) * 1000),
+                last_category,
+                request_id,
+                request_id,
+            )
+            if not retryable or attempt == max_attempts:
+                raise InternalMcpUnavailableError(category=last_category, attempts=attempt) from None
+            time.sleep(backoff_seconds)
+
+    raise InternalMcpUnavailableError(category=last_category, attempts=max_attempts)  # pragma: no cover
+
+
+def _decode_mcp_envelope(*, envelope: object, tool_name: str) -> dict[str, Any]:
     if not isinstance(envelope, dict):
-        return {}
+        raise ValueError("Internal MCP response is not a JSON object")
     error = envelope.get("error")
     if error:
-        raise RuntimeError(f"MCP tool {name} failed: {error}")
+        raise RuntimeError(f"Internal MCP tool {tool_name} returned a JSON-RPC error")
     result = envelope.get("result")
     if not isinstance(result, dict):
-        return {}
+        raise ValueError("Internal MCP response is missing result")
     content = result.get("content")
     if not isinstance(content, list) or not content:
-        return {}
+        raise ValueError("Internal MCP response is missing content")
     first = content[0]
     if not isinstance(first, dict):
-        return {}
+        raise ValueError("Internal MCP content item is invalid")
     text = first.get("text")
     if not isinstance(text, str) or not text.strip():
-        return {}
+        raise ValueError("Internal MCP content text is empty")
     decoded = json.loads(text)
-    return decoded if isinstance(decoded, dict) else {}
+    if not isinstance(decoded, dict):
+        raise ValueError("Internal MCP tool payload is not a JSON object")
+    return decoded
+
+
+def probe_internal_mcp_readiness(*, attempts: int | None = None) -> dict[str, Any]:
+    """Execute an authenticated metadata-only tool call for startup/deploy readiness."""
+
+    remote_base_url = _remote_mcp_base_url()
+    if not remote_base_url:
+        raise InternalMcpUnavailableError(category="base_url_configuration", attempts=0)
+    payload = _call_remote_mcp_tool(
+        remote_base_url=remote_base_url,
+        name="getVersion",
+        arguments={},
+        attempts=attempts,
+    )
+    if not payload.get("api_version"):
+        raise InternalMcpUnavailableError(category="invalid_tool_payload", attempts=1)
+    return payload
+
+
+def _failure_category(exc: Exception) -> str:
+    if isinstance(exc, InternalMcpUnavailableError):
+        return exc.category
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.NetworkError):
+        return "connectivity"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "authentication" if exc.response.status_code in {401, 403} else "http_status"
+    if isinstance(exc, (json.JSONDecodeError, ValueError, TypeError, KeyError)):
+        return "invalid_response"
+    if isinstance(exc, RuntimeError):
+        return "tool_error"
+    return "unexpected"
+
+
+def _is_retryable_failure(exc: Exception) -> bool:
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in _TRANSIENT_MCP_HTTP_STATUSES
+
+
+def _log_internal_mcp_failure(*, tool_name: str, exc: Exception) -> None:
+    _LOGGER.warning(
+        "internal_mcp_lookup status=unavailable tool=%s failure_category=%s",
+        tool_name,
+        _failure_category(exc),
+    )
+
+
+def _positive_attempts(value: int) -> int:
+    if value < 1:
+        raise ValueError("Internal MCP attempts must be >= 1")
+    return value
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name, "").strip()
+    parsed = default if value in {"", "unknown-variable"} else int(value)
+    return _positive_attempts(parsed)
+
+
+def _env_float(name: str, default: float, *, allow_zero: bool) -> float:
+    value = os.getenv(name, "").strip()
+    parsed = default if value in {"", "unknown-variable"} else float(value)
+    minimum_valid = parsed >= 0 if allow_zero else parsed > 0
+    if not minimum_valid:
+        comparator = ">= 0" if allow_zero else "> 0"
+        raise ValueError(f"{name} must be {comparator}")
+    return parsed
 
 
 def _internal_mcp_shared_secret() -> str:
@@ -805,7 +960,9 @@ def _empty_context(*, query: str, tool_calls: list[str], language: str | None) -
     )
 
 
-def _unavailable_context(*, tool_calls: list[str], language: str | None) -> McpLawContext:
+def _unavailable_context(
+    *, tool_calls: list[str], language: str | None, failure_category: str = "unavailable"
+) -> McpLawContext:
     return McpLawContext(
         prompt_note=(
             "INTERNAL MCP LAW TOOL CONTEXT:\n"
@@ -821,6 +978,7 @@ def _unavailable_context(*, tool_calls: list[str], language: str | None) -> McpL
             "details": {
                 "tool_calls": tool_calls,
                 "status": "unavailable",
+                "failure_category": failure_category,
                 "source_notice_i18n": _mcp_contact_notice_messages(),
                 "user_visible": True,
                 "web_search_status": "blocked_pending_user_approval",

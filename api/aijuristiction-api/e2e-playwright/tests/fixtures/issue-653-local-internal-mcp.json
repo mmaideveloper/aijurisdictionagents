@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "issue-653-local-internal-mcp",
+  "countryCode": "SK",
+  "law": {
+    "number": 713,
+    "year": 2026,
+    "identifier": "713/2026",
+    "question": "Stručne vysvetli obsah právneho predpisu 713/2026 Z. z. a uveď jeho presný názov a oficiálny zdroj. Výsledok použijem iba ako podklad na ľudskú právnu kontrolu."
+  },
+  "modelMatrix": [
+    {
+      "id": "azure-gpt-4o-mini-local",
+      "email": "mcp-claude-test-paid@jurisdigta.eu",
+      "expectedPlan": "case",
+      "expectedProvider": "azure_foundry",
+      "expectedModel": "gpt-4o-mini",
+      "expectedModelProfileId": "azure_foundry_gpt_4o_mini"
+    }
+  ]
+}

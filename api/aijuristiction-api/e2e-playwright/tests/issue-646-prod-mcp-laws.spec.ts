@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 type Scenario = {
   schemaVersion: number;
@@ -73,9 +73,13 @@ type MatrixResult = {
   error?: string;
 };
 
-const scenario = JSON.parse(
-  readFileSync(join(process.cwd(), 'tests', 'fixtures', 'issue-646-prod-mcp-laws.json'), 'utf8'),
-) as Scenario;
+const configuredScenarioPath = process.env.MCP_LAW_E2E_SCENARIO_PATH?.trim();
+const scenarioPath = configuredScenarioPath
+  ? isAbsolute(configuredScenarioPath)
+    ? configuredScenarioPath
+    : join(process.cwd(), configuredScenarioPath)
+  : join(process.cwd(), 'tests', 'fixtures', 'issue-646-prod-mcp-laws.json');
+const scenario = JSON.parse(readFileSync(scenarioPath, 'utf8')) as Scenario;
 const apiBaseUrl = (process.env.API_BASE_URL ?? 'https://api.jurisdigta.eu').replace(/\/$/, '');
 const frontendBaseUrl = (process.env.FRONTEND_BASE_URL ?? 'https://web.jurisdigta.eu').replace(/\/$/, '');
 const mcpBaseUrl = (process.env.MCP_PUBLIC_BASE_URL ?? 'https://mcp.jurisdigta.eu').replace(/\/$/, '');
@@ -87,7 +91,7 @@ const authSessionKey = 'jurisdigta.web.auth.user.v1';
 
 test.describe.configure({ mode: 'serial' });
 
-test('production MCP law grounding is preserved through Azure Foundry gpt-5-mini', async ({
+test('production MCP law grounding is preserved through the configured real model', async ({
   browser,
   request,
 }, testInfo) => {
@@ -167,9 +171,12 @@ test('production MCP law grounding is preserved through Azure Foundry gpt-5-mini
       await expect(completedAssistantMessage).toContainText(scenario.law.identifier, {
         timeout: timeoutMs,
       });
-      await expect(page.locator('.assistant-tool-panel')).toContainText(/JurisDigta MCP/i, {
-        timeout: timeoutMs,
-      });
+      await expect(page.locator('.assistant-tool-panel')).toContainText(
+        /JurisDigta (?:MCP|laws collector)/i,
+        {
+          timeout: timeoutMs,
+        },
+      );
 
       const historyResponse = await request.get(
         `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/history?user_id=${encodeURIComponent(userId)}&limit=20`,
@@ -349,9 +356,10 @@ test('production remains stable when a synthetic case requests the latest five l
     await page.locator('.assistant-composer__send').click();
     const assistantMessage = page.locator('.assistant-message').last();
     await expect(assistantMessage).toContainText(/zákon|zakon/i, { timeout: timeoutMs });
-    await expect(page.locator('.assistant-tool-panel')).toContainText(/JurisDigta MCP/i, {
-      timeout: timeoutMs,
-    });
+    await expect(page.locator('.assistant-tool-panel')).toContainText(
+      /JurisDigta (?:MCP|laws collector)/i,
+      { timeout: timeoutMs },
+    );
 
     const historyResponse = await request.get(
       `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/history?user_id=${encodeURIComponent(userId)}&limit=20`,
@@ -638,7 +646,13 @@ async function removePriorSyntheticCases(request: APIRequestContext, userId: str
   );
   expect(response.ok()).toBeTruthy();
   const cases = (await response.json()) as Array<{ case_id?: string; title?: string }>;
-  for (const candidate of cases.filter((item) => String(item.title ?? '').startsWith('[issue-646-'))) {
+  const syntheticPrefixes = ['[issue-646-'];
+  if (scenario.scenarioId === 'issue-653-local-internal-mcp') {
+    syntheticPrefixes.push('[issue-713-latest-law-');
+  }
+  for (const candidate of cases.filter((item) =>
+    syntheticPrefixes.some((prefix) => String(item.title ?? '').startsWith(prefix)),
+  )) {
     const id = String(candidate.case_id ?? '');
     if (id) {
       await request.delete(

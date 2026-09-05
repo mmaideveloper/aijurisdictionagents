@@ -53,6 +53,23 @@ into a document-template clarification workflow before the MCP law tools can run
 MCP citations are persisted before a streamed answer pauses for an optional follow-up reply, so a
 model ending an otherwise complete legal answer with a question cannot discard source provenance.
 
+Before this browser scenario begins, the self-managed deploy must pass both service `/health`
+checks and an authenticated metadata-only `getVersion` call from inside the API container. The
+browser assertion remains the required end-to-end proof that the same direct MCP source identity is
+visible and persisted through frontend -> API -> MCP; the startup probe does not replace it.
+For isolated local acceptance, point `MCP_LAW_E2E_SCENARIO_PATH` at
+`tests/fixtures/issue-653-local-internal-mcp.json` after seeding the synthetic `713/2026` record with
+`scripts/prepare_issue_713_latest_law_e2e.py`. Keep API, MCP, frontend, both PostgreSQL databases,
+and the approved real-model route local to the test run.
+
+Start the task-isolated backend services with
+`python scripts/run_issue_653_local_services.py`. The launcher validates required secrets without
+printing them, enables the authenticated API startup probe, and retains sanitized service logs only
+under ignored `runs/e2e/issue-653-local-internal-mcp/` storage.
+With those services healthy, run `python scripts/run_issue_653_backend_e2e.py` to assert that the
+direct MCP document ID is identical to the case citation persisted after a real-model API reply. A
+browser run and final-state screenshot are still mandatory for final user-facing acceptance.
+
 The Azure assertion waits for the final assistant message and MCP citation for the configured
 300-second timeout. It must not match the law identifier echoed in the user's own question.
 
