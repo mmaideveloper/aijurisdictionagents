@@ -85,6 +85,11 @@ print(
     "they never replace shared sys.modules entries, so the full API suite remains order-independent."
 )
 print(
+    "internal_mcp_readiness => production accepts traffic only after an authenticated "
+    "metadata-only getVersion JSON-RPC probe succeeds from inside the API container; "
+    "only transient failures are retried and telemetry excludes secrets and customer content."
+)
+print(
     "model_routing_request_store => database migrations and schema initialization run at API "
     "startup; effective/selectable request dependencies are read-only to avoid PostgreSQL deadlocks."
 )

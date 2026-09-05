@@ -155,6 +155,7 @@ _SENSITIVE_HEADER_NAMES = {
     "proxy-authorization",
     "set-cookie",
     "x-api-key",
+    "x-jurisdigta-internal-mcp-secret",
     "x-mcp-api-key",
 }
 _SENSITIVE_FIELD_NAMES = {

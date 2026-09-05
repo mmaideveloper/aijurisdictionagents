@@ -427,6 +427,8 @@ start_api_and_mcp() {
     -e COURT_DECISIONS_STORAGE_LOCAL=/workspace/runs/storage/court-decision-collector/files/sk \
     -e COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP="${COURT_DECISIONS_ALLOW_INTERNAL_RAW_MCP:-false}" \
     -e INTERNAL_MCP_BASE_URL=http://jurisdigta-mcp:8070 \
+    -e INTERNAL_MCP_STARTUP_PROBE_ENABLED="${INTERNAL_MCP_STARTUP_PROBE_ENABLED:-true}" \
+    -e INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS="${INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS:-30}" \
     -e PROMETHEUS_BASE_URL="$prometheus_base_url" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
@@ -1022,6 +1024,10 @@ validate_health() {
   fi
   wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
   wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
+  log "validating authenticated API-to-MCP tool path"
+  docker exec jurisdigta-api python -c \
+    "from app.chat.mcp_law_context import probe_internal_mcp_readiness; probe_internal_mcp_readiness(); print('internal_mcp_probe status=ready')" \
+    >/dev/null
   wait_for_http "web" "http://127.0.0.1:${WEB_PORT}/health"
   docker inspect -f '{{.State.Running}}' jurisdigta-email-scheduler | grep -qx true
   if [ "$DOCUMENT_ENGINE_ENABLED" = "1" ]; then

@@ -199,6 +199,11 @@ These are used by infrastructure deployment and API deployment workflows:
 | `MCP_CORS_ALLOW_ORIGINS` | Optional browser origins allowed to call the dedicated MCP service; default production value should include `https://mcp.jurisdigta.eu` |
 | `INTERNAL_MCP_BASE_URL` | Optional API-to-MCP base URL for internal assistant law lookups. Self-managed prod injects `http://jurisdigta-mcp:8070` into the API container so chat answers can call the same MCP `searchLaws` and `getLawText` tools as external assistants |
 | `INTERNAL_MCP_SHARED_SECRET` | Optional service-to-service secret for API-originated internal MCP tool calls. If unset, the API and MCP service use the existing `MCP_API_JWT_SECRET`; set this only when you want a separate internal shared secret in both containers |
+| `INTERNAL_MCP_REQUEST_TIMEOUT_SECONDS` | Bounded timeout per internal JSON-RPC attempt, default `10` |
+| `INTERNAL_MCP_RETRY_ATTEMPTS` | Bounded transient API-to-MCP attempts, default `3`; authentication, configuration, tool, and invalid-response failures are terminal |
+| `INTERNAL_MCP_RETRY_BACKOFF_SECONDS` | Delay between transient internal MCP attempts, default `1` |
+| `INTERNAL_MCP_STARTUP_PROBE_ENABLED` | Optional fail-closed API startup probe, default `false`; the self-managed production deploy enables it and independently repeats the authenticated probe as a required post-start gate |
+| `INTERNAL_MCP_STARTUP_PROBE_ATTEMPTS` | Startup-only authenticated probe attempt cap, default `30` |
 | `MCP_PORT` | Local/self-managed MCP service port when using Docker Compose, default `8070` |
 | `JURISDIGTA_WEB_PUBLIC_BASE_URL` | Public production frontend used by required post-deployment browser tests; default `https://web.jurisdigta.eu` |
 | `MCP_OAUTH_TEST_MFA_BYPASS_ENABLED` | Optional, default `false`; enables password-only MFA bypass only for hardcoded synthetic MCP OAuth E2E emails when the allowlist and expiry are also set |
