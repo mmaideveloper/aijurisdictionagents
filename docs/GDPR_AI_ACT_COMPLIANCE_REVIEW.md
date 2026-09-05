@@ -118,6 +118,14 @@ This content review improves user transparency but does not close the broader te
 5. Compliance event logging schema + redaction tests.
 6. Governance documentation package.
 
+## Issue #389 implementation status
+
+The initial production implementation is documented in `docs/COMPLIANCE_CONTROLS.md` and
+`docs/DATA_RETENTION_POLICY.md`. It adds the central versioned consent ledger, DSAR workflows,
+processing restriction, executable application retention, structured response transparency, and
+append-only redacted compliance events. Remote backup/blob lifecycle enforcement and final privacy/legal
+approval remain deployment gates and must not be represented as completed application deletion evidence.
+
 ## Minimal runnable example update suggestion
 
 After implementing consent ledger + transparency metadata, update `examples/minimal_demo.py` to print:

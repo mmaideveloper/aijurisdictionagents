@@ -6,6 +6,11 @@ from datetime import datetime, timedelta, timezone
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
+from aijurisdictionagents.compliance import (
+    CONSENT_SCOPE_EXTERNAL_MODEL,
+    ComplianceService,
+    build_ai_transparency_metadata,
+)
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
 
@@ -573,6 +578,43 @@ print(
     "requests route deterministically to CASE_UPDATE_JSON case.documents content "
     "and generated PDF export instead of local-model echo text."
 )
+
+with tempfile.TemporaryDirectory(prefix="jurisdigta-compliance-demo-", ignore_cleanup_errors=True) as tmp:
+    compliance_root = Path(tmp)
+    compliance_store = ApiDatabaseStore(
+        db_path=compliance_root / "api.sqlite3",
+        blob_root=compliance_root / "blob",
+    )
+    compliance_store.initialize()
+    compliance_user = compliance_store.create_user(
+        email="compliance-demo@example.test",
+        password="synthetic-only",
+    )
+    compliance = ComplianceService(compliance_store)
+    compliance.record_consent(
+        user_id=compliance_user.user_id,
+        scope=CONSENT_SCOPE_EXTERNAL_MODEL,
+        notice_version="external-model-v1",
+        granted=True,
+        source="ui",
+        country="SK",
+        purpose="external_ai_generation",
+    )
+    consent_active = compliance.has_active_consent(
+        user_id=compliance_user.user_id,
+        scope=CONSENT_SCOPE_EXTERNAL_MODEL,
+    )
+    transparency = build_ai_transparency_metadata(
+        provider="synthetic-provider",
+        model="synthetic-model",
+        tool_provenance=[{"tool": "synthetic-check", "consent": "granted"}],
+    )
+    print(
+        "compliance_controls => "
+        f"external_model_consent={consent_active}; "
+        f"ai_generated={transparency['ai_generated']}; "
+        f"human_review={transparency['human_review_recommended']}"
+    )
 print(
     "document_guest_share => sender locale creates a link-only invitation; the recipient "
     "uses a short-lived email code to open one revocable PDF without registration or case access."

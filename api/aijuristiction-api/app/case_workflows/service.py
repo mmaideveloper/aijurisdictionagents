@@ -45,6 +45,10 @@ from aijurisdictionagents.agents import (
     create_lawyer_agent,
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.compliance import (
+    CONSENT_SCOPE_EXTERNAL_CHECK,
+    ComplianceService,
+)
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
@@ -164,12 +168,25 @@ class ProductionCaseWorkflowServices:
         granted: bool,
         policy: dict[str, Any],
     ) -> dict[str, Any]:
-        return self._workflow_store.record_tool_consent(
+        event = self._workflow_store.record_tool_consent(
             state=state,
             tool_name=tool_name,
             granted=granted,
             policy=policy,
         )
+        if isinstance(self._api_store, ApiDatabaseStore):
+            ComplianceService(self._api_store).record_consent(
+                user_id=state["user_id"],
+                session_id=state.get("session_id", ""),
+                scope=CONSENT_SCOPE_EXTERNAL_CHECK,
+                notice_version=str(policy["consent_text_version"]),
+                granted=granted,
+                source="ui",
+                country=state.get("jurisdiction", ""),
+                purpose=f"tool:{tool_name}",
+                correlation_id=state.get("correlation_id", ""),
+            )
+        return event
 
     def retrieve_legal_requirements(
         self, state: CaseWorkflowState
@@ -211,6 +228,17 @@ class ProductionCaseWorkflowServices:
     def execute_consented_tools(
         self, state: CaseWorkflowState, tool_names: Sequence[str]
     ) -> list[dict[str, Any]]:
+        if isinstance(self._api_store, ApiDatabaseStore) and ComplianceService(
+            self._api_store
+        ).is_processing_restricted(user_id=state.get("user_id", "")):
+            return [
+                {
+                    "tool_name": tool_name,
+                    "status": "blocked_processing_restricted",
+                    "verified": False,
+                }
+                for tool_name in tool_names
+            ]
         policies = validate_tool_policy(
             state.get("flow_definition", {}).get("tool_policy"),
             registry_definitions=self.available_tool_definitions(),
@@ -239,6 +267,14 @@ class ProductionCaseWorkflowServices:
                 or str(ledger.get("tool_name")) != tool_name
                 or str(ledger.get("consent_scope")) != policy.consent_scope
                 or str(ledger.get("consent_text_version")) != policy.consent_text_version
+                or (
+                    isinstance(self._api_store, ApiDatabaseStore)
+                    and not ComplianceService(self._api_store).has_active_consent(
+                        user_id=state.get("user_id", ""),
+                        scope=CONSENT_SCOPE_EXTERNAL_CHECK,
+                        notice_version=policy.consent_text_version if policy is not None else None,
+                    )
+                )
             ):
                 results.append(
                     {

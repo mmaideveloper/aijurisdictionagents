@@ -11,6 +11,7 @@ import pytest
 from app.effective_model_routing_api import get_store as get_effective_model_routing_store
 from app.main import app
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.compliance import CONSENT_SCOPE_EXTERNAL_MODEL, ComplianceService
 from aijurisdictionagents.llm import routing
 from aijurisdictionagents.llm.routing import ModelRouteUnavailable, get_routed_llm_client
 
@@ -22,6 +23,17 @@ def _store(tmp_path: Path) -> ApiDatabaseStore:
     store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob")
     store.initialize()
     return store
+
+
+def _grant_external_model_consent(store: ApiDatabaseStore, user_id: str) -> None:
+    ComplianceService(store).record_consent(
+        user_id=user_id,
+        scope=CONSENT_SCOPE_EXTERNAL_MODEL,
+        notice_version="external-model-test-v1",
+        granted=True,
+        source="ui",
+        purpose="synthetic_model_routing_test",
+    )
 
 
 def test_free_plan_routes_to_seeded_local_ollama_model(tmp_path: Path) -> None:
@@ -106,6 +118,7 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "test-routing-secret")
     store = _store(tmp_path)
     user = store.create_user(email="case@example.com", password="secret", full_name="Case User")
+    _grant_external_model_consent(store, user.user_id)
     subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
     store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
     store.upsert_ai_model_provider(
@@ -136,6 +149,22 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
     assert routed.subscription_id == subscription.subscription_id
 
 
+def test_case_plan_external_model_is_blocked_without_central_consent(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    store = _store(tmp_path)
+    user = store.create_user(email="no-consent@example.test", password="secret")
+    subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
+    store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
+
+    with pytest.raises(ModelRouteUnavailable) as exc_info:
+        get_routed_llm_client(store=store, user_id=user.user_id, task_type="chat_reply")
+    assert exc_info.value.status_code == 403
+    assert "active, versioned user consent" in str(exc_info.value)
+
+
 def test_seeded_azure_foundry_provider_uses_supported_default_api_version(tmp_path: Path) -> None:
     store = _store(tmp_path)
 
@@ -162,6 +191,7 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
     monkeypatch.setattr(routing, "AzureFoundryClient", FakeAzureFoundryClient)
     store = _store(tmp_path)
     user = store.create_user(email="gpt5@example.com", password="secret", full_name="GPT Five User")
+    _grant_external_model_consent(store, user.user_id)
     subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
     store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
     store.upsert_ai_model_provider(
@@ -745,6 +775,7 @@ def test_paid_non_eu_external_route_blocks_without_local_fallback(
     monkeypatch.setenv("AI_MODEL_CREDENTIAL_ENCRYPTION_KEY", "test-routing-secret")
     store = _store(tmp_path)
     user = store.create_user(email="non-eu@example.com", password="secret", full_name="Non EU")
+    _grant_external_model_consent(store, user.user_id)
     subscription = store.request_subscription_change(user_id=user.user_id, plan_code="case")
     store.update_subscription_status(subscription_id=subscription.subscription_id, status="paid")
     provider = store.upsert_ai_model_provider(

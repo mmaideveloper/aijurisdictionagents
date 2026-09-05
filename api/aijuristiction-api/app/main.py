@@ -25,6 +25,7 @@ from app.admin_cases_api import router as admin_cases_router
 from app.admin_users_api import router as admin_users_router
 from app.ai_model_admin_api import router as ai_model_admin_router
 from app.contact_api import router as contact_router
+from app.compliance_api import router as compliance_router
 from app.document_templates.api import router as document_templates_router
 from app.document_shares_api import router as document_shares_router
 from app.effective_model_routing_api import router as effective_model_routing_router
@@ -259,13 +260,22 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "x-request-id", "x-correlation-id"],
+    expose_headers=[
+        "Content-Disposition",
+        "x-request-id",
+        "x-correlation-id",
+        "X-AI-Generated",
+        "X-AI-Model-Provider",
+        "X-AI-Model-Name",
+        "X-Human-Review-Recommended",
+    ],
 )
 app.include_router(chat_router)
 app.include_router(admin_cases_router)
 app.include_router(admin_users_router)
 app.include_router(ai_model_admin_router)
 app.include_router(contact_router)
+app.include_router(compliance_router)
 app.include_router(document_templates_router)
 app.include_router(document_shares_router)
 app.include_router(effective_model_routing_router)

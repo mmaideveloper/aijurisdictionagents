@@ -19,6 +19,7 @@ from app.versioning import get_api_version, get_core_version
 from aijurisdictionagents.agents import AIWebSearchAgent, AIAgentsValidator, ValidatorInputs
 from aijurisdictionagents.agents.validator import EvaluationCriterion
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.compliance import build_ai_transparency_metadata
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _DEFAULT_MODEL_KNOWLEDGE_SOURCE_URL = "https://platform.openai.com/docs/models"
@@ -118,6 +119,7 @@ def build_session_result_metadata(
     final_recommendation: str,
     base_metadata: dict[str, Any] | None = None,
     routed_model_name: str | None = None,
+    routed_model_provider: str | None = None,
 ) -> dict[str, Any]:
     metadata = dict(base_metadata or {})
     visible_messages = _visible_messages(messages)
@@ -187,6 +189,11 @@ def build_session_result_metadata(
             "law_citations": law_citations,
             "api_version": get_api_version(),
             "core_version": get_core_version(),
+            "ai_transparency": build_ai_transparency_metadata(
+                provider=routed_model_provider or "jurisdigta_rules",
+                model=routed_model_name or "deterministic_case_logic",
+                source_provenance=law_citations,
+            ),
         }
     )
     return metadata
