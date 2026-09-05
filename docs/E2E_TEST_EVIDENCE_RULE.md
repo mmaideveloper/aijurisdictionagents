@@ -149,9 +149,11 @@ Local evidence belongs under ignored `mobile_app/e2e-playwright/artifacts/` and 
 
 A case-workflow acceptance manifest must record the real provider/model, local services and
 PostgreSQL database, synthetic run/case identifiers, pinned graph/flow versions, expected and
-observed node path, MCP source IDs, artifact IDs, and audit event IDs. It must assert ordered
-`langgraph_run_started`, assignment pin, interrupt, resume, input validation, MCP result, output
-validation, final review, and completion/escalation events. Missing events, legacy routing, mocks,
+observed node path, MCP source IDs, artifact IDs, and audit event IDs. When orchestration tracing is
+in scope, it must also assert ordered decision-trace event IDs and reason codes without copying the
+trace payload, prompts, messages, case facts, source bodies, or tool payloads into evidence. It must
+assert ordered `langgraph_run_started`, assignment pin, interrupt, resume, input validation, MCP
+result, output validation, final review, and completion/escalation events. Missing events, legacy routing, mocks,
 or unavailable prerequisites fail the test. Document scenarios also retain the PDF, first-page
 render, structural/text validation, and a stable final-state screenshot for at most seven days.
 When a flow exercises an external or registry tool, the manifest must additionally record the

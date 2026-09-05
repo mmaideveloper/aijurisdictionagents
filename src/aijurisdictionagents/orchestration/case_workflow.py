@@ -1175,6 +1175,7 @@ def _validate_initial_state(state: CaseWorkflowState) -> None:
     required = (
         "workflow_run_id",
         "correlation_id",
+        "session_id",
         "case_type_key",
         "graph_key",
         "graph_version",

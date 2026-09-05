@@ -11,12 +11,17 @@ from typing import Any, Iterator, Literal, cast
 from uuid import uuid4
 
 from app.case_workflows.models import (
+    OrchestrationDecisionTraceResponse,
     WorkflowAssignmentResponse,
     WorkflowEventResponse,
     WorkflowRunResponse,
 )
 from aijurisdictionagents.api_db.config import ApiDataConfig
 from aijurisdictionagents.orchestration.case_workflow import CaseWorkflowOutcome, CaseWorkflowState
+from aijurisdictionagents.observability_decision_trace import (
+    serialize_decision_trace,
+    workflow_event_to_decision_trace,
+)
 
 
 @dataclass(frozen=True)
@@ -252,6 +257,36 @@ class CaseWorkflowStore:
                             event["created_at"],
                         ),
                     )
+                    trace_payload = serialize_decision_trace(
+                        workflow_event_to_decision_trace(state, event)
+                    )
+                    decision = cast(dict[str, Any], trace_payload["decision"])
+                    conn.execute(
+                        self._sql(
+                            """
+                            INSERT INTO orchestration_decision_traces(
+                                event_id, schema_version, session_id, workflow_run_id,
+                                correlation_id, stage, actor, event_type, status,
+                                reason_code, payload_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(event_id) DO NOTHING
+                            """
+                        ),
+                        (
+                            trace_payload["event_id"],
+                            trace_payload["schema_version"],
+                            trace_payload["session_id"],
+                            trace_payload["workflow_run_id"],
+                            trace_payload["correlation_id"],
+                            trace_payload["stage"],
+                            trace_payload["actor"],
+                            trace_payload["event_type"],
+                            trace_payload["status"],
+                            decision["reason_code"],
+                            json.dumps(trace_payload, ensure_ascii=True, sort_keys=True),
+                            trace_payload["created_at"],
+                        ),
+                    )
             conn.commit()
         return self.get_run(state["workflow_run_id"], user_id=state.get("user_id", ""))
 
@@ -342,6 +377,42 @@ class CaseWorkflowStore:
                 (workflow_run_id,),
             ).fetchall()
         return [_event(_row(row)) for row in rows]
+
+    def list_decision_traces(
+        self, *, session_id: str, limit: int, offset: int
+    ) -> tuple[list[OrchestrationDecisionTraceResponse], bool]:
+        """Return one exact session timeline; caller must enforce admin authorization."""
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                self._sql(
+                    "SELECT payload_json FROM orchestration_decision_traces "
+                    "WHERE session_id = ? ORDER BY created_at, event_id LIMIT ? OFFSET ?"
+                ),
+                (session_id, limit + 1, offset),
+            ).fetchall()
+        visible = rows[:limit]
+        return (
+            [
+                OrchestrationDecisionTraceResponse.model_validate(
+                    json.loads(str(_row(row)["payload_json"]))
+                )
+                for row in visible
+            ],
+            len(rows) > limit,
+        )
+
+    def delete_session_decision_traces(self, *, session_id: str) -> int:
+        """Retention hook: delete every trace owned by one expired/deleted session."""
+
+        with self._connect() as conn:
+            cursor = conn.execute(
+                self._sql("DELETE FROM orchestration_decision_traces WHERE session_id = ?"),
+                (session_id,),
+            )
+            deleted = max(int(cursor.rowcount), 0)
+            conn.commit()
+        return deleted
 
     def record_tool_consent(
         self,
@@ -503,6 +574,12 @@ class CaseWorkflowStore:
                         available.append(table_name)
                 checkpoint_tables = tuple(available)
             for run_id in run_ids:
+                conn.execute(
+                    self._sql(
+                        "DELETE FROM orchestration_decision_traces WHERE workflow_run_id = ?"
+                    ),
+                    (run_id,),
+                )
                 conn.execute(
                     self._sql("DELETE FROM case_workflow_events WHERE workflow_run_id = ?"),
                     (run_id,),

@@ -32,12 +32,19 @@ Do not advertise a universal retention period. The notice uses category-specific
   where a legal obligation or legal claim justifies it; users can request deletion through the
   published privacy contact;
 - security logs and approval evidence: only as needed for security and compliance evidence;
+- structured orchestrator decision traces: the owning chat session's retention, expiry, deletion,
+  and applicable legal-hold lifecycle; they are not retained indefinitely as a separate dataset;
 - accounting documents: the applicable statutory period, generally ten years following the
   relevant accounting year under Slovak Act No. 431/2002 Coll.
 
 Any new persistent data category must define its purpose, legal basis, recipient access, and an
 enforceable deletion/retention rule before release. If actual runtime behavior differs from the
 notice, fix the behavior or update and approve the notice before deployment.
+
+Decision traces contain bounded operational identifiers, policy/version and reason codes, evidence
+references, and human-review flags. They do not contain chain-of-thought, prompts, messages, case
+facts, document/source bodies, credentials, or raw tool payloads. Local development traces belong
+only under ignored `runs/` storage and should be removed after review.
 
 ## Release checks
 

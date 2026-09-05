@@ -222,6 +222,11 @@ The API database now includes a policy-driven model routing foundation:
 - `ai_task_route_policies`: task type plus plan policy with preferred local/external profile, external acknowledgement, EU data-zone requirement, local fallback flags, and optional `max_cost_eur` budget caps.
 - `ai_model_usage_ledger`: per-request token and estimated cost ledger by user, subscription, case, task type, provider, model, route, and time. Case audit fields also store `session_id`, `question_id`, bounded `question_preview`, `question_sha256`, `answer_id`, and minimal audit metadata so JurisDigta can show which model answered which question without duplicating full legal prompts outside the case history.
 - `ai_model_admin_audit_events`: admin-only model/provider/group/policy and operational case-reset change trail with actor email, entity, old/new summaries, reason, correlation id, and timestamp. It stores metadata summaries only and must not contain legal case text or provider secrets.
+- `orchestration_decision_traces`: append-only schema-versioned, session-scoped orchestration
+  decisions. Rows store the allowlisted actor/stage/status, stable policy and reason identifiers,
+  bounded evidence references, correlation fields, and oversight flags. They cascade with workflow
+  runs and are explicitly purged by session retention/deletion; they never contain prompts,
+  messages, documents, fact values, source bodies, credentials, or raw tool payloads.
 - `users.role` and `users.is_enabled`: global user/admin role and account status used by `/app/admin` and admin APIs.
 
 Case export includes `case-catalog-detection.json` alongside `case.json`, `messages.jsonl`, `ai-model-audit.json`, `citations.json`, and `warnings.json`. The detection artifact exposes the persisted selection records and event trail so users and admins can trace why a document workflow was chosen, degraded, blocked, or sent back for clarification during the session.

@@ -10,6 +10,10 @@ from aijurisdictionagents.orchestration.case_workflow import (
     DeterministicCaseWorkflowServices,
     build_initial_case_workflow_state,
 )
+from aijurisdictionagents.observability_decision_trace import (
+    serialize_decision_trace,
+    workflow_event_to_decision_trace,
+)
 from aijurisdictionagents.tools import build_default_tool_registry
 
 
@@ -95,6 +99,19 @@ def main() -> None:
     print(f"status => {outcome.state['status']}")
     print(outcome.state["final_answer"])
     print("events => " + ", ".join(event["event_type"] for event in outcome.state["events"]))
+    decision_trace = serialize_decision_trace(
+        workflow_event_to_decision_trace(outcome.state, outcome.state["events"][-1])
+    )
+    assert decision_trace["session_id"] == "demo-session"
+    assert "request_text" not in decision_trace
+    assert "facts" not in decision_trace
+    decision = decision_trace["decision"]
+    assert isinstance(decision, dict)
+    print(
+        "decision trace => "
+        f"v{decision_trace['schema_version']} "
+        f"{decision_trace['event_type']} reason={decision['reason_code']}"
+    )
 
 
 if __name__ == "__main__":

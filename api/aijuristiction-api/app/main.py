@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.cases_api import router as cases_router
 from app.case_types.api import router as case_types_router
 from app.case_workflows.api import router as case_workflows_router
+from app.decision_trace_api import router as decision_trace_router
 from app.case_workflows.service import get_case_workflow_service
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
@@ -275,6 +276,7 @@ app.include_router(users_router)
 app.include_router(cases_router)
 app.include_router(case_types_router)
 app.include_router(case_workflows_router)
+app.include_router(decision_trace_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)
