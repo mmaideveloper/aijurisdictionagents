@@ -52,6 +52,13 @@ configured LLM provider, silently select `mock`, expose secrets in logs, or use 
 personal data for validation. Synthetic test data and evidence remain under ignored `runs/`
 or `artifacts/` paths according to `docs/E2E_TEST_EVIDENCE_RULE.md`.
 
+The API image constrains Azure Monitor and OpenTelemetry as one tested compatibility family in
+`api/aijuristiction-api/Dockerfile`. Update the Azure Monitor distribution, exporter, API, SDK,
+OTLP exporters, instrumentation, and semantic-conventions pins together. Leaving only part of this
+family pinned can make pip backtrack across incompatible release trains until it fails with
+`resolution-too-deep`. The runtime-baseline test protects the coherent set, while a successful API
+image build remains the authoritative Linux compatibility check.
+
 ## Upgrade policy
 
 Treat a Python minor-version change as a system task. Use a dedicated branch/worktree, update
