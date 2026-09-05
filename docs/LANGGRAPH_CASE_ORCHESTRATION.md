@@ -1,8 +1,8 @@
 # LangGraph case orchestration
 
 JurisDigta uses LangGraph as the primary chat orchestrator and a registered, versioned runtime for
-guided legal cases. The first active reference is `sk.civil.payment_confirmation@4` on
-`legal_document_workflow@3`; all other enabled Slovak case types receive an explicit
+guided legal cases. The first active reference is `sk.civil.payment_confirmation@5` on
+`legal_document_workflow@4`; all other enabled Slovak case types receive an explicit
 `unsupported_or_human_review@1` assignment until their legal configuration is reviewed.
 
 Every normal chat question enters `PrimaryLangGraphRouter`. Its classifier receives only the
@@ -65,6 +65,15 @@ flowchart LR
     A --> H[GDPR/safety and human-review gates]
 ```
 
+Graph v4 adds policy-gated presentation selection after final case review. The immutable flow
+assigns versioned renderers, a default, explicit user overrides, and payload bounds. An explicit
+supported request such as JSON or plain text takes precedence; otherwise the model may propose only
+from the flow-filtered renderer definitions and sees result shape—not result data. Deterministic
+validation accepts the proposal or falls back to the flow default and then readable text. The API
+returns a schema-v1 presentation block and the client maps it to trusted components; arbitrary HTML
+is never accepted or executed. Sanitized JSON is a bounded user-visible projection, not a raw tool
+payload. See `docs/ADR-755-LANGGRAPH-PRESENTATION-TOOLS.md`.
+
 The reusable engine supports the registered company, address, property, vehicle, and debtor tools
 when a relevant reviewed flow allowlists and maps their inputs. Payment confirmation v4 currently
 allowlists only company, address, and debtor checks because property and vehicle queries are not
@@ -75,7 +84,8 @@ external call. Execution is idempotent per workflow run/tool/consent event.
 PostgreSQL production checkpoints use `PostgresSaver`; local deterministic tests use
 `InMemorySaver`. Run metadata and append-only sanitized audit events are stored in the API
 database by migrations `0020_langgraph_case_workflows.sql` and
-`0021_langgraph_tool_consent.sql`. Runtime database files remain under
+`0021_langgraph_tool_consent.sql`. Typed message presentation is retained by additive migration
+`0026_case_message_presentations.sql`. Runtime database files remain under
 `runs/storage/api/`, never under `databases/`.
 
 Each workflow event is also normalized through the core decision-trace v1 allowlist into the
@@ -160,8 +170,8 @@ versions. A retired flow version cannot be republished, and a published version 
 
 Deployments can contain the legacy `sk.civil.payment_confirmation@1` definition created before
 the MCP retrieval policy became mandatory and the compatible `@2` definition with query keys.
-Startup preserves published versions, seeds consented-tool `@4`, and upgrades only the active
-system-seeded assignment for new cases to graph v3/flow v4. Existing workflow runs remain pinned
+Startup preserves published versions, seeds presentation-enabled `@5`, and upgrades only the active
+system-seeded assignment for new cases to graph v4/flow v5. Existing workflow runs remain pinned
 to their original graph and flow versions, while administrator-created assignments are not
 silently replaced.
 
@@ -193,6 +203,7 @@ python scripts/prepare_issue_716_langgraph_tools_e2e.py
 
 Then run `e2e/issue-716-langgraph-consented-tools.spec.ts` with the emitted
 `ISSUE_716_E2E_MANIFEST` and `ISSUE_716_E2E_EVIDENCE` paths. The test requires the real
-Azure Foundry route, asserts graph v3/flow v4, the visible policy-bound consent prompt, sanitized
+Azure Foundry route, asserts graph v4/flow v5, the visible policy-bound consent prompt, sanitized
 ToolRegistry result, append-only PostgreSQL consent/execution rows, MCP source identity, PDF/text
-integrity, case-ledger deletion, and a stable final screenshot.
+integrity, typed trusted-component rendering with visible provenance, case-ledger deletion, and a
+stable final screenshot.

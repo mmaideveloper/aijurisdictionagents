@@ -64,6 +64,13 @@ so an encoded space cannot leak into a document-package response. The conversion
 does not inject or render HTML; React escaping remains active to prevent script or
 markup execution.
 
+Graph-v4 assistant messages can carry a typed schema-v1 `presentation` block. The client validates
+its size, schema, renderer ID, and version, then maps it to reviewed React components for result
+cards, semantic tables, notices, document previews, text, or escaped sanitized JSON. Unsupported
+blocks fall back to normal assistant text. Citations, reviewed tool status, and human-review notices
+remain visible. A request for “HTML” selects a trusted result-card component; no server/model HTML
+is inserted into the DOM.
+
 Internal `LangGraph...` agent identifiers and audit event types remain unchanged
 for traceability. The user-facing assistant history, live processing text, and role
 label display them as `AI Orchestrator Agent`.
@@ -73,6 +80,7 @@ Minimal focused example and regression check:
 ```powershell
 cd frontend/aijurisdictionfronend
 npm test -- src/__tests__/assistantPresentation.test.ts
+npm test -- src/__tests__/presentation.test.ts src/__tests__/assistantPresentationBlock.test.tsx
 ```
 
 Default frontend endpoint:

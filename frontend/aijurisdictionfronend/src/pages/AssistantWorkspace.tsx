@@ -22,7 +22,9 @@ import {
 } from "../api/chatClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
 import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
+import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
@@ -161,7 +163,8 @@ const caseInteractionToThreadMessage = (
     metadata: {
       custom: {
         actor: interaction.actor,
-        citations: interaction.citations
+        citations: interaction.citations,
+        presentation: interaction.presentation
       }
     }
   };
@@ -507,6 +510,10 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
 
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
+  const typedPresentation = useAuiState((state) => {
+    const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
+    return normalizePresentationBlock(custom?.presentation);
+  });
   const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
   const conversationalText = presentation.conversationalText
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")
@@ -515,12 +522,16 @@ const AssistantTextPart: React.FC = () => {
 
   return (
     <>
-      {conversationalText ? (
+      {typedPresentation ? (
+        <AssistantPresentationBlock block={typedPresentation} />
+      ) : conversationalText ? (
         <p className="assistant-message__text">{conversationalText}</p>
       ) : null}
-      {presentation.documentPreviews.map((preview, index) => (
-        <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
-      ))}
+      {!typedPresentation
+        ? presentation.documentPreviews.map((preview, index) => (
+            <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
+          ))
+        : null}
       <AssistantDocumentLinks links={presentation.documentLinks} />
     </>
   );
@@ -653,6 +664,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
           sessionRef.current = session;
 
           let latestAssistantText = "";
+          let latestPresentation: PresentationBlock | null = null;
           const processingMessages: string[] = [];
           const userVisibleProcessingMessages: string[] = [];
           let activeProgressMessage = "";
@@ -695,8 +707,10 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
               if (streamEvent.data.role === "assistant") {
                 activeProgressMessage = "";
                 latestAssistantText = streamEvent.data.content;
+                latestPresentation = normalizePresentationBlock(streamEvent.data.presentation);
                 yield {
-                  content: [{ type: "text", text: latestAssistantText }]
+                  content: [{ type: "text", text: latestAssistantText }],
+                  metadata: { custom: { presentation: latestPresentation } }
                 };
               }
               continue;
@@ -721,7 +735,9 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             previousDocumentIds: visibleDocumentIdsBeforeRun,
             userId
           });
-          const hydratedAssistantMessage = findLatestAssistantInteraction(refreshedCase)?.message ?? "";
+          const hydratedAssistantInteraction = findLatestAssistantInteraction(refreshedCase);
+          const hydratedAssistantMessage = hydratedAssistantInteraction?.message ?? "";
+          const hydratedPresentation = hydratedAssistantInteraction?.presentation ?? null;
           const streamedAssistantText = latestAssistantText || processingMessages.join("\n\n");
           const responseSourceText = shouldPreferHydratedAssistantMessage(
             streamedAssistantText,
@@ -736,6 +752,11 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
 
           yield {
             content: [{ type: "text", text: finalAssistantText }],
+            metadata: {
+              custom: {
+                presentation: hydratedPresentation ?? latestPresentation
+              }
+            },
             status: { type: "complete", reason: "stop" }
           };
         } catch (error) {

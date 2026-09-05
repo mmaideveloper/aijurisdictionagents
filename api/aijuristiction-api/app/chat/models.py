@@ -41,6 +41,7 @@ class Message(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attachments: List[Attachment] = Field(default_factory=list)
     citations: List[dict[str, Any]] = Field(default_factory=list)
+    presentation: dict[str, Any] = Field(default_factory=dict)
 
 
 class GenerationJob(BaseModel):

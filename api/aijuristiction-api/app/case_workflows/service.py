@@ -20,6 +20,7 @@ from app.case_workflows.models import (
 )
 from app.case_workflows.registry import (
     LEGAL_DOCUMENT_GRAPH_VERSION,
+    PRESENTATION_GRAPH_VERSION,
     REGISTERED_GRAPHS,
     VERIFIED_RETRIEVAL_GRAPH_VERSION,
     get_registered_graph,
@@ -57,6 +58,11 @@ from aijurisdictionagents.orchestration.primary_router import (
     PrimaryLangGraphRouter,
     PrimaryRouteCandidate,
     PrimaryRouteDecision,
+)
+from aijurisdictionagents.orchestration.presentation import presentation_result_shape
+from aijurisdictionagents.orchestration.presentation import (
+    PresentationPolicyError,
+    validate_presentation_policy,
 )
 from aijurisdictionagents.orchestration.retrieval_policy import (
     McpRetrievalPolicyError,
@@ -152,6 +158,70 @@ class ProductionCaseWorkflowServices:
         except Exception:
             return [], {
                 "status": "selector_unavailable_fail_closed",
+                "provider": "",
+                "model": "",
+            }
+
+    def propose_presentation_tool(
+        self, state: CaseWorkflowState, eligible_renderers: Sequence[dict[str, Any]]
+    ) -> tuple[str | None, dict[str, str]]:
+        if not eligible_renderers:
+            return None, {"status": "no_eligible_renderers", "provider": "", "model": ""}
+        result_shape = presentation_result_shape(
+            final_answer=state.get("final_answer", ""),
+            tool_results=[
+                item for item in state.get("tool_results", []) if isinstance(item, Mapping)
+            ],
+            artifacts=[
+                item for item in state.get("artifacts", []) if isinstance(item, Mapping)
+            ],
+            status=state.get("status", "running"),
+        )
+        try:
+            route = get_routed_llm_client(
+                store=self._api_store,
+                user_id=state.get("user_id", ""),
+                task_type="tool_selection",
+                external_acknowledged=bool(
+                    state.get("external_provider_acknowledged", False)
+                ),
+            )
+            raw = route.client.complete(
+                "AIPresentationSelectionAgent",
+                (
+                    "Select one presentation renderer from the supplied flow-assigned definitions. "
+                    "You receive only the result shape, never result values. Return JSON only: "
+                    "{\"renderer_id\": \"assigned_renderer\"}. Do not add data or markup."
+                ),
+                [
+                    Message(
+                        role="user",
+                        agent_name="User",
+                        content=(
+                            f"Flow: {state.get('flow_key', '')}; result shape: {result_shape}. "
+                            "Choose the clearest assigned renderer."
+                        ),
+                    )
+                ],
+                [
+                    Document(
+                        doc_id="eligible-presentation-tools",
+                        path="eligible-presentation-tools.json",
+                        content=json.dumps(list(eligible_renderers), ensure_ascii=False),
+                    )
+                ],
+            )
+            payload = json.loads(_extract_json_object(raw))
+            proposed = str(payload.get("renderer_id", "")).strip() or None
+            return proposed, {
+                "status": "model_proposed",
+                "provider": route.provider,
+                "model": route.model,
+                "route_type": route.route_type,
+            }
+        except Exception:
+            return None, {
+                "status": "selector_unavailable_flow_default",
                 "provider": "",
                 "model": "",
             }
@@ -426,6 +496,13 @@ class CaseWorkflowApplicationService:
                 )
             except ToolPolicyError as exc:
                 raise WorkflowConfigurationError(str(exc)) from exc
+            try:
+                validate_presentation_policy(
+                    flow.definition.get("presentation_policy"),
+                    strict=payload.graph_version >= PRESENTATION_GRAPH_VERSION,
+                )
+            except PresentationPolicyError as exc:
+                raise WorkflowConfigurationError(str(exc)) from exc
         if payload.graph_key == "unsupported_or_human_review" and bool(
             flow.definition.get("automated_finalization", True)
         ):
@@ -602,7 +679,7 @@ class CaseWorkflowApplicationService:
             )
             graph_key = "legal_document_workflow" if chosen else "unsupported_or_human_review"
             graph_version = (
-                LEGAL_DOCUMENT_GRAPH_VERSION
+                PRESENTATION_GRAPH_VERSION
                 if chosen and case_type.case_type_key == "sk.civil.payment_confirmation"
                 else 1
             )

@@ -247,6 +247,7 @@ class CaseCommunication:
     transcript_uri: str | None
     summary: str
     created_at: str
+    presentation: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -822,6 +823,7 @@ class ApiDatabaseStore:
                     channel TEXT NOT NULL,
                     transcript_uri TEXT,
                     summary TEXT NOT NULL,
+                    presentation_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
@@ -4648,7 +4650,8 @@ class ApiDatabaseStore:
         self, *, case_id: str, limit: int | None = None, offset: int = 0
     ) -> list[CaseCommunication]:
         query = """
-            SELECT communication_id, case_id, channel, transcript_uri, summary, created_at
+            SELECT communication_id, case_id, channel, transcript_uri, summary, created_at,
+                   presentation_json
             FROM case_communications
             WHERE case_id = ?
             ORDER BY created_at DESC
@@ -4668,7 +4671,8 @@ class ApiDatabaseStore:
             row = self._fetchone(
                 conn,
                 """
-                SELECT communication_id, case_id, channel, transcript_uri, summary, created_at
+                SELECT communication_id, case_id, channel, transcript_uri, summary, created_at,
+                       presentation_json
                 FROM case_communications
                 WHERE case_id = ? AND communication_id = ?
                 """,
@@ -4788,6 +4792,7 @@ class ApiDatabaseStore:
         role: str,
         content: str,
         agent_name: str | None = None,
+        presentation: dict[str, Any] | None = None,
     ) -> str:
         summary = f"{role.upper()}: {content.strip()}"
         if agent_name:
@@ -4799,6 +4804,7 @@ class ApiDatabaseStore:
             summary=summary[:1000],
             transcript_payload=payload,
             extension="txt",
+            presentation=presentation,
         )
 
     def add_case_text_document(
@@ -4939,6 +4945,7 @@ class ApiDatabaseStore:
         summary: str,
         transcript_payload: bytes | None = None,
         extension: str = "txt",
+        presentation: dict[str, Any] | None = None,
     ) -> str:
         communication_id = str(uuid.uuid4())
         transcript_uri: str | None = None
@@ -4952,9 +4959,10 @@ class ApiDatabaseStore:
                 conn,
                 """
                 INSERT INTO case_communications(
-                    communication_id, case_id, channel, transcript_uri, summary, created_at
+                    communication_id, case_id, channel, transcript_uri, summary, created_at,
+                    presentation_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     communication_id,
@@ -4963,6 +4971,7 @@ class ApiDatabaseStore:
                     transcript_uri,
                     summary,
                     _now_iso(),
+                    json.dumps(presentation or {}, ensure_ascii=False, sort_keys=True),
                 ),
             )
             self._execute(
@@ -5585,6 +5594,35 @@ class ApiDatabaseStore:
         self._ensure_ai_model_usage_audit_columns(conn)
         self._ensure_case_catalog_selection_columns(conn)
         self._ensure_case_catalog_reference_columns(conn)
+        self._ensure_case_communication_presentation_column(conn)
+
+    def _ensure_case_communication_presentation_column(
+        self, conn: sqlite3.Connection | PostgresConnection[Any]
+    ) -> None:
+        if self.uses_postgres:
+            existing_columns = {
+                row[0]
+                for row in self._execute(
+                    conn,
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = ?
+                    """,
+                    ("case_communications",),
+                ).fetchall()
+            }
+        else:
+            existing_columns = {
+                row[1]
+                for row in self._execute(conn, "PRAGMA table_info(case_communications)").fetchall()
+            }
+        if "presentation_json" not in existing_columns:
+            self._execute(
+                conn,
+                "ALTER TABLE case_communications "
+                "ADD COLUMN presentation_json TEXT NOT NULL DEFAULT '{}'",
+            )
 
     def _ensure_case_catalog_selection_columns(
         self, conn: sqlite3.Connection | PostgresConnection[Any]
@@ -6915,6 +6953,7 @@ def _row_to_case_communication(row: tuple[Any, ...]) -> CaseCommunication:
         transcript_uri=str(row[3]) if row[3] is not None else None,
         summary=str(row[4]),
         created_at=str(row[5]),
+        presentation=_json_loads_dict(str(row[6])) if len(row) > 6 and row[6] else {},
     )
 
 

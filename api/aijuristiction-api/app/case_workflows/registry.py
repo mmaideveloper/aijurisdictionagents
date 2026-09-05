@@ -5,6 +5,7 @@ from app.case_workflows.models import RegisteredGraphResponse
 
 VERIFIED_RETRIEVAL_GRAPH_VERSION = 2
 LEGAL_DOCUMENT_GRAPH_VERSION = 3
+PRESENTATION_GRAPH_VERSION = 4
 
 
 _LEGAL_DOCUMENT_NODES = (
@@ -20,6 +21,11 @@ _LEGAL_DOCUMENT_NODES = (
     "verify_output",
     "verify_safety_and_gdpr",
     "review_case",
+    "finalize_or_escalate",
+)
+_PRESENTATION_LEGAL_DOCUMENT_NODES = (
+    *_LEGAL_DOCUMENT_NODES[:-1],
+    "select_presentation",
     "finalize_or_escalate",
 )
 
@@ -42,6 +48,13 @@ REGISTERED_GRAPHS: tuple[RegisteredGraphResponse, ...] = (
         graph_key="legal_document_workflow",
         graph_version=LEGAL_DOCUMENT_GRAPH_VERSION,
         node_names=_LEGAL_DOCUMENT_NODES,
+        supports_interrupt_resume=True,
+        supports_automated_finalization=True,
+    ),
+    RegisteredGraphResponse(
+        graph_key="legal_document_workflow",
+        graph_version=PRESENTATION_GRAPH_VERSION,
+        node_names=_PRESENTATION_LEGAL_DOCUMENT_NODES,
         supports_interrupt_resume=True,
         supports_automated_finalization=True,
     ),
