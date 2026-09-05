@@ -89,6 +89,7 @@ class CaseHistoryMessageResponse(BaseModel):
     agent_name: str | None = None
     created_at: str
     citations: list["CaseCitationResponse"] = Field(default_factory=list)
+    presentation: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseCitationResponse(BaseModel):
@@ -1328,6 +1329,7 @@ def _to_case_history_message_response(
         agent_name=agent_name,
         created_at=communication.created_at,
         citations=citations or [],
+        presentation=getattr(communication, "presentation", {}),
     )
 
 

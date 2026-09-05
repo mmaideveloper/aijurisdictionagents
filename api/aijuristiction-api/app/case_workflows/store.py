@@ -325,6 +325,7 @@ class CaseWorkflowStore:
             final_answer=str(state.get("final_answer", "")),
             artifacts=list(state.get("artifacts", [])),
             tool_results=list(state.get("tool_results", [])),
+            presentation=dict(state.get("presentation", {})),
             review_decisions=dict(state.get("review_decisions", {})),
             escalation_reason=str(state.get("escalation_reason", "")),
             termination_reason=cast(

@@ -121,6 +121,12 @@ Each allowlisted entry binds a registered tool name to its purpose, provider, re
 fact keys, input mapping, permitted data fields, jurisdiction, bounded timeout, consent scope, and
 consent-text version. The LLM sees only eligible definitions and can propose at most one tool;
 execution still requires an exact per-run ledger grant.
+For `legal_document_workflow@4`, the flow must additionally provide `presentation_policy` schema
+version 1. It assigns reviewed renderer IDs and versions, a default renderer, allowed explicit user
+overrides, and bounded item/string/payload limits. Assignment validation rejects unknown renderers,
+missing text fallback, duplicate entries, and unsafe bounds before activation. A model can propose
+only a flow-assigned renderer compatible with the result shape; deterministic policy makes the
+decision. HTML is represented by a trusted `result_card`, never arbitrary markup.
 Assignment validation rejects disabled, deleted, draft, incompatible, or unregistered graph/flow combinations.
 When orchestration mode is active, the primary LangGraph router automatically discovers active
 dedicated assignments backed by enabled, published versions. No separate production case-type

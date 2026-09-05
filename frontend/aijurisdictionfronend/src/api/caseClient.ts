@@ -1,5 +1,6 @@
 import { chatApiRuntimeConfig, ApiRequestError, parseApiErrorResponse } from "./chatClient";
 import { consoleLogger } from "../logging/consoleLogger";
+import type { PresentationBlock } from "../presentation";
 
 export type ApiCase = {
   case_id: string;
@@ -18,6 +19,7 @@ export type ApiCaseHistoryMessage = {
   agent_name: string | null;
   created_at: string;
   citations?: ApiCaseCitation[];
+  presentation?: PresentationBlock;
 };
 
 export type ApiCaseCitation = {

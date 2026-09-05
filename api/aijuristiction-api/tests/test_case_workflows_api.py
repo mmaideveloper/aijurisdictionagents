@@ -87,7 +87,7 @@ def _service(
     return service
 
 
-def test_default_assignment_preserves_legacy_versions_and_selects_consented_tools_v4(
+def test_default_assignment_preserves_legacy_versions_and_selects_presentation_flow_v5(
     tmp_path: Path,
 ) -> None:
     flow_path = tmp_path / "flows.sqlite3"
@@ -119,8 +119,8 @@ def test_default_assignment_preserves_legacy_versions_and_selects_consented_tool
         case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
     )
 
-    assert assignment.graph_version == 3
-    assert assignment.flow_version == 4
+    assert assignment.graph_version == 4
+    assert assignment.flow_version == 5
     assert upgraded_store.get(
         flow_key="sk.civil.payment_confirmation", version=1, jurisdiction="SK"
     ).definition == legacy_definition
@@ -130,6 +130,9 @@ def test_default_assignment_preserves_legacy_versions_and_selects_consented_tool
         ).definition.get("mcp_retrieval"),
         dict,
     )
+    assert upgraded_store.get(
+        flow_key="sk.civil.payment_confirmation", version=5, jurisdiction="SK"
+    ).definition["presentation_policy"]["default_renderer"] == "document_preview"
 
 
 def test_primary_router_candidates_come_from_active_published_dedicated_assignments(
@@ -461,6 +464,78 @@ def test_model_tool_selector_receives_only_flow_eligible_definitions(
     assert selected == ["registeradries_address_validate"]
     assert exposed == eligible
     assert "obchodny_register_company_check" not in str(exposed)
+    assert metadata["provider"] == "azurefoundry-eu"
+
+
+def test_presentation_selector_is_data_blind_and_flow_constrained(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class _PresentationSelectorClient:
+        def complete(
+            self,
+            agent_name: str,
+            system_prompt: str,
+            conversation: Any,
+            documents: Any,
+        ) -> str:
+            captured["agent_name"] = agent_name
+            captured["system_prompt"] = system_prompt
+            captured["conversation"] = conversation
+            captured["documents"] = documents
+            return '{"renderer_id":"data_table"}'
+
+    monkeypatch.setattr(
+        "app.case_workflows.service.get_routed_llm_client",
+        lambda **kwargs: SimpleNamespace(
+            client=_PresentationSelectorClient(),
+            provider="azurefoundry-eu",
+            model="synthetic-model-route",
+            route_type="default",
+        ),
+    )
+    workflow_store = CaseWorkflowStore(
+        CaseWorkflowStoreConfig(
+            db_option="local", db_cloud="", sqlite_path=tmp_path / "presentation-selector.sqlite3"
+        )
+    )
+    service = ProductionCaseWorkflowServices(
+        api_store=cast(Any, object()), workflow_store=workflow_store
+    )
+    eligible = [
+        {
+            "renderer_id": "data_table",
+            "version": 1,
+            "supported_shapes": ["records"],
+            "description": "A bounded table.",
+        }
+    ]
+
+    selected, metadata = service.propose_presentation_tool(
+        cast(
+            Any,
+            {
+                "user_id": "synthetic-user",
+                "flow_key": "test.flow",
+                "final_answer": "PRIVATE FINAL ANSWER",
+                "verified_facts": {"payer": "PRIVATE PAYER"},
+                "tool_results": [{"tool_name": "one"}, {"tool_name": "two"}],
+                "artifacts": [],
+                "status": "completed",
+                "external_provider_acknowledged": True,
+            },
+        ),
+        eligible,
+    )
+
+    exposed = json.loads(captured["documents"][0].content)
+    model_input = f"{captured['system_prompt']} {captured['conversation']} {exposed}"
+    assert selected == "data_table"
+    assert exposed == eligible
+    assert "result shape: records" in captured["conversation"][0].content
+    assert "PRIVATE FINAL ANSWER" not in model_input
+    assert "PRIVATE PAYER" not in model_input
     assert metadata["provider"] == "azurefoundry-eu"
 
 

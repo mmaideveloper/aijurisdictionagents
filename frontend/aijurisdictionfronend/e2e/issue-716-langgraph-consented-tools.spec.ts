@@ -107,8 +107,8 @@ test("real LangGraph model proposal requires consent and executes the address to
   );
   expect(runResponse.ok()).toBeTruthy();
   run = (await runResponse.json()) as Record<string, unknown>;
-  expect(run.graph_version).toBe(3);
-  expect(run.flow_version).toBe(4);
+  expect(run.graph_version).toBe(4);
+  expect(run.flow_version).toBe(5);
   const toolResult = (run.tool_results as Array<Record<string, unknown>>)[0]!;
   expect(toolResult.tool_name).toBe(input.expectedTool);
   expect(toolResult.status).toBe("succeeded");
@@ -128,6 +128,7 @@ test("real LangGraph model proposal requires consent and executes the address to
     "tool_consent_recorded",
     "consented_tools_completed",
     "privacy_safety_validation_completed",
+    "presentation_selected",
     "langgraph_run_completed",
   ]) expect(eventTypes).toContain(eventType);
   const retrievalEvent = events.find((event) => event.event_type === "legal_requirements_retrieved")!;
@@ -159,10 +160,19 @@ test("real LangGraph model proposal requires consent and executes the address to
   expect(pdf.pageCount).toBeGreaterThan(0);
   expect(pdf.extractedText).toContain("100 EUR");
 
+  const presentation = run.presentation as Record<string, unknown>;
+  expect(presentation.schema_version).toBe(1);
+  expect(presentation.renderer_id).toBe("document_preview");
+  expect((presentation.selection as Record<string, unknown>).policy_id).toBe(
+    "sk.civil.payment_confirmation.presentation.v1",
+  );
+
   const finalMessage = page.locator(".assistant-message").filter({ hasText: input.expectedTool }).last();
   await expect(finalMessage).toBeVisible({ timeout: 60_000 });
+  await expect(finalMessage.locator('[data-renderer="document_preview"]')).toBeVisible();
   await expect(finalMessage).toContainText("succeeded");
   await expect(finalMessage).toContainText(/ľudskú kontrolu/i);
+  await expect(finalMessage).toContainText(input.expectedLegalSourceId);
   await finalMessage.scrollIntoViewIfNeeded();
   const screenshotPath = path.join(evidenceRoot, "langgraph-consented-tool-final.png");
   await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -178,6 +188,12 @@ test("real LangGraph model proposal requires consent and executes the address to
     workflowRunId: run.workflow_run_id,
     graph: `${run.graph_key}@${run.graph_version}`,
     flow: `${run.flow_key}@${run.flow_version}`,
+    presentation: {
+      schemaVersion: presentation.schema_version,
+      rendererId: presentation.renderer_id,
+      rendererVersion: presentation.renderer_version,
+      selection: presentation.selection,
+    },
     tool: toolResult,
     consent: ledger,
     observedEventIds: events.map((event) => event.event_id),

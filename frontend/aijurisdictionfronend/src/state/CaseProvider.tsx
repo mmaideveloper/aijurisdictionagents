@@ -19,6 +19,7 @@ import { consoleLogger } from "../logging/consoleLogger";
 import { assistantAgentDisplayName, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
 import { useLanguage } from "../components/LanguageProvider";
 import { normalizeCaseRole, type CaseRole } from "./caseRoles";
+import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
 
 export type { CaseRole } from "./caseRoles";
 
@@ -36,6 +37,7 @@ export type SendCaseMessageResult = {
   sessionId: string;
   assistantActor: string;
   assistantMessage: string;
+  presentation?: PresentationBlock;
 };
 
 export type CaseInteraction = {
@@ -44,6 +46,7 @@ export type CaseInteraction = {
   actor: string;
   message: string;
   citations: CaseCitation[];
+  presentation?: PresentationBlock;
 };
 
 export type CaseCitation = {
@@ -140,7 +143,12 @@ type CaseContextValue = {
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
   setContinueRequested: (value: boolean) => void;
-  addInteraction: (caseId: string, actor: string, message: string) => void;
+  addInteraction: (
+    caseId: string,
+    actor: string,
+    message: string,
+    presentation?: PresentationBlock
+  ) => void;
   sendCaseMessage: (input: SendCaseMessageInput) => Promise<SendCaseMessageResult>;
   updateCase: (caseId: string, update: Partial<CaseRecord>) => void;
   setCaseRole: (caseId: string, role: CaseRole) => void;
@@ -879,7 +887,8 @@ const mapApiCase = (
       message: message.role === "assistant"
         ? normalizeAssistantPresentationText(message.content)
         : message.content,
-      citations: (message.citations ?? []).map(mapApiCitation)
+      citations: (message.citations ?? []).map(mapApiCitation),
+      presentation: normalizePresentationBlock(message.presentation) ?? undefined
     })),
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",
@@ -1215,14 +1224,15 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const addInteraction = React.useCallback(
-    (caseId: string, actor: string, message: string) => {
+    (caseId: string, actor: string, message: string, presentation?: PresentationBlock) => {
       const createdAt = new Date().toISOString();
       const interaction: CaseInteraction = {
         id: `${caseId}-${Date.now()}`,
         createdAt,
         actor,
         message,
-        citations: []
+        citations: [],
+        presentation
       };
       setStoredCases((prev) =>
         prev.map((caseItem) =>
@@ -1290,7 +1300,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return {
         sessionId,
         assistantActor: assistantAgentDisplayName(assistantMessage.agent_name, "AI Assistant"),
-        assistantMessage: normalizeAssistantPresentationText(assistantMessage.content)
+        assistantMessage: normalizeAssistantPresentationText(assistantMessage.content),
+        presentation: normalizePresentationBlock(assistantMessage.presentation) ?? undefined
       };
     },
     [storedCases, ensureCaseSessionId]

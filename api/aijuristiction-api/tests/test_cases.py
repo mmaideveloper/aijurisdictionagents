@@ -83,6 +83,55 @@ def test_case_lifecycle_and_limit(monkeypatch, tmp_path) -> None:
     assert listing.json() == []
 
 
+def test_case_history_preserves_typed_presentation_block(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("DB_OPTION", "local")
+    monkeypatch.setenv("STORAGE_OPTION", "local")
+    monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))
+    monkeypatch.setenv("STORE_LOCAL", str(tmp_path / "storage"))
+    client = TestClient(app)
+    user_id = _create_user(client, idx=78)
+    created = client.post(
+        "/v1/cases",
+        headers=_headers(),
+        json={"user_id": user_id, "title": "Presentation case"},
+    )
+    case_id = created.json()["case_id"]
+    presentation = {
+        "schema_version": 1,
+        "renderer_id": "sanitized_json",
+        "renderer_version": 1,
+        "data": {"answer": "Synthetic visible result"},
+        "fallback_text": "Synthetic visible result",
+        "citations": [],
+        "notices": ["Human review required"],
+        "selection": {
+            "policy_id": "test.presentation.v1",
+            "reason_code": "explicit_user_format",
+            "explicit_user_request": True,
+            "model_proposal_accepted": False,
+        },
+    }
+    store = ApiDatabaseStore.from_env()
+    store.initialize()
+    store.add_case_message(
+        case_id=case_id,
+        role="assistant",
+        content="Synthetic visible result",
+        agent_name="LangGraphCaseWorkflow",
+        presentation=presentation,
+    )
+
+    history = client.get(
+        f"/v1/cases/{case_id}/history?user_id={user_id}&limit=5",
+        headers=_headers(),
+    )
+
+    assert history.status_code == 200
+    message = history.json()["messages"][0]
+    assert message["presentation"] == presentation
+    assert "password" not in str(message["presentation"]).lower()
+
+
 def test_document_delete_erases_payload_derived_data_and_shares_with_audit(
     monkeypatch, tmp_path
 ) -> None:

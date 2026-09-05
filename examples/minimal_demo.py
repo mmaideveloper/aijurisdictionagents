@@ -61,6 +61,12 @@ print(
     "documented in docs/FRONTEND_DEMO.md."
 )
 print(
+    "flow_assigned_presentation_tools => graph v4 honors supported explicit user formats, otherwise "
+    "validates a data-blind model proposal against immutable flow policy; the API returns bounded "
+    "schema-v1 data for trusted client components, visible citations/tool status, and readable text "
+    "fallback without executing model-generated HTML or exposing raw tool payloads."
+)
+print(
     "latest_law_research_routing => standalone latest-law questions bypass ambiguous or waiting "
     "document workflows and continue through cited JurisDigta MCP research; explicit document or "
     "PDF preparation requests remain in orchestration."

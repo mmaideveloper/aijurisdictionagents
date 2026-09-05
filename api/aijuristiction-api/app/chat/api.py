@@ -215,14 +215,29 @@ def _ensure_case_write_access_for_session(session: Session) -> None:
         raise HTTPException(status_code=403, detail=detail)
 
 
-def _persist_case_message_if_needed(*, session: Session, role: str, content: str, agent_name: str | None = None) -> None:
+def _persist_case_message_if_needed(
+    *,
+    session: Session,
+    role: str,
+    content: str,
+    agent_name: str | None = None,
+    presentation: dict[str, Any] | None = None,
+) -> None:
     case_id = session.case_id
     if case_id is None or not case_id.strip():
         return
     store = _get_store()
     if role.strip().lower() == "assistant":
         content = _user_visible_text(content)
-    store.add_case_message(case_id=case_id, role=role, content=content, agent_name=agent_name)
+    message_kwargs: dict[str, Any] = {
+        "case_id": case_id,
+        "role": role,
+        "content": content,
+        "agent_name": agent_name,
+    }
+    if presentation:
+        message_kwargs["presentation"] = presentation
+    store.add_case_message(**message_kwargs)
 
 
 def _record_case_ai_model_audit(
@@ -744,6 +759,7 @@ def _bootstrap_case_history_if_needed(*, session: Session) -> None:
                 role=role,
                 content=content,
                 agent_name=agent_name,
+                presentation=getattr(item, "presentation", {}),
             )
         )
 
@@ -757,6 +773,7 @@ def _message_payload(message: Message) -> dict[str, object]:
         "agent_name": visible_message.agent_name,
         "content": visible_message.content,
         "created_at": visible_message.created_at.isoformat(),
+        "presentation": visible_message.presentation,
     }
     generated_document_urls = list(
         dict.fromkeys(
@@ -1161,6 +1178,7 @@ def _persist_direct_assistant_message(
     content: str,
     agent_name: str,
     allow_document_generation: bool = True,
+    presentation: dict[str, Any] | None = None,
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
@@ -1180,6 +1198,7 @@ def _persist_direct_assistant_message(
             role=MessageRole.ASSISTANT,
             content=content,
             agent_name=agent_name,
+            presentation=presentation or {},
         )
     )
     _persist_case_message_if_needed(
@@ -1187,6 +1206,7 @@ def _persist_direct_assistant_message(
         role="assistant",
         content=content,
         agent_name=agent_name,
+        presentation=presentation,
     )
     return persisted_lawyer
 
@@ -1568,6 +1588,7 @@ def _run_direct_lawyer_turn(
             content=workflow_reply,
             agent_name="LangGraphCaseWorkflow",
             allow_document_generation=active_workflow_run.status == "completed",
+            presentation=active_workflow_run.presentation,
         )
         _record_case_ai_model_audit(
             session=session,
