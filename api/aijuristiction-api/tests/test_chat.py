@@ -2500,6 +2500,8 @@ def test_mcp_law_context_honors_explicit_latest_law_count(monkeypatch) -> None:
     from app.chat.mcp_law_context import build_mcp_law_context
 
     calls: list[tuple[str, dict[str, object]]] = []
+    long_title = "Oznamenie o ulozeni kolektivnej zmluvy " + "a uplnom verejnom nazve " * 14
+    long_summary = "Verejny metadatovy suhrn " + "s uplnym obsahom bez skratenia " * 24
 
     def fake_call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         calls.append((name, arguments))
@@ -2509,8 +2511,8 @@ def test_mcp_law_context_honors_explicit_latest_law_count(monkeypatch) -> None:
                     {
                         "document_id": f"doc-{index}",
                         "law_identifier_text": f"{index}/2026 Z. z.",
-                        "title": f"Zakon o verejnej teme {index}",
-                        "summary": f"Verejna tema {index}",
+                        "title": long_title if index == 1 else f"Zakon o verejnej teme {index}",
+                        "summary": long_summary if index == 1 else f"Verejna tema {index}",
                         "source_url": f"https://static.slov-lex.sk/zakon/{index}",
                     }
                     for index in range(1, 6)
@@ -2543,13 +2545,19 @@ def test_mcp_law_context_honors_explicit_latest_law_count(monkeypatch) -> None:
     assert all(f"{index}/2026 Z. z." in context.prompt_note for index in range(1, 6))
     assert context.grounded_latest_laws_reply is not None
     assert "Najnovšie zákony" in context.grounded_latest_laws_reply
+    assert len(long_title) > 300
+    assert len(long_summary) > 600
+    assert long_title.strip() in context.grounded_latest_laws_reply
+    assert long_summary.strip() in context.grounded_latest_laws_reply
     assert all(
-        f"{index}/2026 Z. z. – Zakon o verejnej teme {index}"
+        f"{index}/2026 Z. z. – "
+        f"{long_title.strip() if index == 1 else f'Zakon o verejnej teme {index}'}"
         in context.grounded_latest_laws_reply
         for index in range(1, 6)
     )
     assert all(
-        f"Súhrn: Verejna tema {index}" in context.grounded_latest_laws_reply
+        f"Súhrn: {long_summary.strip() if index == 1 else f'Verejna tema {index}'}"
+        in context.grounded_latest_laws_reply
         for index in range(1, 6)
     )
 
