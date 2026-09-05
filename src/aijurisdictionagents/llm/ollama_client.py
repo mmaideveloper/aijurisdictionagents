@@ -8,7 +8,14 @@ import time
 from typing import Any, Iterable, Sequence, cast
 from urllib import error, request
 
-from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from .base import (
+    ModelProcessingTimeout,
+    elapsed_seconds,
+    execute_correlated_model_call,
+    log_llm_request,
+    log_llm_response,
+)
+from ..correlation import correlation_headers, record_debug_event
 from ..model_parameters import ModelParameters
 from ..schemas import Document, Message
 
@@ -78,13 +85,29 @@ class OllamaClient:
             "think": self._config.think,
             "options": options,
         }
-        response_payload = self._post_json("/api/chat", payload)
+        response_payload = execute_correlated_model_call(
+            provider=self._config.provider_label,
+            model=self._config.model,
+            agent_name=agent_name,
+            request_payload=messages,
+            invoke=lambda: self._post_json("/api/chat", payload),
+        )
         message_payload = response_payload.get("message")
         response_message = cast(dict[str, object], message_payload if isinstance(message_payload, dict) else {})
         content = str(response_message.get("content") or "").strip()
         if not content:
             reason = str(response_message.get("reasoning") or "").strip()
             if reason:
+                record_debug_event(
+                    "model",
+                    "response_validation",
+                    "failed",
+                    {
+                        "provider": self._config.provider_label,
+                        "model": self._config.model,
+                        "error_type": "reasoning_only_response",
+                    },
+                )
                 raise RuntimeError(
                     "Ollama returned reasoning without a final answer. "
                     "Disable model thinking or increase the local output limit."
@@ -102,7 +125,7 @@ class OllamaClient:
         req = request.Request(
             f"{self._base_url}{path}",
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **correlation_headers()},
             method="POST",
         )
         started_at = time.monotonic()

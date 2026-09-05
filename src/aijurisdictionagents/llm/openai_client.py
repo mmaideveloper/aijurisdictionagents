@@ -8,8 +8,15 @@ from typing import Iterable, Sequence
 
 from openai import APITimeoutError, OpenAI
 
-from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from .base import (
+    ModelProcessingTimeout,
+    elapsed_seconds,
+    execute_correlated_model_call,
+    log_llm_request,
+    log_llm_response,
+)
 from ..model_parameters import ModelParameters
+from ..correlation import correlation_headers
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -84,7 +91,16 @@ class OpenAIClient:
         )
         started_at = time.monotonic()
         try:
-            response = self._client.chat.completions.create(**request_kwargs)
+            response = execute_correlated_model_call(
+                provider=self._config.provider_label,
+                model=self._config.model,
+                agent_name=agent_name,
+                request_payload=messages,
+                invoke=lambda: self._client.chat.completions.create(
+                    **request_kwargs,
+                    extra_headers=correlation_headers(),
+                ),
+            )
         except APITimeoutError as exc:
             raise ModelProcessingTimeout(
                 provider_class="external",

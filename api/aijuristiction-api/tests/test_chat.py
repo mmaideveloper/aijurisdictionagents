@@ -118,12 +118,19 @@ def test_document_task_plan_note_defers_summary_output_until_documents_are_proce
 
 
 def test_create_session_and_messages_roundtrip() -> None:
+    correlation_id = "chat-session-correlation-303"
     session_response = client.post(
         "/v1/chat/sessions",
-        json={"country": "SK", "discussion_type": "advice"},
-        headers=AUTH_HEADERS,
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "correlation_id": correlation_id,
+        },
+        headers={**AUTH_HEADERS, "x-correlation-id": correlation_id},
     )
     assert session_response.status_code == 200
+    assert session_response.json()["correlation_id"] == correlation_id
+    assert session_response.headers["x-correlation-id"] == correlation_id
     session_id = session_response.json()["id"]
 
     create_message_response = client.post(
@@ -143,6 +150,20 @@ def test_create_session_and_messages_roundtrip() -> None:
     messages = list_response.json()
     assert len(messages) == 1
     assert messages[0]["role"] == "user"
+
+
+def test_create_session_rejects_unsafe_correlation_id() -> None:
+    response = client.post(
+        "/v1/chat/sessions",
+        json={
+            "country": "SK",
+            "discussion_type": "advice",
+            "correlation_id": "unsafe correlation/id",
+        },
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422
 
 
 def test_third_party_template_classifier_marks_internal_memorandum_as_non_corporate() -> None:

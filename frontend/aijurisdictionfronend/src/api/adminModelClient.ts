@@ -495,6 +495,31 @@ export interface AdminAuthContext {
   deviceAuthToken?: string;
 }
 
+export interface AdminDebugTimelineEvent {
+  kind: "debug" | "decision" | "log";
+  event_id: string;
+  created_at: string;
+  correlation_id: string;
+  session_id: string;
+  component: string;
+  stage: string;
+  status: string;
+  request_id?: string;
+  parent_request_id?: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AdminDebugTrace {
+  correlation_id: string;
+  retention_days: number;
+  generated_at: string;
+  session: Record<string, unknown> | null;
+  messages: Array<Record<string, unknown>>;
+  timeline: AdminDebugTimelineEvent[];
+  flow: { nodes: Array<{ id: string; label: string }>; edges: Array<{ from: string; to: string }> };
+  warnings: string[];
+}
+
 type AdminAuthInput = AdminAuthContext | string;
 
 const normalizeAdminAuth = (adminAuth: AdminAuthInput): AdminAuthContext =>
@@ -592,6 +617,30 @@ export const fetchAdminCaseExportBlob = async (
 
 export const fetchAIModelAdminDashboard = (adminAuth: AdminAuthContext): Promise<AIModelAdminDashboard> =>
   adminRequest<AIModelAdminDashboard>("/v1/admin/ai-models", adminAuth, { method: "GET" });
+
+export const fetchAdminDebugTrace = (
+  adminAuth: AdminAuthInput,
+  correlationId: string
+): Promise<AdminDebugTrace> =>
+  adminRequest<AdminDebugTrace>(`/v1/admin/debug/${encodeURIComponent(correlationId)}`, adminAuth, { method: "GET" });
+
+export const fetchAdminDebugExport = async (
+  adminAuth: AdminAuthInput,
+  correlationId: string
+): Promise<{ blob: Blob; filename: string }> => {
+  const config = chatApiRuntimeConfig();
+  const response = await fetch(
+    `${config.baseUrl}/v1/admin/debug/${encodeURIComponent(correlationId)}/export`,
+    { method: "GET", headers: adminHeaders(adminAuth) }
+  );
+  if (!response.ok) {
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+  return {
+    blob: await response.blob(),
+    filename: extractFilenameFromContentDisposition(response.headers.get("Content-Disposition")) || `debug-${correlationId}.zip`
+  };
+};
 
 export const fetchAdminUsers = (
   adminAuth: AdminAuthContext,

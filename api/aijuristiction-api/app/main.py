@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 import html
 import json
 import logging
@@ -19,6 +21,7 @@ from app.cases_api import router as cases_router
 from app.case_types.api import router as case_types_router
 from app.case_workflows.api import router as case_workflows_router
 from app.decision_trace_api import router as decision_trace_router
+from app.debug_api import router as debug_router
 from app.case_workflows.service import get_case_workflow_service
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
@@ -53,6 +56,10 @@ from app.voice_intent_api import router as voice_intent_router
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
+from aijurisdictionagents.correlation import correlation_scope, record_debug_event
+from app.debug_trace import debug_event_sink
+
+_debug_retention_task: asyncio.Task[None] | None = None
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REPO_ENV_PATH = _REPO_ROOT / ".env"
@@ -277,6 +284,7 @@ app.include_router(cases_router)
 app.include_router(case_types_router)
 app.include_router(case_workflows_router)
 app.include_router(decision_trace_router)
+app.include_router(debug_router)
 app.include_router(voice_intent_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)
@@ -288,6 +296,7 @@ instrument_fastapi(app)
 
 @app.on_event("startup")
 async def startup_log() -> None:
+    global _debug_retention_task
     store = ApiDatabaseStore.from_env()
     if store.uses_postgres:
         apply_sql_migrations(
@@ -299,7 +308,12 @@ async def startup_log() -> None:
     store.initialize()
     # Seed reviewed case-workflow assignments and initialize durable LangGraph checkpoints
     # before case-type detection serves the first request.
-    get_case_workflow_service()
+    workflow_service = get_case_workflow_service()
+    workflow_service.store.purge_expired_debug_events()
+    _debug_retention_task = asyncio.create_task(
+        _purge_expired_debug_events_loop(workflow_service.store),
+        name="session-debug-retention",
+    )
     law_snapshot = get_law_knowledge_snapshot(None)
     logger.info(
         (
@@ -327,10 +341,41 @@ async def request_id_middleware(
 ) -> fastapi.Response:
     request_id = request.headers.get("x-request-id", str(uuid4()))
     correlation_id = request.headers.get("x-correlation-id", request_id)
+    request_debug_sink = (
+        debug_event_sink if request.headers.get("x-correlation-id", "").strip() else None
+    )
     request.state.request_id = request_id
     request.state.correlation_id = correlation_id
     started = time.perf_counter()
-    response = await call_next(request)
+    try:
+        with correlation_scope(
+            correlation_id=correlation_id,
+            request_id=request_id,
+            debug_sink=request_debug_sink,
+        ):
+            record_debug_event(
+                "api", "http_request", "started",
+                {"method": request.method, "path": request.url.path},
+            )
+            response = await call_next(request)
+    except Exception as exc:
+        with correlation_scope(
+            correlation_id=correlation_id,
+            request_id=request_id,
+            debug_sink=request_debug_sink,
+        ):
+            record_debug_event(
+                "api",
+                "http_request",
+                "failed",
+                {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+        raise
     duration_ms = int((time.perf_counter() - started) * 1000)
     response.headers["x-request-id"] = request_id
     response.headers["x-correlation-id"] = correlation_id
@@ -345,7 +390,43 @@ async def request_id_middleware(
         request.headers.get("origin"),
         request.headers.get("user-agent"),
     )
+    with correlation_scope(
+        correlation_id=correlation_id,
+        request_id=request_id,
+        debug_sink=request_debug_sink,
+    ):
+        record_debug_event(
+            "api", "http_request", "completed" if response.status_code < 400 else "failed",
+            {
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
     return response
+
+
+async def _purge_expired_debug_events_loop(store: Any) -> None:
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            deleted = store.purge_expired_debug_events()
+            if deleted:
+                logger.info("Purged %d expired session debug events", deleted)
+        except Exception:
+            logger.exception("Session debug retention purge failed")
+
+
+@app.on_event("shutdown")
+async def shutdown_debug_retention() -> None:
+    global _debug_retention_task
+    if _debug_retention_task is None:
+        return
+    _debug_retention_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await _debug_retention_task
+    _debug_retention_task = None
 
 
 @app.exception_handler(Exception)
@@ -364,6 +445,10 @@ async def unhandled_exception_handler(request: fastapi.Request, exc: Exception) 
             "message": "An unexpected error occurred",
             "request_id": getattr(request.state, "request_id", None),
             "correlation_id": getattr(request.state, "correlation_id", None),
+        },
+        headers={
+            "x-request-id": str(getattr(request.state, "request_id", "")),
+            "x-correlation-id": str(getattr(request.state, "correlation_id", "")),
         },
     )
 

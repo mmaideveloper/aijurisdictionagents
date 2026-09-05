@@ -91,6 +91,34 @@ resource applicationInsightsExisting 'Microsoft.Insights/components@2020-02-02' 
   name: applicationInsightsName
 }
 
+// Application Insights tables otherwise default to substantially longer retention.
+// Session troubleshooting is deliberately capped at seven days in every table queried
+// by Admin > Debug. Keep total retention equal to interactive retention so no archive remains.
+var sessionDebugLogTables = [
+  'AppDependencies'
+  'AppExceptions'
+  'AppRequests'
+  'AppTraces'
+]
+
+resource createdWorkspaceDebugTables 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = [for tableName in sessionDebugLogTables: if (createLogAnalyticsWorkspace) {
+  parent: logAnalyticsWorkspace
+  name: tableName
+  properties: {
+    retentionInDays: 7
+    totalRetentionInDays: 7
+  }
+}]
+
+resource existingWorkspaceDebugTables 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = [for tableName in sessionDebugLogTables: if (!createLogAnalyticsWorkspace) {
+  parent: logAnalyticsWorkspaceExisting
+  name: tableName
+  properties: {
+    retentionInDays: 7
+    totalRetentionInDays: 7
+  }
+}]
+
 var logAnalyticsCustomerId = createLogAnalyticsWorkspace
   ? logAnalyticsWorkspace.properties.customerId
   : logAnalyticsWorkspaceExisting.properties.customerId

@@ -344,6 +344,23 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 - Require strong authentication and human oversight for legal-risk admin and MCP operations before production exposure.
 - Provide user transparency when legal workflows use AI assistance, and retain traceable but privacy-safe audit logs.
 
+### Session Debug Retention Setup
+
+- Owner: Azure infrastructure administrator with Log Analytics Contributor-equivalent table
+  permissions in both `test` and `prod`.
+- Deploy `infra/bicep/main.bicep`; it configures `AppDependencies`, `AppExceptions`, `AppRequests`,
+  and `AppTraces` with seven-day interactive and total retention for Admin → Debug correlation
+  searches.
+- Validate with `az monitor log-analytics workspace table show` after authenticating through
+  `infra/scripts/login_service_principal.ps1`. Each listed table must report both retention values
+  as `7`. Do not use the currently signed-in personal Azure identity.
+- Restrict Admin → Debug to enabled database administrators and review `view_debug_trace` and
+  `export_debug_trace` audit events. Exported ZIPs may contain case personal data and must be
+  deleted no later than seven days after the underlying event.
+- Rollback: redeploy the prior Bicep revision and verify the restored values. If a deployment
+  cannot enforce seven days, disable session-content debug ingestion/search rather than retaining
+  protected debug content longer than approved.
+
 ## JurisDigta Server Eaton UPS Shutdown Protection
 
 Purpose: install and validate Network UPS Tools (NUT) on the self-managed Ubuntu

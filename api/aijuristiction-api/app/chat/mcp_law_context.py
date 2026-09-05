@@ -9,6 +9,10 @@ import re
 from typing import Any
 
 import httpx
+from aijurisdictionagents.correlation import (
+    child_operation,
+    record_debug_event,
+)
 
 from aijurisdictionagents.agents import AIWebSearchAgent
 from aijurisdictionagents.schemas import Document as CoreDocument
@@ -600,14 +604,30 @@ def _section_start_from_query(query: str) -> str:
 
 
 def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    record_debug_event(
+        "retrieval", "mcp_pre_filter", "completed",
+        {"tool_name": name, "arguments": arguments},
+    )
     remote_base_url = _remote_mcp_base_url()
     if remote_base_url:
-        return _call_remote_mcp_tool(remote_base_url=remote_base_url, name=name, arguments=arguments)
+        result = _call_remote_mcp_tool(
+            remote_base_url=remote_base_url, name=name, arguments=arguments
+        )
+        record_debug_event(
+            "retrieval", "mcp_post_filter", "completed",
+            {"tool_name": name, "result": result},
+        )
+        return result
 
     from app.mcp_api import _call_tool
 
     payload = _call_tool(name, arguments)
-    return payload if isinstance(payload, dict) else {}
+    result = payload if isinstance(payload, dict) else {}
+    record_debug_event(
+        "retrieval", "mcp_post_filter", "completed",
+        {"tool_name": name, "result": result},
+    )
+    return result
 
 
 def _remote_mcp_base_url() -> str:
@@ -631,14 +651,33 @@ def _call_remote_mcp_tool(*, remote_base_url: str, name: str, arguments: dict[st
     internal_secret = _internal_mcp_shared_secret()
     if internal_secret:
         headers[_INTERNAL_MCP_SECRET_HEADER] = internal_secret
-    with httpx.Client(timeout=10.0) as client:
-        response = client.post(
-            f"{remote_base_url}/mcp",
-            json=payload,
-            headers=headers,
+    with child_operation() as operation:
+        headers["x-correlation-id"] = operation.correlation_id
+        headers["x-request-id"] = operation.request_id
+        if operation.parent_request_id:
+            headers["x-parent-request-id"] = operation.parent_request_id
+        record_debug_event(
+            "mcp", "remote_tool_call", "started", {"tool_name": name, "arguments": arguments}
         )
-        response.raise_for_status()
-        envelope = response.json()
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                response = client.post(
+                    f"{remote_base_url}/mcp",
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                envelope = response.json()
+        except Exception as exc:
+            record_debug_event(
+                "mcp", "remote_tool_call", "failed",
+                {"tool_name": name, "error_type": type(exc).__name__, "message": str(exc)},
+            )
+            raise
+        record_debug_event(
+            "mcp", "remote_tool_call", "completed",
+            {"tool_name": name, "status_code": getattr(response, "status_code", 200)},
+        )
     if not isinstance(envelope, dict):
         return {}
     error = envelope.get("error")

@@ -57,6 +57,12 @@ class Session(BaseModel):
     language: str | None = None
     discussion_type: str = "advice"
     selected_model_profile_id: str | None = None
+    correlation_id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,199}$",
+    )
     state: SessionState = SessionState.ACTIVE
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

@@ -12,8 +12,15 @@ from openai import APITimeoutError, AzureOpenAI, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 import truststore
 
-from .base import ModelProcessingTimeout, elapsed_seconds, log_llm_request, log_llm_response
+from .base import (
+    ModelProcessingTimeout,
+    elapsed_seconds,
+    execute_correlated_model_call,
+    log_llm_request,
+    log_llm_response,
+)
 from ..model_parameters import ModelParameters
+from ..correlation import correlation_headers
 from ..schemas import Document, Message
 
 logger = logging.getLogger(__name__)
@@ -95,7 +102,16 @@ class AzureFoundryClient:
                 self._config.deployment,
                 sorted(self._config.model_parameters),
             )
-            response = self._client.chat.completions.create(**request_kwargs)
+            response = execute_correlated_model_call(
+                provider="azurefoundry",
+                model=self._config.deployment,
+                agent_name=agent_name,
+                request_payload=messages,
+                invoke=lambda: self._client.chat.completions.create(
+                    **request_kwargs,
+                    extra_headers=correlation_headers(),
+                ),
+            )
         except APITimeoutError as exc:
             raise ModelProcessingTimeout(
                 provider_class="external",

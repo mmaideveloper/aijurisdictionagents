@@ -45,6 +45,7 @@ from aijurisdictionagents.agents import (
     create_lawyer_agent,
 )
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.correlation import record_debug_event
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
@@ -525,7 +526,7 @@ class CaseWorkflowApplicationService:
         )
         state = build_initial_case_workflow_state(
             workflow_run_id=str(uuid4()),
-            correlation_id=str(uuid4()),
+            correlation_id=payload.correlation_id.strip() or str(uuid4()),
             case_id=payload.case_id,
             session_id=payload.session_id,
             user_id=payload.user_id,
@@ -796,6 +797,7 @@ def handle_chat_workflow_turn(
     request_text: str,
     routing_evidence: Sequence[str] = ("existing_case_catalog_selection",),
     external_provider_acknowledged: bool = False,
+    correlation_id: str = "",
 ) -> WorkflowRunResponse | None:
     mode = os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower()
     if mode != "active":
@@ -823,6 +825,7 @@ def handle_chat_workflow_turn(
             routing_confidence=routing_confidence,
             routing_evidence=[str(item)[:200] for item in routing_evidence][:10],
             external_provider_acknowledged=external_provider_acknowledged,
+            correlation_id=correlation_id,
         )
     )
 
@@ -838,6 +841,7 @@ def route_primary_chat_workflow_turn(
     llm_client: Any,
     verified_facts: Mapping[str, str] | None = None,
     external_provider_acknowledged: bool = False,
+    correlation_id: str = "",
 ) -> PrimaryChatRouteResult | None:
     """Run the default chat route through a constrained LangGraph router."""
     if os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower() != "active":
@@ -858,6 +862,7 @@ def route_primary_chat_workflow_turn(
             request_text=request_text,
             routing_evidence=("primary_langgraph_router", "active_workflow_resume"),
             external_provider_acknowledged=external_provider_acknowledged,
+            correlation_id=correlation_id,
         )
         return PrimaryChatRouteResult(
             decision=PrimaryRouteDecision(
@@ -920,6 +925,16 @@ def route_primary_chat_workflow_turn(
         verified_facts=route_facts,
         candidates=candidates,
     )
+    record_debug_event(
+        "langgraph", "primary_router", "completed",
+        {
+            "route": decision.route,
+            "selected_case_type_key": decision.selected_case_type_key,
+            "confidence": decision.confidence,
+            "confidence_gap": decision.confidence_gap,
+            "evidence": list(decision.evidence),
+        },
+    )
     selected_run: WorkflowRunResponse | None = None
     if decision.route == "dedicated_flow" and decision.selected_case_type_key:
         selected_run = handle_chat_workflow_turn(
@@ -933,6 +948,7 @@ def route_primary_chat_workflow_turn(
             request_text=request_text,
             routing_evidence=decision.evidence,
             external_provider_acknowledged=external_provider_acknowledged,
+            correlation_id=correlation_id,
         )
         if selected_run is None:
             decision = PrimaryRouteDecision(

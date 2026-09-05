@@ -1,5 +1,6 @@
 import { chatApiRuntimeConfig, ApiRequestError, parseApiErrorResponse } from "./chatClient";
 import { consoleLogger } from "../logging/consoleLogger";
+import { correlationHeaders } from "./correlation";
 
 export type ApiCase = {
   case_id: string;
@@ -127,7 +128,10 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
 
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, {
+      ...init,
+      headers: { ...correlationHeaders(), ...(init.headers ?? {}) }
+    });
   } catch (error) {
     consoleLogger.error("Case API network request failed", { method, path, url }, error);
     throw new ApiRequestError(
@@ -187,7 +191,8 @@ export const deleteApiCase = async (userId: string, caseId: string): Promise<voi
     response = await fetch(`${config.baseUrl}${path}`, {
       method: "DELETE",
       headers: {
-        "x-api-key": config.apiKey
+        "x-api-key": config.apiKey,
+        ...correlationHeaders()
       }
     });
   } catch {
@@ -217,7 +222,8 @@ export const deleteApiCaseDocument = async (
     {
       method: "DELETE",
       headers: {
-        "x-api-key": config.apiKey
+        "x-api-key": config.apiKey,
+        ...correlationHeaders()
       }
     }
   );
@@ -254,7 +260,8 @@ export const getCaseCitations = async (
     {
       method: "GET",
       headers: {
-        "x-api-key": config.apiKey
+        "x-api-key": config.apiKey,
+        ...correlationHeaders()
       }
     }
   );

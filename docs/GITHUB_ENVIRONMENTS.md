@@ -188,6 +188,15 @@ These are used by infrastructure deployment and API deployment workflows:
 | `EMAIL_SMTP_PORT` | SMTP port, default `587` |
 | `EMAIL_SMTP_USE_TLS` | SMTP STARTTLS flag, default `true` |
 | `EMAIL_SMTP_USERNAME` | SMTP username, default `no-reply@jurisdigta.eu` |
+
+The infrastructure deployment applies a seven-day interactive and total retention override to
+the `AppDependencies`, `AppExceptions`, `AppRequests`, and `AppTraces` tables in the named Log
+Analytics workspace. The deployment service principal for both `test` and `prod` must have
+`Microsoft.OperationalInsights/workspaces/tables/read` and `/write` permission (for example via
+Log Analytics Contributor). After deployment, verify each table reports `retentionInDays=7` and
+`totalRetentionInDays=7`. Roll back by redeploying the prior template or restoring the approved
+table retention values; do not deploy a longer value while session-content correlation logging is
+enabled without a new privacy review.
 | `EMAIL_SCHEDULER_ENABLED` | Optional email scheduler toggle for API replicas, default `true`; set `false` when a dedicated Azure email scheduler job is deployed |
 | `EMAIL_SCHEDULER_INTERVAL_SECONDS` | Optional scheduler interval for Azure API replicas, default `60` |
 | `CAR_VALIDATION_API_BASE_URL` | Optional vehicle validation API base URL, for example `https://www.databazavozidiel.sk`; leave unset to skip live car API checks |
