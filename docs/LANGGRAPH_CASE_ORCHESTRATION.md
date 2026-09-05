@@ -72,11 +72,24 @@ necessary for that purpose. A denial, an ambiguous reply, stale consent text, mi
 missing ledger event, invalid model output, timeout, or unregistered tool fails closed without an
 external call. Execution is idempotent per workflow run/tool/consent event.
 
-PostgreSQL production checkpoints use `PostgresSaver`; local deterministic tests use
-`InMemorySaver`. Run metadata and append-only sanitized audit events are stored in the API
+PostgreSQL production checkpoints use `PostgresSaver`; local application runs use `SqliteSaver`
+at `runs/storage/api/sqlite/case_workflow_checkpoints.sqlite3`. `InMemorySaver` is limited to
+isolated deterministic tests and carries no restart/resume guarantee. A local API restart or another
+local API process sharing the SQLite file can resume; multi-host or horizontally scaled deployments
+must use PostgreSQL. Run metadata and append-only sanitized audit events are stored in the API
 database by migrations `0020_langgraph_case_workflows.sql` and
-`0021_langgraph_tool_consent.sql`. Runtime database files remain under
+`0021_langgraph_tool_consent.sql`; migration `0026_workflow_resume_claims.sql` adds the resume
+claim ledger. Runtime database files remain under
 `runs/storage/api/`, never under `databases/`.
+
+The application projection persists the current checkpoint marker. Before resume, the service
+loads the durable checkpoint: an advanced marker reconciles the projection and records a sanitized
+`workflow_projection_reconciled` event; a missing checkpoint records
+`workflow_persistence_mismatch_detected` and returns a recoverable `409` instead of silently running
+from incomplete state. One claim may own a checkpoint at a time. `WorkflowResumeRequest` accepts an
+optional `idempotency_key`; client values are hashed with the workflow identifier before persistence,
+and reusing a key with the same value returns without repeating side effects,
+while reuse with a different value or a concurrent claimant returns `409`.
 
 Each workflow event is also normalized through the core decision-trace v1 allowlist into the
 append-only `orchestration_decision_traces` ledger. The normalized record contains only stable IDs,
@@ -113,6 +126,12 @@ retries, and two identical consecutive failures. It applies a 15-minute executio
 `termination_policy`; runtime normalization caps them to safe ranges. Quality revisions never
 consume the technical retry budget. Reflection code can use `record_quality_revision_failure`,
 while infrastructure retry code can use `record_technical_retry_failure`.
+
+Failed output validation creates structured critique with a stable failure category and a
+policy-owned actionable instruction. Recoverable categories loop through `revise_documents` until
+validation passes or the quality/no-progress budget terminates the workflow. Each attempt records
+`retry_count`, `max_revision_attempts`, provider/model route, and artifact revision provenance.
+These records exclude prompts, hidden chain-of-thought, secrets, and case-content duplication.
 
 Privacy, consent, mandatory legal-risk, and provenance failures bypass autonomous retries.
 `GraphRecursionError` is converted to `operational_failure` and human review. Cancellation is
@@ -183,6 +202,13 @@ python scripts/prepare_issue_635_langgraph_e2e.py
 
 The script refuses non-loopback or non-E2E law databases, upserts only the synthetic
 `issue-635-civil-code` source, and writes ignored evidence under `runs/e2e/issue-635-langgraph/`.
+
+Issue 753 uses `scripts/run_issue_753_e2e_service.py api` and
+`scripts/run_issue_753_e2e_service.py mcp` to start the real local services against uniquely named
+loopback PostgreSQL databases. The launcher maps only approved `E2E_AZURE_FOUNDRY_*` values inside
+the child process and never displays them. Use the prepared issue-635 browser scenario for the
+end-to-end document path and retain its sanitized PDF, render, screenshot, and manifest for no more
+than seven days.
 
 The consented-tool acceptance uses the same isolated legal fixture plus a branch-local API
 database and a synthetic address. Prepare it with:

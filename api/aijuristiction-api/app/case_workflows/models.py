@@ -66,6 +66,7 @@ class WorkflowStartRequest(BaseModel):
 class WorkflowResumeRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=200)
     value: str | dict[str, str]
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=200)
 
 
 class WorkflowControlRequest(BaseModel):
@@ -112,6 +113,10 @@ class WorkflowRunResponse(BaseModel):
     input_attempt_count: int = 0
     quality_revision_count: int = 0
     technical_retry_count: int = 0
+    retry_count: int = 0
+    max_revision_attempts: int = 0
+    critiques: list[dict[str, Any]] = Field(default_factory=list)
+    persistence_status: str = ""
     created_at: datetime
     updated_at: datetime
 

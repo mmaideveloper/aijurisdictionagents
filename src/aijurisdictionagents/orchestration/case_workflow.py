@@ -34,6 +34,16 @@ WorkflowStatus = Literal[
     "blocked",
 ]
 ReviewDisposition = Literal["approved", "revisions_required", "human_review_required"]
+CritiqueFailureCategory = Literal[
+    "incomplete_output",
+    "missing_verified_fact",
+    "unresolved_placeholder",
+    "output_quality",
+    "privacy",
+    "consent",
+    "provenance_missing",
+    "legal_risk",
+]
 TerminationReason = Literal[
     "quality_approved",
     "human_review_required",
@@ -64,6 +74,15 @@ class WorkflowEvent(TypedDict):
     status: str
     created_at: str
     details: dict[str, str | int | float | bool | None]
+
+
+class OutputCritique(TypedDict):
+    failure_category: CritiqueFailureCategory
+    revision_instruction: str
+    recoverable: bool
+    provider: str
+    model: str
+    route_type: str
 
 
 class CaseWorkflowState(TypedDict, total=False):
@@ -117,6 +136,11 @@ class CaseWorkflowState(TypedDict, total=False):
     last_failure_category: str
     last_output_fingerprint: str
     retry_count: int
+    max_revision_attempts: int
+    current_critique: OutputCritique
+    critiques: list[OutputCritique]
+    checkpoint_marker: str
+    persistence_status: str
     events: list[WorkflowEvent]
 
 
@@ -149,6 +173,8 @@ class CaseWorkflowServices(Protocol):
     ) -> tuple[str, list[dict[str, Any]]]: ...
 
     def review_output(self, state: CaseWorkflowState) -> tuple[bool, str]: ...
+
+    def critique_output(self, state: CaseWorkflowState, reason: str) -> OutputCritique: ...
 
     def review_safety_and_gdpr(self, state: CaseWorkflowState) -> tuple[bool, str]: ...
 
@@ -215,6 +241,9 @@ class DeterministicCaseWorkflowServices:
                 "artifact_id": f"{state['workflow_run_id']}:draft",
                 "artifact_type": "legal_document_draft",
                 "status": "draft",
+                "provider": "deterministic",
+                "model": "deterministic",
+                "route_type": "deterministic",
             }
         ]
 
@@ -223,6 +252,18 @@ class DeterministicCaseWorkflowServices:
         if "[" in answer or "]" in answer:
             return False, "unresolved_placeholder"
         return bool(answer.strip()), "output_present" if answer.strip() else "output_missing"
+
+    def critique_output(self, state: CaseWorkflowState, reason: str) -> OutputCritique:
+        del state
+        category, instruction, recoverable = _critique_policy(reason)
+        return OutputCritique(
+            failure_category=category,
+            revision_instruction=instruction,
+            recoverable=recoverable,
+            provider="deterministic",
+            model="deterministic",
+            route_type="deterministic",
+        )
 
     def review_safety_and_gdpr(self, state: CaseWorkflowState) -> tuple[bool, str]:
         unauthorized = set(state.get("offered_checks", ())) - set(state.get("consented_checks", ()))
@@ -290,7 +331,7 @@ class CaseWorkflowRuntime:
             result = graph.invoke(state, config=config)
         except GraphRecursionError:
             return self._recursion_failure(graph=graph, config=config, fallback=state)
-        return _outcome(result)
+        return self._with_checkpoint_id(graph=graph, config=config, outcome=_outcome(result))
 
     def resume(
         self,
@@ -321,7 +362,7 @@ class CaseWorkflowRuntime:
             )
         except GraphRecursionError:
             return self._recursion_failure(graph=graph, config=config, fallback=state)
-        return _outcome(result)
+        return self._with_checkpoint_id(graph=graph, config=config, outcome=_outcome(result))
 
     @staticmethod
     def terminate(
@@ -335,6 +376,43 @@ class CaseWorkflowRuntime:
         graph = self._graph(graph_key, graph_version)
         snapshot = graph.get_state({"configurable": {"thread_id": workflow_run_id}})
         return cast(CaseWorkflowState, dict(snapshot.values))
+
+    def get_checkpoint_outcome(
+        self, *, graph_key: str, graph_version: int, workflow_run_id: str
+    ) -> CaseWorkflowOutcome | None:
+        graph = self._graph(graph_key, graph_version)
+        config = {"configurable": {"thread_id": workflow_run_id}}
+        snapshot = graph.get_state(config)
+        if not snapshot.values:
+            return None
+        result = dict(snapshot.values)
+        raw_interrupts = [
+            item for task in snapshot.tasks for item in getattr(task, "interrupts", ())
+        ]
+        if raw_interrupts:
+            result["__interrupt__"] = tuple(raw_interrupts)
+        return self._with_checkpoint_id(
+            graph=graph,
+            config=config,
+            outcome=_outcome(result),
+        )
+
+    @staticmethod
+    def _with_checkpoint_id(
+        *, graph: Any, config: Mapping[str, Any], outcome: CaseWorkflowOutcome
+    ) -> CaseWorkflowOutcome:
+        snapshot = graph.get_state(config)
+        configurable = dict(snapshot.config.get("configurable", {})) if snapshot.config else {}
+        checkpoint_id = str(configurable.get("checkpoint_id", ""))
+        state = cast(
+            CaseWorkflowState,
+            {
+                **outcome.state,
+                "checkpoint_marker": checkpoint_id,
+                "persistence_status": "consistent",
+            },
+        )
+        return CaseWorkflowOutcome(state=state, interrupts=outcome.interrupts)
 
     def _graph(self, graph_key: str, graph_version: int) -> Any:
         try:
@@ -389,7 +467,9 @@ class CaseWorkflowRuntime:
         builder.add_node("execute_consented_tools", self._execute_consented_tools)
         builder.add_node("resolve_conflicts", self._resolve_conflicts)
         builder.add_node("draft_documents", self._draft_documents)
+        builder.add_node("revise_documents", self._revise_documents)
         builder.add_node("verify_output", self._verify_output)
+        builder.add_node("critique_output", self._critique_output)
         builder.add_node("verify_safety_and_gdpr", self._verify_safety_and_gdpr)
         builder.add_node("review_case", self._review_case)
         builder.add_node("finalize_or_escalate", self._finalize_or_escalate)
@@ -440,9 +520,27 @@ class CaseWorkflowRuntime:
             {"draft": "draft_documents", "finalize": "finalize_or_escalate"},
         )
         builder.add_edge("draft_documents", "verify_output")
-        builder.add_edge("verify_output", "verify_safety_and_gdpr")
-        builder.add_edge("verify_safety_and_gdpr", "review_case")
-        builder.add_edge("review_case", "finalize_or_escalate")
+        builder.add_conditional_edges(
+            "verify_output",
+            self._after_output_verification,
+            {"continue": "verify_safety_and_gdpr", "critique": "critique_output"},
+        )
+        builder.add_conditional_edges(
+            "critique_output",
+            self._after_output_critique,
+            {"revise": "revise_documents", "finalize": "finalize_or_escalate"},
+        )
+        builder.add_edge("revise_documents", "verify_output")
+        builder.add_conditional_edges(
+            "verify_safety_and_gdpr",
+            self._after_safety_verification,
+            {"review": "review_case", "finalize": "finalize_or_escalate"},
+        )
+        builder.add_conditional_edges(
+            "review_case",
+            self._after_case_review,
+            {"critique": "critique_output", "finalize": "finalize_or_escalate"},
+        )
         builder.add_edge("finalize_or_escalate", END)
         return builder.compile(checkpointer=checkpointer)
 
@@ -802,15 +900,54 @@ class CaseWorkflowRuntime:
         return "finalize" if state.get("status") == "human_review_required" else "draft"
 
     def _draft_documents(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        return self._generate_documents(state, revised=False)
+
+    def _revise_documents(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        return self._generate_documents(state, revised=True)
+
+    def _generate_documents(
+        self, state: CaseWorkflowState, *, revised: bool
+    ) -> CaseWorkflowState:
         answer, artifacts = self._services.draft_documents(state)
+        revision_number = state.get("quality_revision_count", 0)
+        previous_artifact_id = ""
+        previous_artifacts = state.get("artifacts", [])
+        if previous_artifacts:
+            previous_artifact_id = str(previous_artifacts[-1].get("artifact_id", ""))
+        normalized_artifacts: list[dict[str, Any]] = []
+        for artifact in artifacts:
+            item = dict(artifact)
+            if revised:
+                item["artifact_id"] = (
+                    f"{item.get('artifact_id', state['workflow_run_id'] + ':draft')}:"
+                    f"r{revision_number}"
+                )
+            item["revision_number"] = revision_number
+            if revised and previous_artifact_id:
+                item["revises_artifact_id"] = previous_artifact_id
+            normalized_artifacts.append(item)
+        decisions = dict(state.get("review_decisions", {}))
+        decisions.pop("output", None)
+        decisions.pop("case", None)
         return _update(
             state,
-            stage="draft_documents",
+            stage="revise_documents" if revised else "draft_documents",
             status="running",
             final_answer=answer,
-            artifacts=artifacts,
-            event_type="documents_drafted",
-            details={"artifact_count": len(artifacts)},
+            artifacts=[*previous_artifacts, *normalized_artifacts] if revised else normalized_artifacts,
+            review_decisions=decisions,
+            escalation_reason="",
+            event_type="documents_revised" if revised else "documents_drafted",
+            details={
+                "artifact_count": len(normalized_artifacts),
+                "revision_number": revision_number,
+                "provider": str(normalized_artifacts[-1].get("provider", ""))
+                if normalized_artifacts
+                else "",
+                "model": str(normalized_artifacts[-1].get("model", ""))
+                if normalized_artifacts
+                else "",
+            },
         )
 
     def _verify_output(self, state: CaseWorkflowState) -> CaseWorkflowState:
@@ -820,35 +957,86 @@ class CaseWorkflowRuntime:
         return _update(
             state,
             stage="verify_output",
-            status="running" if passed else "human_review_required",
+            status="running",
             escalation_reason="" if passed else reason,
             review_decisions=decisions,
             event_type="output_validation_completed",
-            event_status="passed" if passed else "human_review_required",
+            event_status="passed" if passed else "revisions_required",
             details={"passed": passed, "reason": reason},
         )
+
+    @staticmethod
+    def _after_output_verification(state: CaseWorkflowState) -> str:
+        return "continue" if state.get("review_decisions", {}).get("output") == "passed" else "critique"
+
+    def _critique_output(self, state: CaseWorkflowState) -> CaseWorkflowState:
+        reason = state.get("escalation_reason", "output_quality")
+        critique = _sanitize_critique(self._services.critique_output(state, reason), reason=reason)
+        critiques = [*state.get("critiques", []), critique]
+        critique_delta = _update(
+            state,
+            stage="critique_output",
+            status="running",
+            current_critique=critique,
+            critiques=critiques,
+            event_type="output_critique_created",
+            details={
+                "failure_category": critique["failure_category"],
+                "revision_instruction": critique["revision_instruction"],
+                "recoverable": critique["recoverable"],
+                "revision_number": state.get("quality_revision_count", 0) + 1,
+                "provider": critique["provider"],
+                "model": critique["model"],
+                "route_type": critique["route_type"],
+            },
+        )
+        critiqued = cast(CaseWorkflowState, {**state, **critique_delta})
+        updated = record_quality_revision_failure(
+            critiqued,
+            failure_category=critique["failure_category"],
+            output=state.get("final_answer", ""),
+        )
+        if not critique["recoverable"] and not _is_terminal(updated):
+            updated = _terminate_for_critique(updated, critique["failure_category"])
+        return updated
+
+    @staticmethod
+    def _after_output_critique(state: CaseWorkflowState) -> str:
+        return "finalize" if _is_terminal(state) else "revise"
 
     def _verify_safety_and_gdpr(self, state: CaseWorkflowState) -> CaseWorkflowState:
         passed, reason = self._services.review_safety_and_gdpr(state)
         decisions = dict(state.get("review_decisions", {}))
         decisions["safety_gdpr"] = "passed" if passed else "failed"
+        failed_status: WorkflowStatus = (
+            "human_review_required" if "provenance" in reason else "blocked"
+        )
+        failure_termination: TerminationReason = (
+            "provenance_missing" if "provenance" in reason else "privacy_blocked"
+        )
         return _update(
             state,
             stage="verify_safety_and_gdpr",
-            status="running" if passed else "blocked",
+            status="running" if passed else failed_status,
             escalation_reason=state.get("escalation_reason", "") if passed else reason,
-            termination_reason="" if passed else "privacy_blocked",
+            termination_reason="" if passed else failure_termination,
             review_decisions=decisions,
             event_type="privacy_safety_validation_completed",
-            event_status="passed" if passed else "blocked",
+            event_status="passed" if passed else failed_status,
             details={"passed": passed, "reason": reason},
         )
+
+    @staticmethod
+    def _after_safety_verification(state: CaseWorkflowState) -> str:
+        return "review" if state.get("review_decisions", {}).get("safety_gdpr") == "passed" else "finalize"
 
     def _review_case(self, state: CaseWorkflowState) -> CaseWorkflowState:
         disposition, reason = self._services.review_case(state)
         decisions = dict(state.get("review_decisions", {}))
         decisions["case"] = disposition
-        status: WorkflowStatus = "running" if disposition == "approved" else "human_review_required"
+        status: WorkflowStatus = (
+            "running" if disposition in {"approved", "revisions_required"} else "human_review_required"
+        )
         return _update(
             state,
             stage="review_case",
@@ -860,6 +1048,14 @@ class CaseWorkflowRuntime:
             event_type="case_review_completed",
             event_status=disposition,
             details={"disposition": disposition, "reason": reason},
+        )
+
+    @staticmethod
+    def _after_case_review(state: CaseWorkflowState) -> str:
+        return (
+            "critique"
+            if state.get("review_decisions", {}).get("case") == "revisions_required"
+            else "finalize"
         )
 
     def _finalize_or_escalate(self, state: CaseWorkflowState) -> CaseWorkflowState:
@@ -968,6 +1164,18 @@ def build_initial_case_workflow_state(
         last_failure_category="",
         last_output_fingerprint="",
         retry_count=0,
+        max_revision_attempts=policy["quality_revision_limit"],
+        current_critique=OutputCritique(
+            failure_category="output_quality",
+            revision_instruction="",
+            recoverable=True,
+            provider="",
+            model="",
+            route_type="",
+        ),
+        critiques=[],
+        checkpoint_marker="",
+        persistence_status="pending_checkpoint",
         events=[
             WorkflowEvent(
                 event_id=f"{workflow_run_id}:001:langgraph_run_started",
@@ -981,6 +1189,195 @@ def build_initial_case_workflow_state(
     )
 
 
+def _critique_policy(
+    reason: str,
+) -> tuple[CritiqueFailureCategory, str, bool]:
+    normalized = reason.strip().lower()
+    policies: dict[str, tuple[CritiqueFailureCategory, str, bool]] = {
+        "empty_document_draft": (
+            "incomplete_output",
+            "Produce the requested document with all required sections.",
+            True,
+        ),
+        "output_missing": (
+            "incomplete_output",
+            "Produce the requested document with all required sections.",
+            True,
+        ),
+        "unresolved_placeholder": (
+            "unresolved_placeholder",
+            "Remove placeholders and use only available verified facts.",
+            True,
+        ),
+        "verified_fact_missing_from_output": (
+            "missing_verified_fact",
+            "Include every verified fact without changing its value.",
+            True,
+        ),
+        "tool_executed_without_consent": (
+            "consent",
+            "Stop autonomous processing and request human review.",
+            False,
+        ),
+        "consent": (
+            "consent",
+            "Stop autonomous processing and request human review.",
+            False,
+        ),
+        "legal_provenance_missing": (
+            "provenance_missing",
+            "Stop autonomous processing until legal provenance is verified.",
+            False,
+        ),
+        "provenance": (
+            "provenance_missing",
+            "Stop autonomous processing until legal provenance is verified.",
+            False,
+        ),
+        "provenance_missing": (
+            "provenance_missing",
+            "Stop autonomous processing until legal provenance is verified.",
+            False,
+        ),
+        "required_legal_evidence_unavailable": (
+            "provenance_missing",
+            "Stop autonomous processing until legal provenance is verified.",
+            False,
+        ),
+        "privacy": (
+            "privacy",
+            "Stop autonomous processing and request privacy review.",
+            False,
+        ),
+        "privacy_policy_failed": (
+            "privacy",
+            "Stop autonomous processing and request privacy review.",
+            False,
+        ),
+        "legal_risk": (
+            "legal_risk",
+            "Stop autonomous processing and request mandatory human review.",
+            False,
+        ),
+        "mandatory_human_review": (
+            "legal_risk",
+            "Stop autonomous processing and request mandatory human review.",
+            False,
+        ),
+    }
+    return policies.get(
+        normalized,
+        (
+            "output_quality",
+            "Revise the draft to satisfy the recorded output-quality gate.",
+            True,
+        ),
+    )
+
+
+def _sanitize_critique(raw: OutputCritique, *, reason: str) -> OutputCritique:
+    category, instruction, recoverable = _critique_policy(reason)
+    # Instructions are policy-owned strings. Model narratives and case content are never persisted.
+    return OutputCritique(
+        failure_category=category,
+        revision_instruction=instruction,
+        recoverable=recoverable,
+        provider=_safe_route_label(raw.get("provider", "")),
+        model=_safe_route_label(raw.get("model", "")),
+        route_type=_safe_route_label(raw.get("route_type", "")),
+    )
+
+
+def _safe_route_label(value: Any) -> str:
+    return "".join(
+        character
+        for character in str(value)
+        if character.isalnum() or character in {".", "_", "-", "/"}
+    )[:100]
+
+
+def _terminate_for_critique(
+    state: CaseWorkflowState, category: CritiqueFailureCategory
+) -> CaseWorkflowState:
+    if category in {"privacy", "consent"}:
+        return _terminate(state, reason="privacy_blocked", stage="critique_output")
+    if category == "provenance_missing":
+        return _terminate(state, reason="provenance_missing", stage="critique_output")
+    return _terminate(state, reason="human_review_required", stage="critique_output")
+
+
+def reconcile_checkpoint_projection(
+    projection: CaseWorkflowState, checkpoint: CaseWorkflowOutcome
+) -> CaseWorkflowOutcome:
+    """Recover the application projection from the durable execution checkpoint."""
+
+    merged_events = {
+        event["event_id"]: event
+        for event in [*projection.get("events", []), *checkpoint.state.get("events", [])]
+    }
+    recovered = cast(
+        CaseWorkflowState,
+        {
+            **projection,
+            **checkpoint.state,
+            "events": sorted(
+                merged_events.values(),
+                key=lambda event: event["event_id"],
+            ),
+            "persistence_status": "reconciled",
+        },
+    )
+    delta = _update(
+        recovered,
+        stage=recovered.get("stage", "persistence_reconciliation"),
+        status=recovered.get("status", "human_review_required"),
+        persistence_status="reconciled",
+        event_type="workflow_projection_reconciled",
+        event_status="recovered",
+        details={"checkpoint_marker": recovered.get("checkpoint_marker", "")[:100]},
+    )
+    return CaseWorkflowOutcome(
+        state=cast(CaseWorkflowState, {**recovered, **delta}),
+        interrupts=checkpoint.interrupts,
+    )
+
+
+def merge_projected_events(
+    projection: CaseWorkflowState, checkpoint: CaseWorkflowOutcome
+) -> CaseWorkflowOutcome:
+    """Preserve projection-only boundary events after a checkpoint-driven graph invocation."""
+
+    merged = {
+        event["event_id"]: event
+        for event in [*projection.get("events", []), *checkpoint.state.get("events", [])]
+    }
+    return CaseWorkflowOutcome(
+        state=cast(
+            CaseWorkflowState,
+            {
+                **checkpoint.state,
+                "events": sorted(merged.values(), key=lambda event: event["event_id"]),
+            },
+        ),
+        interrupts=checkpoint.interrupts,
+    )
+
+
+def record_persistence_mismatch(
+    state: CaseWorkflowState, *, reason: str
+) -> CaseWorkflowState:
+    delta = _update(
+        state,
+        stage="persistence_reconciliation",
+        status=state.get("status", "human_review_required"),
+        persistence_status="checkpoint_projection_mismatch",
+        event_type="workflow_persistence_mismatch_detected",
+        event_status="recoverable_operational_error",
+        details={"reason": reason[:100]},
+    )
+    return cast(CaseWorkflowState, {**state, **delta})
+
+
 def record_quality_revision_failure(
     state: CaseWorkflowState, *, failure_category: str, output: str
 ) -> CaseWorkflowState:
@@ -988,7 +1385,14 @@ def record_quality_revision_failure(
 
     category = failure_category.strip()[:100] or "unspecified_quality_failure"
     fingerprint = sha256(output.encode("utf-8")).hexdigest()
-    revision_count = state.get("quality_revision_count", 0) + 1
+    revision_count = state.get("quality_revision_count", 0)
+    revision_limit = _policy_value(
+        state,
+        "quality_revision_limit",
+        DEFAULT_QUALITY_REVISION_LIMIT,
+        minimum=1,
+        maximum=20,
+    )
     no_progress = (
         state.get("consecutive_no_progress_count", 0) + 1
         if state.get("last_failure_category") == category
@@ -999,28 +1403,33 @@ def record_quality_revision_failure(
         CaseWorkflowState,
         {
             **state,
-            "quality_revision_count": revision_count,
+            "max_revision_attempts": revision_limit,
             "consecutive_no_progress_count": no_progress,
             "last_failure_category": category,
             "last_output_fingerprint": fingerprint,
         },
     )
-    if category in {"privacy", "consent", "legal_risk", "privacy_or_consent"}:
+    if category in {"privacy", "consent", "privacy_or_consent"}:
         return _terminate(updated, reason="privacy_blocked", stage="reflection")
+    if category == "legal_risk":
+        return _terminate(updated, reason="human_review_required", stage="reflection")
     if category in {"provenance", "provenance_missing"}:
         return _terminate(updated, reason="provenance_missing", stage="reflection")
-    if revision_count >= _policy_value(
-        state,
-        "quality_revision_limit",
-        DEFAULT_QUALITY_REVISION_LIMIT,
-        minimum=1,
-        maximum=20,
-    ):
+    if revision_count >= revision_limit:
         return _terminate(updated, reason="revision_budget_exhausted", stage="reflection")
     if no_progress >= _policy_value(
         state, "no_progress_limit", DEFAULT_NO_PROGRESS_LIMIT, minimum=2, maximum=20
     ):
         return _terminate(updated, reason="no_progress", stage="reflection")
+    revision_count += 1
+    updated = cast(
+        CaseWorkflowState,
+        {
+            **updated,
+            "quality_revision_count": revision_count,
+            "retry_count": revision_count,
+        },
+    )
     delta = _update(
         updated,
         stage="reflection",
@@ -1043,7 +1452,6 @@ def record_technical_retry_failure(
         {
             **state,
             "technical_retry_count": retry_count,
-            "retry_count": retry_count,
             "last_failure_category": category,
         },
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -22,6 +23,27 @@ def _runtime() -> CaseWorkflowRuntime:
         ),
         checkpointer=InMemorySaver(),
     )
+
+
+@dataclass(frozen=True)
+class _ReflectingServices(DeterministicCaseWorkflowServices):
+    recover_after_revision: int | None = 1
+
+    def draft_documents(self, state):
+        answer, artifacts = super().draft_documents(state)
+        revision = state.get("quality_revision_count", 0)
+        if self.recover_after_revision is None or revision < self.recover_after_revision:
+            return "Synthetic draft [unresolved]", artifacts
+        return answer, artifacts
+
+
+@dataclass(frozen=True)
+class _BlockingSafetyServices(DeterministicCaseWorkflowServices):
+    failure_reason: str = "privacy_policy_failed"
+
+    def review_safety_and_gdpr(self, state):
+        del state
+        return False, self.failure_reason
 
 
 def _state(
@@ -101,6 +123,83 @@ def test_case_workflow_completes_and_records_ordered_review_events() -> None:
         "workflow_terminated",
     ]
     assert outcome.state["termination_reason"] == "quality_approved"
+
+
+def test_recoverable_output_failure_is_critiqued_revised_and_completed() -> None:
+    runtime = CaseWorkflowRuntime(
+        services=_ReflectingServices(
+            legal_requirements=({"requirement": "Synthetic"},),
+            legal_source_ids=("synthetic-law-1",),
+        ),
+        checkpointer=InMemorySaver(),
+    )
+
+    outcome = runtime.start(
+        _state(facts={"payer": "A", "recipient": "B", "amount": "100 EUR"})
+    )
+
+    assert outcome.state["status"] == "completed"
+    assert outcome.state["quality_revision_count"] == 1
+    assert outcome.state["retry_count"] == 1
+    assert outcome.state["max_revision_attempts"] == 3
+    assert outcome.state["critiques"] == [
+        {
+            "failure_category": "unresolved_placeholder",
+            "revision_instruction": "Remove placeholders and use only available verified facts.",
+            "recoverable": True,
+            "provider": "deterministic",
+            "model": "deterministic",
+            "route_type": "deterministic",
+        }
+    ]
+    event_types = [event["event_type"] for event in outcome.state["events"]]
+    assert "output_critique_created" in event_types
+    assert "documents_revised" in event_types
+    assert outcome.state["artifacts"][-1]["revision_number"] == 1
+    assert outcome.state["artifacts"][-1]["revises_artifact_id"].endswith(":draft")
+
+
+def test_reflection_budget_exhaustion_escalates_without_unbounded_drafting() -> None:
+    runtime = CaseWorkflowRuntime(
+        services=_ReflectingServices(
+            legal_source_ids=("synthetic-law-1",), recover_after_revision=None
+        ),
+        checkpointer=InMemorySaver(),
+    )
+    state = _state(facts={"payer": "A", "recipient": "B", "amount": "100 EUR"})
+    state["termination_policy"].update({"quality_revision_limit": 2, "no_progress_limit": 5})
+    state["max_revision_attempts"] = 2
+
+    outcome = runtime.start(state)
+
+    assert outcome.state["status"] == "human_review_required"
+    assert outcome.state["termination_reason"] == "revision_budget_exhausted"
+    assert outcome.state["quality_revision_count"] == 2
+    assert [event["event_type"] for event in outcome.state["events"]].count(
+        "documents_revised"
+    ) == 2
+
+
+def test_nonrecoverable_safety_failures_never_enter_reflection() -> None:
+    for reason, termination in (
+        ("privacy_policy_failed", "privacy_blocked"),
+        ("legal_provenance_missing", "provenance_missing"),
+    ):
+        runtime = CaseWorkflowRuntime(
+            services=_BlockingSafetyServices(
+                legal_source_ids=("synthetic-law-1",), failure_reason=reason
+            ),
+            checkpointer=InMemorySaver(),
+        )
+        outcome = runtime.start(
+            _state(facts={"payer": "A", "recipient": "B", "amount": "100 EUR"})
+        )
+
+        assert outcome.state["termination_reason"] == termination
+        assert outcome.state["quality_revision_count"] == 0
+        assert "output_critique_created" not in {
+            event["event_type"] for event in outcome.state["events"]
+        }
 
 
 def test_case_workflow_interrupts_and_resumes_without_losing_pinned_versions() -> None:
@@ -220,7 +319,7 @@ def test_reflection_policy_separates_quality_and_technical_retries() -> None:
     )
 
     assert final["termination_reason"] == "no_progress"
-    assert final["quality_revision_count"] == 2
+    assert final["quality_revision_count"] == 1
     assert final["technical_retry_count"] == 0
 
     technical = record_technical_retry_failure(state, failure_category="provider_timeout")
