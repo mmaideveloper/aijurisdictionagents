@@ -337,7 +337,8 @@ describe("AssistantWorkspace", () => {
       language: "sk",
       userId: "user-1",
       caseId: "case-1",
-      modelProfileId: "azure_foundry_gpt_4o_mini"
+      modelProfileId: "azure_foundry_gpt_4o_mini",
+      correlationId: expect.any(String)
     });
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
@@ -345,7 +346,8 @@ describe("AssistantWorkspace", () => {
       userId: "user-1",
       userEmail: "admin@example.com",
       modelProfileId: "azure_foundry_gpt_4o_mini",
-      signal: expect.any(AbortSignal)
+      signal: expect.any(AbortSignal),
+      correlationId: expect.any(String)
     });
   });
 
@@ -492,7 +494,8 @@ describe("AssistantWorkspace", () => {
       language: "sk",
       discussion_type: "advice",
       state: "active",
-      created_at: "2026-06-20T00:00:00Z"
+      created_at: "2026-06-20T00:00:00Z",
+      correlation_id: "corr-visible-303"
     });
     vi.mocked(streamSession).mockImplementation(async function* () {
       yield {
@@ -541,7 +544,8 @@ describe("AssistantWorkspace", () => {
       language: "sk",
       userId: "user-1",
       caseId: "case-1",
-      modelProfileId: undefined
+      modelProfileId: undefined,
+      correlationId: expect.any(String)
     });
     expect(streamSession).toHaveBeenCalledWith({
       sessionId: "session-1",
@@ -549,8 +553,10 @@ describe("AssistantWorkspace", () => {
       userId: "user-1",
       userEmail: "admin@example.com",
       modelProfileId: undefined,
-      signal: expect.any(AbortSignal)
+      signal: expect.any(AbortSignal),
+      correlationId: "corr-visible-303"
     });
+    expect(screen.getByRole("status").textContent).toContain("corr-visible-303");
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
   });

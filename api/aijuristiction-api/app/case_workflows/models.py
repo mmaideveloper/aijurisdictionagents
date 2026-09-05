@@ -61,6 +61,11 @@ class WorkflowStartRequest(BaseModel):
     external_provider_acknowledged: bool = False
     execution_deadline_at: datetime | None = None
     session_expires_at: datetime | None = None
+    correlation_id: str = Field(
+        default="",
+        max_length=200,
+        pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,199}$",
+    )
 
 
 class WorkflowResumeRequest(BaseModel):

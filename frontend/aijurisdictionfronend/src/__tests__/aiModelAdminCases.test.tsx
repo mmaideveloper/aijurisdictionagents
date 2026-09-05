@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import AIModelAdmin from "../pages/AIModelAdmin";
 import {
   fetchAdminCaseExportBlob,
+  fetchAdminDebugTrace,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchOllamaModels,
@@ -35,6 +36,8 @@ vi.mock("../components/LanguageProvider", () => ({
 
 vi.mock("../api/adminModelClient", () => ({
   fetchAdminUsers: vi.fn(),
+  fetchAdminDebugTrace: vi.fn(),
+  fetchAdminDebugExport: vi.fn(),
   fetchAdminCaseExportBlob: vi.fn(),
   fetchAdminCaseCatalogCaseTypes: vi.fn(),
   fetchAdminCaseCatalogDocumentTemplates: vi.fn(),
@@ -106,6 +109,49 @@ describe("AIModelAdmin case reset panel", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("finds an exact correlation trace and switches to flow view", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchAIModelAdminDashboard).mockResolvedValue(dashboard);
+    vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
+    vi.mocked(fetchAdminDebugTrace).mockResolvedValue({
+      correlation_id: "corr-admin-303",
+      retention_days: 7,
+      generated_at: "2026-09-05T12:00:00Z",
+      session: null,
+      messages: [],
+      timeline: [{
+        kind: "debug",
+        event_id: "event-1",
+        created_at: "2026-09-05T12:00:00Z",
+        correlation_id: "corr-admin-303",
+        session_id: "session-1",
+        component: "retrieval",
+        stage: "case_document_post_filter",
+        status: "completed",
+        payload: { selected: ["doc-1"] }
+      }],
+      flow: {
+        nodes: [{ id: "retrieval:case_document_post_filter", label: "retrieval → case_document_post_filter" }],
+        edges: []
+      },
+      warnings: []
+    });
+
+    render(<AIModelAdmin />);
+
+    await user.click(await screen.findByRole("button", { name: /adminDebugTitle/ }));
+    await user.type(screen.getByLabelText("adminDebugCorrelationId"), "corr-admin-303");
+    await user.click(screen.getByRole("button", { name: /adminDebugSearch/ }));
+
+    expect(await screen.findByText("retrieval → case_document_post_filter")).not.toBeNull();
+    expect(fetchAdminDebugTrace).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "admin-1" }),
+      "corr-admin-303"
+    );
+    await user.click(screen.getByRole("button", { name: /adminDebugFlow/ }));
+    expect(screen.getByText("retrieval → case_document_post_filter")).not.toBeNull();
   });
 
   it("downloads an audited admin case export from each case row", async () => {

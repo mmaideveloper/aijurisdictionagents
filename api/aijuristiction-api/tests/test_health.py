@@ -37,6 +37,15 @@ class _StartupStore:
         return None
 
 
+class _StartupWorkflowStore:
+    def purge_expired_debug_events(self) -> int:
+        return 0
+
+
+def _startup_workflow_service() -> SimpleNamespace:
+    return SimpleNamespace(store=_StartupWorkflowStore())
+
+
 def _startup_law_snapshot() -> SimpleNamespace:
     return SimpleNamespace(
         last_law_update_date=None,
@@ -49,8 +58,12 @@ def _startup_law_snapshot() -> SimpleNamespace:
 def test_startup_runs_enabled_internal_mcp_probe_after_existing_initialization(monkeypatch) -> None:
     calls: list[tuple[str, int | None]] = []
 
+    def load_workflow_service() -> SimpleNamespace:
+        calls.append(("workflow", None))
+        return _startup_workflow_service()
+
     monkeypatch.setattr(app_main.ApiDatabaseStore, "from_env", lambda: _StartupStore())
-    monkeypatch.setattr(app_main, "get_case_workflow_service", lambda: calls.append(("workflow", None)))
+    monkeypatch.setattr(app_main, "get_case_workflow_service", load_workflow_service)
     monkeypatch.setattr(app_main, "get_law_knowledge_snapshot", lambda _country: _startup_law_snapshot())
     monkeypatch.setattr(
         "app.chat.mcp_law_context.probe_internal_mcp_readiness",
@@ -68,7 +81,7 @@ def test_startup_fails_closed_when_internal_mcp_probe_fails(monkeypatch) -> None
     from app.chat.mcp_law_context import InternalMcpUnavailableError
 
     monkeypatch.setattr(app_main.ApiDatabaseStore, "from_env", lambda: _StartupStore())
-    monkeypatch.setattr(app_main, "get_case_workflow_service", lambda: None)
+    monkeypatch.setattr(app_main, "get_case_workflow_service", _startup_workflow_service)
     monkeypatch.setattr(app_main, "get_law_knowledge_snapshot", lambda _country: _startup_law_snapshot())
     monkeypatch.setattr(
         "app.chat.mcp_law_context.probe_internal_mcp_readiness",

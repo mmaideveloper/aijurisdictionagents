@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -28,6 +28,7 @@ def get_application_insights_logs(
     application: ApplicationName | None = None,
     level: LogLevel | None = None,
     source: LogSource | None = None,
+    correlation_id: Annotated[str | None, Query(max_length=200)] = None,
 ) -> dict[str, object]:
     try:
         service = AzureApplicationInsightsLogService.from_env()
@@ -35,12 +36,17 @@ def get_application_insights_logs(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     try:
+        query_args: dict[str, Any] = {
+            "minutes": minutes,
+            "limit": limit,
+            "application": application,
+            "level": level,
+            "source": source,
+        }
+        if correlation_id:
+            query_args["correlation_id"] = correlation_id
         result = service.query_logs(
-            minutes=minutes,
-            limit=limit,
-            application=application,
-            level=level,
-            source=source,
+            **query_args,
         )
     except Exception as exc:
         raise HTTPException(

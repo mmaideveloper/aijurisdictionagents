@@ -74,6 +74,14 @@ selected, but never stores the model's hidden reasoning or duplicates prompts, m
 documents, legal-source bodies, or tool payloads. Retrieval is limited to enabled administrators by
 exact `session_id`; traces inherit the owning session's retention/deletion and legal-hold lifecycle.
 
+Session troubleshooting uses the separate protected design documented in
+`docs/SESSION_CORRELATION_DEBUGGING.md`. A browser-visible correlation ID stays stable for the
+entire chat while request and parent-request IDs identify individual API, retrieval, orchestration,
+model, and response operations. Unlike ordinary operational logs and the privacy-minimized
+decision ledger, the protected seven-day debug bundle contains session-scoped prompt, response,
+and retrieval content required to diagnose an incident. It remains exact-ID/admin-only, audited,
+credential-redacted, and excludes hidden model chain-of-thought.
+
 Provider and model-profile records also contain validated, non-secret `model_parameters`. Provider values are defaults; profile values override them. A profile can set a key to JSON `null` to remove an inherited provider default. For example, an Azure provider may default to `{"temperature": 0.2}` while its `gpt-5-mini` profile uses `{"temperature": null}` so the request omits `temperature` and the model applies its supported default. Routing never guesses compatibility from a model name and never retries by silently discarding an explicitly configured parameter. The allowlist accepts only bounded chat-generation scalars; credentials, endpoints, prompts, case data, arbitrary SDK kwargs, and nested objects are rejected.
 
 The resolved Azure/OpenAI request is built dynamically. Missing or explicitly removed parameters are not sent to the SDK. Operational logs and admin audit events record only applied parameter names, provider/profile identity, and validation/provider error metadata; they do not record parameter values, prompts, documents, credentials, or case content.

@@ -8,9 +8,12 @@ import os
 import re
 import time
 from typing import Any
-from uuid import uuid4
 
 import httpx
+from aijurisdictionagents.correlation import (
+    child_operation,
+    record_debug_event,
+)
 
 from aijurisdictionagents.agents import AIWebSearchAgent
 from aijurisdictionagents.schemas import Document as CoreDocument
@@ -628,14 +631,30 @@ def _section_start_from_query(query: str) -> str:
 
 
 def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    record_debug_event(
+        "retrieval", "mcp_pre_filter", "completed",
+        {"tool_name": name, "arguments": arguments},
+    )
     remote_base_url = _remote_mcp_base_url()
     if remote_base_url:
-        return _call_remote_mcp_tool(remote_base_url=remote_base_url, name=name, arguments=arguments)
+        result = _call_remote_mcp_tool(
+            remote_base_url=remote_base_url, name=name, arguments=arguments
+        )
+        record_debug_event(
+            "retrieval", "mcp_post_filter", "completed",
+            {"tool_name": name, "result": result},
+        )
+        return result
 
     from app.mcp_api import _call_tool
 
     payload = _call_tool(name, arguments)
-    return payload if isinstance(payload, dict) else {}
+    result = payload if isinstance(payload, dict) else {}
+    record_debug_event(
+        "retrieval", "mcp_post_filter", "completed",
+        {"tool_name": name, "result": result},
+    )
+    return result
 
 
 def _remote_mcp_base_url() -> str:
@@ -661,16 +680,9 @@ def _call_remote_mcp_tool(
             "arguments": arguments,
         },
     }
-    request_id = str(uuid4())
-    headers = {
-        "Content-Type": "application/json",
-        "X-Request-ID": request_id,
-        "X-Correlation-ID": request_id,
-    }
     internal_secret = _internal_mcp_shared_secret()
     if not internal_secret:
         raise InternalMcpUnavailableError(category="auth_configuration", attempts=0)
-    headers[_INTERNAL_MCP_SECRET_HEADER] = internal_secret
     max_attempts = _positive_attempts(attempts) if attempts is not None else _env_int(
         "INTERNAL_MCP_RETRY_ATTEMPTS", 3
     )
@@ -678,46 +690,93 @@ def _call_remote_mcp_tool(
     backoff_seconds = _env_float("INTERNAL_MCP_RETRY_BACKOFF_SECONDS", 1.0, allow_zero=True)
     last_category = "unknown"
 
-    for attempt in range(1, max_attempts + 1):
-        started = time.perf_counter()
-        try:
-            with httpx.Client(timeout=timeout_seconds) as client:
-                response = client.post(
-                    f"{remote_base_url}/mcp",
-                    json=payload,
-                    headers=headers,
+    with child_operation() as operation:
+        request_id = operation.request_id
+        correlation_id = operation.correlation_id or request_id
+        headers = {
+            "Content-Type": "application/json",
+            "X-Request-ID": request_id,
+            "X-Correlation-ID": correlation_id,
+            _INTERNAL_MCP_SECRET_HEADER: internal_secret,
+        }
+        if operation.parent_request_id:
+            headers["X-Parent-Request-ID"] = operation.parent_request_id
+        record_debug_event(
+            "mcp",
+            "remote_tool_call",
+            "started",
+            {"tool_name": name, "arguments": arguments, "max_attempts": max_attempts},
+        )
+
+        for attempt in range(1, max_attempts + 1):
+            started = time.perf_counter()
+            try:
+                with httpx.Client(timeout=timeout_seconds) as client:
+                    response = client.post(
+                        f"{remote_base_url}/mcp",
+                        json=payload,
+                        headers=headers,
+                    )
+                    response.raise_for_status()
+                    envelope = response.json()
+                    decoded = _decode_mcp_envelope(envelope=envelope, tool_name=name)
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                _LOGGER.info(
+                    "internal_mcp_tool_call tool=%s status=ok attempt=%d duration_ms=%d "
+                    "request_id=%s correlation_id=%s",
+                    name,
+                    attempt,
+                    duration_ms,
+                    request_id,
+                    correlation_id,
                 )
-                response.raise_for_status()
-                envelope = response.json()
-                decoded = _decode_mcp_envelope(envelope=envelope, tool_name=name)
-            _LOGGER.info(
-                "internal_mcp_tool_call tool=%s status=ok attempt=%d duration_ms=%d "
-                "request_id=%s correlation_id=%s",
-                name,
-                attempt,
-                int((time.perf_counter() - started) * 1000),
-                request_id,
-                request_id,
-            )
-            return decoded
-        except Exception as exc:  # noqa: BLE001
-            last_category = _failure_category(exc)
-            retryable = _is_retryable_failure(exc)
-            status = "retryable_failure" if retryable else "terminal_failure"
-            _LOGGER.warning(
-                "internal_mcp_tool_call tool=%s status=%s attempt=%d duration_ms=%d "
-                "failure_category=%s request_id=%s correlation_id=%s",
-                name,
-                status,
-                attempt,
-                int((time.perf_counter() - started) * 1000),
-                last_category,
-                request_id,
-                request_id,
-            )
-            if not retryable or attempt == max_attempts:
-                raise InternalMcpUnavailableError(category=last_category, attempts=attempt) from None
-            time.sleep(backoff_seconds)
+                record_debug_event(
+                    "mcp",
+                    "remote_tool_call",
+                    "completed",
+                    {
+                        "tool_name": name,
+                        "attempt": attempt,
+                        "duration_ms": duration_ms,
+                        "status_code": getattr(response, "status_code", 200),
+                    },
+                )
+                return decoded
+            except Exception as exc:  # noqa: BLE001
+                last_category = _failure_category(exc)
+                retryable = _is_retryable_failure(exc)
+                terminal = not retryable or attempt == max_attempts
+                log_status = "terminal_failure" if terminal else "retryable_failure"
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                _LOGGER.warning(
+                    "internal_mcp_tool_call tool=%s status=%s attempt=%d duration_ms=%d "
+                    "failure_category=%s request_id=%s correlation_id=%s",
+                    name,
+                    log_status,
+                    attempt,
+                    duration_ms,
+                    last_category,
+                    request_id,
+                    correlation_id,
+                )
+                record_debug_event(
+                    "mcp",
+                    "remote_tool_call",
+                    "failed" if terminal else "retrying",
+                    {
+                        "tool_name": name,
+                        "attempt": attempt,
+                        "duration_ms": duration_ms,
+                        "failure_category": last_category,
+                        "error_type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                )
+                if terminal:
+                    raise InternalMcpUnavailableError(
+                        category=last_category, attempts=attempt
+                    ) from None
+                time.sleep(backoff_seconds)
 
     raise InternalMcpUnavailableError(category=last_category, attempts=max_attempts)  # pragma: no cover
 

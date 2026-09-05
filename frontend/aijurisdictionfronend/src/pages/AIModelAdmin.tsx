@@ -1,6 +1,6 @@
 import React from "react";
 import { createSearchParams } from "react-router-dom";
-import { FaBriefcase, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
+import { FaBriefcase, FaBug, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
 import {
   AIModelAdminDashboard,
   AIModelCredential,
@@ -12,6 +12,7 @@ import {
   AdminCaseUser,
   AdminUserSummary,
   AdminUsersPage,
+  AdminDebugTrace,
   CaseCatalogCaseType,
   CaseWorkflowAssignment,
   DocumentTemplateCatalogItem,
@@ -51,12 +52,14 @@ import {
   importOllamaModel,
   setOllamaModelDefault,
   removeOllamaModel,
-  updateAdminUser
+  updateAdminUser,
+  fetchAdminDebugTrace,
+  fetchAdminDebugExport
 } from "../api/adminModelClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 
-type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
 type AdminFormMode = "table" | "create" | "edit";
 type AdminDashboardLoadState = "idle" | "loading" | "success" | "error";
 type AdminCaseCatalogLoadState = "idle" | "loading" | "success" | "error";
@@ -197,6 +200,9 @@ const AIModelAdmin: React.FC = () => {
   const [dashboardLoadState, setDashboardLoadState] = React.useState<AdminDashboardLoadState>("idle");
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
+  const [debugCorrelationId, setDebugCorrelationId] = React.useState("");
+  const [debugTrace, setDebugTrace] = React.useState<AdminDebugTrace | null>(null);
+  const [debugView, setDebugView] = React.useState<"timeline" | "flow">("timeline");
   const [formSubmitting, setFormSubmitting] = React.useState(false);
   const formSubmittingRef = React.useRef(false);
   const editFormRef = React.useRef<HTMLFormElement | null>(null);
@@ -962,6 +968,7 @@ const AIModelAdmin: React.FC = () => {
     { key: "policies", label: t("adminPoliciesTitle"), icon: <FaRoute aria-hidden="true" /> },
     { key: "ollamaImport", label: t("adminOllamaImportTitle"), icon: <FaDownload aria-hidden="true" /> },
     { key: "ollama", label: t("adminOllamaTitle"), icon: <FaDownload aria-hidden="true" /> },
+    { key: "debug", label: t("adminDebugTitle"), icon: <FaBug aria-hidden="true" /> },
     { key: "audit", label: t("adminAuditTitle"), icon: <FaKey aria-hidden="true" /> }
   ];
 
@@ -1986,6 +1993,53 @@ const AIModelAdmin: React.FC = () => {
               <div className="admin-table-scroll">
                 <table><thead><tr><th>{t("adminAction")}</th><th>{t("adminEntity")}</th><th>{t("adminActor")}</th><th>{t("adminCreated")}</th></tr></thead><tbody>{dashboard?.audit_events.map((event) => <tr key={event.audit_event_id}><td>{event.action}</td><td>{event.entity_type}: {event.entity_id}</td><td>{event.admin_email}</td><td>{event.created_at}</td></tr>)}</tbody></table>
               </div>
+            </section>
+          ) : null}
+          {activeSection === "debug" ? (
+            <section className="admin-table-section admin-debug">
+              <h2>{t("adminDebugTitle")}</h2>
+              <p className="admin-muted">{t("adminDebugHelp")}</p>
+              <form className="admin-debug__search" onSubmit={(event) => {
+                event.preventDefault();
+                setError("");
+                void fetchAdminDebugTrace(adminAuth, debugCorrelationId.trim())
+                  .then(setDebugTrace)
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+              }}>
+                <label>{t("adminDebugCorrelationId")}<input value={debugCorrelationId} onChange={(event) => setDebugCorrelationId(event.target.value)} required /></label>
+                <button className="primary-button" type="submit"><FaSearch aria-hidden="true" />{t("adminDebugSearch")}</button>
+              </form>
+              {debugTrace ? <>
+                <div className="admin-inline-actions">
+                  <button className="button ghost" type="button" onClick={() => setDebugView("timeline")}>{t("adminDebugTimeline")}</button>
+                  <button className="button ghost" type="button" onClick={() => setDebugView("flow")}>{t("adminDebugFlow")}</button>
+                  <button className="button ghost" type="button" onClick={() => void fetchAdminDebugExport(adminAuth, debugTrace.correlation_id).then(({ blob, filename }) => {
+                    const url = URL.createObjectURL(blob);
+                    const anchor = document.createElement("a");
+                    anchor.href = url;
+                    anchor.download = filename;
+                    anchor.click();
+                    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  })}><FaDownload aria-hidden="true" />{t("adminDebugExport")}</button>
+                </div>
+                <p className="admin-muted">{debugTrace.correlation_id} · {t("adminDebugRetention")}</p>
+                {debugView === "timeline" ? (
+                  <ol className="admin-debug__timeline">
+                    {debugTrace.timeline.map((item) => <li key={`${item.kind}-${item.event_id}`}>
+                      <time>{item.created_at}</time>
+                      <strong>{item.component} → {item.stage}</strong>
+                      <span className={`admin-debug__status admin-debug__status--${item.status}`}>{item.status}</span>
+                      <details><summary>{t("adminDebugDetails")}</summary><pre>{JSON.stringify(item.payload, null, 2)}</pre></details>
+                    </li>)}
+                  </ol>
+                ) : (
+                  <div className="admin-debug__flow" aria-label={t("adminDebugFlow")}>
+                    {debugTrace.flow.nodes.map((node, index) => <React.Fragment key={node.id}>
+                      {index > 0 ? <span aria-hidden="true">→</span> : null}<strong>{node.label}</strong>
+                    </React.Fragment>)}
+                  </div>
+                )}
+              </> : null}
             </section>
           ) : null}
           </> : null}

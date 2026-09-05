@@ -5,9 +5,14 @@ import logging
 import math
 import os
 import time
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence, TypeVar
 
 from ..schemas import Document, Message
+from ..correlation import child_operation, current_correlation_context, record_debug_event
+
+
+T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class LLMClient(Protocol):
@@ -74,6 +79,15 @@ def log_llm_request(
     agent_name: str,
     request_payload: Sequence[dict[str, Any]],
 ) -> None:
+    context = current_correlation_context()
+    logger.info(
+        "llm_request provider=%s agent=%s correlation_id=%s request_id=%s parent_request_id=%s",
+        provider,
+        agent_name,
+        context.correlation_id,
+        context.request_id,
+        context.parent_request_id,
+    )
     if not should_log_llm_io():
         return
     logger.info(
@@ -91,6 +105,10 @@ def log_llm_response(
     agent_name: str,
     raw_response: str,
 ) -> None:
+    record_debug_event(
+        "model", "response_content", "completed",
+        {"provider": provider, "agent_name": agent_name, "content": raw_response},
+    )
     if not should_log_llm_io():
         return
     logger.info(
@@ -99,3 +117,60 @@ def log_llm_response(
         agent_name,
         raw_response,
     )
+
+
+def execute_correlated_model_call(
+    *,
+    provider: str,
+    model: str,
+    agent_name: str,
+    request_payload: Sequence[dict[str, Any]],
+    invoke: Callable[[], T],
+) -> T:
+    """Record model I/O for the protected debug bundle without changing prompt prose."""
+
+    with child_operation() as context:
+        record_debug_event(
+            "model", "completion", "started",
+            {
+                "provider": provider,
+                "model": model,
+                "agent_name": agent_name,
+                "effective_messages": list(request_payload),
+            },
+        )
+        try:
+            response = invoke()
+        except Exception as exc:
+            record_debug_event(
+                "model", "completion", "failed",
+                {
+                    "provider": provider,
+                    "model": model,
+                    "agent_name": agent_name,
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
+            raise
+        provider_request_id = str(
+            getattr(response, "_request_id", "") or getattr(response, "request_id", "") or ""
+        )
+        record_debug_event(
+            "model", "completion", "completed",
+            {
+                "provider": provider,
+                "model": model,
+                "agent_name": agent_name,
+                "provider_request_id": provider_request_id,
+            },
+        )
+        logger.info(
+            "llm_response provider=%s model=%s correlation_id=%s request_id=%s provider_request_id=%s",
+            provider,
+            model,
+            context.correlation_id,
+            context.request_id,
+            provider_request_id,
+        )
+        return response

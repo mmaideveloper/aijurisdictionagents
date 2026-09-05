@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 from typing import Any, Iterator, Literal, cast
 from uuid import uuid4
@@ -403,6 +404,93 @@ class CaseWorkflowStore:
             len(rows) > limit,
         )
 
+    def list_decision_traces_by_correlation(
+        self, *, correlation_id: str, limit: int = 500
+    ) -> list[OrchestrationDecisionTraceResponse]:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                self._sql(
+                    "SELECT payload_json FROM orchestration_decision_traces "
+                    "WHERE correlation_id = ? AND created_at >= ? "
+                    "ORDER BY created_at, event_id LIMIT ?"
+                ),
+                (correlation_id.strip(), cutoff, min(max(limit, 1), 1000)),
+            ).fetchall()
+        return [
+            OrchestrationDecisionTraceResponse.model_validate(
+                json.loads(str(_row(row)["payload_json"]))
+            )
+            for row in rows
+        ]
+
+    def record_debug_event(
+        self,
+        *,
+        correlation_id: str,
+        session_id: str,
+        request_id: str,
+        parent_request_id: str,
+        component: str,
+        stage: str,
+        status: str,
+        payload: dict[str, Any],
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=7)
+        safe_payload = _sanitize_debug_payload(payload)
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    "INSERT INTO session_debug_events(event_id, correlation_id, session_id, "
+                    "request_id, parent_request_id, component, stage, status, payload_json, "
+                    "created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                ),
+                (
+                    str(uuid4()), correlation_id.strip(), session_id.strip(), request_id.strip(),
+                    parent_request_id.strip(), component.strip(), stage.strip(), status.strip(),
+                    json.dumps(safe_payload, ensure_ascii=False, sort_keys=True),
+                    now.isoformat(), expires_at.isoformat(),
+                ),
+            )
+            conn.execute(
+                self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"),
+                (now.isoformat(),),
+            )
+            conn.commit()
+
+    def list_debug_events(self, *, correlation_id: str, limit: int = 1000) -> list[dict[str, Any]]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"), (now,))
+            rows = conn.execute(
+                self._sql(
+                    "SELECT * FROM session_debug_events WHERE correlation_id = ? "
+                    "ORDER BY created_at, event_id LIMIT ?"
+                ),
+                (correlation_id.strip(), min(max(limit, 1), 2000)),
+            ).fetchall()
+            conn.commit()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = _row(row)
+            item["payload"] = json.loads(str(item.pop("payload_json")))
+            result.append(item)
+        return result
+
+    def purge_expired_debug_events(self) -> int:
+        """Physically remove protected debug rows after their seven-day deadline."""
+
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"),
+                (now,),
+            )
+            deleted = max(int(cursor.rowcount), 0)
+            conn.commit()
+        return deleted
+
     def delete_session_decision_traces(self, *, session_id: str) -> int:
         """Retention hook: delete every trace owned by one expired/deleted session."""
 
@@ -700,6 +788,71 @@ def _event(row: dict[str, Any]) -> WorkflowEventResponse:
 
 def _row(value: Any) -> dict[str, Any]:
     return dict(value)
+
+
+_DEBUG_SECRET_KEYS = {
+    "authorization",
+    "proxy_authorization",
+    "api_key",
+    "apikey",
+    "password",
+    "secret",
+    "client_secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "bearer_token",
+    "connection_string",
+}
+_DEBUG_SECRET_SUFFIXES = (
+    "_api_key",
+    "_password",
+    "_secret",
+    "_access_token",
+    "_refresh_token",
+    "_connection_string",
+)
+
+
+def _sanitize_debug_payload(value: Any, *, key: str = "") -> Any:
+    """Remove credentials while retaining session-scoped troubleshooting content."""
+
+    normalized_key = key.lower().replace("-", "_")
+    if normalized_key in _DEBUG_SECRET_KEYS or normalized_key.endswith(
+        _DEBUG_SECRET_SUFFIXES
+    ):
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {
+            str(item_key): _sanitize_debug_payload(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_debug_payload(item, key=key) for item in value]
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        return _redact_debug_string(value)[:250_000]
+    return str(value)[:10_000]
+
+
+def _redact_debug_string(value: str) -> str:
+    redacted = re.sub(
+        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+        "Bearer [REDACTED]",
+        value,
+    )
+    redacted = re.sub(
+        r"\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}",
+        "[REDACTED_API_KEY]",
+        redacted,
+    )
+    return re.sub(
+        r"(?i)([a-z][a-z0-9+.-]*://[^:\s/]+:)[^@\s]+@",
+        r"\1[REDACTED]@",
+        redacted,
+    )
 
 
 def _utc_now() -> str:

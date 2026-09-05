@@ -140,7 +140,13 @@ describe("caseClient", () => {
       "/v1/cases/case-1/documents/doc-1?user_id=user-1"
     );
     expect(fetchMock.mock.calls[0][1]).toEqual(
-      expect.objectContaining({ method: "DELETE", headers: { "x-api-key": "aijuris" } })
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          "x-api-key": "aijuris",
+          "x-request-id": expect.any(String)
+        })
+      })
     );
     expect(result.outcome).toBe("deleted");
     expect(result.correlation_id).toBe("correlation-1");
@@ -154,7 +160,13 @@ describe("caseClient", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/v1/cases/case-1?user_id=user-1"),
-      expect.objectContaining({ method: "DELETE", headers: { "x-api-key": "aijuris" } })
+      expect.objectContaining({
+        method: "DELETE",
+        headers: expect.objectContaining({
+          "x-api-key": "aijuris",
+          "x-request-id": expect.any(String)
+        })
+      })
     );
   });
 });

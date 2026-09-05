@@ -44,6 +44,7 @@ class ObservabilityLogRecord:
     duration_ms: float | None
     exception_type: str
     problem_id: str
+    correlation_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class ObservabilityQueryResult:
     by_level: dict[str, int]
     by_source: dict[str, int]
     records: list[ObservabilityLogRecord]
+    correlation_id: str | None = None
 
 
 class AzureApplicationInsightsLogService:
@@ -117,11 +119,13 @@ class AzureApplicationInsightsLogService:
         application: ApplicationName | None = None,
         level: LogLevel | None = None,
         source: LogSource | None = None,
+        correlation_id: str | None = None,
     ) -> ObservabilityQueryResult:
         base_query = _build_base_query(
             application=application,
             level=level,
             source=source,
+            correlation_id=correlation_id,
         )
         workspace_id = self._resolve_workspace_id()
         client = self._build_client()
@@ -152,6 +156,7 @@ class AzureApplicationInsightsLogService:
             by_level=by_level,
             by_source=by_source,
             records=records,
+            correlation_id=correlation_id,
         )
 
     def _build_client(self) -> LogsQueryClient:
@@ -240,13 +245,16 @@ class AzureApplicationInsightsLogService:
 
 
 def serialize_query_result(result: ObservabilityQueryResult) -> dict[str, object]:
+    filters: dict[str, object] = {
+        "minutes": result.minutes,
+        "application": result.application,
+        "level": result.level,
+        "source": result.source,
+    }
+    if result.correlation_id:
+        filters["correlation_id"] = result.correlation_id
     return {
-        "filters": {
-            "minutes": result.minutes,
-            "application": result.application,
-            "level": result.level,
-            "source": result.source,
-        },
+        "filters": filters,
         "summary": {
             "total_count": result.total_count,
             "by_application": result.by_application,
@@ -262,6 +270,7 @@ def _build_base_query(
     application: ApplicationName | None,
     level: LogLevel | None,
     source: LogSource | None,
+    correlation_id: str | None = None,
 ) -> str:
     filters: list[str] = []
     if application is not None:
@@ -271,6 +280,9 @@ def _build_base_query(
         filters.append(f"level == '{level}'")
     if source is not None:
         filters.append(f"source == '{source}'")
+    if correlation_id is not None:
+        safe_correlation_id = correlation_id.replace("'", "''")
+        filters.append(f"correlation_id == '{safe_correlation_id}'")
 
     filter_block = ""
     if filters:
@@ -353,6 +365,7 @@ def _row_to_record(row: dict[str, object]) -> ObservabilityLogRecord:
         duration_ms=_to_optional_float(duration_value),
         exception_type=str(row.get("exception_type", "")),
         problem_id=str(row.get("problem_id", "")),
+        correlation_id=str(row.get("correlation_id", "")),
     )
 
 
@@ -429,6 +442,7 @@ _UNION_QUERY = """
 let traces = AppTraces
 | extend app_role = tolower(tostring(column_ifexists("AppRoleName", column_ifexists("cloud_RoleName", ""))))
 | extend severity = toint(column_ifexists("SeverityLevel", column_ifexists("severityLevel", 1)))
+| extend properties = todynamic(column_ifexists("Properties", "{}"))
 | project
     timestamp = TimeGenerated,
     application = case(
@@ -453,10 +467,12 @@ let traces = AppTraces
     success = bool(null),
     duration_ms = real(null),
     exception_type = "",
-    problem_id = "";
+    problem_id = "",
+    correlation_id = coalesce(tostring(properties["correlation_id"]), extract(@"correlation_id=([^ ]+)", 1, tostring(column_ifexists("Message", ""))));
 let exceptions = AppExceptions
 | extend app_role = tolower(tostring(column_ifexists("AppRoleName", column_ifexists("cloud_RoleName", ""))))
 | extend severity = toint(column_ifexists("SeverityLevel", column_ifexists("severityLevel", 3)))
+| extend properties = todynamic(column_ifexists("Properties", "{}"))
 | project
     timestamp = TimeGenerated,
     application = case(
@@ -486,10 +502,12 @@ let exceptions = AppExceptions
     success = bool(null),
     duration_ms = real(null),
     exception_type = tostring(column_ifexists("ExceptionType", "")),
-    problem_id = tostring(column_ifexists("ProblemId", ""));
+    problem_id = tostring(column_ifexists("ProblemId", "")),
+    correlation_id = coalesce(tostring(properties["correlation_id"]), extract(@"correlation_id=([^ ]+)", 1, tostring(column_ifexists("OuterMessage", ""))));
 let requests = AppRequests
 | extend app_role = tolower(tostring(column_ifexists("AppRoleName", column_ifexists("cloud_RoleName", ""))))
 | extend request_success = tobool(column_ifexists("Success", true))
+| extend properties = todynamic(column_ifexists("Properties", "{}"))
 | project
     timestamp = TimeGenerated,
     application = case(
@@ -508,7 +526,8 @@ let requests = AppRequests
     success = request_success,
     duration_ms = todouble(column_ifexists("DurationMs", 0.0)),
     exception_type = "",
-    problem_id = "";
+    problem_id = "",
+    correlation_id = tostring(properties["correlation_id"]);
 union traces, exceptions, requests
 | where application in ("api", "document_processor", "laws_collector")
 """.strip()

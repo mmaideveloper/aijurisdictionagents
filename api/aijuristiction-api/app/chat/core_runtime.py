@@ -61,6 +61,8 @@ def run_orchestration(
                 discussion_type=session.discussion_type,
                 user_response_provider=user_response_provider,
                 message_callback=message_callback,
+                session_id=str(session.id),
+                correlation_id=session.correlation_id,
             )
         finally:
             trace.close()

@@ -8,6 +8,7 @@ from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPI
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
+from aijurisdictionagents.correlation import correlation_headers, correlation_scope
 
 MINIMUM_PYTHON = (3, 13)
 if sys.version_info < MINIMUM_PYTHON:
@@ -34,6 +35,20 @@ print(
     "chat_context_management => MAX_SESSION_CHAT_MESSAGE=10 keeps the latest individual "
     "user/assistant messages verbatim and summarizes older turns in memory; full stored history "
     "remains available, and summarization never silently changes the configured model provider."
+)
+
+with correlation_scope(
+    correlation_id="minimal-session-correlation",
+    session_id="minimal-session",
+    request_id="minimal-request",
+):
+    assert correlation_headers() == {
+        "x-correlation-id": "minimal-session-correlation",
+        "x-request-id": "minimal-request",
+    }
+print(
+    "session_correlation_debug => one browser-visible correlation ID spans API, retrieval, "
+    "LangGraph, model, response, and error events; protected admin exports expire within seven days."
 )
 
 print(

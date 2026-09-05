@@ -1,4 +1,9 @@
 import { consoleLogger } from "../logging/consoleLogger";
+import {
+  correlationHeaders,
+  createSessionCorrelationId,
+  setActiveSessionCorrelationId
+} from "./correlation";
 import type { PresentationBlock } from "../presentation";
 
 const DEFAULT_API_BASE_URL =
@@ -19,6 +24,7 @@ export type ChatSession = {
   discussion_type: "advice" | "court";
   state: string;
   created_at: string;
+  correlation_id?: string;
 };
 
 export type ChatMessage = {
@@ -73,6 +79,7 @@ export type CreateChatSessionInput = {
   language?: string;
   discussionType?: "advice" | "court";
   modelProfileId?: string;
+  correlationId?: string;
 };
 
 export type ReplyToSessionInput = {
@@ -90,6 +97,7 @@ export type StreamSessionInput = {
   userEmail?: string;
   modelProfileId?: string;
   signal?: AbortSignal;
+  correlationId: string;
 };
 
 export type ChatStreamEvent =
@@ -239,7 +247,10 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
 
   let response: Response;
   try {
-    response = await fetch(url, init);
+    response = await fetch(url, {
+      ...init,
+      headers: { ...correlationHeaders(), ...(init.headers ?? {}) }
+    });
   } catch (error) {
     consoleLogger.error(
       "API network request failed",
@@ -281,11 +292,12 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
 
 export const createChatSession = async (input: CreateChatSessionInput = {}): Promise<ChatSession> => {
   const config = resolveApiConfig();
-  return requestJson<ChatSession>("/v1/chat/sessions", {
+  const session = await requestJson<ChatSession>("/v1/chat/sessions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": config.apiKey
+      "x-api-key": config.apiKey,
+      ...correlationHeaders(input.correlationId)
     },
     body: JSON.stringify({
       user_id: input.userId || null,
@@ -293,9 +305,14 @@ export const createChatSession = async (input: CreateChatSessionInput = {}): Pro
       country: input.country || config.country,
       language: input.language || config.language,
       discussion_type: input.discussionType || "advice",
-      model_profile_id: input.modelProfileId?.trim() || null
+      model_profile_id: input.modelProfileId?.trim() || null,
+      correlation_id: input.correlationId?.trim() || null
     })
   });
+  const resolvedCorrelationId =
+    session.correlation_id?.trim() || input.correlationId?.trim() || createSessionCorrelationId();
+  setActiveSessionCorrelationId(resolvedCorrelationId);
+  return { ...session, correlation_id: resolvedCorrelationId };
 };
 
 export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMessage> => {
@@ -304,7 +321,8 @@ export const replyToSession = async (input: ReplyToSessionInput): Promise<ChatMe
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": config.apiKey
+      "x-api-key": config.apiKey,
+      ...correlationHeaders()
     },
     body: JSON.stringify({
       content: input.content,
@@ -393,7 +411,8 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": config.apiKey
+        "x-api-key": config.apiKey,
+        ...correlationHeaders(input.correlationId)
       },
       body: JSON.stringify({
         instruction: input.instruction,

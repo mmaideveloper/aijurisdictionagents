@@ -23,7 +23,7 @@ from typing import Any, List, Literal, Optional, cast
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.graphics import renderPDF  # type: ignore[import-untyped]
@@ -71,6 +71,12 @@ from aijurisdictionagents.llm.routing import (
     RoutedLLMClient,
     get_routed_llm_client,
 )
+from aijurisdictionagents.correlation import (
+    correlation_scope,
+    current_correlation_context,
+    record_debug_event,
+)
+from app.debug_trace import debug_event_sink
 from aijurisdictionagents.schemas import Document as CoreDocument
 from aijurisdictionagents.schemas import Message as CoreMessage
 from services.document_processor.runtime import (
@@ -160,6 +166,12 @@ class CreateSessionRequest(BaseModel):
     language: str | None = None
     discussion_type: Literal["advice", "court"] = "advice"
     model_profile_id: str | None = None
+    correlation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,199}$",
+    )
 
 
 class CreateMessageRequest(BaseModel):
@@ -546,9 +558,42 @@ def _load_case_documents_for_llm(
             for chunk in list_case_document_chunks(case_id=case_id)
             if chunk.doc_id in processed_names_by_doc_id
         ]
+        record_debug_event(
+            "retrieval",
+            "case_document_pre_filter",
+            "started",
+            {
+                "case_id": case_id,
+                "query": query,
+                "candidate_chunks": [
+                    {
+                        "doc_id": chunk.doc_id,
+                        "chunk_index": chunk.chunk_index,
+                        "content": chunk.chunk_text,
+                    }
+                    for chunk in chunk_entries
+                ],
+            },
+        )
         selected_chunks = _select_relevant_case_document_chunks(
             query=query,
             chunk_entries=chunk_entries,
+        )
+        record_debug_event(
+            "retrieval",
+            "case_document_post_filter",
+            "completed",
+            {
+                "case_id": case_id,
+                "selected_chunks": [
+                    {
+                        "doc_id": chunk.doc_id,
+                        "chunk_index": chunk.chunk_index,
+                        "content": chunk.chunk_text,
+                    }
+                    for chunk in selected_chunks
+                ],
+            },
         )
         if selected_chunks:
             processed_documents = [
@@ -563,6 +608,23 @@ def _load_case_documents_for_llm(
     selected_entries = _select_relevant_case_documents(
         query=query,
         processed_entries=processed_entries,
+    )
+    record_debug_event(
+        "retrieval",
+        "case_document_fallback_filter",
+        "completed",
+        {
+            "case_id": case_id,
+            "query": query,
+            "candidates": [
+                {"doc_id": item[0], "name": item[1], "content": item[2]}
+                for item in processed_entries
+            ],
+            "selected": [
+                {"doc_id": item[0], "name": item[1], "content": item[2]}
+                for item in selected_entries
+            ],
+        },
     )
     processed_documents = [
         CoreDocument(doc_id=doc_id, path=name, content=text)
@@ -1490,6 +1552,37 @@ def _run_direct_lawyer_turn(
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
 ) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
+    parent = current_correlation_context()
+    with correlation_scope(
+        correlation_id=session.correlation_id,
+        session_id=str(session_id),
+        request_id=parent.request_id or None,
+        parent_request_id=parent.parent_request_id,
+        debug_sink=debug_event_sink,
+    ):
+        return _run_direct_lawyer_turn_impl(
+            session_id=session_id,
+            session=session,
+            content=content,
+            request_user_id=request_user_id,
+            request_user_email=request_user_email,
+            supplemental_documents=supplemental_documents,
+            processing_event_callback=processing_event_callback,
+            user_message_callback=user_message_callback,
+        )
+
+
+def _run_direct_lawyer_turn_impl(
+    *,
+    session_id: UUID,
+    session: Session,
+    content: str,
+    request_user_id: str | None = None,
+    request_user_email: str | None = None,
+    supplemental_documents: list[CoreDocument] | None = None,
+    processing_event_callback: Callable[[dict[str, object]], None] | None = None,
+    user_message_callback: Callable[[Message], None] | None = None,
+) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
     persisted_user = _repository.add_message(
         Message(
             session_id=session_id,
@@ -1575,6 +1668,7 @@ def _run_direct_lawyer_turn(
             language=session.language or "sk-SK",
             request_text=content,
             llm_client=primary_routed_llm.client,
+            correlation_id=session.correlation_id,
             verified_facts={},
         )
     if primary_route is not None and primary_route.workflow_run is not None:
@@ -2192,7 +2286,8 @@ class StartSessionStreamRequest(BaseModel):
 
 
 @router.post("/sessions", response_model=Session)
-def create_session(payload: CreateSessionRequest) -> Session:
+def create_session(payload: CreateSessionRequest, request: Request) -> Session:
+    correlation_id = (payload.correlation_id or str(request.state.correlation_id)).strip()
     session = Session(
         user_id=payload.user_id,
         case_id=payload.case_id,
@@ -2200,8 +2295,23 @@ def create_session(payload: CreateSessionRequest) -> Session:
         language=payload.language,
         discussion_type=payload.discussion_type,
         selected_model_profile_id=(payload.model_profile_id or "").strip() or None,
+        correlation_id=correlation_id,
     )
     created = _repository.create_session(session)
+    parent = current_correlation_context()
+    with correlation_scope(
+        correlation_id=created.correlation_id,
+        session_id=str(created.id),
+        request_id=parent.request_id,
+        parent_request_id=parent.parent_request_id,
+        debug_sink=debug_event_sink,
+    ):
+        record_debug_event(
+            "chat",
+            "session_created",
+            "completed",
+            {"session": created.model_dump(mode="json")},
+        )
     _bootstrap_case_history_if_needed(session=created)
     return created
 
@@ -2268,7 +2378,9 @@ def list_session_messages(session_id: UUID) -> List[Message]:
 
 
 @router.post("/sessions/{session_id}/stream")
-def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> StreamingResponse:
+def stream_session(
+    session_id: UUID, payload: StartSessionStreamRequest, request: Request
+) -> StreamingResponse:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -2281,7 +2393,12 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
     _ensure_case_write_access_for_session(session)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser":
-        return _stream_read_user_session(session_id=session_id, session=session, payload=payload)
+        return _stream_read_user_session(
+            session_id=session_id,
+            session=session,
+            payload=payload,
+            request_id=str(request.state.request_id),
+        )
 
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
     replies = deque(payload.user_replies)
@@ -2544,11 +2661,15 @@ def stream_session(session_id: UUID, payload: StartSessionStreamRequest) -> Stre
                     session_id,
                     type(exc).__name__,
                 )
-            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
+            event_queue.put(("error", _correlated_error_payload(timeout_payload, exc)))
         finally:
             event_queue.put(None)
 
-    Thread(target=worker, daemon=True).start()
+    _start_session_worker(
+        session=session,
+        request_id=str(request.state.request_id),
+        target=worker,
+    )
 
     return StreamingResponse(
         _stream_event_queue(event_queue=event_queue, session=session),
@@ -2561,6 +2682,7 @@ def _stream_read_user_session(
     session_id: UUID,
     session: Session,
     payload: StartSessionStreamRequest,
+    request_id: str,
 ) -> StreamingResponse:
     inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
@@ -2747,16 +2869,51 @@ def _stream_read_user_session(
                     session_id,
                     type(exc).__name__,
                 )
-            event_queue.put(("error", timeout_payload or {"message": str(exc)}))
+            event_queue.put(("error", _correlated_error_payload(timeout_payload, exc)))
         finally:
             event_queue.put(None)
 
-    Thread(target=worker, daemon=True).start()
+    _start_session_worker(session=session, request_id=request_id, target=worker)
 
     return StreamingResponse(
         _stream_event_queue(event_queue=event_queue, session=session),
         media_type="text/event-stream",
     )
+
+
+def _start_session_worker(*, session: Session, request_id: str, target: Callable[[], None]) -> None:
+    def correlated_target() -> None:
+        with correlation_scope(
+            correlation_id=session.correlation_id,
+            session_id=str(session.id),
+            request_id=request_id,
+            debug_sink=debug_event_sink,
+        ):
+            record_debug_event(
+                "api", "chat_session_worker", "started", {"session_id": str(session.id)}
+            )
+            target()
+            record_debug_event(
+                "api", "chat_session_worker", "completed", {"session_id": str(session.id)}
+            )
+
+    Thread(target=correlated_target, daemon=True).start()
+
+
+def _correlated_error_payload(
+    payload: dict[str, object] | None, exc: Exception
+) -> dict[str, object]:
+    context = current_correlation_context()
+    result = dict(payload or {"message": str(exc)})
+    result["correlation_id"] = context.correlation_id
+    result["request_id"] = context.request_id
+    record_debug_event(
+        "api",
+        "chat_session_worker",
+        "failed",
+        {"error_type": type(exc).__name__, "message": str(exc)},
+    )
+    return result
 
 
 def _is_followup_termination_prompt(prompt: str) -> bool:

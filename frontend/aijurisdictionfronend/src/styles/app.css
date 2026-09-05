@@ -920,6 +920,71 @@
   flex-direction: column;
 }
 
+.assistant-correlation-id {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-debug__search {
+  display: flex;
+  align-items: end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-debug__search label {
+  flex: 1 1 26rem;
+}
+
+.admin-debug__timeline {
+  display: grid;
+  gap: 0.8rem;
+  padding-left: 1.5rem;
+}
+
+.admin-debug__timeline li {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+}
+
+.admin-debug__timeline pre {
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.admin-debug__status {
+  width: fit-content;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.admin-debug__flow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.admin-debug__flow strong {
+  min-width: max-content;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
 .assistant-thread__viewport {
   flex: 1;
   overflow: auto;

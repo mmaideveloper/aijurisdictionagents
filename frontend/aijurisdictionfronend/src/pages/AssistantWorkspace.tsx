@@ -20,6 +20,7 @@ import {
   fetchSelectableModelProfiles,
   streamSession
 } from "../api/chatClient";
+import { createSessionCorrelationId, setActiveSessionCorrelationId } from "../api/correlation";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
@@ -601,8 +602,16 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
   const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData } = useCases();
   const activeCaseId = activeCase?.id;
-  const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string } | null>(
+  const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string; correlationId: string } | null>(
     null
+  );
+  const [correlationId, setCorrelationId] = React.useState("");
+
+  React.useEffect(
+    () => () => {
+      setActiveSessionCorrelationId("");
+    },
+    []
   );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
@@ -655,13 +664,25 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             existingSession.userId === userId &&
             existingSession.caseId === activeCaseId
               ? existingSession
-              : {
-                  language,
-                  userId,
-                  caseId: activeCaseId,
-                  sessionId: (await createChatSession({ language, userId, caseId: activeCaseId, modelProfileId: selectedModelProfileId })).id
-                };
+              : await (async () => {
+                  const requestedCorrelationId = createSessionCorrelationId();
+                  const created = await createChatSession({
+                    language,
+                    userId,
+                    caseId: activeCaseId,
+                    modelProfileId: selectedModelProfileId,
+                    correlationId: requestedCorrelationId
+                  });
+                  return {
+                    language,
+                    userId,
+                    caseId: activeCaseId,
+                    sessionId: created.id,
+                    correlationId: created.correlation_id || requestedCorrelationId
+                  };
+                })();
           sessionRef.current = session;
+          setCorrelationId(session.correlationId);
 
           let latestAssistantText = "";
           let latestPresentation: PresentationBlock | null = null;
@@ -680,7 +701,8 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
             userId,
             userEmail: user?.email,
             modelProfileId: selectedModelProfileId,
-            signal: options.abortSignal
+            signal: options.abortSignal,
+            correlationId: session.correlationId
           })) {
             if (streamEvent.event === "processing" || streamEvent.event === "waiting_for_reply") {
               const message = typeof streamEvent.data.message === "string" ? streamEvent.data.message.trim() : "";
@@ -822,6 +844,14 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="assistant-thread">
+        {correlationId ? (
+          <div className="assistant-correlation-id" role="status">
+            <span>{t("assistantCorrelationId")}: {correlationId}</span>
+            <button type="button" className="button ghost" onClick={() => void navigator.clipboard.writeText(correlationId)}>
+              {t("assistantCopyCorrelationId")}
+            </button>
+          </div>
+        ) : null}
         <ThreadPrimitive.Viewport className="assistant-thread__viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>

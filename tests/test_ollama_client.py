@@ -6,6 +6,7 @@ import pytest
 
 from aijurisdictionagents.llm.base import ModelProcessingTimeout, read_positive_finite_env_seconds
 from aijurisdictionagents.llm.ollama_client import OllamaClient, OllamaConfig
+from aijurisdictionagents.correlation import correlation_scope
 from aijurisdictionagents.schemas import Message
 
 
@@ -32,6 +33,7 @@ def test_ollama_client_uses_native_chat_without_thinking(monkeypatch: pytest.Mon
                 "url": req.full_url,
                 "payload": json.loads(req.data.decode("utf-8")),
                 "timeout": timeout,
+                "headers": dict(req.header_items()),
             }
         )
         return _FakeResponse({"message": {"role": "assistant", "content": "Odpoved pre pouzivatela."}})
@@ -46,16 +48,23 @@ def test_ollama_client_uses_native_chat_without_thinking(monkeypatch: pytest.Mon
         )
     )
 
-    content = client.complete(
-        "Lawyer",
-        "System prompt",
-        [Message(role="user", content="Chcem sudne rozhodnutie o prenajme", agent_name="User")],
-        [],
-    )
+    with correlation_scope(
+        correlation_id="corr-ollama-303",
+        session_id="session-303",
+        request_id="request-parent",
+    ):
+        content = client.complete(
+            "Lawyer",
+            "System prompt",
+            [Message(role="user", content="Chcem sudne rozhodnutie o prenajme", agent_name="User")],
+            [],
+        )
 
     assert content == "Odpoved pre pouzivatela."
     assert requests[0]["url"] == "http://ollama.local:11434/api/chat"
     assert requests[0]["timeout"] == 42
+    assert requests[0]["headers"]["X-correlation-id"] == "corr-ollama-303"
+    assert requests[0]["headers"]["X-parent-request-id"] == "request-parent"
     payload = requests[0]["payload"]
     assert payload["model"] == "qwen3:1.7b"
     assert payload["stream"] is False
