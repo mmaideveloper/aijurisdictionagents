@@ -452,17 +452,18 @@ class DocumentTemplateStore:
         jurisdiction: str | None = None,
     ) -> CaseTypeDefinition:
         normalized_key = case_type_key.strip().lower()
-        with self._connect() as conn:
-            if jurisdiction:
+        if jurisdiction:
+            with self._connect() as conn:
                 row = conn.execute(
                     self._sql("SELECT * FROM case_types WHERE case_type_key = ? AND jurisdiction = ?"),
                     self._params(normalized_key, jurisdiction.strip().upper()),
                 ).fetchone()
-                if row is None:
-                    raise CaseTypeNotFoundError(
-                        f"Case type '{case_type_key}' for jurisdiction '{jurisdiction}' was not found"
-                    )
-                return self._case_row_to_definition(_row_to_mapping(row))
+            if row is None:
+                raise CaseTypeNotFoundError(
+                    f"Case type '{case_type_key}' for jurisdiction '{jurisdiction}' was not found"
+                )
+            return self._case_row_to_definition(_row_to_mapping(row))
+        with self._connect() as conn:
             rows = conn.execute(
                 self._sql("SELECT * FROM case_types WHERE case_type_key = ?"),
                 self._params(normalized_key),
@@ -896,8 +897,113 @@ class DocumentTemplateStore:
         if row is not None and int(row["count"]) > 0:
             return
         templates = self.list(include_deleted=False, latest_only=True)
-        for item in build_default_case_types(templates):
-            self.create_case_type(item)
+        self._seed_case_types(
+            items=build_default_case_types(templates),
+            templates=templates,
+        )
+
+    def _seed_case_types(
+        self,
+        *,
+        items: builtins.list[CaseTypeCreateRequest],
+        templates: builtins.list[DocumentTemplateDefinition],
+    ) -> None:
+        template_ids = {
+            (template.template_key, template.jurisdiction): template.template_id
+            for template in templates
+        }
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            for item in items:
+                case_type_id = str(uuid4())
+                conn.execute(
+                    self._sql(
+                        """
+                        INSERT INTO case_types (
+                            case_type_id, case_type_key, jurisdiction, language, name, description,
+                            keywords_json, is_enabled, is_deleted, created_at, updated_at, deleted_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                        ON CONFLICT(jurisdiction, case_type_key) DO NOTHING
+                        """
+                    ),
+                    self._params(
+                        case_type_id,
+                        item.case_type_key.strip().lower(),
+                        item.jurisdiction.strip().upper(),
+                        (item.language or "").strip() or None,
+                        item.name.strip(),
+                        item.description.strip(),
+                        json.dumps(
+                            _dedupe_preserve_order(item.keywords),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        1 if item.is_enabled else 0,
+                        now,
+                        now,
+                    ),
+                )
+                row = conn.execute(
+                    self._sql(
+                        """
+                        SELECT case_type_id FROM case_types
+                        WHERE case_type_key = ? AND jurisdiction = ?
+                        """
+                    ),
+                    self._params(
+                        item.case_type_key.strip().lower(),
+                        item.jurisdiction.strip().upper(),
+                    ),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("Case type seed could not be persisted")
+                persisted_case_type_id = str(_row_to_mapping(row)["case_type_id"])
+                if item.prompt_text is not None and item.prompt_text.strip():
+                    conn.execute(
+                        self._sql(
+                            """
+                            INSERT INTO case_prompts (
+                                case_prompt_id, case_type_id, prompt_text, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(case_type_id) DO NOTHING
+                            """
+                        ),
+                        self._params(
+                            str(uuid4()),
+                            persisted_case_type_id,
+                            item.prompt_text.strip(),
+                            now,
+                            now,
+                        ),
+                    )
+                for template_key in _dedupe_preserve_order(item.template_keys):
+                    template_id = template_ids.get((template_key, item.jurisdiction))
+                    if template_id is None:
+                        raise DocumentTemplateNotFoundError(
+                            f"Template '{template_key}' for jurisdiction "
+                            f"'{item.jurisdiction}' was not found"
+                        )
+                    conn.execute(
+                        self._sql(
+                            """
+                            INSERT INTO case_type_templates (
+                                case_type_template_id, case_type_id, template_id,
+                                suitability_score, notes, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(case_type_id, template_id) DO NOTHING
+                            """
+                        ),
+                        self._params(
+                            str(uuid4()),
+                            persisted_case_type_id,
+                            template_id,
+                            100,
+                            "",
+                            now,
+                            now,
+                        ),
+                    )
+            conn.commit()
 
     def _refresh_seeded_case_type_descriptions(self) -> None:
         default_items = build_default_case_types(
@@ -905,23 +1011,31 @@ class DocumentTemplateStore:
         )
         if not default_items:
             return
+        with self._connect() as conn:
+            rows = conn.execute(
+                self._sql("SELECT case_type_key, jurisdiction, description FROM case_types")
+            ).fetchall()
+        current_descriptions = {
+            (
+                str(mapped["case_type_key"]),
+                str(mapped["jurisdiction"]),
+            ): str(mapped["description"])
+            for row in rows
+            for mapped in (_row_to_mapping(row),)
+        }
         updates: list[tuple[str, str, str, str]] = []
         for item in default_items:
-            try:
-                current = self.get_case_type(
-                    case_type_key=item.case_type_key,
-                    jurisdiction=item.jurisdiction,
-                )
-            except CaseTypeNotFoundError:
+            key = (item.case_type_key, item.jurisdiction)
+            if key not in current_descriptions:
                 continue
-            if current.description.strip() == item.description.strip():
+            if current_descriptions[key].strip() == item.description.strip():
                 continue
             updates.append(
                 (
                     item.description.strip(),
                     _utc_now_iso(),
-                    current.case_type_key,
-                    current.jurisdiction,
+                    item.case_type_key,
+                    item.jurisdiction,
                 )
             )
         if not updates:
