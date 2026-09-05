@@ -9,24 +9,35 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
-from pytest import MonkeyPatch
+from langgraph.checkpoint.sqlite import SqliteSaver
+from pytest import MonkeyPatch, raises
 from pypdf import PdfReader
 
 from app.ai_model_admin_api import AdminContext, require_ai_model_admin
-from app.case_workflows.models import WorkflowAssignmentRequest, WorkflowAssignmentResponse
+from app.case_workflows.models import (
+    WorkflowAssignmentRequest,
+    WorkflowAssignmentResponse,
+    WorkflowStartRequest,
+)
 from app.case_workflows.service import (
     CaseWorkflowApplicationService,
     ProductionCaseWorkflowServices,
+    WorkflowPersistenceMismatchError,
     _normalize_generated_draft,
     get_case_workflow_service,
     route_primary_chat_workflow_turn,
 )
-from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
+from app.case_workflows.store import (
+    CaseWorkflowStore,
+    CaseWorkflowStoreConfig,
+    WorkflowResumeConflictError,
+)
 from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
 from app.flow_packs.store import FlowPackStore, FlowPackStoreConfig
 from app.main import app
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
+    CaseWorkflowOutcome,
     DeterministicCaseWorkflowServices,
 )
 from aijurisdictionagents.schemas import Document
@@ -54,7 +65,10 @@ def test_generated_draft_preserves_only_missing_verified_facts() -> None:
 
 
 def _service(
-    tmp_path: Path, *, flow_store: FlowPackStore | None = None
+    tmp_path: Path,
+    *,
+    flow_store: FlowPackStore | None = None,
+    checkpointer: Any | None = None,
 ) -> CaseWorkflowApplicationService:
     flow_store = flow_store or FlowPackStore(
         FlowPackStoreConfig(
@@ -80,7 +94,7 @@ def _service(
                 legal_source_ids=("synthetic-law-1",),
                 tool_definitions=build_default_tool_registry().list_definitions(),
             ),
-            checkpointer=InMemorySaver(),
+            checkpointer=checkpointer or InMemorySaver(),
         ),
     )
     service.ensure_default_assignments()
@@ -573,6 +587,173 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
         assert event_types.index("workflow_interrupted") < event_types.index("workflow_resumed")
     finally:
         app.dependency_overrides.clear()
+
+
+def _durable_start_payload() -> WorkflowStartRequest:
+    return WorkflowStartRequest(
+        case_id="synthetic-durable-case",
+        session_id="synthetic-durable-session",
+        user_id="synthetic-durable-user",
+        jurisdiction="SK",
+        case_type_key="sk.civil.payment_confirmation",
+        request_text="Priprav syntetické potvrdenie.",
+        routing_confidence=1.0,
+        routing_evidence=["synthetic exact match"],
+        facts={},
+    )
+
+
+def test_sqlite_checkpoint_resumes_after_runtime_reconstruction(tmp_path: Path) -> None:
+    checkpoint_path = tmp_path / "case_workflow_checkpoints.sqlite3"
+    first_connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+    first_service = _service(
+        tmp_path,
+        checkpointer=SqliteSaver(first_connection),
+    )
+    first = first_service.start(_durable_start_payload())
+    first_connection.close()
+
+    second_connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+    try:
+        second_service = _service(
+            tmp_path,
+            checkpointer=SqliteSaver(second_connection),
+        )
+        resumed = second_service.resume(
+            first.workflow_run_id,
+            user_id=first.user_id,
+            value="Platiteľ A",
+            idempotency_key="restart-resume-753",
+        )
+    finally:
+        second_connection.close()
+
+    assert resumed.status == "waiting_for_user"
+    assert resumed.persistence_status == "consistent"
+    assert resumed.pending_action["field"] == "recipient_identification"
+
+
+def test_in_memory_checkpoint_restart_is_rejected_and_exposed(tmp_path: Path) -> None:
+    first_service = _service(tmp_path)
+    started = first_service.start(_durable_start_payload())
+    restarted_service = _service(tmp_path)
+
+    with raises(WorkflowPersistenceMismatchError):
+        restarted_service.resume(
+            started.workflow_run_id,
+            user_id=started.user_id,
+            value="Platiteľ A",
+            idempotency_key="missing-checkpoint-753",
+        )
+
+    state = restarted_service.store.get_run_state(
+        started.workflow_run_id, user_id=started.user_id
+    )
+    assert state["persistence_status"] == "checkpoint_projection_mismatch"
+    assert state["events"][-1]["event_type"] == "workflow_persistence_mismatch_detected"
+
+
+def test_checkpoint_projection_mismatch_is_reconciled_and_audited(tmp_path: Path) -> None:
+    connection = sqlite3.connect(
+        tmp_path / "case_workflow_checkpoints.sqlite3", check_same_thread=False
+    )
+    try:
+        service = _service(tmp_path, checkpointer=SqliteSaver(connection))
+        started = service.start(_durable_start_payload())
+        stale = service.store.get_run_state(started.workflow_run_id, user_id=started.user_id)
+        stale["checkpoint_marker"] = "stale-checkpoint-marker"
+        assignment = service.store.get_run(started.workflow_run_id, user_id=started.user_id)
+        service.store.save_run(
+            assignment_id=assignment.assignment_id,
+            outcome=CaseWorkflowOutcome(state=stale, interrupts=()),
+            created_at=assignment.created_at.isoformat(),
+        )
+
+        resumed = service.resume(
+            started.workflow_run_id,
+            user_id=started.user_id,
+            value="Platiteľ A",
+            idempotency_key="reconcile-resume-753",
+        )
+        event_types = [
+            event.event_type
+            for event in service.store.list_events(
+                started.workflow_run_id, user_id=started.user_id
+            )
+        ]
+    finally:
+        connection.close()
+
+    assert resumed.status == "waiting_for_user"
+    assert "workflow_projection_reconciled" in event_types
+
+
+def test_resume_idempotency_and_concurrent_checkpoint_claim(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    started = service.start(_durable_start_payload())
+    state = service.store.get_run_state(started.workflow_run_id, user_id=started.user_id)
+    first_claim = service.store.claim_resume(
+        state=state,
+        value="Platiteľ A",
+        idempotency_key="concurrent-resume-753-a",
+    )
+    with raises(WorkflowResumeConflictError):
+        service.store.claim_resume(
+            state=state,
+            value="Platiteľ B",
+            idempotency_key="concurrent-resume-753-b",
+        )
+    service.store.finish_resume_claim(first_claim.claim_id, succeeded=False)
+
+    first = service.resume(
+        started.workflow_run_id,
+        user_id=started.user_id,
+        value="Platiteľ A",
+        idempotency_key="idempotent-resume-753",
+    )
+    repeated = service.resume(
+        started.workflow_run_id,
+        user_id=started.user_id,
+        value="Platiteľ A",
+        idempotency_key="idempotent-resume-753",
+    )
+
+    assert repeated.pending_action == first.pending_action
+    events = service.store.list_events(started.workflow_run_id, user_id=started.user_id)
+    assert sum(event.event_type == "workflow_resumed" for event in events) == 1
+
+
+def test_case_deletion_removes_resume_claims_and_local_checkpoints(tmp_path: Path) -> None:
+    checkpoint_path = tmp_path / "case_workflow_checkpoints.sqlite3"
+    connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+    service = _service(tmp_path, checkpointer=SqliteSaver(connection))
+    started = service.start(_durable_start_payload())
+    state = service.store.get_run_state(started.workflow_run_id, user_id=started.user_id)
+    claim = service.store.claim_resume(
+        state=state,
+        value="Platiteľ A",
+        idempotency_key="deletion-resume-753",
+    )
+    service.store.finish_resume_claim(claim.claim_id, succeeded=True)
+    connection.close()
+
+    deleted = service.store.delete_case_workflows(
+        case_id=started.case_id, user_id=started.user_id
+    )
+
+    with sqlite3.connect(tmp_path / "workflows.sqlite3") as workflow_db:
+        claim_count = workflow_db.execute(
+            "SELECT COUNT(*) FROM workflow_resume_claims WHERE workflow_run_id = ?",
+            (started.workflow_run_id,),
+        ).fetchone()[0]
+    with sqlite3.connect(checkpoint_path) as checkpoint_db:
+        checkpoint_count = checkpoint_db.execute(
+            "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?",
+            (started.workflow_run_id,),
+        ).fetchone()[0]
+    assert deleted == 1
+    assert claim_count == 0
+    assert checkpoint_count == 0
 
 
 def test_api_cancel_is_persisted_and_does_not_duplicate_terminal_event(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -41,6 +42,16 @@ class WorkflowRunNotFoundError(KeyError):
 
 class WorkflowOwnershipError(PermissionError):
     pass
+
+
+class WorkflowResumeConflictError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class WorkflowResumeClaim:
+    claim_id: str
+    status: Literal["acquired", "completed"]
 
 
 class CaseWorkflowStore:
@@ -290,6 +301,122 @@ class CaseWorkflowStore:
             conn.commit()
         return self.get_run(state["workflow_run_id"], user_id=state.get("user_id", ""))
 
+    def claim_resume(
+        self,
+        *,
+        state: CaseWorkflowState,
+        value: Any,
+        idempotency_key: str | None,
+    ) -> WorkflowResumeClaim:
+        checkpoint_id = state.get("checkpoint_marker", "").strip()
+        if not checkpoint_id:
+            raise WorkflowResumeConflictError("Workflow checkpoint identity is unavailable")
+        encoded_value = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        request_fingerprint = sha256(encoded_value.encode("utf-8")).hexdigest()
+        supplied_key = (idempotency_key or "").strip()
+        claim_id = (
+            sha256(
+                f"client:{state['workflow_run_id']}:{supplied_key}".encode("utf-8")
+            ).hexdigest()
+            if supplied_key
+            else sha256(
+                f"{state['workflow_run_id']}:{checkpoint_id}:{request_fingerprint}".encode(
+                    "utf-8"
+                )
+            ).hexdigest()
+        )
+        now = _utc_now()
+        with self._connect() as conn:
+            prior_claim = conn.execute(
+                self._sql(
+                    "SELECT checkpoint_id, request_fingerprint, status "
+                    "FROM workflow_resume_claims "
+                    "WHERE claim_id = ?"
+                ),
+                (claim_id,),
+            ).fetchone()
+            if prior_claim is not None:
+                mapped_prior = _row(prior_claim)
+                if str(mapped_prior["request_fingerprint"]) != request_fingerprint:
+                    raise WorkflowResumeConflictError(
+                        "The idempotency key was already used with a different resume value"
+                    )
+                if str(mapped_prior["status"]) == "completed":
+                    return WorkflowResumeClaim(claim_id=claim_id, status="completed")
+                if str(mapped_prior["checkpoint_id"]) != checkpoint_id:
+                    conn.execute(
+                        self._sql(
+                            "UPDATE workflow_resume_claims SET status = 'completed', "
+                            "updated_at = ? WHERE claim_id = ?"
+                        ),
+                        (now, claim_id),
+                    )
+                    conn.commit()
+                    return WorkflowResumeClaim(claim_id=claim_id, status="completed")
+                raise WorkflowResumeConflictError(
+                    "The workflow resume request is already in progress"
+                )
+            inserted = conn.execute(
+                self._sql(
+                    """
+                    INSERT INTO workflow_resume_claims(
+                        claim_id, workflow_run_id, checkpoint_id, request_fingerprint,
+                        status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'in_progress', ?, ?)
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                (
+                    claim_id,
+                    state["workflow_run_id"],
+                    checkpoint_id,
+                    request_fingerprint,
+                    now,
+                    now,
+                ),
+            )
+            row = conn.execute(
+                self._sql(
+                    "SELECT claim_id, request_fingerprint, status FROM workflow_resume_claims "
+                    "WHERE workflow_run_id = ? AND checkpoint_id = ?"
+                ),
+                (state["workflow_run_id"], checkpoint_id),
+            ).fetchone()
+            conn.commit()
+        if row is None:
+            raise WorkflowResumeConflictError("Workflow resume claim could not be created")
+        mapped = _row(row)
+        if str(mapped["claim_id"]) != claim_id:
+            raise WorkflowResumeConflictError(
+                "Another resume request already owns this workflow checkpoint"
+            )
+        if str(mapped["request_fingerprint"]) != request_fingerprint:
+            raise WorkflowResumeConflictError(
+                "The idempotency key was already used with a different resume value"
+            )
+        if str(mapped["status"]) == "completed":
+            return WorkflowResumeClaim(claim_id=claim_id, status="completed")
+        if inserted.rowcount <= 0:
+            raise WorkflowResumeConflictError("The workflow resume request is already in progress")
+        return WorkflowResumeClaim(claim_id=claim_id, status="acquired")
+
+    def finish_resume_claim(self, claim_id: str, *, succeeded: bool) -> None:
+        with self._connect() as conn:
+            if succeeded:
+                conn.execute(
+                    self._sql(
+                        "UPDATE workflow_resume_claims SET status = 'completed', updated_at = ? "
+                        "WHERE claim_id = ?"
+                    ),
+                    (_utc_now(), claim_id),
+                )
+            else:
+                conn.execute(
+                    self._sql("DELETE FROM workflow_resume_claims WHERE claim_id = ?"),
+                    (claim_id,),
+                )
+            conn.commit()
+
     def get_run_state(self, workflow_run_id: str, *, user_id: str) -> CaseWorkflowState:
         row = self._get_run_row(workflow_run_id, user_id=user_id)
         return CaseWorkflowState(**json.loads(str(row["state_json"])))
@@ -333,6 +460,10 @@ class CaseWorkflowStore:
             input_attempt_count=int(state.get("input_attempt_count", 0)),
             quality_revision_count=int(state.get("quality_revision_count", 0)),
             technical_retry_count=int(state.get("technical_retry_count", 0)),
+            retry_count=int(state.get("retry_count", 0)),
+            max_revision_attempts=int(state.get("max_revision_attempts", 0)),
+            critiques=list(state.get("critiques", [])),
+            persistence_status=str(state.get("persistence_status", "")),
             created_at=_datetime(str(row["created_at"])),
             updated_at=_datetime(str(row["updated_at"])),
         )
@@ -575,6 +706,10 @@ class CaseWorkflowStore:
                 checkpoint_tables = tuple(available)
             for run_id in run_ids:
                 conn.execute(
+                    self._sql("DELETE FROM workflow_resume_claims WHERE workflow_run_id = ?"),
+                    (run_id,),
+                )
+                conn.execute(
                     self._sql(
                         "DELETE FROM orchestration_decision_traces WHERE workflow_run_id = ?"
                     ),
@@ -594,6 +729,22 @@ class CaseWorkflowStore:
                 (case_id, user_id),
             )
             conn.commit()
+        if not self._is_postgres and self.sqlite_checkpoint_path.exists():
+            with sqlite3.connect(self.sqlite_checkpoint_path) as checkpoint_conn:
+                available_tables = {
+                    str(row[0])
+                    for row in checkpoint_conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+                for run_id in run_ids:
+                    for table_name in ("checkpoint_writes", "checkpoints", "checkpoint_blobs"):
+                        if table_name in available_tables:
+                            checkpoint_conn.execute(
+                                f"DELETE FROM {table_name} WHERE thread_id = ?",  # noqa: S608
+                                (run_id,),
+                            )
+                checkpoint_conn.commit()
         return len(run_ids)
 
     def _get_run_row(self, workflow_run_id: str, *, user_id: str) -> dict[str, Any]:
@@ -639,6 +790,14 @@ class CaseWorkflowStore:
     @property
     def _is_postgres(self) -> bool:
         return self._config.db_option in {"postgres", "azure"}
+
+    @property
+    def uses_postgres(self) -> bool:
+        return self._is_postgres
+
+    @property
+    def sqlite_checkpoint_path(self) -> Path:
+        return self._config.sqlite_path.with_name("case_workflow_checkpoints.sqlite3")
 
     @contextmanager
     def _connect(self) -> Iterator[Any]:

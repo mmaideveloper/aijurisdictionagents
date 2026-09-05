@@ -1,13 +1,100 @@
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
+
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
+from aijurisdictionagents.orchestration.case_workflow import (
+    CaseWorkflowRuntime,
+    DeterministicCaseWorkflowServices,
+    build_initial_case_workflow_state,
+)
+
+
+class _ReflectionDemoServices(DeterministicCaseWorkflowServices):
+    def draft_documents(self, state):
+        answer, artifacts = super().draft_documents(state)
+        if state.get("quality_revision_count", 0) == 0:
+            return "Synthetic draft [unresolved]", artifacts
+        return answer, artifacts
+
+
+def _run_reflection_resume_demo() -> None:
+    run_id = str(uuid4())
+    with tempfile.TemporaryDirectory() as directory:
+        checkpoint_path = Path(directory) / "case-workflow-checkpoints.sqlite3"
+        services = _ReflectionDemoServices(
+            legal_requirements=({"content": "Synthetic legal requirement"},),
+            legal_source_ids=("synthetic-law-reflection",),
+        )
+        first_connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+        first_runtime = CaseWorkflowRuntime(
+            services=services,
+            checkpointer=SqliteSaver(first_connection),
+        )
+        waiting = first_runtime.start(
+            build_initial_case_workflow_state(
+                workflow_run_id=run_id,
+                correlation_id=str(uuid4()),
+                case_id="synthetic-reflection-case",
+                session_id="synthetic-reflection-session",
+                user_id="synthetic-reflection-user",
+                jurisdiction="SK",
+                language="sk-SK",
+                request_text="Prepare a synthetic payment confirmation.",
+                case_type_key="sk.civil.payment_confirmation",
+                routing_confidence=1.0,
+                routing_evidence=("synthetic exact match",),
+                graph_key="legal_document_workflow",
+                graph_version=2,
+                flow_key="sk.civil.payment_confirmation",
+                flow_version=1,
+                flow_definition={
+                    "required_facts": ["payer", "amount"],
+                    "mcp_retrieval": {
+                        "schema_version": 1,
+                        "policy_id": "demo.reflection.v1",
+                        "required": True,
+                        "case_type_keys": ["sk.civil.payment_confirmation"],
+                        "jurisdictions": ["SK"],
+                        "query_keys": ["payment_confirmation_legal_requirements"],
+                        "default_query": "payment confirmation",
+                    },
+                },
+                facts={"payer": "Synthetic payer"},
+            )
+        )
+        assert waiting.is_waiting
+        first_connection.close()
+
+        second_connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+        second_runtime = CaseWorkflowRuntime(
+            services=services,
+            checkpointer=SqliteSaver(second_connection),
+        )
+        completed = second_runtime.resume(
+            graph_key="legal_document_workflow",
+            graph_version=2,
+            workflow_run_id=run_id,
+            value={"amount": "100 EUR"},
+        )
+        second_connection.close()
+
+    assert completed.state["status"] == "completed"
+    assert completed.state["quality_revision_count"] == 1
+    assert completed.state["critiques"][0]["failure_category"] == "unresolved_placeholder"
+    print(
+        "langgraph_reflection_resume => durable SQLite restart resumed; "
+        "one sanitized critique triggered one bounded revision and completed."
+    )
 
 MINIMUM_PYTHON = (3, 13)
 if sys.version_info < MINIMUM_PYTHON:
@@ -54,6 +141,7 @@ print(
     "provenance, retry exhaustion, and recursion overflow produce one sanitized "
     "workflow_terminated event plus a stable termination_reason for human oversight."
 )
+_run_reflection_resume_demo()
 print(
     "assistant_presentation => internal LangGraph identifiers stay audit-visible while the frontend "
     "shows AI Orchestrator Agent and safely converts numeric character references such as &#x20; to "

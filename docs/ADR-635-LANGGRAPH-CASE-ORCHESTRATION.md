@@ -24,3 +24,19 @@ Terminal paths persist a stable reason code and one sanitized `workflow_terminat
 consent, provenance, and mandatory legal-risk failures bypass autonomous revision and require a
 blocked or human-review outcome. Reflection added later must reuse this contract rather than
 introduce an independent retry counter.
+
+Issue 753 implements that contract as an explicit
+`draft -> validate -> critique -> revise -> validate` route. Critiques use stable failure categories
+and policy-owned revision instructions; prompts, hidden reasoning, and case text are not copied into
+the audit ledger. `quality_revision_count` is the authoritative bounded counter, while the persisted
+`retry_count` and `max_revision_attempts` fields provide compatibility-facing names for the same
+quality-revision budget. Privacy, consent, missing-provenance, and mandatory legal-risk failures
+still bypass the loop and enter human oversight immediately.
+
+Production and local application runtimes must use durable checkpoints. PostgreSQL remains the
+shared multi-replica checkpointer; local SQLite uses a dedicated checkpoint file under
+`runs/storage/api/sqlite/`. `InMemorySaver` is supported only by isolated deterministic tests and
+examples that make no restart guarantee. The application projection records the durable checkpoint
+marker, reconciles from the checkpoint when it detects an interrupted projection write, and exposes
+a recoverable operational conflict when the checkpoint is missing. A per-checkpoint resume claim
+and optional client idempotency key prevent duplicate lifecycle execution.

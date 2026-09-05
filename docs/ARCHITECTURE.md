@@ -119,3 +119,15 @@ allowlisted verified-fact aliases; raw personal facts and unrestricted model-gen
 excluded. The legacy orchestrator remains
 available as a fail-closed rollout fallback. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md` and
 `docs/ADR-635-LANGGRAPH-CASE-ORCHESTRATION.md`.
+
+Recoverable output-quality failures follow a bounded `draft -> critique -> revise -> validate`
+cycle. Each revision stores a stable category, policy-owned instruction, revision number,
+provider/model route, and artifact parent reference. No prompt, hidden reasoning, or duplicated case
+content is required for this trace. Privacy, consent, provenance, and mandatory legal-risk failures
+remain non-recoverable and route directly to human oversight.
+
+Checkpoint durability is explicit: deployed/shared runtimes use PostgreSQL; local application
+runtimes use the SQLite checkpointer at `runs/storage/api/sqlite/case_workflow_checkpoints.sqlite3`.
+The JSON run projection stores a checkpoint marker and is reconciled from the checkpointer when a
+partial write is detected. Resume claims are unique per checkpoint, and callers may provide an
+idempotency key to make retries side-effect free.

@@ -9,8 +9,6 @@ import os
 from typing import Any, Sequence, cast
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import InMemorySaver
-
 from app.case_types.models import CaseTypeCreateRequest, CaseTypeUpdateRequest
 from app.case_workflows.models import (
     WorkflowAssignmentRequest,
@@ -48,9 +46,14 @@ from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
+    CaseWorkflowOutcome,
     CaseWorkflowState,
+    OutputCritique,
     ReviewDisposition,
     build_initial_case_workflow_state,
+    merge_projected_events,
+    reconcile_checkpoint_projection,
+    record_persistence_mismatch,
 )
 from aijurisdictionagents.orchestration.primary_router import (
     PrimaryClassification,
@@ -75,6 +78,10 @@ from aijurisdictionagents.tools.base import ToolDefinition
 
 
 class WorkflowConfigurationError(ValueError):
+    pass
+
+
+class WorkflowPersistenceMismatchError(RuntimeError):
     pass
 
 
@@ -307,6 +314,13 @@ class ProductionCaseWorkflowServices:
             "provided JurisDigta MCP legal requirements. Never invent a missing fact, never expose "
             "hidden reasoning, and clearly mark the result as AI-assisted and subject to human review."
         )
+        critique = state.get("current_critique", {})
+        revision_instruction = str(critique.get("revision_instruction", "")).strip()
+        if state.get("quality_revision_count", 0) and revision_instruction:
+            prompt += (
+                " This is a bounded revision. Apply this policy-owned instruction: "
+                f"{revision_instruction}"
+            )
         answer = lawyer.respond(
             conversation=[
                 Message(
@@ -349,6 +363,17 @@ class ProductionCaseWorkflowServices:
         if missing_values:
             return False, "verified_fact_missing_from_output"
         return True, "verified_facts_preserved"
+
+    def critique_output(self, state: CaseWorkflowState, reason: str) -> OutputCritique:
+        artifact = state.get("artifacts", [])[-1] if state.get("artifacts") else {}
+        return OutputCritique(
+            failure_category="output_quality",
+            revision_instruction=reason,
+            recoverable=True,
+            provider=str(artifact.get("provider", "")),
+            model=str(artifact.get("model", "")),
+            route_type=str(artifact.get("route_type", "")),
+        )
 
     def review_safety_and_gdpr(self, state: CaseWorkflowState) -> tuple[bool, str]:
         executed = {str(item.get("tool_name", "")) for item in state.get("tool_results", [])}
@@ -553,21 +578,69 @@ class CaseWorkflowApplicationService:
         outcome = self.runtime.start(state)
         return self.store.save_run(assignment_id=assignment.assignment_id, outcome=outcome)
 
-    def resume(self, workflow_run_id: str, *, user_id: str, value: Any) -> WorkflowRunResponse:
+    def resume(
+        self,
+        workflow_run_id: str,
+        *,
+        user_id: str,
+        value: Any,
+        idempotency_key: str | None = None,
+    ) -> WorkflowRunResponse:
         prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
-        outcome = self.runtime.resume(
+        run = self.store.get_run(workflow_run_id, user_id=user_id)
+        if prior.get("termination_reason"):
+            return run
+        checkpoint = self.runtime.get_checkpoint_outcome(
             graph_key=prior["graph_key"],
             graph_version=prior["graph_version"],
             workflow_run_id=workflow_run_id,
-            value=value,
+        )
+        if checkpoint is None:
+            mismatch = record_persistence_mismatch(prior, reason="durable_checkpoint_missing")
+            self.store.save_run(
+                assignment_id=run.assignment_id,
+                outcome=CaseWorkflowOutcome(state=mismatch, interrupts=()),
+                created_at=run.created_at.isoformat(),
+            )
+            raise WorkflowPersistenceMismatchError(
+                "The durable workflow checkpoint is unavailable; restore it before resuming"
+            )
+        if checkpoint.state.get("checkpoint_marker") != prior.get("checkpoint_marker"):
+            checkpoint = reconcile_checkpoint_projection(prior, checkpoint)
+            run = self.store.save_run(
+                assignment_id=run.assignment_id,
+                outcome=checkpoint,
+                created_at=run.created_at.isoformat(),
+            )
+            prior = checkpoint.state
+            if prior.get("termination_reason"):
+                return run
+        claim = self.store.claim_resume(
             state=prior,
+            value=value,
+            idempotency_key=idempotency_key,
         )
-        run = self.store.get_run(workflow_run_id, user_id=user_id)
-        return self.store.save_run(
-            assignment_id=run.assignment_id,
-            outcome=outcome,
-            created_at=run.created_at.isoformat(),
-        )
+        if claim.status == "completed":
+            return self.store.get_run(workflow_run_id, user_id=user_id)
+        try:
+            outcome = self.runtime.resume(
+                graph_key=prior["graph_key"],
+                graph_version=prior["graph_version"],
+                workflow_run_id=workflow_run_id,
+                value=value,
+                state=prior,
+            )
+            outcome = merge_projected_events(prior, outcome)
+            saved = self.store.save_run(
+                assignment_id=run.assignment_id,
+                outcome=outcome,
+                created_at=run.created_at.isoformat(),
+            )
+        except Exception:
+            self.store.finish_resume_claim(claim.claim_id, succeeded=False)
+            raise
+        self.store.finish_resume_claim(claim.claim_id, succeeded=True)
+        return saved
 
     def cancel(self, workflow_run_id: str, *, user_id: str) -> WorkflowRunResponse:
         prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
@@ -745,6 +818,7 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
 
     os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
     api_store = ApiDatabaseStore.from_env()
+    workflow_store = CaseWorkflowStore.from_env()
     if api_store.uses_postgres:
         from langgraph.checkpoint.postgres import PostgresSaver
         from psycopg.rows import dict_row
@@ -761,8 +835,14 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
         checkpointer: Any = PostgresSaver(pool)
         checkpointer.setup()
     else:
-        checkpointer = InMemorySaver()
-    workflow_store = CaseWorkflowStore.from_env()
+        import sqlite3
+
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        checkpoint_path = workflow_store.sqlite_checkpoint_path
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(checkpoint_path, check_same_thread=False)
+        checkpointer = SqliteSaver(connection)
     runtime = CaseWorkflowRuntime(
         services=ProductionCaseWorkflowServices(
             api_store=api_store,
