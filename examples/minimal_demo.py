@@ -48,6 +48,12 @@ print(
     "review, and sanitized ordered audit events without external data or credentials."
 )
 print(
+    "langgraph_termination_contract => every loop has persisted input, quality-revision, "
+    "technical-retry, and no-progress counters; cancellation, expiry, deadlines, privacy, "
+    "provenance, retry exhaustion, and recursion overflow produce one sanitized "
+    "workflow_terminated event plus a stable termination_reason for human oversight."
+)
+print(
     "assistant_presentation => internal LangGraph identifiers stay audit-visible while the frontend "
     "shows AI Orchestrator Agent and safely converts numeric character references such as &#x20; to "
     "plain Unicode text without enabling HTML rendering; run the focused frontend Vitest example "

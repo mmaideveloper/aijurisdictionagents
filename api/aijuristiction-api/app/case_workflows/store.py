@@ -172,6 +172,7 @@ class CaseWorkflowStore:
         state = outcome.state
         now = _utc_now()
         created = created_at or now
+        write_events = True
         with self._connect() as conn:
             existing = conn.execute(
                 self._sql("SELECT created_at FROM case_workflow_runs WHERE workflow_run_id = ?"),
@@ -179,19 +180,22 @@ class CaseWorkflowStore:
             ).fetchone()
             if existing is not None:
                 created = str(_row(existing)["created_at"])
-                conn.execute(
+                cursor = conn.execute(
                     self._sql(
-                        "UPDATE case_workflow_runs SET status = ?, current_stage = ?, state_json = ?, "
-                        "updated_at = ? WHERE workflow_run_id = ?"
+                        "UPDATE case_workflow_runs SET status = ?, current_stage = ?, "
+                        "termination_reason = ?, state_json = ?, updated_at = ? "
+                        "WHERE workflow_run_id = ? AND termination_reason = ''"
                     ),
                     (
                         state["status"],
                         state["stage"],
+                        state.get("termination_reason", ""),
                         json.dumps(state, ensure_ascii=False, sort_keys=True),
                         now,
                         state["workflow_run_id"],
                     ),
                 )
+                write_events = cursor.rowcount > 0
             else:
                 conn.execute(
                     self._sql(
@@ -199,9 +203,9 @@ class CaseWorkflowStore:
                         INSERT INTO case_workflow_runs(
                             workflow_run_id, correlation_id, case_id, session_id, user_id,
                             jurisdiction, case_type_key, assignment_id, graph_key, graph_version,
-                            flow_key, flow_version, status, current_stage, state_json, created_at,
-                            updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            flow_key, flow_version, status, current_stage, termination_reason,
+                            state_json, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """
                     ),
                     (
@@ -219,33 +223,35 @@ class CaseWorkflowStore:
                         state["flow_version"],
                         state["status"],
                         state["stage"],
+                        state.get("termination_reason", ""),
                         json.dumps(state, ensure_ascii=False, sort_keys=True),
                         created,
                         now,
                     ),
                 )
-            for event in state.get("events", []):
-                conn.execute(
-                    self._sql(
-                        """
-                        INSERT INTO case_workflow_events(
-                            event_id, workflow_run_id, correlation_id, event_type, stage,
-                            status, details_json, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(event_id) DO NOTHING
-                        """
-                    ),
-                    (
-                        event["event_id"],
-                        state["workflow_run_id"],
-                        state["correlation_id"],
-                        event["event_type"],
-                        event["stage"],
-                        event["status"],
-                        json.dumps(event["details"], ensure_ascii=False, sort_keys=True),
-                        event["created_at"],
-                    ),
-                )
+            if write_events:
+                for event in state.get("events", []):
+                    conn.execute(
+                        self._sql(
+                            """
+                            INSERT INTO case_workflow_events(
+                                event_id, workflow_run_id, correlation_id, event_type, stage,
+                                status, details_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(event_id) DO NOTHING
+                            """
+                        ),
+                        (
+                            event["event_id"],
+                            state["workflow_run_id"],
+                            state["correlation_id"],
+                            event["event_type"],
+                            event["stage"],
+                            event["status"],
+                            json.dumps(event["details"], ensure_ascii=False, sort_keys=True),
+                            event["created_at"],
+                        ),
+                    )
             conn.commit()
         return self.get_run(state["workflow_run_id"], user_id=state.get("user_id", ""))
 
@@ -286,6 +292,12 @@ class CaseWorkflowStore:
             tool_results=list(state.get("tool_results", [])),
             review_decisions=dict(state.get("review_decisions", {})),
             escalation_reason=str(state.get("escalation_reason", "")),
+            termination_reason=cast(
+                Any, state.get("termination_reason", "") or str(row["termination_reason"])
+            ),
+            input_attempt_count=int(state.get("input_attempt_count", 0)),
+            quality_revision_count=int(state.get("quality_revision_count", 0)),
+            technical_retry_count=int(state.get("technical_retry_count", 0)),
             created_at=_datetime(str(row["created_at"])),
             updated_at=_datetime(str(row["updated_at"])),
         )
@@ -480,15 +492,26 @@ class CaseWorkflowStore:
                 (case_id, user_id),
             ).fetchall()
             run_ids = [str(_row(row)["workflow_run_id"]) for row in rows]
+            checkpoint_tables: tuple[str, ...] = ()
+            if self._is_postgres:
+                available: list[str] = []
+                for table_name in ("checkpoint_writes", "checkpoints", "checkpoint_blobs"):
+                    table_row = conn.execute(
+                        "SELECT to_regclass(%s) AS table_name", (table_name,)
+                    ).fetchone()
+                    if table_row is not None and _row(table_row)["table_name"] is not None:
+                        available.append(table_name)
+                checkpoint_tables = tuple(available)
             for run_id in run_ids:
                 conn.execute(
                     self._sql("DELETE FROM case_workflow_events WHERE workflow_run_id = ?"),
                     (run_id,),
                 )
-                if self._is_postgres:
-                    conn.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (run_id,))
-                    conn.execute("DELETE FROM checkpoints WHERE thread_id = %s", (run_id,))
-                    conn.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (run_id,))
+                for table_name in checkpoint_tables:
+                    conn.execute(
+                        f"DELETE FROM {table_name} WHERE thread_id = %s",  # noqa: S608
+                        (run_id,),
+                    )
             conn.execute(
                 self._sql("DELETE FROM case_workflow_runs WHERE case_id = ? AND user_id = ?"),
                 (case_id, user_id),
@@ -520,6 +543,20 @@ class CaseWorkflowStore:
                         conn.execute(statement)
             else:
                 conn.executescript(schema)
+            if self._is_postgres:
+                conn.execute(
+                    "ALTER TABLE case_workflow_runs ADD COLUMN IF NOT EXISTS "
+                    "termination_reason TEXT NOT NULL DEFAULT ''"
+                )
+            else:
+                columns = {
+                    str(row[1]) for row in conn.execute("PRAGMA table_info(case_workflow_runs)")
+                }
+                if "termination_reason" not in columns:
+                    conn.execute(
+                        "ALTER TABLE case_workflow_runs ADD COLUMN "
+                        "termination_reason TEXT NOT NULL DEFAULT ''"
+                    )
             conn.commit()
 
     @property
