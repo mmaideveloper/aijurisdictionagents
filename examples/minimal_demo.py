@@ -45,7 +45,8 @@ print(
     "active mode first routes every question through PrimaryLangGraphRouter, discovers only active "
     "published dedicated flows, asks on ambiguity, and otherwise uses the generic graph route; the "
     "case demo proves pinned versions, interrupt/resume, constrained tool consent, deterministic "
-    "review, and sanitized ordered audit events without external data or credentials."
+    "review, and a schema-v1 privacy-safe decision trace with no prompts, fact values, source "
+    "bodies, raw tool payloads, external data, or credentials."
 )
 print(
     "assistant_presentation => internal LangGraph identifiers stay audit-visible while the frontend "

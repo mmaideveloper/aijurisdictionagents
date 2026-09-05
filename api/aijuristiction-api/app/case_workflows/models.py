@@ -106,3 +106,71 @@ class WorkflowEventResponse(BaseModel):
 
 class WorkflowEventListResponse(BaseModel):
     items: list[WorkflowEventResponse]
+
+
+class DecisionRecordResponse(BaseModel):
+    decision_type: str
+    policy_id: str
+    policy_version: str
+    candidate_ids: list[str] = Field(default_factory=list)
+    field_ids: list[str] = Field(default_factory=list)
+    metrics: dict[str, int] = Field(default_factory=dict)
+    selected_outcome: str
+    reason_code: str
+    confidence_band: str
+    calibrated_score: float | None = None
+    fallback: bool
+    escalation: bool
+    human_review_required: bool
+
+
+class EvidenceReferenceResponse(BaseModel):
+    evidence_type: str
+    reference_id: str
+    content_hash: str = ""
+    version: str = ""
+    verification_status: str
+
+
+class TracePrivacyMetadataResponse(BaseModel):
+    data_classification: str
+    redaction_policy: str
+    redaction_policy_version: str
+    retention_class: str
+    user_export_allowed: bool
+    operator_telemetry_allowed: bool
+    evaluation_artifact_allowed: bool
+
+
+class OrchestrationDecisionTraceResponse(BaseModel):
+    schema_version: int
+    event_id: str
+    created_at: datetime
+    session_id: str
+    correlation_id: str
+    workflow_run_id: str = ""
+    case_id: str = ""
+    turn_id: str = ""
+    question_id: str = ""
+    answer_id: str = ""
+    orchestrator_version: str = ""
+    graph_version: str = ""
+    flow_version: str = ""
+    stage: str
+    actor: Literal["system", "model", "orchestrator"]
+    event_type: str
+    status: str
+    decision: DecisionRecordResponse
+    evidence: list[EvidenceReferenceResponse] = Field(default_factory=list)
+    privacy: TracePrivacyMetadataResponse
+    provider_id: str = ""
+    model_id: str = ""
+    model_audit_id: str = ""
+    execution_event_id: str = ""
+
+
+class DecisionTraceListResponse(BaseModel):
+    items: list[OrchestrationDecisionTraceResponse]
+    limit: int
+    offset: int
+    next_offset: int | None = None

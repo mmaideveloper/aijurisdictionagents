@@ -6,7 +6,9 @@
 - Orchestration: `Orchestrator` manages the turn-taking and synthesis.
 - Documents: `load_documents` ingests files from `data/` and `select_sources` builds citations.
 - Cases: `CaseStore` persists Slovak advice cases to `cases/` (case.json, documents, discussion logs).
-- Observability: `TraceRecorder` writes `trace.jsonl` and `setup_logging` writes `run.log`.
+- Observability: `TraceRecorder` writes privacy-safe local `trace.jsonl` metadata and versioned
+  orchestration decisions; `setup_logging` writes `run.log`. Raw prompts, messages, source bodies,
+  tool payloads, credentials, and hidden model reasoning are excluded.
 - LLM Clients: `MockLLMClient` for offline runs, `OpenAIClient` for OpenAI, and `AzureFoundryClient` for Azure OpenAI.
 - Logs include the LLM provider name and client class at startup.
 - Azure Foundry logs auth method plus endpoint, deployment, API version, and temperature on client init.
@@ -33,6 +35,19 @@ Each agent message includes:
 8. Discussion continues while follow-up questions are provided, or until the max discussion time is reached (default 15 minutes, 0 = unlimited).
 9. Orchestrator synthesizes a final recommendation and rationale in the requested output language and stores trace artifacts.
 10. For Slovak advice runs, the CLI persists a case folder under `cases/` with documents and discussion logs.
+
+## Structured orchestration decision traces
+
+Legacy and LangGraph orchestration share `OrchestrationTraceEnvelope` schema v1. Each record carries
+the owning `session_id`, correlation and workflow identifiers, actor, stage, status, a stable policy
+and reason code, bounded candidate identifiers, evidence references, and human-review/escalation
+flags. The record is an audit aid, not chain-of-thought or an independent legal justification.
+
+Every local, durable, or telemetry integration must call the shared allowlist serializer first.
+Unknown fields and narrative identifier values are rejected. The API persists the sanitized payload
+in `orchestration_decision_traces`, ordered by session and timestamp. Optional local observability
+failures do not alter an answer; the durable workflow write is transactional so a required legal-risk
+audit record cannot silently disappear.
 
 ## API document-task planning
 

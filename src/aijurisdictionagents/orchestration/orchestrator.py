@@ -39,6 +39,8 @@ class Orchestrator:
         discussion_type: str = "advice",
         user_response_provider: UserResponseProvider | None = None,
         message_callback: MessageCallback | None = None,
+        session_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> OrchestrationResult:
         if not country.strip():
             raise ValueError("country is required.")
@@ -51,6 +53,8 @@ class Orchestrator:
             raise ValueError("discussion_type must be 'advice' or 'court'")
         if discussion_type == "court" and self.judge is None:
             raise ValueError("judge is required for court discussion type")
+        if session_id:
+            self.trace.bind_context(session_id=session_id, correlation_id=correlation_id)
 
         self.logger.info("Starting orchestration with %d documents", len(documents))
         output_language_hint = _output_language_hint(language)
@@ -72,7 +76,7 @@ class Orchestrator:
             sources=[],
         )
         self._record_message(conversation, user_message, message_callback)
-        self.logger.info("User instruction: %s", user_instruction)
+        self.logger.info("User instruction received (content omitted)")
 
         citations = select_sources(documents, user_instruction)
         lawyer_prompt = _augment_prompt(
@@ -119,7 +123,7 @@ class Orchestrator:
             )
             self._record_message(conversation, lawyer_message, message_callback)
             last_lawyer_message = lawyer_message
-            self.logger.info("Lawyer response: %s", lawyer_message.content)
+            self.logger.info("Lawyer response received (content omitted)")
 
             if _time_exceeded(start_time, max_seconds):
                 self.logger.info("Discussion stopped before judge turn (time limit).")
@@ -176,7 +180,7 @@ class Orchestrator:
                         )
                         self._record_message(conversation, judge_message, message_callback)
                         last_judge_message = judge_message
-                        self.logger.info("Judge response: %s", judge_message.content)
+                        self.logger.info("Judge response received (content omitted)")
 
                         remaining_seconds = _remaining_seconds(start_time, max_seconds)
                         if remaining_seconds is not None and remaining_seconds <= 0:
@@ -217,7 +221,7 @@ class Orchestrator:
                 )
                 self._record_message(conversation, judge_message, message_callback)
                 last_judge_message = judge_message
-                self.logger.info("Judge response: %s", judge_message.content)
+                self.logger.info("Judge response received (content omitted)")
 
                 remaining_seconds = _remaining_seconds(start_time, max_seconds)
                 if remaining_seconds is not None and remaining_seconds <= 0:
@@ -328,11 +332,7 @@ class Orchestrator:
 
         self.trace.record_event(
             "result",
-            {
-                "final_recommendation": result.final_recommendation,
-                "judge_rationale": result.judge_rationale,
-                "citations": [source.__dict__ for source in result.citations],
-            },
+            {"citation_count": len(result.citations)},
         )
         self.logger.info("Orchestration complete")
         return result
@@ -392,7 +392,7 @@ class Orchestrator:
             answered = False
             self.trace.record_event(
                 "user_timeout",
-                {"question": question, "timeout_seconds": prompt_timeout},
+                {"timeout_seconds": prompt_timeout},
             )
 
         user_message = Message(

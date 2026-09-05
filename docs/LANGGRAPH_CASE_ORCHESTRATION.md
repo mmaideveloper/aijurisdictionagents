@@ -78,6 +78,12 @@ database by migrations `0020_langgraph_case_workflows.sql` and
 `0021_langgraph_tool_consent.sql`. Runtime database files remain under
 `runs/storage/api/`, never under `databases/`.
 
+Each workflow event is also normalized through the core decision-trace v1 allowlist into the
+append-only `orchestration_decision_traces` ledger. The normalized record contains only stable IDs,
+counts/enums, policy versions, bounded reason codes, source references, and oversight flags. It does
+not copy `request_text`, facts, draft content, prompts, source bodies, or tool inputs/results from
+workflow state. Existing `case_workflow_events` remain readable during the additive migration.
+
 ## API and channels
 
 - `GET /v1/case-workflows/graphs` lists reviewed graph versions.
@@ -87,6 +93,10 @@ database by migrations `0020_langgraph_case_workflows.sql` and
 - Admin-only `POST /assignments` requires explicit `confirmation=true` when replacing a default.
 - `POST /runs`, `POST /runs/{id}/resume`, `GET /runs/{id}`, and `GET /runs/{id}/events` expose the
   shared web/mobile/chat-simulator workflow state.
+- Admin-only `GET /v1/admin/chat-sessions/{session_id}/decision-trace?limit=50&offset=0` returns an
+  exact-session, chronological, paginated decision timeline. Authorization runs before lookup, so
+  ordinary users receive the same `403` for existing and unknown sessions; empty/unknown timelines
+  return the same `404` to an authorized administrator.
 
 The chat API uses primary routing when `AI_CASE_ORCHESTRATION_MODE=active`; `legacy` is the emergency
 rollback setting. Legal-research messages enter the primary router, receive no dedicated document
@@ -113,7 +123,8 @@ If model prose omits a user-verified value, the workflow appends that exact valu
 verified-data section before validation. It never infers or fills an absent value.
 
 Case deletion removes associated workflow run state, consent/execution ledger rows, audit events,
-and checkpoints with the parent case. Publishing and assigning another dedicated flow requires the
+structured decision traces, and checkpoints with the parent case. Session expiry/deletion invokes
+the same trace retention hook, preventing orphan trace rows. Publishing and assigning another dedicated flow requires the
 same privacy, legal, and real-path E2E review used for the payment-confirmation reference flow; the
 primary router discovers it automatically after activation.
 
