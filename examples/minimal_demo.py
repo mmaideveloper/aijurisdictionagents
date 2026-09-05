@@ -65,6 +65,11 @@ print(
     "PDF preparation requests remain in orchestration."
 )
 print(
+    "latest_law_response_integrity => multi-law answers retain complete normalized public titles "
+    "and summaries from JurisDigta MCP; requested counts remain bounded and legal use still "
+    "requires human review."
+)
+print(
     "law_amendment_analytics => run python examples/law_analytics_demo.py --year 2025; "
     "JurisDigta MCP ranks laws by distinct imported amending acts, keeps version counts separate, "
     "and discloses that amendment frequency is a proxy requiring human legal review."
