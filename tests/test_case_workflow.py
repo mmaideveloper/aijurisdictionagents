@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import START, StateGraph
 
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
     DeterministicCaseWorkflowServices,
     build_initial_case_workflow_state,
+    record_quality_revision_failure,
+    record_technical_retry_failure,
 )
 
 
@@ -93,8 +98,9 @@ def test_case_workflow_completes_and_records_ordered_review_events() -> None:
         "output_validation_completed",
         "privacy_safety_validation_completed",
         "case_review_completed",
-        "langgraph_run_completed",
+        "workflow_terminated",
     ]
+    assert outcome.state["termination_reason"] == "quality_approved"
 
 
 def test_case_workflow_interrupts_and_resumes_without_losing_pinned_versions() -> None:
@@ -149,3 +155,130 @@ def test_unsupported_case_type_fails_safe_to_human_review() -> None:
     assert outcome.state["status"] == "human_review_required"
     assert outcome.state["escalation_reason"] == "case_type_not_automated"
     assert outcome.state["final_answer"] == ""
+    assert outcome.state["termination_reason"] == "human_review_required"
+
+
+def test_repeated_invalid_input_stops_at_configured_attempt_limit() -> None:
+    runtime = _runtime()
+    state = _state(facts={"payer": "A", "recipient": "B"})
+    state["termination_policy"].update({"input_attempt_limit": 2, "no_progress_limit": 5})
+    first = runtime.start(state)
+
+    second = runtime.resume(
+        graph_key="legal_document_workflow",
+        graph_version=1,
+        workflow_run_id=state["workflow_run_id"],
+        value="",
+        state=first.state,
+    )
+    final = runtime.resume(
+        graph_key="legal_document_workflow",
+        graph_version=1,
+        workflow_run_id=state["workflow_run_id"],
+        value="",
+        state=second.state,
+    )
+
+    assert final.state["status"] == "human_review_required"
+    assert final.state["termination_reason"] == "input_attempts_exhausted"
+    assert final.state["input_attempt_count"] == 2
+    assert [event["event_type"] for event in final.state["events"]].count(
+        "workflow_terminated"
+    ) == 1
+
+
+def test_identical_missing_fact_failures_stop_for_no_progress() -> None:
+    runtime = _runtime()
+    state = _state(facts={"payer": "A", "recipient": "B"})
+    state["termination_policy"].update({"input_attempt_limit": 5, "no_progress_limit": 2})
+    first = runtime.start(state)
+    second = runtime.resume(
+        graph_key="legal_document_workflow",
+        graph_version=1,
+        workflow_run_id=state["workflow_run_id"],
+        value="",
+        state=first.state,
+    )
+    final = runtime.resume(
+        graph_key="legal_document_workflow",
+        graph_version=1,
+        workflow_run_id=state["workflow_run_id"],
+        value="",
+        state=second.state,
+    )
+
+    assert final.state["termination_reason"] == "no_progress"
+
+
+def test_reflection_policy_separates_quality_and_technical_retries() -> None:
+    state = _state(facts={"payer": "A"})
+    first = record_quality_revision_failure(
+        state, failure_category="incomplete_output", output="unchanged"
+    )
+    final = record_quality_revision_failure(
+        first, failure_category="incomplete_output", output="unchanged"
+    )
+
+    assert final["termination_reason"] == "no_progress"
+    assert final["quality_revision_count"] == 2
+    assert final["technical_retry_count"] == 0
+
+    technical = record_technical_retry_failure(state, failure_category="provider_timeout")
+    assert technical["technical_retry_count"] == 1
+    assert technical["quality_revision_count"] == 0
+
+
+def test_privacy_and_provenance_failures_bypass_reflection_retries() -> None:
+    privacy = record_quality_revision_failure(
+        _state(), failure_category="privacy", output="sensitive-output-not-persisted"
+    )
+    provenance = record_quality_revision_failure(
+        _state(), failure_category="provenance_missing", output="draft"
+    )
+
+    assert privacy["termination_reason"] == "privacy_blocked"
+    assert privacy["status"] == "blocked"
+    assert provenance["termination_reason"] == "provenance_missing"
+    assert provenance["status"] == "human_review_required"
+    assert "sensitive-output-not-persisted" not in str(privacy["events"])
+
+
+def test_deadline_and_cancellation_are_idempotent_terminal_outcomes() -> None:
+    past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+    state = _state()
+    state["execution_deadline_at"] = past
+
+    expired = _runtime().start(state)
+    assert expired.state["termination_reason"] == "deadline_exceeded"
+    assert expired.state["status"] == "blocked"
+
+    session_state = _state()
+    session_state["session_expires_at"] = past
+    session_expired = _runtime().start(session_state)
+    assert session_expired.state["termination_reason"] == "session_expired"
+
+    runtime = _runtime()
+    cancelled = runtime.terminate(_state(), reason="user_cancelled", stage="cancelled")
+    repeated = runtime.terminate(cancelled.state, reason="user_cancelled", stage="cancelled")
+    assert repeated.state["termination_reason"] == "user_cancelled"
+    assert [event["event_type"] for event in repeated.state["events"]].count(
+        "workflow_terminated"
+    ) == 1
+
+
+def test_graph_recursion_error_becomes_controlled_operational_failure() -> None:
+    runtime = _runtime()
+    builder = StateGraph(dict)
+    builder.add_node("loop", lambda state: state)
+    builder.add_edge(START, "loop")
+    builder.add_edge("loop", "loop")
+    runtime._graphs[("cyclic_test", 1)] = builder.compile(checkpointer=InMemorySaver())
+    state = _state(graph_key="unsupported_or_human_review")
+    state["graph_key"] = "cyclic_test"
+    state["termination_policy"]["recursion_limit"] = 4
+
+    outcome = runtime.start(state)
+
+    assert outcome.state["termination_reason"] == "operational_failure"
+    assert outcome.state["status"] == "human_review_required"
+    assert outcome.state["stage"] == "recursion_limit"

@@ -519,11 +519,10 @@ def _grounded_latest_laws_reply(
             law.get("law_identifier_text") or law.get("law_identifier"),
             max_chars=80,
         )
-        title = _bounded_display_text(
+        title = _complete_display_text(
             law.get("title") or law.get("lawyer_title") or law.get("official_name"),
-            max_chars=300,
         )
-        summary = _bounded_display_text(law.get("summary"), max_chars=600)
+        summary = _complete_display_text(law.get("summary"))
         if not identifier or not title or not summary:
             return None
         rows.append((identifier, title, summary))
@@ -561,6 +560,10 @@ def _grounded_latest_laws_reply(
 
 def _bounded_display_text(value: Any, *, max_chars: int) -> str:
     return " ".join(str(value or "").split())[:max_chars].strip()
+
+
+def _complete_display_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
 
 
 def _is_latest_court_query(query: str) -> bool:

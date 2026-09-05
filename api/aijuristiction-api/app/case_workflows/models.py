@@ -59,11 +59,17 @@ class WorkflowStartRequest(BaseModel):
     facts: dict[str, str] = Field(default_factory=dict)
     consented_checks: list[str] = Field(default_factory=list)
     external_provider_acknowledged: bool = False
+    execution_deadline_at: datetime | None = None
+    session_expires_at: datetime | None = None
 
 
 class WorkflowResumeRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=200)
     value: str | dict[str, str]
+
+
+class WorkflowControlRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=200)
 
 
 class WorkflowRunResponse(BaseModel):
@@ -89,6 +95,23 @@ class WorkflowRunResponse(BaseModel):
     tool_results: list[dict[str, Any]] = Field(default_factory=list)
     review_decisions: dict[str, str] = Field(default_factory=dict)
     escalation_reason: str = ""
+    termination_reason: Literal[
+        "",
+        "quality_approved",
+        "human_review_required",
+        "revision_budget_exhausted",
+        "input_attempts_exhausted",
+        "no_progress",
+        "privacy_blocked",
+        "provenance_missing",
+        "user_cancelled",
+        "session_expired",
+        "deadline_exceeded",
+        "operational_failure",
+    ] = ""
+    input_attempt_count: int = 0
+    quality_revision_count: int = 0
+    technical_retry_count: int = 0
     created_at: datetime
     updated_at: datetime
 

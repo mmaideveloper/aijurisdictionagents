@@ -543,6 +543,12 @@ class CaseWorkflowApplicationService:
             facts=payload.facts,
             consented_checks=payload.consented_checks,
             external_provider_acknowledged=payload.external_provider_acknowledged,
+            execution_deadline_at=(
+                payload.execution_deadline_at.isoformat() if payload.execution_deadline_at else None
+            ),
+            session_expires_at=(
+                payload.session_expires_at.isoformat() if payload.session_expires_at else None
+            ),
         )
         outcome = self.runtime.start(state)
         return self.store.save_run(assignment_id=assignment.assignment_id, outcome=outcome)
@@ -554,8 +560,19 @@ class CaseWorkflowApplicationService:
             graph_version=prior["graph_version"],
             workflow_run_id=workflow_run_id,
             value=value,
+            state=prior,
         )
         run = self.store.get_run(workflow_run_id, user_id=user_id)
+        return self.store.save_run(
+            assignment_id=run.assignment_id,
+            outcome=outcome,
+            created_at=run.created_at.isoformat(),
+        )
+
+    def cancel(self, workflow_run_id: str, *, user_id: str) -> WorkflowRunResponse:
+        prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
+        run = self.store.get_run(workflow_run_id, user_id=user_id)
+        outcome = self.runtime.terminate(prior, reason="user_cancelled", stage="cancelled")
         return self.store.save_run(
             assignment_id=run.assignment_id,
             outcome=outcome,

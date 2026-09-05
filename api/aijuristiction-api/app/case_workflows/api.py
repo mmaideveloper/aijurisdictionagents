@@ -9,6 +9,7 @@ from app.case_workflows.models import (
     WorkflowAssignmentListResponse,
     WorkflowAssignmentRequest,
     WorkflowAssignmentResponse,
+    WorkflowControlRequest,
     WorkflowEventListResponse,
     WorkflowResumeRequest,
     WorkflowRunResponse,
@@ -115,6 +116,20 @@ def resume_workflow(
 ) -> WorkflowRunResponse:
     try:
         return service.resume(workflow_run_id, user_id=payload.user_id, value=payload.value)
+    except WorkflowRunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except WorkflowOwnershipError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+@router.post("/runs/{workflow_run_id}/cancel", response_model=WorkflowRunResponse)
+def cancel_workflow(
+    workflow_run_id: str,
+    payload: WorkflowControlRequest,
+    service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
+) -> WorkflowRunResponse:
+    try:
+        return service.cancel(workflow_run_id, user_id=payload.user_id)
     except WorkflowRunNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except WorkflowOwnershipError as exc:
