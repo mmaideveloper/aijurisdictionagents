@@ -1,9 +1,10 @@
 # Session correlation debugging
 
 Every web chat session owns one opaque `correlation_id`. The browser creates it before the
-session request, sends it in the JSON body and `x-correlation-id` header, and displays a copy
-control above the conversation. A fresh `x-request-id` identifies each HTTP or downstream
-operation while `x-parent-request-id` links child calls.
+session request and sends it in the JSON body and `x-correlation-id` header. After the first
+message creates a session, the user can open **Diagnostics** beside **Configurations** to view
+and copy the ID. A fresh `x-request-id` identifies each HTTP or downstream operation while
+`x-parent-request-id` links child calls.
 
 The same correlation context is restored in streaming worker threads and propagated through:
 
@@ -24,6 +25,11 @@ JSON files for offline Codex review.
 Search and export require the existing API key, an authenticated administrator identity, and an
 enabled server-side `admin` role. Both actions create admin audit events. Lookup is exact; the
 endpoint does not offer broad browsing of user sessions.
+
+For Codex-assisted incident investigation, provide the copied correlation ID, the approximate
+event time, and whether the problem occurred locally or on `jurisdigta-server`. Start with an
+exact-ID lookup and the smallest relevant log window. Remote log access still requires explicit
+permission and must exclude prompts, case facts, documents, credentials, and other secrets.
 
 ## Privacy, security, and retention
 
@@ -48,6 +54,9 @@ This design supports GDPR storage limitation, access control, and accountability
 EU AI Act traceability and human oversight without exposing hidden reasoning. A production owner
 must still document the lawful basis, restrict the admin group, review audit events, and handle
 data-subject deletion across the parent case/session lifecycle.
+
+The user-facing dialog contains only the opaque ID and a privacy warning. It does not send email,
+upload a support report, or disclose chat/case content.
 
 ## Verification
 

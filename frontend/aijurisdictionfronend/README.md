@@ -163,6 +163,9 @@ Implementation notes:
 - Shows transparency metadata: AI-assisted draft, legal-review-required risk level, and required human oversight.
 - Shows the public AI model/runtime label used for the chat. Do not put API keys, URLs, connection strings, or secret deployment values into `VITE_CHAT_MODEL_LABEL`; it is compiled into the browser bundle.
 - All user-facing assistant strings are translated for `en`, `sk`, and `de`.
+- The configuration header includes a Diagnostics control. After the first message creates a
+  session, its dialog shows the opaque correlation ID and copies the exact value to the clipboard
+  for an authorized support lookup. The dialog does not send email or include chat/case content.
 
 Production deployment preparation:
 

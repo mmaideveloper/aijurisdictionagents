@@ -2,7 +2,7 @@
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
 import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, fetchSelectableModelProfiles, streamSession } from "../api/chatClient";
 
@@ -39,6 +39,19 @@ const labels: Record<string, string> = {
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
+  assistantCorrelationId: "Correlation ID",
+  assistantCopyCorrelationId: "Copy ID",
+  diagnosticsButton: "Diagnostics",
+  diagnosticsOpen: "Open diagnostics",
+  diagnosticsEyebrow: "Support reference",
+  diagnosticsTitle: "Diagnostics",
+  diagnosticsDescription: "Copy this correlation ID and share it with support.",
+  diagnosticsClose: "Close diagnostics",
+  diagnosticsUnavailableValue: "Not available yet",
+  diagnosticsUnavailableHint: "The correlation ID will be available after you send your first message.",
+  diagnosticsCopySuccess: "Correlation ID copied to the clipboard.",
+  diagnosticsCopyFailed: "The ID could not be copied. Select it above and copy it manually.",
+  diagnosticsPrivacyNotice: "Share only this ID for troubleshooting.",
   assistantRole: "Assistant",
   assistantUserRole: "You",
   assistantInitialMessage: "JurisDigta Assistant is ready with JurisDigta API and MCP locked on.",
@@ -147,6 +160,7 @@ type CapturedRunResult = { content?: readonly { type: string; text?: string }[] 
 let capturedAdapter: { run: (options: unknown) => AsyncGenerator<CapturedRunResult, void> | Promise<CapturedRunResult> } | null =
   null;
 let capturedRuntimeOptions: { initialMessages?: unknown[] } | null = null;
+const clipboardWriteText = vi.fn();
 
 vi.mock("@assistant-ui/react", () => ({
   AssistantRuntimeProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -190,6 +204,11 @@ vi.mock("@assistant-ui/react", () => ({
 
 describe("AssistantWorkspace", () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: clipboardWriteText }
+    });
+    clipboardWriteText.mockResolvedValue(undefined);
     authState.isAuthenticated = true;
     authState.isAuthLoading = false;
     authState.user = { userId: "user-1", email: "admin@example.com" };
@@ -217,6 +236,7 @@ describe("AssistantWorkspace", () => {
     vi.mocked(fetchEffectiveModelRoute).mockReset();
     vi.mocked(fetchSelectableModelProfiles).mockReset();
     vi.mocked(streamSession).mockReset();
+    clipboardWriteText.mockReset();
     cleanup();
   });
 
@@ -454,6 +474,21 @@ describe("AssistantWorkspace", () => {
     expect(screen.getAllByText("Coming later")).toHaveLength(2);
   });
 
+  it("opens diagnostics and explains that the ID is created after the first message", () => {
+    render(<AssistantWorkspace />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open diagnostics" }));
+
+    expect(screen.getByRole("dialog", { name: "Diagnostics" })).toBeDefined();
+    expect(screen.getByText("Not available yet")).toBeDefined();
+    expect(screen.getByText("The correlation ID will be available after you send your first message.")).toBeDefined();
+    expect((screen.getByRole("button", { name: "Copy ID" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("dialog", { name: "Diagnostics" }).querySelector('a[href^="mailto:"]')).toBeNull();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Diagnostics" })).toBeNull();
+  });
+
   it("does not show the static MCP news panel in the assistant workspace", () => {
     render(<AssistantWorkspace />);
 
@@ -556,7 +591,18 @@ describe("AssistantWorkspace", () => {
       signal: expect.any(AbortSignal),
       correlationId: "corr-visible-303"
     });
-    expect(screen.getByRole("status").textContent).toContain("corr-visible-303");
+    fireEvent.click(screen.getByRole("button", { name: "Open diagnostics" }));
+    expect(screen.getByRole("dialog", { name: "Diagnostics" }).textContent).toContain("corr-visible-303");
+    fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));
+    await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledWith("corr-visible-303"));
+    expect(screen.getByRole("status").textContent).toBe("Correlation ID copied to the clipboard.");
+    clipboardWriteText.mockRejectedValueOnce(new Error("clipboard unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe(
+        "The ID could not be copied. Select it above and copy it manually."
+      );
+    });
     expect(caseActions.loadCaseData).toHaveBeenCalledWith("case-1");
     expect(lastResult?.content?.[0]?.text).toBe("Real answer from API");
   });
