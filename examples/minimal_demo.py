@@ -36,6 +36,11 @@ print(
     "user/assistant messages verbatim and summarizes older turns in memory; full stored history "
     "remains available, and summarization never silently changes the configured model provider."
 )
+print(
+    "chat_workflow_startup_timeout => case-document query embeddings fall back to lexical-only "
+    "retrieval after CHAT_EMBEDDING_TIMEOUT_SECONDS, and SSE emits a privacy-safe terminal "
+    "chat_workflow_timeout after CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS instead of waiting forever."
+)
 
 with correlation_scope(
     correlation_id="minimal-session-correlation",

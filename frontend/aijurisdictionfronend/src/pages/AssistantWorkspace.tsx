@@ -30,6 +30,7 @@ import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider"
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
 import { AI_ORCHESTRATOR_AGENT_LABEL, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
+import { caseThreadKey } from "./assistantWorkspaceUtils";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 const EMPTY_CASE_CITATIONS: CaseCitation[] = [];
@@ -49,16 +50,6 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
     }
   }
   return "";
-};
-
-const caseThreadKey = (activeCase: CaseRecord | null): string => {
-  if (!activeCase) {
-    return "assistant-no-case";
-  }
-  const historyKey = activeCase.interactionHistory
-    .map((interaction) => `${interaction.id}:${interaction.createdAt}`)
-    .join("|");
-  return `${activeCase.id}:${historyKey}`;
 };
 
 const citationDisplayLabel = (citation: CaseCitation): string =>
@@ -511,10 +502,14 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
 
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
-  const typedPresentation = useAuiState((state) => {
+  const rawPresentation = useAuiState((state) => {
     const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
-    return normalizePresentationBlock(custom?.presentation);
+    return custom?.presentation;
   });
+  const typedPresentation = React.useMemo(
+    () => normalizePresentationBlock(rawPresentation),
+    [rawPresentation]
+  );
   const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
   const conversationalText = presentation.conversationalText
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")

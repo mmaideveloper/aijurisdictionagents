@@ -139,6 +139,13 @@ takes precedence only when a registered published flow confidently matches the r
 The production workflow describes `active` with this registry-driven contract; it does not imply or
 accept a separate static case-type allowlist.
 
+Case-document semantic ranking is a pre-router dependency. It is bounded by
+`CHAT_EMBEDDING_TIMEOUT_SECONDS` and falls back to lexical-only ranking when initialization or the
+embedding request stalls. The SSE channel has an independent
+`CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS` fail-safe and emits a sanitized terminal error plus completion
+signal instead of remaining pending. See `docs/ISSUE_776_CHAT_WORKFLOW_STARTUP.md` for the diagnosed
+boundary and deterministic reproduction.
+
 For the real local regression, `scripts/prepare_issue_713_latest_law_e2e.py` seeds only isolated
 synthetic PostgreSQL records and writes the expected MCP source ID to an ignored manifest under
 `runs/e2e/issue-713-latest-law/`. Retain its sanitized manifest and final screenshot for at most

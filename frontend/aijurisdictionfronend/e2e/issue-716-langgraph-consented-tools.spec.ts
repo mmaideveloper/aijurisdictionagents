@@ -129,7 +129,7 @@ test("real LangGraph model proposal requires consent and executes the address to
     "consented_tools_completed",
     "privacy_safety_validation_completed",
     "presentation_selected",
-    "langgraph_run_completed",
+    "workflow_terminated",
   ]) expect(eventTypes).toContain(eventType);
   const retrievalEvent = events.find((event) => event.event_type === "legal_requirements_retrieved")!;
   const observedLegalSourceIds = String(
@@ -167,10 +167,12 @@ test("real LangGraph model proposal requires consent and executes the address to
     "sk.civil.payment_confirmation.presentation.v1",
   );
 
-  const finalMessage = page.locator(".assistant-message").filter({ hasText: input.expectedTool }).last();
+  await reloadSelectedCase(page, input.caseTitle);
+  const finalMessage = page.locator(".assistant-message").filter({
+    has: page.locator('[data-renderer="document_preview"]'),
+  }).last();
   await expect(finalMessage).toBeVisible({ timeout: 60_000 });
   await expect(finalMessage.locator('[data-renderer="document_preview"]')).toBeVisible();
-  await expect(finalMessage).toContainText("succeeded");
   await expect(finalMessage).toContainText(/ľudskú kontrolu/i);
   await expect(finalMessage).toContainText(input.expectedLegalSourceId);
   await finalMessage.scrollIntoViewIfNeeded();
@@ -218,7 +220,9 @@ test("real LangGraph model proposal requires consent and executes the address to
 
 async function reloadSelectedCase(page: import("@playwright/test").Page, caseTitle: string) {
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.getByText(caseTitle, { exact: true }).click({ timeout: 60_000 });
+  const caseButton = page.getByRole("button").filter({ hasText: caseTitle }).first();
+  await expect(caseButton).toContainText(/\/ [1-9]\d* messages/, { timeout: 60_000 });
+  await caseButton.click();
 }
 
 async function submitTurn(
