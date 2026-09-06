@@ -11,7 +11,7 @@ import {
   type ThreadMessageLike
 } from "@assistant-ui/react";
 import { BsArrowUpCircle } from "react-icons/bs";
-import { FiMessageSquare, FiMic, FiVideo } from "react-icons/fi";
+import { FiActivity, FiCopy, FiMessageSquare, FiMic, FiVideo, FiX } from "react-icons/fi";
 import {
   ApiRequestError,
   chatApiRuntimeConfig,
@@ -592,7 +592,10 @@ const currentCaseDeepLinkId = (): string | undefined => {
   return match?.[1] ? decodeURIComponent(match[1]) : undefined;
 };
 
-const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ selectedModelProfileId }) => {
+const AssistantThread: React.FC<{
+  selectedModelProfileId?: string;
+  onCorrelationIdChange: (correlationId: string) => void;
+}> = ({ selectedModelProfileId, onCorrelationIdChange }) => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData } = useCases();
@@ -600,13 +603,12 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string; correlationId: string } | null>(
     null
   );
-  const [correlationId, setCorrelationId] = React.useState("");
-
   React.useEffect(
     () => () => {
       setActiveSessionCorrelationId("");
+      onCorrelationIdChange("");
     },
-    []
+    [onCorrelationIdChange]
   );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
@@ -677,7 +679,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
                   };
                 })();
           sessionRef.current = session;
-          setCorrelationId(session.correlationId);
+          onCorrelationIdChange(session.correlationId);
 
           let latestAssistantText = "";
           let latestPresentation: PresentationBlock | null = null;
@@ -806,6 +808,7 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
       isAuthLoading,
       language,
       loadCaseData,
+      onCorrelationIdChange,
       selectedModelProfileId,
       t,
       user?.email,
@@ -839,14 +842,6 @@ const AssistantThread: React.FC<{ selectedModelProfileId?: string }> = ({ select
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="assistant-thread">
-        {correlationId ? (
-          <div className="assistant-correlation-id" role="status">
-            <span>{t("assistantCorrelationId")}: {correlationId}</span>
-            <button type="button" className="button ghost" onClick={() => void navigator.clipboard.writeText(correlationId)}>
-              {t("assistantCopyCorrelationId")}
-            </button>
-          </div>
-        ) : null}
         <ThreadPrimitive.Viewport className="assistant-thread__viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>
@@ -890,9 +885,105 @@ const CaseMessageCitations: React.FC = () => {
   return <CitationList citations={citations} emptyLabel={t("workspaceCitationsEmpty")} />;
 };
 
-const AssistantConfigurations: React.FC = () => {
+const DiagnosticsDialog: React.FC<{ correlationId: string; onClose: () => void }> = ({
+  correlationId,
+  onClose
+}) => {
+  const { t } = useLanguage();
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const [copyStatus, setCopyStatus] = React.useState<"idle" | "copied" | "failed">("idle");
+  const resolvedCorrelationId = correlationId.trim();
+
+  React.useEffect(() => {
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const copyCorrelationId = async () => {
+    if (!resolvedCorrelationId) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(resolvedCorrelationId);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  };
+
+  return (
+    <div className="diagnostics-dialog-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) {
+        onClose();
+      }
+    }}>
+      <section
+        className="diagnostics-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diagnostics-dialog-title"
+        aria-describedby="diagnostics-dialog-description"
+      >
+        <div className="diagnostics-dialog__header">
+          <div>
+            <p className="eyebrow">{t("diagnosticsEyebrow")}</p>
+            <h2 id="diagnostics-dialog-title">{t("diagnosticsTitle")}</h2>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="diagnostics-dialog__close"
+            aria-label={t("diagnosticsClose")}
+            onClick={onClose}
+          >
+            <FiX aria-hidden="true" />
+          </button>
+        </div>
+        <p id="diagnostics-dialog-description">{t("diagnosticsDescription")}</p>
+        <div className="diagnostics-id-field">
+          <span>{t("assistantCorrelationId")}</span>
+          <code>{resolvedCorrelationId || t("diagnosticsUnavailableValue")}</code>
+        </div>
+        {!resolvedCorrelationId ? <p className="diagnostics-dialog__notice">{t("diagnosticsUnavailableHint")}</p> : null}
+        <div className="diagnostics-dialog__actions">
+          <button
+            type="button"
+            className="button primary"
+            disabled={!resolvedCorrelationId}
+            onClick={() => void copyCorrelationId()}
+          >
+            <FiCopy aria-hidden="true" />
+            {t("assistantCopyCorrelationId")}
+          </button>
+        </div>
+        <p className="diagnostics-dialog__copy-status" role="status" aria-live="polite">
+          {copyStatus === "copied"
+            ? t("diagnosticsCopySuccess")
+            : copyStatus === "failed"
+              ? t("diagnosticsCopyFailed")
+              : ""}
+        </p>
+        <p className="diagnostics-dialog__privacy">{t("diagnosticsPrivacyNotice")}</p>
+      </section>
+    </div>
+  );
+};
+
+const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlationId }) => {
   const { t } = useLanguage();
   const { activeCase, setCaseRole, setCaseCommunicationMode } = useCases();
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
+  const diagnosticsButtonRef = React.useRef<HTMLButtonElement>(null);
+  const closeDiagnostics = React.useCallback(() => {
+    setIsDiagnosticsOpen(false);
+    window.setTimeout(() => diagnosticsButtonRef.current?.focus(), 0);
+  }, []);
 
   const communicationModeOptions = React.useMemo(
     () => [
@@ -952,6 +1043,17 @@ const AssistantConfigurations: React.FC = () => {
     <div className="panel-card assistant-config-card">
       <div className="panel-card__header">
         <h2>{t("workspaceConfigurations")}</h2>
+        <button
+          ref={diagnosticsButtonRef}
+          type="button"
+          className="assistant-diagnostics-button"
+          aria-label={t("diagnosticsOpen")}
+          title={t("diagnosticsOpen")}
+          onClick={() => setIsDiagnosticsOpen(true)}
+        >
+          <FiActivity aria-hidden="true" />
+          <span>{t("diagnosticsButton")}</span>
+        </button>
       </div>
       <div className="config-list">
         <fieldset className="role-selector" disabled={!activeCase}>
@@ -1025,6 +1127,9 @@ const AssistantConfigurations: React.FC = () => {
           emptyLabel={t("workspaceCitationsEmpty")}
         />
       </div>
+      {isDiagnosticsOpen ? (
+        <DiagnosticsDialog correlationId={correlationId} onClose={closeDiagnostics} />
+      ) : null}
     </div>
   );
 };
@@ -1047,6 +1152,10 @@ const AssistantWorkspace: React.FC = () => {
     isAuthenticated ? pendingModelLabel : fallbackModelLabel
   );
   const [selectedModelProfileId, setSelectedModelProfileId] = React.useState("");
+  const [correlationId, setCorrelationId] = React.useState("");
+  const handleCorrelationIdChange = React.useCallback((nextCorrelationId: string) => {
+    setCorrelationId(nextCorrelationId);
+  }, []);
   const [selectableProfiles, setSelectableProfiles] = React.useState<
     { model_profile_id: string; label: string; is_external: boolean; is_local: boolean }[]
   >([]);
@@ -1145,11 +1254,15 @@ const AssistantWorkspace: React.FC = () => {
             </div>
           </section>
 
-          <AssistantThread key={threadKey} selectedModelProfileId={selectedModelProfileId || undefined} />
+          <AssistantThread
+            key={threadKey}
+            selectedModelProfileId={selectedModelProfileId || undefined}
+            onCorrelationIdChange={handleCorrelationIdChange}
+          />
         </main>
 
         <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>
-          <AssistantConfigurations />
+          <AssistantConfigurations correlationId={correlationId} />
         </aside>
       </section>
     </div>

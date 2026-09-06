@@ -920,17 +920,129 @@
   flex-direction: column;
 }
 
-.assistant-correlation-id {
-  display: flex;
+.assistant-diagnostics-button {
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.assistant-diagnostics-button:hover,
+.assistant-diagnostics-button:focus-visible {
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.diagnostics-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(9, 33, 67, 0.46);
+  backdrop-filter: blur(2px);
+}
+
+.diagnostics-dialog {
+  width: min(100%, 30rem);
+  display: grid;
+  gap: 1rem;
+  padding: 1.35rem;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(9, 33, 67, 0.28);
+}
+
+.diagnostics-dialog__header {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.55rem 1rem;
-  border-bottom: 1px solid var(--line);
+  gap: 1rem;
+}
+
+.diagnostics-dialog__header h2,
+.diagnostics-dialog__header p,
+.diagnostics-dialog > p {
+  margin: 0;
+}
+
+.diagnostics-dialog__close {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.diagnostics-id-field {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--sand);
+}
+
+.diagnostics-id-field span {
   color: var(--ink-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.diagnostics-id-field code {
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88rem;
   overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.diagnostics-dialog__actions {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.diagnostics-dialog__actions .button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.diagnostics-dialog__copy-status {
+  min-height: 1.2rem;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.diagnostics-dialog__notice,
+.diagnostics-dialog__privacy {
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.diagnostics-dialog__privacy {
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
 }
 
 .admin-debug__search {

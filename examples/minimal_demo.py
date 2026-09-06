@@ -52,8 +52,9 @@ with correlation_scope(
         "x-request-id": "minimal-request",
     }
 print(
-    "session_correlation_debug => one browser-visible correlation ID spans API, retrieval, "
-    "LangGraph, model, response, and error events; protected admin exports expire within seven days."
+    "session_correlation_debug => the web Diagnostics dialog exposes one copyable correlation ID "
+    "after the first message; it spans API, retrieval, LangGraph, model, response, and error events, "
+    "while protected admin exports expire within seven days and the dialog sends no case content."
 )
 
 print(
