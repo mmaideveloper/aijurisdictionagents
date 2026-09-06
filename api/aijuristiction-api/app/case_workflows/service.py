@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from functools import lru_cache
 import json
+import logging
 import os
+import time
 from typing import Any, Sequence, cast
 from uuid import uuid4
 
@@ -79,6 +81,9 @@ from aijurisdictionagents.orchestration.tool_policy import (
 from aijurisdictionagents.schemas import Document, Message
 from aijurisdictionagents.tools import ToolRegistry, build_default_tool_registry
 from aijurisdictionagents.tools.base import ToolDefinition
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class WorkflowConfigurationError(ValueError):
@@ -444,11 +449,13 @@ class CaseWorkflowApplicationService:
         flow_store: FlowPackStore,
         template_store: DocumentTemplateStore,
         runtime: CaseWorkflowRuntime,
+        api_store: ApiDatabaseStore | None = None,
     ) -> None:
         self.store = store
         self.flow_store = flow_store
         self.template_store = template_store
         self.runtime = runtime
+        self.api_store = api_store
 
     def validate_assignment(self, payload: WorkflowAssignmentRequest) -> tuple[str, str]:
         graph = get_registered_graph(payload.graph_key, payload.graph_version)
@@ -658,13 +665,24 @@ class CaseWorkflowApplicationService:
         )
 
     def ensure_default_assignments(self) -> None:
+        started_at = time.perf_counter()
+        _LOGGER.info("case_workflow_startup stage=default_assignments status=started")
         self._ensure_payment_confirmation_template()
         self._ensure_payment_confirmation_case_type()
-        for case_type in self.template_store.list_case_types(
+        case_types = self.template_store.list_case_types(
             include_deleted=False, jurisdiction="SK"
-        ):
+        )
+        _LOGGER.info(
+            "case_workflow_startup stage=default_assignments status=loaded case_type_count=%d",
+            len(case_types),
+        )
+        for case_type in case_types:
             if not case_type.is_enabled:
                 continue
+            _LOGGER.info(
+                "case_workflow_startup stage=default_assignment status=started case_type_key=%s",
+                case_type.case_type_key,
+            )
             try:
                 existing = self.store.get_active_assignment(
                     case_type_key=case_type.case_type_key,
@@ -712,6 +730,10 @@ class CaseWorkflowApplicationService:
                 ),
                 actor="system_seed_upgrade" if existing is not None else "system_seed",
             )
+        _LOGGER.info(
+            "case_workflow_startup stage=default_assignments status=completed duration_ms=%d",
+            int((time.perf_counter() - started_at) * 1000),
+        )
 
     def _ensure_payment_confirmation_case_type(self) -> None:
         try:
@@ -835,9 +857,21 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
             kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
             open=False,
         )
+        started_at = time.perf_counter()
+        _LOGGER.info("case_workflow_startup stage=checkpoint_pool status=started")
         pool.open(wait=True)
+        _LOGGER.info(
+            "case_workflow_startup stage=checkpoint_pool status=completed duration_ms=%d",
+            int((time.perf_counter() - started_at) * 1000),
+        )
         checkpointer: Any = PostgresSaver(pool)
+        started_at = time.perf_counter()
+        _LOGGER.info("case_workflow_startup stage=checkpoint_schema status=started")
         checkpointer.setup()
+        _LOGGER.info(
+            "case_workflow_startup stage=checkpoint_schema status=completed duration_ms=%d",
+            int((time.perf_counter() - started_at) * 1000),
+        )
     else:
         checkpointer = InMemorySaver()
     workflow_store = CaseWorkflowStore.from_env()
@@ -853,8 +887,10 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
         flow_store=get_flow_pack_store(),
         template_store=get_document_template_store(),
         runtime=runtime,
+        api_store=api_store,
     )
     service.ensure_default_assignments()
+    _LOGGER.info("case_workflow_startup stage=service status=ready")
     return service
 
 
@@ -952,6 +988,62 @@ def route_primary_chat_workflow_turn(
             ),
             workflow_run=active_run,
         )
+
+    case_selection = (
+        service.api_store.get_case_catalog_selection(
+            selection_scope="case", entity_id=case_id
+        )
+        if service.api_store is not None and case_id
+        else None
+    )
+    if (
+        case_selection is not None
+        and case_selection.status == "matched"
+        and case_selection.case_type_key
+    ):
+        catalog_selected_run = handle_chat_workflow_turn(
+            session_id=session_id,
+            case_id=case_id,
+            user_id=user_id,
+            jurisdiction=jurisdiction,
+            language=language,
+            case_type_key=case_selection.case_type_key,
+            routing_confidence=case_selection.confidence_score,
+            request_text=request_text,
+            routing_evidence=(
+                "primary_langgraph_router",
+                "existing_case_catalog_selection",
+            ),
+            external_provider_acknowledged=external_provider_acknowledged,
+            correlation_id=correlation_id,
+        )
+        if catalog_selected_run is not None:
+            decision = PrimaryRouteDecision(
+                route="dedicated_flow",
+                selected_case_type_key=case_selection.case_type_key,
+                confidence=case_selection.confidence_score,
+                confidence_gap=case_selection.confidence_gap,
+                clarification_question="",
+                evidence=(
+                    "primary_langgraph_router",
+                    "existing_case_catalog_selection",
+                ),
+            )
+            record_debug_event(
+                "langgraph",
+                "primary_router",
+                "completed",
+                {
+                    "route": decision.route,
+                    "selected_case_type_key": decision.selected_case_type_key,
+                    "confidence": decision.confidence,
+                    "confidence_gap": decision.confidence_gap,
+                    "evidence": list(decision.evidence),
+                },
+            )
+            return PrimaryChatRouteResult(
+                decision=decision, workflow_run=catalog_selected_run
+            )
 
     candidates = service.list_primary_route_candidates(jurisdiction=jurisdiction)
     route_facts = dict(verified_facts or {})

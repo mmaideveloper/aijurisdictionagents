@@ -50,6 +50,18 @@ def main() -> int:
         company_id=None,
         title=f"[{run_id}] Súhlas a overenie adresy",
     )
+    store.upsert_case_catalog_selection(
+        selection_scope="case",
+        entity_id=case.case_id,
+        case_id=case.case_id,
+        case_type_id="sk.civil.payment_confirmation",
+        case_type_key="sk.civil.payment_confirmation",
+        case_type_name="Potvrdenie o zaplatení",
+        status="matched",
+        confidence_score=1.0,
+        confidence_gap=1.0,
+        source="synthetic_e2e_seed",
+    )
     route = get_routed_llm_client(
         store=store,
         user_id=user.user_id,

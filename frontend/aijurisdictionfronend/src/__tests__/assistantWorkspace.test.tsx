@@ -4,6 +4,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
+import { caseThreadKey } from "../pages/assistantWorkspaceUtils";
 import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, fetchSelectableModelProfiles, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
@@ -187,6 +188,43 @@ vi.mock("@assistant-ui/react", () => ({
     return {};
   }
 }));
+
+it("invalidates a hydrated case thread when an existing message gains presentation content", () => {
+  const caseRecord = {
+    id: "synthetic-case",
+    interactionHistory: [{
+      id: "assistant-message",
+      createdAt: "2026-09-06T12:00:00Z",
+      message: "Working",
+    }],
+  } as unknown as NonNullable<Parameters<typeof caseThreadKey>[0]>;
+  const initialKey = caseThreadKey(caseRecord);
+
+  caseRecord.interactionHistory[0] = {
+    id: "assistant-message",
+    createdAt: "2026-09-06T12:00:00Z",
+    actor: "AI Assistant",
+    message: "Completed synthetic document",
+    citations: [],
+    presentation: {
+      schema_version: 1,
+      renderer_id: "document_preview",
+      renderer_version: 1,
+      data: {},
+      fallback_text: "Completed synthetic document",
+      notices: [],
+      citations: [],
+      selection: {
+        policy_id: "synthetic.presentation.v1",
+        reason_code: "test",
+        explicit_user_request: true,
+        model_proposal_accepted: false,
+      },
+    },
+  };
+
+  expect(caseThreadKey(caseRecord)).not.toBe(initialKey);
+});
 
 describe("AssistantWorkspace", () => {
   beforeEach(() => {

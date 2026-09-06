@@ -106,6 +106,55 @@ def test_select_relevant_case_document_chunks_keeps_all_documents_when_user_requ
     assert "doc-c" in selected_doc_ids
 
 
+def test_case_document_embedding_timeout_falls_back_before_langgraph_start(
+    monkeypatch, caplog
+) -> None:
+    import time
+
+    from app.chat import api as chat_api
+
+    diagnostic_events: list[tuple[str, str]] = []
+
+    class _BlockingEmbeddingClient:
+        def embed_texts(self, _texts):
+            time.sleep(0.25)
+            return SimpleNamespace(vectors=[[1.0, 0.0]], model_name="blocked-test-model")
+
+    chunks = [
+        SimpleNamespace(
+            doc_id="synthetic-doc",
+            chunk_index=0,
+            chunk_text="synthetic lease deadline",
+            embedding_model="blocked-test-model",
+            embedding_dimensions=2,
+            embedding_vector="[1.0, 0.0]",
+        )
+    ]
+    monkeypatch.setenv("CHAT_EMBEDDING_TIMEOUT_SECONDS", "0.02")
+    monkeypatch.setattr(chat_api, "get_embedding_client", lambda: _BlockingEmbeddingClient())
+    monkeypatch.setattr(
+        chat_api,
+        "record_debug_event",
+        lambda _component, stage, status, _payload: diagnostic_events.append((stage, status)),
+    )
+
+    started_at = time.monotonic()
+    selected = chat_api._select_relevant_case_document_chunks(
+        query="synthetic lease deadline",
+        chunk_entries=chunks,
+    )
+    elapsed = time.monotonic() - started_at
+
+    assert selected == chunks
+    assert elapsed < 0.2
+    assert diagnostic_events == [
+        ("case_document_query_embedding", "started"),
+        ("case_document_query_embedding", "timed_out"),
+    ]
+    assert "reason_code=case_embedding_timeout" in caplog.text
+    assert "synthetic lease deadline" not in caplog.text
+
+
 def test_document_task_plan_note_defers_summary_output_until_documents_are_processed() -> None:
     from app.chat.intent_policy_service import build_document_task_plan_note
 
@@ -6441,6 +6490,105 @@ def test_stream_read_user_returns_typed_local_model_timeout(monkeypatch, caplog)
     assert events.count("event: error") == 1
     assert caplog.text.count("ai_model_processing_timeout provider_class=local") == 1
     assert "synteticka testovacia otazka" not in caplog.text
+
+
+def test_stream_read_user_has_terminal_timeout_and_done_signal(monkeypatch, caplog) -> None:
+    import time
+
+    from app.chat import api as chat_api
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    def blocked_direct_turn(**_kwargs):
+        time.sleep(0.25)
+        raise AssertionError("blocked turn should be cancelled before returning")
+
+    monkeypatch.setenv("CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS", "0.03")
+    monkeypatch.setattr(chat_api, "_STREAM_KEEPALIVE_SECONDS", 0.01)
+    monkeypatch.setattr(chat_api, "_STREAM_STATUS_SECONDS", 0.01)
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", blocked_direct_turn)
+    monkeypatch.setattr(chat_api, "record_debug_event", lambda *_args, **_kwargs: None)
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={
+            "instruction": "synthetic private timeout marker",
+            "user_simulation_mode": "ReadUser",
+        },
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert events.count("event: error") == 1
+    assert events.count("event: done") == 1
+    assert '"code": "chat_workflow_timeout"' in events
+    assert '"reason_code": "chat_workflow_timeout"' in events
+    assert '"status": "failed"' in events
+    assert chat_api._repository.get_session(session_id).state.value == "failed"
+    assert "synthetic private timeout marker" not in caplog.text
+
+
+def test_stream_generic_exception_is_sanitized(monkeypatch, caplog) -> None:
+    from app.chat import api as chat_api
+
+    session_response = client.post(
+        "/v1/chat/sessions",
+        json={"country": "SK", "discussion_type": "advice", "language": "sk"},
+        headers=AUTH_HEADERS,
+    )
+    assert session_response.status_code == 200
+    session_id = UUID(session_response.json()["id"])
+
+    def failed_direct_turn(**_kwargs):
+        raise RuntimeError("private prompt and credential-shaped diagnostic value")
+
+    monkeypatch.setattr(chat_api, "_run_direct_lawyer_turn", failed_direct_turn)
+
+    with client.stream(
+        "POST",
+        f"/v1/chat/sessions/{session_id}/stream",
+        headers=AUTH_HEADERS,
+        json={"instruction": "synthetic request", "user_simulation_mode": "ReadUser"},
+    ) as response:
+        assert response.status_code == 200
+        events = "".join(response.iter_text())
+
+    assert '"code": "chat_processing_failed"' in events
+    assert "private prompt" not in events
+    assert "credential-shaped" not in events
+    assert "private prompt" not in caplog.text
+    assert "credential-shaped" not in caplog.text
+
+
+def test_stream_generator_close_signals_worker_cancellation(monkeypatch) -> None:
+    from queue import Queue
+    from threading import Event
+
+    from app.chat import api as chat_api
+    from app.chat.models import Session
+
+    monkeypatch.setattr(chat_api, "_STREAM_KEEPALIVE_SECONDS", 0.01)
+    monkeypatch.setattr(chat_api, "_STREAM_STATUS_SECONDS", 60.0)
+    queue = Queue()
+    cancellation_event = Event()
+    stream = chat_api._stream_event_queue(
+        event_queue=queue,
+        session=Session(country="SK", language="sk"),
+        cancellation_event=cancellation_event,
+    )
+
+    assert next(stream) == ": keepalive\n\n"
+    stream.close()
+
+    assert cancellation_event.is_set()
 
 
 def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> None:

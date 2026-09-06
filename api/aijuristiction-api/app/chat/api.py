@@ -18,7 +18,7 @@ from collections.abc import Callable, Generator
 from datetime import date, datetime, timezone
 from pathlib import Path
 from queue import Empty, Queue
-from threading import Thread
+from threading import Event, Thread
 from typing import Any, List, Literal, Optional, cast
 from urllib.parse import quote
 from uuid import UUID, uuid4
@@ -95,6 +95,8 @@ _LOGGER = logging.getLogger(__name__)
 _LAWYER_OUTPUT_VALIDATOR = AILawyerOutputMessageValidationAgent()
 _STREAM_KEEPALIVE_SECONDS = 15.0
 _STREAM_STATUS_SECONDS = 15.0
+_CHAT_EMBEDDING_TIMEOUT_SECONDS = 60.0
+_CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS = 660.0
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _LOGO_SVG_PRIMARY = _REPO_ROOT / "corporate-web" / "assets" / "ai-log.svg"
 _LOGO_SVG_FALLBACK = _REPO_ROOT / "corporate-web" / "assets" / "aj-logo.svg"
@@ -564,15 +566,8 @@ def _load_case_documents_for_llm(
             "started",
             {
                 "case_id": case_id,
-                "query": query,
-                "candidate_chunks": [
-                    {
-                        "doc_id": chunk.doc_id,
-                        "chunk_index": chunk.chunk_index,
-                        "content": chunk.chunk_text,
-                    }
-                    for chunk in chunk_entries
-                ],
+                "candidate_chunk_count": len(chunk_entries),
+                "candidate_document_count": len(processed_names_by_doc_id),
             },
         )
         selected_chunks = _select_relevant_case_document_chunks(
@@ -585,14 +580,8 @@ def _load_case_documents_for_llm(
             "completed",
             {
                 "case_id": case_id,
-                "selected_chunks": [
-                    {
-                        "doc_id": chunk.doc_id,
-                        "chunk_index": chunk.chunk_index,
-                        "content": chunk.chunk_text,
-                    }
-                    for chunk in selected_chunks
-                ],
+                "selected_chunk_count": len(selected_chunks),
+                "selected_document_ids": sorted({chunk.doc_id for chunk in selected_chunks}),
             },
         )
         if selected_chunks:
@@ -615,15 +604,8 @@ def _load_case_documents_for_llm(
         "completed",
         {
             "case_id": case_id,
-            "query": query,
-            "candidates": [
-                {"doc_id": item[0], "name": item[1], "content": item[2]}
-                for item in processed_entries
-            ],
-            "selected": [
-                {"doc_id": item[0], "name": item[1], "content": item[2]}
-                for item in selected_entries
-            ],
+            "candidate_document_count": len(processed_entries),
+            "selected_document_ids": [item[0] for item in selected_entries],
         },
     )
     processed_documents = [
@@ -682,15 +664,7 @@ def _select_relevant_case_document_chunks(
             per_document_limit=per_document_limit,
         )
 
-    query_vector: list[float] = []
-    query_model_name = ""
-    try:
-        embedding_client = get_embedding_client()
-        query_batch = embedding_client.embed_texts([normalized_query])
-        query_vector = query_batch.vectors[0]
-        query_model_name = query_batch.model_name
-    except Exception:
-        _LOGGER.warning("Falling back to lexical-only case document chunk retrieval", exc_info=True)
+    query_vector, query_model_name = _load_query_embedding_with_timeout(normalized_query)
 
     scored: list[tuple[float, int, Any]] = []
     for index, chunk in enumerate(chunk_entries):
@@ -719,6 +693,112 @@ def _select_relevant_case_document_chunks(
         limit=limit,
         per_document_limit=per_document_limit,
     )
+
+
+def _load_query_embedding_with_timeout(query: str) -> tuple[list[float], str]:
+    """Bound optional semantic retrieval so it cannot delay LangGraph indefinitely."""
+
+    timeout_seconds = float(
+        read_positive_finite_env_seconds(
+            "CHAT_EMBEDDING_TIMEOUT_SECONDS",
+            _CHAT_EMBEDDING_TIMEOUT_SECONDS,
+        )
+    )
+    result_queue: Queue[tuple[str, object]] = Queue(maxsize=1)
+    parent = current_correlation_context()
+    started_at = time.monotonic()
+    record_debug_event(
+        "retrieval",
+        "case_document_query_embedding",
+        "started",
+        {"timeout_seconds": timeout_seconds},
+    )
+
+    def target() -> None:
+        with correlation_scope(
+            correlation_id=parent.correlation_id,
+            session_id=parent.session_id,
+            request_id=parent.request_id or None,
+            parent_request_id=parent.parent_request_id,
+            debug_sink=debug_event_sink,
+        ):
+            try:
+                embedding_client = get_embedding_client()
+                query_batch = embedding_client.embed_texts([query])
+                result_queue.put(("completed", query_batch))
+            except Exception as exc:  # noqa: BLE001
+                result_queue.put(("failed", exc))
+
+    Thread(target=target, name="chat-query-embedding", daemon=True).start()
+    try:
+        status, result = result_queue.get(timeout=timeout_seconds)
+    except Empty:
+        elapsed = max(0.0, time.monotonic() - started_at)
+        _LOGGER.warning(
+            "Case document semantic retrieval timed out; using lexical fallback | "
+            "reason_code=case_embedding_timeout timeout_seconds=%.3f elapsed_seconds=%.3f",
+            timeout_seconds,
+            elapsed,
+        )
+        record_debug_event(
+            "retrieval",
+            "case_document_query_embedding",
+            "timed_out",
+            {
+                "reason_code": "case_embedding_timeout",
+                "timeout_seconds": timeout_seconds,
+                "elapsed_seconds": round(elapsed, 3),
+                "fallback": "lexical_only",
+            },
+        )
+        return [], ""
+
+    elapsed = max(0.0, time.monotonic() - started_at)
+    if status == "failed":
+        _LOGGER.warning(
+            "Case document semantic retrieval failed; using lexical fallback | "
+            "reason_code=case_embedding_failed error_type=%s elapsed_seconds=%.3f",
+            type(result).__name__,
+            elapsed,
+        )
+        record_debug_event(
+            "retrieval",
+            "case_document_query_embedding",
+            "failed",
+            {
+                "reason_code": "case_embedding_failed",
+                "error_type": type(result).__name__,
+                "elapsed_seconds": round(elapsed, 3),
+                "fallback": "lexical_only",
+            },
+        )
+        return [], ""
+
+    vectors = getattr(result, "vectors", [])
+    model_name = str(getattr(result, "model_name", ""))
+    if not vectors:
+        record_debug_event(
+            "retrieval",
+            "case_document_query_embedding",
+            "failed",
+            {
+                "reason_code": "case_embedding_empty",
+                "elapsed_seconds": round(elapsed, 3),
+                "fallback": "lexical_only",
+            },
+        )
+        return [], ""
+    record_debug_event(
+        "retrieval",
+        "case_document_query_embedding",
+        "completed",
+        {
+            "elapsed_seconds": round(elapsed, 3),
+            "embedding_model": model_name,
+            "embedding_dimensions": len(vectors[0]),
+        },
+    )
+    return list(vectors[0]), model_name
 
 
 def _limit_chunks_per_document(
@@ -2122,18 +2202,20 @@ def _warn_if_flow_pack_missing(*, session_id: UUID, session: Session, request_te
         )
     except Exception as exc:  # noqa: BLE001
         _LOGGER.warning(
-            "Flow-pack lookup failed for request | session_id=%s country=%s reason=%s",
+            "Flow-pack lookup failed for request | session_id=%s country=%s "
+            "reason=flow_pack_lookup_failed error_type=%s",
             session_id,
             session.country,
-            exc,
+            type(exc).__name__,
         )
         return
     if flow_pack is None:
         _LOGGER.warning(
-            "No flow-pack matched user request | session_id=%s country=%s request=%s",
+            "No flow-pack matched user request | session_id=%s country=%s "
+            "request_char_count=%d",
             session_id,
             session.country,
-            " ".join(request_text.split())[:180],
+            len(request_text),
         )
 
 
@@ -2401,6 +2483,7 @@ def stream_session(
         )
 
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
+    cancellation_event = Event()
     replies = deque(payload.user_replies)
     communication_minutes = payload.communication_minutes or payload.max_discussion_minutes
     simulation_deadline = time.monotonic() + max(communication_minutes, 0) * 60
@@ -2627,6 +2710,8 @@ def stream_session(
                     model=str(getattr(stream_route, "model", "unknown")),
                 ),
             )
+            if cancellation_event.is_set():
+                return
             persisted_messages = _repository.list_messages(session_id)
             metadata = build_session_result_metadata(
                 session=session,
@@ -2649,6 +2734,8 @@ def stream_session(
             event_queue.put(("result", session_result.model_dump(mode="json")))
             event_queue.put(("done", {"session_id": str(session_id)}))
         except Exception as exc:  # noqa: BLE001
+            if cancellation_event.is_set():
+                return
             _repository.mark_failed(session_id)
             timeout_payload = _model_timeout_error_payload(
                 exc,
@@ -2656,7 +2743,7 @@ def stream_session(
                 task_type="discussion_stream",
             )
             if timeout_payload is None:
-                _LOGGER.exception(
+                _LOGGER.error(
                     "Discussion stream worker failed | session_id=%s error_type=%s",
                     session_id,
                     type(exc).__name__,
@@ -2672,7 +2759,12 @@ def stream_session(
     )
 
     return StreamingResponse(
-        _stream_event_queue(event_queue=event_queue, session=session),
+        _stream_event_queue(
+            event_queue=event_queue,
+            session=session,
+            request_id=str(request.state.request_id),
+            cancellation_event=cancellation_event,
+        ),
         media_type="text/event-stream",
     )
 
@@ -2686,6 +2778,7 @@ def _stream_read_user_session(
 ) -> StreamingResponse:
     inline_documents = [CoreDocument(doc_id=d.doc_id, path=d.path, content=d.content) for d in payload.documents]
     event_queue: Queue[tuple[str, dict[str, object]] | None] = Queue()
+    cancellation_event = Event()
 
     def processing_event_callback(event: dict[str, object]) -> None:
         event_queue.put(("processing", event))
@@ -2805,6 +2898,8 @@ def _stream_read_user_session(
                     user_message_callback=user_message_callback,
                 )
             )
+            if cancellation_event.is_set():
+                return
             current_messages = _repository.list_messages(session_id)
             if not current_messages:
                 current_messages = [message for message in (_persisted_user, persisted_lawyer) if message is not None]
@@ -2857,6 +2952,8 @@ def _stream_read_user_session(
                 event_queue.put(("result", session_result.model_dump(mode="json")))
                 event_queue.put(("done", {"session_id": str(session_id), "status": "completed"}))
         except Exception as exc:  # noqa: BLE001
+            if cancellation_event.is_set():
+                return
             _repository.mark_failed(session_id)
             timeout_payload = _model_timeout_error_payload(
                 exc,
@@ -2864,7 +2961,7 @@ def _stream_read_user_session(
                 task_type="chat_reply",
             )
             if timeout_payload is None:
-                _LOGGER.exception(
+                _LOGGER.error(
                     "ReadUser stream worker failed | session_id=%s error_type=%s",
                     session_id,
                     type(exc).__name__,
@@ -2876,7 +2973,12 @@ def _stream_read_user_session(
     _start_session_worker(session=session, request_id=request_id, target=worker)
 
     return StreamingResponse(
-        _stream_event_queue(event_queue=event_queue, session=session),
+        _stream_event_queue(
+            event_queue=event_queue,
+            session=session,
+            request_id=request_id,
+            cancellation_event=cancellation_event,
+        ),
         media_type="text/event-stream",
     )
 
@@ -2904,14 +3006,23 @@ def _correlated_error_payload(
     payload: dict[str, object] | None, exc: Exception
 ) -> dict[str, object]:
     context = current_correlation_context()
-    result = dict(payload or {"message": str(exc)})
+    result = dict(
+        payload
+        or {
+            "code": "chat_processing_failed",
+            "message": _chat_processing_failure_message(),
+        }
+    )
     result["correlation_id"] = context.correlation_id
     result["request_id"] = context.request_id
     record_debug_event(
         "api",
         "chat_session_worker",
         "failed",
-        {"error_type": type(exc).__name__, "message": str(exc)},
+        {
+            "error_type": type(exc).__name__,
+            "reason_code": str(result.get("code", "chat_processing_failed")),
+        },
     )
     return result
 
@@ -5128,17 +5239,118 @@ def _stream_visible_progress_seconds() -> float:
     return min(configured, _STREAM_STATUS_SECONDS)
 
 
+def _chat_processing_failure_message() -> str:
+    return (
+        "The chat request could not be completed. Please retry and provide the "
+        "correlation ID if the problem continues."
+    )
+
+
+def _chat_stream_timeout_message(*, country: str, language: str | None) -> str:
+    normalized_country = (country or "").strip().upper()
+    normalized_language = (language or "").strip().lower()
+    if normalized_country == "SK" or normalized_language.startswith("sk"):
+        return (
+            "Spracovanie požiadavky prekročilo časový limit. Skúste to znova a pri "
+            "opakovaní uveďte ID korelácie."
+        )
+    if normalized_country == "DE" or normalized_language.startswith("de"):
+        return (
+            "Die Verarbeitung hat das Zeitlimit überschritten. Versuchen Sie es erneut "
+            "und geben Sie bei Wiederholung die Korrelations-ID an."
+        )
+    return (
+        "The chat request exceeded its processing time limit. Retry and provide the "
+        "correlation ID if it happens again."
+    )
+
+
+def _stream_terminal_timeout_seconds() -> float:
+    return float(
+        read_positive_finite_env_seconds(
+            "CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS",
+            _CHAT_STREAM_TERMINAL_TIMEOUT_SECONDS,
+        )
+    )
+
+
 def _stream_event_queue(
     *,
     event_queue: Queue[tuple[str, dict[str, object]] | None],
     session: Session,
+    request_id: str = "",
+    cancellation_event: Event | None = None,
+) -> Generator[str, None, None]:
+    try:
+        yield from _iterate_stream_event_queue(
+            event_queue=event_queue,
+            session=session,
+            request_id=request_id,
+            cancellation_event=cancellation_event,
+        )
+    finally:
+        if cancellation_event is not None:
+            cancellation_event.set()
+
+
+def _iterate_stream_event_queue(
+    *,
+    event_queue: Queue[tuple[str, dict[str, object]] | None],
+    session: Session,
+    request_id: str = "",
+    cancellation_event: Event | None = None,
 ) -> Generator[str, None, None]:
     last_visible_status_at = time.monotonic()
+    started_at = last_visible_status_at
     visible_progress_seconds = _stream_visible_progress_seconds()
     poll_seconds = min(_STREAM_KEEPALIVE_SECONDS, visible_progress_seconds)
+    terminal_timeout_seconds = _stream_terminal_timeout_seconds()
     while True:
+        elapsed = max(0.0, time.monotonic() - started_at)
+        remaining = terminal_timeout_seconds - elapsed
+        if remaining <= 0:
+            if cancellation_event is not None:
+                cancellation_event.set()
+            _repository.mark_failed(session.id)
+            timeout_body: dict[str, object] = {
+                "code": "chat_workflow_timeout",
+                "message": _chat_stream_timeout_message(
+                    country=session.country,
+                    language=session.language,
+                ),
+                "params": {"timeout_seconds": terminal_timeout_seconds},
+                "correlation_id": session.correlation_id,
+                "request_id": request_id,
+            }
+            _LOGGER.error(
+                "Chat stream terminal timeout | correlation_id=%s request_id=%s "
+                "reason_code=chat_workflow_timeout timeout_seconds=%.3f elapsed_seconds=%.3f",
+                session.correlation_id,
+                request_id,
+                terminal_timeout_seconds,
+                elapsed,
+            )
+            _record_chat_stream_timeout_diagnostic(
+                session=session,
+                request_id=request_id,
+                timeout_seconds=terminal_timeout_seconds,
+                elapsed_seconds=elapsed,
+            )
+            yield f"event: error\ndata: {json.dumps(timeout_body)}\n\n"
+            yield (
+                "event: done\ndata: "
+                + json.dumps(
+                    {
+                        "session_id": str(session.id),
+                        "status": "failed",
+                        "reason_code": "chat_workflow_timeout",
+                    }
+                )
+                + "\n\n"
+            )
+            break
         try:
-            item = event_queue.get(timeout=poll_seconds)
+            item = event_queue.get(timeout=min(poll_seconds, remaining))
         except Empty:
             now = time.monotonic()
             if now - last_visible_status_at >= visible_progress_seconds:
@@ -5160,6 +5372,36 @@ def _stream_event_queue(
         if event_name in {"message", "processing", "waiting_for_reply", "result", "done", "error"}:
             last_visible_status_at = time.monotonic()
         yield f"event: {event_name}\ndata: {json.dumps(body)}\n\n"
+
+
+def _record_chat_stream_timeout_diagnostic(
+    *,
+    session: Session,
+    request_id: str,
+    timeout_seconds: float,
+    elapsed_seconds: float,
+) -> None:
+    """Persist timeout tracing best-effort without delaying the terminal SSE event."""
+
+    def target() -> None:
+        with correlation_scope(
+            correlation_id=session.correlation_id,
+            session_id=str(session.id),
+            request_id=request_id or None,
+            debug_sink=debug_event_sink,
+        ):
+            record_debug_event(
+                "api",
+                "chat_stream",
+                "timed_out",
+                {
+                    "reason_code": "chat_workflow_timeout",
+                    "timeout_seconds": timeout_seconds,
+                    "elapsed_seconds": round(elapsed_seconds, 3),
+                },
+            )
+
+    Thread(target=target, name="chat-timeout-diagnostic", daemon=True).start()
 
 
 def _finish_discussion_reply(language: str | None) -> str:

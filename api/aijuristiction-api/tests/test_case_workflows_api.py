@@ -29,6 +29,7 @@ from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
     DeterministicCaseWorkflowServices,
 )
+from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.schemas import Document
 from aijurisdictionagents.tools import ToolRegistry, build_default_tool_registry
 from aijurisdictionagents.tools.base import ToolDefinition, ToolResult
@@ -168,6 +169,51 @@ class _PrimaryRouterLLM:
     def complete(self, _agent: str, _prompt: str, conversation: list[Any], _documents: list[Any]) -> str:
         self.conversations.append(conversation)
         return json.dumps(self._payload)
+
+
+def test_primary_chat_router_uses_existing_case_selection_before_model_classification(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    service = _service(tmp_path)
+    api_store = ApiDatabaseStore(
+        db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "blob"
+    )
+    api_store.initialize()
+    api_store.upsert_case_catalog_selection(
+        selection_scope="case",
+        entity_id="assigned-case",
+        case_type_id="sk.civil.payment_confirmation",
+        case_type_key="sk.civil.payment_confirmation",
+        case_type_name="Synthetic payment confirmation",
+        status="matched",
+        confidence_score=1.0,
+        confidence_gap=1.0,
+        source="synthetic_test",
+    )
+    service.api_store = api_store
+    llm = _PrimaryRouterLLM({"status": "not_matched"})
+    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
+    monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
+
+    result = route_primary_chat_workflow_turn(
+        session_id="assigned-session",
+        case_id="assigned-case",
+        user_id="synthetic-user",
+        jurisdiction="SK",
+        language="sk-SK",
+        request_text="Prepare the assigned synthetic document.",
+        llm_client=llm,
+    )
+
+    assert result is not None
+    assert result.decision.route == "dedicated_flow"
+    assert result.workflow_run is not None
+    assert result.workflow_run.case_type_key == "sk.civil.payment_confirmation"
+    assert result.decision.evidence == (
+        "primary_langgraph_router",
+        "existing_case_catalog_selection",
+    )
+    assert llm.conversations == []
 
 
 def test_primary_chat_router_starts_registered_flow_without_static_allowlist(
