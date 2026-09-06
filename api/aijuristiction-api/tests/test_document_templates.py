@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import json
 from io import BytesIO
 from pathlib import Path
 import sqlite3
+from typing import Any
 import unicodedata
 
 from fastapi import FastAPI
@@ -207,6 +210,82 @@ def test_document_template_store_reseeds_case_types_from_latest_template_version
 
     assert len(case_type_keys) == len(set(case_type_keys))
     assert case_type_keys.count("sk.employment.employment_contract") == 1
+
+
+def test_get_case_type_closes_lookup_connection_before_hydration(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    store = _build_store(tmp_path)
+    expected = store.get_case_type(
+        case_type_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+    real_connect = store._connect
+    active_connections = 0
+
+    @contextmanager
+    def tracked_connect() -> Iterator[Any]:
+        nonlocal active_connections
+        with real_connect() as connection:
+            active_connections += 1
+            try:
+                yield connection
+            finally:
+                active_connections -= 1
+
+    def hydrate_after_lookup(_row: dict[str, Any]) -> Any:
+        assert active_connections == 0
+        return expected
+
+    monkeypatch.setattr(store, "_connect", tracked_connect)
+    monkeypatch.setattr(store, "_case_row_to_definition", hydrate_after_lookup)
+
+    result = store.get_case_type(
+        case_type_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+    )
+
+    assert result == expected
+
+
+def test_seeded_description_refresh_does_not_hydrate_case_types(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    store = _build_store(tmp_path)
+
+    def fail_full_hydration(**_kwargs: Any) -> Any:
+        raise AssertionError("startup description refresh must not fully hydrate case types")
+
+    monkeypatch.setattr(store, "get_case_type", fail_full_hydration)
+
+    store._refresh_seeded_case_type_descriptions()
+
+
+def test_case_type_startup_seed_does_not_hydrate_each_created_type(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    config = DocumentTemplateStoreConfig(
+        db_option="sqlite",
+        db_cloud="",
+        sqlite_path=tmp_path / "document_templates.sqlite3",
+    )
+    store = DocumentTemplateStore(config)
+    with sqlite3.connect(config.sqlite_path) as connection:
+        connection.execute("DELETE FROM case_type_templates")
+        connection.execute("DELETE FROM case_prompts")
+        connection.execute("DELETE FROM case_types")
+
+    def fail_public_create(_payload: Any) -> Any:
+        raise AssertionError("startup seeding must not hydrate every created case type")
+
+    monkeypatch.setattr(store, "create_case_type", fail_public_create)
+
+    store._seed_case_types_if_empty()
+
+    assert len(store.list_case_types()) > 0
 
 
 def test_document_template_store_versions_legacy_empty_sale_purchase_seed_once(tmp_path: Path) -> None:

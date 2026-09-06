@@ -623,7 +623,8 @@ print(
 )
 print(
     "case_type_seed_latest_only => API startup derives seeded case types from only the latest "
-    "active document-template version, keeping clean PostgreSQL initialization idempotent."
+    "active document-template version, batches clean PostgreSQL seeding, and refreshes descriptions "
+    "without fully hydrating every case type."
 )
 print(
     "api_container_telemetry_constraints => Azure Monitor and OpenTelemetry container packages "
