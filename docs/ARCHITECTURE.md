@@ -88,6 +88,12 @@ Each new Slovak legal act (for example owner addition, `konateľ` change, compan
 - output documents;
 - follow-up question strategy.
 
+Flow versions carry routing intent (question kind, legal domain, requested outcome, positive and
+negative examples, and clarification policy). Admin-authored versions are immutable after a
+definition-hash lock and must pass a synthetic offline suite plus explicit human approval before
+publication. Offline runs are isolated from production assignments and user sessions and retain only
+bounded metrics and provenance pins; see `docs/FLOW_PACKS_API.md`.
+
 ### Proactive behavior requirement for `AILawyerAgent`
 
 For every Slovak legal flow, the agent must proactively:

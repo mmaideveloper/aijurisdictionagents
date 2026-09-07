@@ -7,10 +7,12 @@ guided legal cases. The first active reference is `sk.civil.payment_confirmation
 
 Every normal chat question enters `PrimaryLangGraphRouter`. Its classifier receives only the
 current question, verified facts, and candidates derived from active assignments backed by enabled,
-published immutable flow packs. A unique high-confidence match enters the dedicated case graph;
-an ambiguous or low-confidence result asks one clarification question; and no match follows the
-generic LangGraph route. There is no environment-maintained case-type allowlist and the model cannot
-invent a candidate key.
+published immutable flow packs. The classifier catalog includes each published flow version's reviewed
+routing intent and examples. A unique high-confidence match enters the dedicated case graph; an
+ambiguous or low-confidence result asks one clarification question; and no match follows the generic
+LangGraph route. Draft and offline-test versions are never exposed to production routing. A version
+reaches published only after hash-pinned synthetic evaluation and human production approval. There is
+no environment-maintained case-type allowlist and the model cannot invent a candidate key.
 
 ```mermaid
 flowchart TD

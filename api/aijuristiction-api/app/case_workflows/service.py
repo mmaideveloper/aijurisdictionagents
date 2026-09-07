@@ -557,12 +557,21 @@ class CaseWorkflowApplicationService:
                 if isinstance(raw_keywords, list)
                 else ()
             )
+            routing_description = (
+                f"{case_type.description or flow.description} "
+                f"Question kind: {flow.question_kind}. Legal domain: {flow.legal_domain}. "
+                f"Requested outcome: {flow.requested_outcome}."
+            )
+            if flow.negative_examples:
+                routing_description += " Exclude questions like: " + "; ".join(flow.negative_examples[:10])
             candidates.append(
                 PrimaryRouteCandidate(
                     case_type_key=case_type.case_type_key,
                     case_type_name=case_type.name,
-                    description=case_type.description or flow.description,
-                    keywords=tuple(dict.fromkeys((*case_type.keywords, *flow_keywords))),
+                    description=routing_description,
+                    keywords=tuple(dict.fromkeys((
+                        *case_type.keywords, *flow_keywords, *flow.positive_examples,
+                    ))),
                     graph_key=assignment.graph_key,
                     graph_version=assignment.graph_version,
                     flow_key=assignment.flow_key,

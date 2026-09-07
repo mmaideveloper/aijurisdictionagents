@@ -9,6 +9,7 @@ from app.flow_packs.models import (
     FlowPackCreateRequest,
     FlowPackCreateVersionRequest,
     FlowPackListResponse,
+    FlowPackLockRequest,
     FlowPackResponse,
     FlowPackUpdateRequest,
     FlowPackVersionListResponse,
@@ -77,6 +78,8 @@ def create_flow_pack(
         return store.create(payload)
     except FlowPackVersionConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/{flow_key}/versions", response_model=FlowPackResponse, status_code=status.HTTP_201_CREATED)
@@ -95,6 +98,8 @@ def create_flow_pack_version(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except FlowPackAmbiguousError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.patch("/{flow_key}/versions/{version}", response_model=FlowPackResponse)
@@ -108,6 +113,31 @@ def update_flow_pack_version(
 ) -> FlowPackResponse:
     try:
         return store.update(flow_key=flow_key, version=version, payload=payload, jurisdiction=jurisdiction)
+    except FlowPackNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except FlowPackAmbiguousError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/{flow_key}/versions/{version}/lock-for-testing", response_model=FlowPackResponse)
+def lock_flow_pack_version_for_testing(
+    flow_key: str,
+    version: int,
+    payload: FlowPackLockRequest,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    jurisdiction: str | None = Query(default=None),
+    store: FlowPackStore = Depends(get_flow_pack_store),
+) -> FlowPackResponse:
+    try:
+        return store.lock_for_testing(
+            flow_key=flow_key,
+            version=version,
+            actor_id=admin.user_id,
+            payload=payload,
+            jurisdiction=jurisdiction,
+        )
     except FlowPackNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except FlowPackAmbiguousError as exc:
@@ -148,6 +178,8 @@ def disable_flow_pack_version(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except FlowPackAmbiguousError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except FlowPackImmutableError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.delete("/{flow_key}/versions/{version}", response_model=FlowPackResponse)

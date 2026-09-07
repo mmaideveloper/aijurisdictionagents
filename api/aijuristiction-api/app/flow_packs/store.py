@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import contextmanager
@@ -18,6 +19,7 @@ from app.flow_packs.default_packs import build_default_slovak_flow_packs
 from app.flow_packs.models import (
     FlowPackCreateRequest,
     FlowPackCreateVersionRequest,
+    FlowPackLockRequest,
     FlowPackResponse,
     FlowPackUpdateRequest,
 )
@@ -131,7 +133,11 @@ class FlowPackStore:
             )
         return self._row_to_response(_row_to_mapping(rows[0]))
 
-    def create(self, payload: FlowPackCreateRequest) -> FlowPackResponse:
+    def create(self, payload: FlowPackCreateRequest, *, trusted_seed: bool = False) -> FlowPackResponse:
+        if payload.is_enabled and not trusted_seed:
+            raise FlowPackImmutableError(
+                "New admin flow versions must start as drafts and pass offline evaluation before publication"
+            )
         flow_key = payload.flow_key.strip()
         jurisdiction = payload.jurisdiction.strip().upper()
         version = (
@@ -144,15 +150,18 @@ class FlowPackStore:
             )
         now = _utc_now_iso()
         flow_id = str(uuid4())
+        definition_hash = _payload_definition_hash(payload, version) if trusted_seed else None
         with self._connect() as conn:
             conn.execute(
                 self._sql(
                     """
                 INSERT INTO flow_packs (
                     flow_id, flow_key, version, jurisdiction, domain, title, description,
-                    definition_json, is_enabled, lifecycle_state, is_deleted, created_at, updated_at,
-                    deleted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    definition_json, question_kind, legal_domain, requested_outcome,
+                    positive_examples_json, negative_examples_json, clarification_policy_json,
+                    definition_hash, locked_at, locked_by, locked_reason, is_enabled, lifecycle_state,
+                    is_deleted, created_at, updated_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, 0, ?, ?, NULL)
                 """
                 ),
                 self._params(
@@ -164,8 +173,15 @@ class FlowPackStore:
                     payload.title.strip(),
                     payload.description.strip(),
                     json.dumps(payload.definition, ensure_ascii=False, sort_keys=True),
+                    payload.question_kind.strip().lower(),
+                    payload.legal_domain.strip().lower(),
+                    payload.requested_outcome.strip().lower(),
+                    json.dumps(payload.positive_examples, ensure_ascii=False),
+                    json.dumps(payload.negative_examples, ensure_ascii=False),
+                    json.dumps(payload.clarification_policy, ensure_ascii=False, sort_keys=True),
+                    definition_hash,
                     1 if payload.is_enabled else 0,
-                    "published" if payload.is_enabled else "draft",
+                    "published" if trusted_seed and payload.is_enabled else "draft",
                     now,
                     now,
                 ),
@@ -180,6 +196,10 @@ class FlowPackStore:
         payload: FlowPackCreateVersionRequest,
         jurisdiction: str | None = None,
     ) -> FlowPackResponse:
+        if payload.is_enabled:
+            raise FlowPackImmutableError(
+                "New flow versions must start as drafts and cannot be enabled during creation"
+            )
         target_jurisdiction = (payload.jurisdiction or jurisdiction or "").strip().upper()
         latest = self._latest(flow_key, jurisdiction=target_jurisdiction or None)
         if latest is None:
@@ -196,7 +216,17 @@ class FlowPackStore:
             title=payload.title or latest.title,
             description=payload.description or latest.description,
             definition=payload.definition if payload.definition is not None else latest.definition,
-            is_enabled=payload.is_enabled,
+            question_kind=payload.question_kind or latest.question_kind,
+            legal_domain=payload.legal_domain or latest.legal_domain,
+            requested_outcome=payload.requested_outcome or latest.requested_outcome,
+            positive_examples=payload.positive_examples or latest.positive_examples,
+            negative_examples=payload.negative_examples if payload.negative_examples is not None else latest.negative_examples,
+            clarification_policy=(
+                payload.clarification_policy
+                if payload.clarification_policy is not None
+                else latest.clarification_policy
+            ),
+            is_enabled=False,
         )
         return self.create(create_payload)
 
@@ -213,7 +243,7 @@ class FlowPackStore:
             raise FlowPackNotFoundError(f"Flow pack '{flow_key}' version {version} is deleted")
         if current.lifecycle_state != "draft":
             raise FlowPackImmutableError(
-                f"Flow pack '{flow_key}' version {version} is published and immutable; "
+                f"Flow pack '{flow_key}' version {version} is locked and immutable; "
                 "create a new draft version"
             )
         updated = {
@@ -226,6 +256,23 @@ class FlowPackStore:
                 ensure_ascii=False,
                 sort_keys=True,
             ),
+            "question_kind": (payload.question_kind or current.question_kind).strip().lower(),
+            "legal_domain": (payload.legal_domain or current.legal_domain).strip().lower(),
+            "requested_outcome": (payload.requested_outcome or current.requested_outcome).strip().lower(),
+            "positive_examples_json": json.dumps(
+                payload.positive_examples or current.positive_examples, ensure_ascii=False
+            ),
+            "negative_examples_json": json.dumps(
+                payload.negative_examples if payload.negative_examples is not None else current.negative_examples,
+                ensure_ascii=False,
+            ),
+            "clarification_policy_json": json.dumps(
+                payload.clarification_policy
+                if payload.clarification_policy is not None
+                else current.clarification_policy,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             "updated_at": _utc_now_iso(),
         }
         with self._connect() as conn:
@@ -233,7 +280,10 @@ class FlowPackStore:
                 self._sql(
                     """
                 UPDATE flow_packs
-                SET jurisdiction = ?, domain = ?, title = ?, description = ?, definition_json = ?, updated_at = ?
+                SET jurisdiction = ?, domain = ?, title = ?, description = ?, definition_json = ?,
+                    question_kind = ?, legal_domain = ?, requested_outcome = ?,
+                    positive_examples_json = ?, negative_examples_json = ?, clarification_policy_json = ?,
+                    updated_at = ?
                 WHERE flow_key = ? AND version = ? AND jurisdiction = ?
                 """
                 ),
@@ -243,6 +293,12 @@ class FlowPackStore:
                     updated["title"],
                     updated["description"],
                     updated["definition_json"],
+                    updated["question_kind"],
+                    updated["legal_domain"],
+                    updated["requested_outcome"],
+                    updated["positive_examples_json"],
+                    updated["negative_examples_json"],
+                    updated["clarification_policy_json"],
                     updated["updated_at"],
                     flow_key.strip(),
                     version,
@@ -251,6 +307,57 @@ class FlowPackStore:
             )
             conn.commit()
         return self.get(flow_key=flow_key, version=version, jurisdiction=current.jurisdiction)
+
+    def lock_for_testing(
+        self,
+        *,
+        flow_key: str,
+        version: int,
+        actor_id: str,
+        payload: FlowPackLockRequest,
+        jurisdiction: str | None = None,
+    ) -> FlowPackResponse:
+        current = self.get(flow_key=flow_key, version=version, jurisdiction=jurisdiction)
+        if current.lifecycle_state != "draft" or current.is_deleted:
+            raise FlowPackImmutableError("Only a non-deleted draft can be locked for testing")
+        if not current.definition or not current.positive_examples:
+            raise FlowPackImmutableError("Definition and positive routing examples are required before testing")
+        definition_hash = _flow_definition_hash(current)
+        now = _utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    "UPDATE flow_packs SET lifecycle_state = 'test_ready', definition_hash = ?, "
+                    "locked_at = ?, locked_by = ?, locked_reason = ?, updated_at = ? "
+                    "WHERE flow_id = ? AND lifecycle_state = 'draft'"
+                ),
+                self._params(
+                    definition_hash, now, actor_id.strip(), payload.reason.strip(), now, current.flow_id
+                ),
+            )
+            conn.commit()
+        return self.get(flow_key=flow_key, version=version, jurisdiction=current.jurisdiction)
+
+    def transition_lifecycle(self, *, flow_id: str, expected: str, target: str) -> FlowPackResponse:
+        with self._connect() as conn:
+            cursor = conn.execute(
+                self._sql(
+                    "UPDATE flow_packs SET lifecycle_state = ?, updated_at = ? "
+                    "WHERE flow_id = ? AND lifecycle_state = ? AND is_deleted = 0"
+                ),
+                self._params(target, _utc_now_iso(), flow_id, expected),
+            )
+            conn.commit()
+            if cursor.rowcount != 1:
+                raise FlowPackImmutableError(
+                    f"Flow lifecycle changed concurrently; expected '{expected}'"
+                )
+            row = conn.execute(
+                self._sql("SELECT * FROM flow_packs WHERE flow_id = ?"), self._params(flow_id)
+            ).fetchone()
+        if row is None:
+            raise FlowPackNotFoundError(flow_id)
+        return self._row_to_response(_row_to_mapping(row))
 
     def set_enabled(
         self,
@@ -261,13 +368,13 @@ class FlowPackStore:
         jurisdiction: str | None = None,
     ) -> FlowPackResponse:
         current = self.get(flow_key=flow_key, version=version, jurisdiction=jurisdiction)
-        if enabled and current.lifecycle_state == "retired":
+        if enabled and current.lifecycle_state != "production_approved":
             raise FlowPackImmutableError(
-                f"Retired flow pack '{flow_key}' version {version} cannot be republished"
+                "Only a production-approved flow version can be published"
             )
-        lifecycle_state = "published" if enabled else (
-            "draft" if current.lifecycle_state == "draft" else "retired"
-        )
+        if not enabled and current.lifecycle_state != "published":
+            raise FlowPackImmutableError("Only a published flow version can be retired")
+        lifecycle_state = "published" if enabled else "retired"
         with self._connect() as conn:
             conn.execute(
                 self._sql(
@@ -339,13 +446,23 @@ class FlowPackStore:
 
     def _seed_missing_defaults(self) -> None:
         for item in build_default_slovak_flow_packs():
-            payload = FlowPackCreateRequest.model_validate(item)
+            definition = item.get("definition", {})
+            keywords = list(_extract_flow_keywords(definition))
+            payload = FlowPackCreateRequest.model_validate({
+                **item,
+                "question_kind": "legal_question",
+                "legal_domain": item.get("domain", "general"),
+                "requested_outcome": "legal_information",
+                "positive_examples": keywords or [str(item.get("title", "legal question"))],
+                "negative_examples": [],
+                "clarification_policy": {"on_low_confidence": "ask_user"},
+            })
             if not self._version_exists(
                 flow_key=payload.flow_key,
                 version=payload.version or 1,
                 jurisdiction=payload.jurisdiction,
             ):
-                self.create(payload)
+                self.create(payload, trusted_seed=True)
 
     def _initialize(self) -> None:
         with self._connect() as conn:
@@ -357,6 +474,7 @@ class FlowPackStore:
                 conn.executescript(_load_schema_sql())
             self._migrate_legacy_uniqueness(conn)
             self._migrate_lifecycle_state(conn)
+            self._migrate_routing_metadata(conn)
             conn.commit()
 
     @property
@@ -406,6 +524,28 @@ class FlowPackStore:
                 "ALTER TABLE flow_packs ADD COLUMN lifecycle_state "
                 "TEXT NOT NULL DEFAULT 'published'"
             )
+
+    def _migrate_routing_metadata(self, conn: Any) -> None:
+        columns = {
+            "question_kind": "TEXT NOT NULL DEFAULT 'legal_question'",
+            "legal_domain": "TEXT NOT NULL DEFAULT 'general'",
+            "requested_outcome": "TEXT NOT NULL DEFAULT 'legal_information'",
+            "positive_examples_json": "TEXT NOT NULL DEFAULT '[]'",
+            "negative_examples_json": "TEXT NOT NULL DEFAULT '[]'",
+            "clarification_policy_json": "TEXT NOT NULL DEFAULT '{}'",
+            "definition_hash": "TEXT NULL",
+            "locked_at": "TEXT NULL",
+            "locked_by": "TEXT NULL",
+            "locked_reason": "TEXT NULL",
+        }
+        if self._is_postgres:
+            for name, declaration in columns.items():
+                conn.execute(f"ALTER TABLE flow_packs ADD COLUMN IF NOT EXISTS {name} {declaration}")
+            return
+        existing = {str(row["name"]) for row in conn.execute("PRAGMA table_info(flow_packs)").fetchall()}
+        for name, declaration in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE flow_packs ADD COLUMN {name} {declaration}")
 
     def _version_exists(self, *, flow_key: str, version: int, jurisdiction: str) -> bool:
         with self._connect() as conn:
@@ -510,9 +650,23 @@ class FlowPackStore:
             title=str(row["title"]),
             description=str(row["description"]),
             definition=json.loads(str(row["definition_json"])) if row["definition_json"] else {},
+            question_kind=str(row["question_kind"]),
+            legal_domain=str(row["legal_domain"]),
+            requested_outcome=str(row["requested_outcome"]),
+            positive_examples=json.loads(str(row["positive_examples_json"])),
+            negative_examples=json.loads(str(row["negative_examples_json"])),
+            clarification_policy=json.loads(str(row["clarification_policy_json"])),
+            definition_hash=str(row["definition_hash"]) if row["definition_hash"] else None,
+            locked_at=_from_iso(str(row["locked_at"])) if row["locked_at"] else None,
+            locked_by=str(row["locked_by"]) if row["locked_by"] else None,
+            locked_reason=str(row["locked_reason"]) if row["locked_reason"] else None,
             is_enabled=bool(row["is_enabled"]),
             lifecycle_state=cast(
-                Literal["draft", "published", "retired"], str(row["lifecycle_state"])
+                Literal[
+                    "draft", "test_ready", "testing", "test_passed",
+                    "production_approved", "published", "retired",
+                ],
+                str(row["lifecycle_state"]),
             ),
             is_deleted=bool(row["is_deleted"]),
             created_at=_from_iso(str(row["created_at"])),
@@ -590,3 +744,44 @@ def _token_roots(value: str) -> set[str]:
             continue
         roots.add(cleaned[:4])
     return roots
+
+
+def _flow_definition_hash(flow: FlowPackResponse) -> str:
+    versioned_content = {
+        "flow_key": flow.flow_key,
+        "version": flow.version,
+        "jurisdiction": flow.jurisdiction,
+        "domain": flow.domain,
+        "title": flow.title,
+        "description": flow.description,
+        "definition": flow.definition,
+        "question_kind": flow.question_kind,
+        "legal_domain": flow.legal_domain,
+        "requested_outcome": flow.requested_outcome,
+        "positive_examples": flow.positive_examples,
+        "negative_examples": flow.negative_examples,
+        "clarification_policy": flow.clarification_policy,
+    }
+    canonical = json.dumps(
+        versioned_content, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _payload_definition_hash(payload: FlowPackCreateRequest, version: int) -> str:
+    versioned_content = {
+        "flow_key": payload.flow_key.strip(), "version": version,
+        "jurisdiction": payload.jurisdiction.strip().upper(),
+        "domain": payload.domain.strip().lower(), "title": payload.title.strip(),
+        "description": payload.description.strip(), "definition": payload.definition,
+        "question_kind": payload.question_kind.strip().lower(),
+        "legal_domain": payload.legal_domain.strip().lower(),
+        "requested_outcome": payload.requested_outcome.strip().lower(),
+        "positive_examples": payload.positive_examples,
+        "negative_examples": payload.negative_examples,
+        "clarification_policy": payload.clarification_policy,
+    }
+    canonical = json.dumps(
+        versioned_content, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()

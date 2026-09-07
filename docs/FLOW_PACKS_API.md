@@ -1,6 +1,6 @@
 # Flow Packs API (Slovak legal process packs)
 
-This API adds flow-pack lifecycle management for Slovak legal processes.
+This API adds versioned flow-pack lifecycle management and isolated offline evaluation for legal processes.
 
 ## Purpose
 
@@ -12,6 +12,8 @@ Flow packs provide configurable process metadata used by a future process router
 - escalation guidance
 - enabled/disabled runtime state
 - immutable version history
+- versioned routing metadata: question kind, legal domain, requested outcome, positive/negative examples, and clarification policy
+- immutable SHA-256 definition pins used by evaluation and approval
 
 Default seeded Slovak packs include:
 
@@ -70,16 +72,42 @@ All endpoints require `x-api-key`.
   - soft delete (also disables the version)
   - optional query: `jurisdiction=SK|CZ|...` (required if ambiguous)
 
-## Soft delete and versioning behavior
+## Lifecycle and publication gates
 
 - `DELETE` marks `is_deleted=true`, sets `deleted_at`, and forces `is_enabled=false`.
-- lifecycle is `draft -> published -> retired`; a retired version cannot be republished.
-- only draft versions are editable. Enabling publishes a version permanently and published
-  content is immutable; changes require a derived draft with a new version.
+- lifecycle is `draft -> test_ready -> testing -> test_passed -> production_approved -> published -> retired`.
+- new admin versions always start disabled in `draft`; `is_enabled=true` is rejected and cannot bypass evaluation.
+- only drafts are editable. `POST .../lock-for-testing` validates required routing content, records the
+  admin/reason/time, creates the canonical definition hash, and makes that version immutable.
+- `/enable` accepts only `production_approved`; `/disable` accepts only `published`. Retired versions
+  cannot be republished. Changes always require a new draft version.
+- bundled defaults use a private trusted-seed path; that path is unavailable through the admin API.
 - mutation endpoints require authenticated admin authorization in addition to `x-api-key`.
 - version values are immutable and unique per `flow_key`.
 - uniqueness is country-scoped: `(jurisdiction, flow_key, version)`.
 - creating a new version never mutates prior versions.
+
+## Offline evaluation API
+
+All evaluation endpoints require API and AI-model-admin authorization.
+
+- `POST /v1/flow-evaluations/suites` creates an immutable, synthetic-only suite. The request must
+  explicitly confirm synthetic data, chooses `routing_only` or `full_graph` per case, sets a routing
+  accuracy threshold, and sets retention from 1 to 30 days.
+- `GET /v1/flow-evaluations/suites/{suite_id}` returns suite pins and counts, not synthetic question text.
+- `POST /v1/flow-evaluations/runs` records one complete suite-mode observation set and evaluates hard gates.
+- `GET /v1/flow-evaluations/runs/{run_id}` returns minimized metrics and pinned provenance.
+- `POST /v1/flow-evaluations/flows/{flow_key}/versions/{version}/production-approval?jurisdiction=SK`
+  records human approval of the latest successful, non-stale run and atomically advances the lifecycle.
+- `DELETE /v1/flow-evaluations/expired` applies run/result retention deletion.
+
+Runs pin flow ID/version/hash, suite version/hash, graph version, routing-policy hash, provider/model route,
+and a synthetic run ID. Hard gates cover routing threshold, schema/policy, required citations and provenance,
+zero privacy violations, no unsupported automatic finalization, and required human review. Failed or stale
+runs cannot be approved. Evaluation never reads or changes production case-flow assignments or user sessions.
+Stored results omit prompts, generated response text, source bodies, credentials, and personal facts.
+The migration also creates immutable promotion-provenance storage (approval, prior/target assignment hash,
+actor, time, and rollback link) for the separate production assignment workflow.
 
 ## Runtime warning on unmatched requests
 
@@ -98,6 +126,10 @@ For chat-simulator coverage, flow definitions now include:
 
 ```bash
 python examples/flow_packs_minimal_demo.py
+```
+
+```bash
+python examples/flow_evaluation_minimal_demo.py
 ```
 
 ```bash
