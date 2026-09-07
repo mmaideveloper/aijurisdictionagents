@@ -44,7 +44,6 @@ def main() -> int:
     os.environ["AZURE_OPENAI_API_VERSION"] = _required("E2E_AZURE_FOUNDRY_API_VERSION")
     os.environ["AZURE_OPENAI_DEPLOYMENT"] = _required("E2E_AZURE_FOUNDRY_DEPLOYMENT")
     os.environ["AZURE_OPENAI_API_KEY"] = _required("E2E_AZURE_FOUNDRY_API_KEY")
-    os.environ["AI_CASE_ORCHESTRATION_MODE"] = "active"
     os.environ["INTERNAL_MCP_BASE_URL"] = "http://127.0.0.1:8070"
     os.environ["INTERNAL_MCP_SHARED_SECRET"] = "issue-720-local-e2e-only"
     api_root = REPO_ROOT / "api" / "aijuristiction-api"

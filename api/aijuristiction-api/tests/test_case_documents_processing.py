@@ -442,8 +442,12 @@ def test_uploaded_pdf_is_stored_vectorized_and_used_for_vector_prompt_context(
 
     assert [user_prompt] in embedding_client.calls
     assert llm_client.calls
-    llm_documents = llm_client.calls[0]["documents"]
-    assert llm_documents
+    llm_documents = [
+        document
+        for call in llm_client.calls
+        for document in call["documents"]
+    ]
+    assert any(document.path == "case-type-candidates.json" for document in llm_documents)
     assert any("#chunk-" in document.path for document in llm_documents)
     assert any("67/2000" in _normalize_text(document.content) for document in llm_documents)
 

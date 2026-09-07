@@ -9,7 +9,7 @@ and copy the ID. A fresh `x-request-id` identifies each HTTP or downstream opera
 The same correlation context is restored in streaming worker threads and propagated through:
 
 - API requests and correlated error responses;
-- legacy orchestration and the primary LangGraph router;
+- the primary LangGraph router and dedicated case workflows;
 - local case-document pre/post retrieval filters and JurisDigta MCP tool calls;
 - Azure Foundry, OpenAI, and Ollama model calls, including effective messages and final output;
 - structured workflow decisions and the final chat result.

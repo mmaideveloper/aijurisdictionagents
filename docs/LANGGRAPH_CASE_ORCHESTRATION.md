@@ -1,6 +1,6 @@
 # LangGraph case orchestration
 
-JurisDigta uses LangGraph as the primary chat orchestrator and a registered, versioned runtime for
+JurisDigta uses LangGraph as the mandatory primary chat orchestrator and a registered, versioned runtime for
 guided legal cases. The first active reference is `sk.civil.payment_confirmation@5` on
 `legal_document_workflow@4`; all other enabled Slovak case types receive an explicit
 `unsupported_or_human_review@1` assignment until their legal configuration is reviewed.
@@ -132,12 +132,12 @@ prompt, credentials, or case facts. The application projection stores the same r
 `0024_langgraph_termination_policy.sql`; repeated or concurrent persistence is deduplicated by the
 stable terminal event ID.
 
-The chat API uses primary routing when `AI_CASE_ORCHESTRATION_MODE=active`; `legacy` is the emergency
-rollback setting. Legal-research messages enter the primary router, receive no dedicated document
+The chat API always uses primary LangGraph routing for ordinary chat questions. Legal-research
+messages enter the primary router, receive no dedicated document
 flow match, and continue through the established cited MCP research executor. Document orchestration
 takes precedence only when a registered published flow confidently matches the requested outcome.
-The production workflow describes `active` with this registry-driven contract; it does not imply or
-accept a separate static case-type allowlist.
+The production workflow uses this registry-driven contract without a separate static case-type
+allowlist or an alternate orchestration mode.
 
 Case-document semantic ranking is a pre-router dependency. It is bounded by
 `CHAT_EMBEDDING_TIMEOUT_SECONDS` and falls back to lexical-only ranking when initialization or the
@@ -171,9 +171,11 @@ primary router discovers it automatically after activation.
 
 ## Operations and rollback
 
-Production deploy selects `active` or `legacy` explicitly. Roll back by dispatching the exact
-validated commit with `case_orchestration_mode=legacy`; never change a running case's pinned
-versions. A retired flow version cannot be republished, and a published version cannot be edited.
+Production deployment has no orchestration-mode input. Roll back configuration by assigning a
+previously reviewed immutable flow version or the registered safe flow for new runs; never change a
+running case's pinned versions. Code rollback still requires the exact commit to pass every build
+and acceptance gate. A retired flow version cannot be republished, and a published version cannot
+be edited.
 
 Deployments can contain the legacy `sk.civil.payment_confirmation@1` definition created before
 the MCP retrieval policy became mandatory and the compatible `@2` definition with query keys.

@@ -743,19 +743,22 @@ The self-managed production deployment script performs the Ollama install, priva
 - If cleanup itself causes an operational concern, omit `finalize_image_retention` in a controlled rollback deployment; do not replace it with global volume or runtime-storage deletion.
 - Keep `/srv/jurisdigta/secrets/jurisdigta.env` owned by `root:jurisdigta-admin` at mode `0640`; validate with `stat -c '%a %U %G %n' /srv/jurisdigta/secrets/jurisdigta.env`. This is distinct from encrypted USB profile files, which remain mode `0600`.
 
-### LangGraph case-orchestration rollout
+### Mandatory LangGraph case orchestration
 
 - Owner: JurisDigta production application administrator and legal workflow reviewer.
-- Do not configure a production case-type environment allowlist. Active mode discovers only active,
-  validated assignments backed by enabled, published immutable flow packs. Publish and assign a new
+- Do not configure an orchestration mode or production case-type environment allowlist. The primary
+  router discovers only active, validated assignments backed by enabled, published immutable flow
+  packs. Publish and assign a new
   dedicated flow only after its legal, privacy, human-oversight, and real E2E review succeeds.
-- Dispatch `Self-Managed Prod Deploy` with `case_orchestration_mode=active` only after the exact
-  commit's build, API, frontend, migration, and real local E2E gates pass.
+- Dispatch `Self-Managed Prod Deploy` only after the exact commit's build, API, frontend, migration,
+  and real local E2E gates pass. Primary LangGraph routing has no deployment input.
 - Validate PostgreSQL migrations, `langgraph_checkpoints*`, `case_workflow_*` tables, API health,
   one synthetic interrupt/resume run, ordered sanitized events, PDF/text/render evidence, and no
   raw facts or credentials in logs.
-- Roll back by dispatching the last validated commit with `case_orchestration_mode=legacy`.
-  Existing pinned workflow records remain readable; do not delete PostgreSQL data during rollback.
+- Roll back flow configuration by assigning a previously reviewed immutable version or the
+  registered safe flow for new runs. Code rollback deploys the last validated commit after repeating
+  its exact-commit build gate. Existing pinned workflow records remain readable; do not delete
+  PostgreSQL data during rollback.
 
 ### Privacy And Compliance Notes
 

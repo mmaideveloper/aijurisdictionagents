@@ -128,7 +128,7 @@ missing text fallback, duplicate entries, and unsafe bounds before activation. A
 only a flow-assigned renderer compatible with the result shape; deterministic policy makes the
 decision. HTML is represented by a trusted `result_card`, never arbitrary markup.
 Assignment validation rejects disabled, deleted, draft, incompatible, or unregistered graph/flow combinations.
-When orchestration mode is active, the primary LangGraph router automatically discovers active
+The mandatory primary LangGraph router automatically discovers active
 dedicated assignments backed by enabled, published versions. No separate production case-type
 allowlist must be synchronized with the registry.
 See `docs/LANGGRAPH_CASE_ORCHESTRATION.md`.

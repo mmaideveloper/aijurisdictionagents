@@ -912,9 +912,6 @@ def handle_chat_workflow_turn(
     external_provider_acknowledged: bool = False,
     correlation_id: str = "",
 ) -> WorkflowRunResponse | None:
-    mode = os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower()
-    if mode != "active":
-        return None
     service = get_case_workflow_service()
     candidates = service.list_primary_route_candidates(jurisdiction=jurisdiction)
     if case_type_key not in {item.case_type_key for item in candidates}:
@@ -955,11 +952,40 @@ def route_primary_chat_workflow_turn(
     verified_facts: Mapping[str, str] | None = None,
     external_provider_acknowledged: bool = False,
     correlation_id: str = "",
-) -> PrimaryChatRouteResult | None:
-    """Run the default chat route through a constrained LangGraph router."""
-    if os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower() != "active":
-        return None
-    service = get_case_workflow_service()
+) -> PrimaryChatRouteResult:
+    """Run every ordinary chat question through the constrained LangGraph router."""
+    try:
+        service = get_case_workflow_service()
+    except Exception as exc:
+        _LOGGER.error(
+            "Primary LangGraph workflow service is unavailable",
+            extra={"error_type": type(exc).__name__},
+        )
+        decision = PrimaryLangGraphRouter(
+            classifier=lambda *_args: PrimaryClassification(
+                status="no_match",
+                rationale="workflow_service_unavailable_fail_closed",
+            )
+        ).route(
+            question=request_text,
+            verified_facts=dict(verified_facts or {}),
+            candidates=(),
+        )
+        return PrimaryChatRouteResult(
+            decision=PrimaryRouteDecision(
+                route="generic",
+                selected_case_type_key=None,
+                confidence=decision.confidence,
+                confidence_gap=decision.confidence_gap,
+                clarification_question="",
+                evidence=(
+                    "primary_langgraph_router",
+                    "workflow_service_unavailable_fail_closed",
+                    "generic_langgraph_route",
+                ),
+            ),
+            workflow_run=None,
+        )
     prior = service.store.get_latest_run_for_session(session_id=session_id, user_id=user_id)
     if prior is None and case_id:
         prior = service.store.get_latest_run_for_case(case_id=case_id, user_id=user_id)
@@ -989,13 +1015,17 @@ def route_primary_chat_workflow_turn(
             workflow_run=active_run,
         )
 
-    case_selection = (
-        service.api_store.get_case_catalog_selection(
-            selection_scope="case", entity_id=case_id
-        )
-        if service.api_store is not None and case_id
-        else None
-    )
+    case_selection = None
+    if service.api_store is not None and case_id:
+        try:
+            case_selection = service.api_store.get_case_catalog_selection(
+                selection_scope="case", entity_id=case_id
+            )
+        except Exception as exc:
+            _LOGGER.warning(
+                "Primary LangGraph case selection lookup unavailable; continuing with registered flows",
+                extra={"error_type": type(exc).__name__},
+            )
     if (
         case_selection is not None
         and case_selection.status == "matched"
@@ -1155,9 +1185,6 @@ def handle_active_chat_workflow_turn(
     external_provider_acknowledged: bool = False,
 ) -> WorkflowRunResponse | None:
     """Backward-compatible active-run resume; new routing uses the primary graph."""
-    mode = os.getenv("AI_CASE_ORCHESTRATION_MODE", "legacy").strip().lower()
-    if mode != "active":
-        return None
     service = get_case_workflow_service()
     prior = service.store.get_latest_run_for_session(session_id=session_id, user_id=user_id)
     if prior is None and case_id:
