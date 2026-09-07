@@ -1804,25 +1804,22 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     assert "Client full name: Marek Matonok" in captured_prompts[-1]
 
 
-def test_reply_endpoint_injects_case_catalog_detection_context_and_persists_selection(
+def test_reply_endpoint_does_not_activate_unassigned_case_catalog_flow(
     monkeypatch, tmp_path
 ) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
-    from aijurisdictionagents.agents.case_type_detector import CaseTypeDetectionResult
     from aijurisdictionagents.api_db import ApiDatabaseStore, SubscriptionPlan
     from aijurisdictionagents.llm.routing import RoutedLLMClient
     import app.document_templates.store as template_store_module
 
     captured_prompts: list[str] = []
-    captured_documents: list[list[str]] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
             captured_prompts.append(system_prompt_override)
-            captured_documents.append([document.path for document in documents])
             return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
 
     class _FakeLLM:
@@ -1839,18 +1836,6 @@ def test_reply_endpoint_injects_case_catalog_detection_context_and_persists_sele
     )
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
     monkeypatch.setattr(template_store_module, "_store", None)
-    monkeypatch.setattr(
-        "app.chat.case_type_detection.AICaseTypeDetectionAgent.detect",
-        lambda self, **kwargs: CaseTypeDetectionResult(
-            status="matched",
-            selected_case_type_key="sk.real_estate.lease_agreement",
-            confidence=0.94,
-            second_case_type_key="sk.real_estate.sale_purchase_agreement",
-            second_confidence=0.21,
-            clarification_question="",
-            rationale="Lease-agreement terminology dominates the first request.",
-        ),
-    )
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
         lambda llm, country: _SpyLawyer(),
@@ -1905,19 +1890,15 @@ def test_reply_endpoint_injects_case_catalog_detection_context_and_persists_sele
 
     assert reply_response.status_code == 200
     assert captured_prompts
-    assert "AUTOMATIC CASE-TYPE DETECTION" in captured_prompts[-1]
-    assert "sk.real_estate.lease_agreement" in captured_prompts[-1]
-    assert any(path.startswith("case-templates/") for path in captured_documents[-1])
+    assert "AUTOMATIC CASE-TYPE DETECTION" not in captured_prompts[-1]
 
     selections = store.list_case_catalog_selections(case_id=case.case_id)
-    assert any(item.selection_scope == "case" for item in selections)
-    assert any(item.selection_scope == "session" for item in selections)
-    assert any(item.case_type_key == "sk.real_estate.lease_agreement" for item in selections)
+    assert selections == []
     events = store.list_case_catalog_events(case_id=case.case_id, limit=10, offset=0)
-    assert any(item.event_type == "case_type_detection.matched" for item in events)
+    assert events == []
 
 
-def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambiguous(
+def test_unassigned_ambiguous_catalog_request_uses_generic_langgraph_route(
     monkeypatch, tmp_path
 ) -> None:
     from app.chat.repository import InMemoryChatRepository
@@ -1927,11 +1908,11 @@ def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambig
     from aijurisdictionagents.llm.routing import RoutedLLMClient
     import app.document_templates.store as template_store_module
 
-    class _FailingLawyer:
-        system_prompt = "should-not-run"
+    class _GenericLawyer:
+        system_prompt = "generic-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            raise AssertionError("Lawyer agent should not run for ambiguous case-type detection.")
+            return SimpleNamespace(content="GENERIC_LANGGRAPH_REPLY", agent_name="LawyerSlovakia")
 
     class _FakeLLM:
         def complete(self, agent_name, system_prompt, conversation, documents):
@@ -1961,7 +1942,7 @@ def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambig
     )
     monkeypatch.setattr(
         "aijurisdictionagents.agents.create_lawyer_agent",
-        lambda llm, country: _FailingLawyer(),
+        lambda llm, country: _GenericLawyer(),
     )
     monkeypatch.setattr(
         chat_api,
@@ -2012,25 +1993,11 @@ def test_reply_endpoint_asks_for_clarification_when_case_type_detection_is_ambig
     )
 
     assert reply_response.status_code == 200
-    normalized_reply = "".join(
-        char
-        for char in unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
-        if not unicodedata.combining(char)
-    )
-    assert "automaticke urcenie" in normalized_reply
-    assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
-    normalized_reply = "".join(
-        char
-        for char in unicodedata.normalize("NFKD", reply_response.json()["content"]).lower()
-        if not unicodedata.combining(char)
-    )
-    assert "automaticke urcenie" in normalized_reply
-    assert "ide o najom, alebo o kupu nehnutelnosti?" in normalized_reply
+    assert reply_response.json()["content"] == "GENERIC_LANGGRAPH_REPLY"
     selections = store.list_case_catalog_selections(case_id=case.case_id)
-    assert any(item.status == "ambiguous" for item in selections)
-    assert any(item.clarification_question == "Ide o najom, alebo o kupu nehnutelnosti?" for item in selections)
+    assert selections == []
     events = store.list_case_catalog_events(case_id=case.case_id, limit=10, offset=0)
-    assert any(item.event_type == "case_type_detection.ambiguous" for item in events)
+    assert events == []
 
 
 def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_path) -> None:
@@ -3150,8 +3117,11 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
     monkeypatch.setattr(
         chat_api,
         "route_primary_chat_workflow_turn",
-        lambda **_kwargs: (_ for _ in ()).throw(
-            AssertionError("Primary LangGraph routing must be stubbed for this focused test")
+        lambda **_kwargs: SimpleNamespace(
+            decision=SimpleNamespace(
+                route="generic", confidence=0.0, confidence_gap=0.0, evidence=()
+            ),
+            workflow_run=None,
         ),
     )
     monkeypatch.setattr(
@@ -5251,7 +5221,7 @@ def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
     assert _document_export_ready(messages)
 
 
-def test_run_direct_lawyer_turn_does_not_initialize_llm_for_tool_capability_question(monkeypatch) -> None:
+def test_run_direct_lawyer_turn_routes_tool_capability_question_through_langgraph(monkeypatch) -> None:
     import app.chat.api as chat_api
     from app.chat.repository import InMemoryChatRepository
     from app.chat.models import Session
@@ -5260,11 +5230,8 @@ def test_run_direct_lawyer_turn_does_not_initialize_llm_for_tool_capability_ques
     repository = InMemoryChatRepository()
     repository.create_session(session)
 
-    def fail_get_llm_client() -> object:
-        raise AssertionError("LLM should not be initialized for deterministic tool capability replies")
-
     monkeypatch.setattr(chat_api, "_repository", repository)
-    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", fail_get_llm_client)
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
 
     _user_message, assistant_message, visible_text, processing_events, _route = chat_api._run_direct_lawyer_turn(
         session_id=session.id,

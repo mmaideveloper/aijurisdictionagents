@@ -192,7 +192,6 @@ def test_primary_chat_router_uses_existing_case_selection_before_model_classific
     )
     service.api_store = api_store
     llm = _PrimaryRouterLLM({"status": "not_matched"})
-    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
     monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
 
     result = route_primary_chat_workflow_turn(
@@ -230,7 +229,6 @@ def test_primary_chat_router_starts_registered_flow_without_static_allowlist(
             "rationale": "The requested outcome is a payment confirmation.",
         }
     )
-    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
     monkeypatch.delenv("AI_CASE_ORCHESTRATION_CASE_TYPES", raising=False)
     monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
 
@@ -269,7 +267,6 @@ def test_primary_chat_router_asks_instead_of_guessing_low_confidence_flow(
             "rationale": "The request is incomplete.",
         }
     )
-    monkeypatch.setenv("AI_CASE_ORCHESTRATION_MODE", "active")
     monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", lambda: service)
 
     result = route_primary_chat_workflow_turn(
@@ -286,6 +283,33 @@ def test_primary_chat_router_asks_instead_of_guessing_low_confidence_flow(
     assert result.decision.route == "clarification"
     assert result.workflow_run is None
     assert result.decision.clarification_question == "Chcete pripraviť potvrdenie o prijatí platby?"
+
+
+def test_primary_chat_router_fails_closed_through_langgraph_when_service_is_unavailable(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def unavailable() -> None:
+        raise RuntimeError("synthetic workflow service outage")
+
+    monkeypatch.setattr("app.case_workflows.service.get_case_workflow_service", unavailable)
+
+    result = route_primary_chat_workflow_turn(
+        session_id="unavailable-session",
+        case_id="unavailable-case",
+        user_id="synthetic-user",
+        jurisdiction="SK",
+        language="sk-SK",
+        request_text="Vysvetlite syntetickú právnu otázku.",
+        llm_client=_PrimaryRouterLLM({"status": "matched"}),
+    )
+
+    assert result.workflow_run is None
+    assert result.decision.route == "generic"
+    assert result.decision.evidence == (
+        "primary_langgraph_router",
+        "workflow_service_unavailable_fail_closed",
+        "generic_langgraph_route",
+    )
 
 
 def test_production_retrieval_uses_policy_query_and_excludes_unmapped_identity(

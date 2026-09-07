@@ -63,7 +63,8 @@ print(
 )
 print(
     "langgraph_case_orchestration => run python examples/langgraph_case_workflow_demo.py; "
-    "active mode first routes every question through PrimaryLangGraphRouter, discovers only active "
+    "the mandatory primary router sends every ordinary question through PrimaryLangGraphRouter, "
+    "discovers only active "
     "published dedicated flows, asks on ambiguity, and otherwise uses the generic graph route; the "
     "case demo proves pinned versions, interrupt/resume, constrained tool consent, deterministic "
     "review, and a schema-v1 privacy-safe decision trace with no prompts, fact values, source "

@@ -1,9 +1,9 @@
 # ADR 635: Registered LangGraph case workflows
 
-Status: accepted for controlled rollout.
+Status: accepted and mandatory.
 
-JurisDigta will use LangGraph for durable guided case execution while retaining the legacy
-orchestrator as a rollout fallback. Case types remain the routing catalog, flow packs remain the
+JurisDigta uses LangGraph for durable guided case execution and primary chat routing. Case types
+remain the routing catalog, flow packs remain the
 declarative legal configuration, and a persisted assignment connects both to a reviewed Python
 graph version.
 
@@ -14,8 +14,9 @@ plus explicit migration/operations work. Arbitrary autonomous provider agents an
 personal-data discovery are rejected.
 
 Published flow versions and running-case pins are immutable. Missing or incompatible
-configuration uses an explicit non-automated human-review flow. Production activation remains
-allowlisted and reversible with `AI_CASE_ORCHESTRATION_MODE=legacy`.
+configuration uses the generic cited-research route or an explicit non-automated human-review
+flow. Operational rollback assigns a previously reviewed immutable flow version or the registered
+safe flow; it never switches chat back to a separate orchestrator.
 
 Loop termination is part of the durable workflow contract. All iterative nodes must use persisted,
 bounded input, quality, and technical counters; repeated-category plus unchanged-output no-progress

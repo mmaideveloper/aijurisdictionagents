@@ -42,7 +42,6 @@ def main() -> int:
             "STORAGE_OPTION": "local",
             "STORE_LOCAL": str(REPO_ROOT / "runs" / "e2e" / "issue-776-chat-startup" / "files"),
             "LLM_PROVIDER": "azurefoundry",
-            "AI_CASE_ORCHESTRATION_MODE": "active",
             "INTERNAL_MCP_BASE_URL": mcp_url,
             "INTERNAL_MCP_STARTUP_PROBE_ENABLED": "true",
             "INTERNAL_MCP_REQUEST_TIMEOUT_SECONDS": "10",

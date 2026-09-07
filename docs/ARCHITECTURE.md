@@ -116,8 +116,9 @@ Guided cases use persisted checkpoints, sanitized ordered events, and independen
 input/output/privacy/final-review gates. JurisDigta MCP supplies current legal requirements. Graph v2 verifies required facts
 before retrieval and constructs a bounded query only from reviewed immutable policy terms plus
 allowlisted verified-fact aliases; raw personal facts and unrestricted model-generated queries are
-excluded. The legacy orchestrator remains
-available as a fail-closed rollout fallback. See `docs/LANGGRAPH_CASE_ORCHESTRATION.md` and
+excluded. LangGraph is mandatory for ordinary chat questions. Missing or incompatible dedicated
+configuration stays inside the generic or human-review LangGraph path. See
+`docs/LANGGRAPH_CASE_ORCHESTRATION.md` and
 `docs/ADR-635-LANGGRAPH-CASE-ORCHESTRATION.md`. Graph v4 adds flow-assigned presentation tools:
 explicit supported user format requests take precedence, otherwise a data-blind model proposal is
 validated against immutable policy and result shape. Clients render the versioned data contract
