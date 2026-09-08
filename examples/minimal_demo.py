@@ -577,6 +577,11 @@ print(
     "server-authorized admin APIs."
 )
 print(
+    "admin_flow_offline_testing => /app/admin/ai-models Flow packages lets an authorized "
+    "admin clone and validate versioned LangGraph flow drafts, lock immutable test candidates, "
+    "and review synthetic offline evaluation gates without assigning them to production."
+)
+print(
     "ai_model_user_assignment => /app/admin User model assignment searches by email, "
     "assigns any enabled local or external model profile as a per-user override, "
     "and disables the override with mandatory admin reason and audit logging."

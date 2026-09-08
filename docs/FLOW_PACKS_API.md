@@ -109,6 +109,33 @@ Stored results omit prompts, generated response text, source bodies, credentials
 The migration also creates immutable promotion-provenance storage (approval, prior/target assignment hash,
 actor, time, and rollback link) for the separate production assignment workflow.
 
+## Admin authoring and offline test workspace
+
+The frontend route `/app/admin/ai-models` includes a **Flow packages** workspace for server-authorized
+administrators. It can search and filter version history by jurisdiction, domain, question kind,
+requested outcome, lifecycle, and registered-graph compatibility. Administrators can clone any version
+into a new draft, edit the structured routing fields or validated JSON, compare it with the prior version,
+validate it, and lock it for testing. Locked versions are read-only and must be cloned before changing them.
+
+Offline evaluation remains separate from production assignment. The workspace creates or loads an immutable
+synthetic suite, records the selected graph, routing policy, provider/model route, and sanitized observations,
+and displays the server-evaluated gates. A human-review confirmation is mandatory before submission. The UI
+does not expose production approval or assignment; that is a separate audited workflow. In the existing case
+assignment screen, only enabled versions whose lifecycle is exactly `published` are labelled and offered as
+published flow packages.
+
+The evaluation API intentionally has no suite-list endpoint yet. An administrator creates a suite in the
+workspace or loads a known immutable suite ID. Test inputs must be synthetic and minimized: do not paste
+customer case content, credentials, source bodies, model prompts/responses, or hidden reasoning into suite or
+observation JSON. Run summaries retain only hashes, identifiers, metrics, gates, and the configured expiry.
+
+Minimal frontend regression:
+
+```powershell
+cd frontend/aijurisdictionfronend
+npm test -- --run src/__tests__/adminFlowPackages.test.tsx src/__tests__/aiModelAdminCaseCatalog.test.tsx
+```
+
 ## Runtime warning on unmatched requests
 
 During chat reply processing, the API now attempts to match each user request against enabled flow packs
