@@ -64,7 +64,11 @@ def _application_logs(
 
 
 def _build_payload(
-    *, correlation_id: str, service: CaseWorkflowApplicationService, limit: int = 1000
+    *,
+    correlation_id: str,
+    service: CaseWorkflowApplicationService,
+    limit: int = 1000,
+    offset: int = 0,
 ) -> dict[str, object]:
     debug_events = service.store.list_debug_events(
         correlation_id=correlation_id, limit=limit
@@ -77,6 +81,9 @@ def _build_payload(
     ]
     session, messages = _session_payload(correlation_id)
     logs, logs_warning = _application_logs(correlation_id, limit=limit)
+    langgraph_evidence = service.store.list_graph_evidence_by_correlation(
+        correlation_id=correlation_id, limit=min(limit, 1000), offset=offset
+    )
     timeline: list[dict[str, object]] = []
     for event in debug_events:
         timeline.append({"kind": "debug", **event})
@@ -130,6 +137,7 @@ def _build_payload(
         "messages": messages,
         "timeline": timeline,
         "flow": {"nodes": nodes, "edges": edges},
+        "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
@@ -157,12 +165,15 @@ def get_session_debug_trace(
     request: Request,
     correlation_id: str = Path(min_length=1, max_length=200),
     limit: int = Query(default=1000, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
     admin: AdminContext = Depends(require_decision_trace_admin),
     admin_store: ApiDatabaseStore = Depends(get_admin_store),
     service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
 ) -> dict[str, object]:
     resolved = _validated_correlation_id(correlation_id)
-    payload = _build_payload(correlation_id=resolved, service=service, limit=limit)
+    payload = _build_payload(
+        correlation_id=resolved, service=service, limit=limit, offset=offset
+    )
     if not payload["timeline"] and payload["session"] is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Debug trace not found or expired")
     _audit(store=admin_store, admin=admin, request=request, action="view_debug_trace", correlation_id=resolved)
@@ -183,17 +194,37 @@ def export_session_debug_trace(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Debug trace not found or expired")
     archive = BytesIO()
     with ZipFile(archive, "w", compression=ZIP_DEFLATED) as bundle:
+        graph_evidence = payload["langgraph_evidence"]
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "correlation_id": resolved,
             "generated_at": payload["generated_at"],
             "retention_days": 7,
+            "langgraph_evidence_schema_version": (
+                graph_evidence.get("schema_version")
+                if isinstance(graph_evidence, dict)
+                else None
+            ),
+            "evidence_completeness": (
+                graph_evidence.get("completeness")
+                if isinstance(graph_evidence, dict)
+                else "unavailable"
+            ),
             "exclusions": [
                 "credentials", "authorization headers", "environment secrets", "hidden chain-of-thought"
             ],
         }
         bundle.writestr("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False))
-        for name in ("session", "messages", "timeline", "flow", "decision_traces", "application_logs", "warnings"):
+        for name in (
+            "session",
+            "messages",
+            "timeline",
+            "flow",
+            "langgraph_evidence",
+            "decision_traces",
+            "application_logs",
+            "warnings",
+        ):
             bundle.writestr(f"{name}.json", json.dumps(payload[name], indent=2, ensure_ascii=False))
     _audit(store=admin_store, admin=admin, request=request, action="export_debug_trace", correlation_id=resolved)
     return Response(

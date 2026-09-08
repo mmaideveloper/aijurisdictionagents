@@ -1208,6 +1208,143 @@
   border-radius: 0.5rem;
 }
 
+.langgraph-audit {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.langgraph-audit__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.langgraph-audit__heading label {
+  min-width: min(32rem, 100%);
+}
+
+.langgraph-audit__badges,
+.langgraph-audit__controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.langgraph-audit__badges span {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+}
+
+.langgraph-audit__viewport {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent));
+}
+
+.langgraph-audit__viewport svg path {
+  fill: none;
+  stroke: var(--ink-muted);
+  stroke-width: 1.5;
+}
+
+.langgraph-audit__viewport svg marker path {
+  fill: var(--ink-muted);
+}
+
+.langgraph-audit__viewport svg .is-conditional {
+  stroke-dasharray: 5 4;
+}
+
+.langgraph-audit__viewport svg g.is-observed > path {
+  stroke: #157347;
+  stroke-width: 3;
+}
+
+.langgraph-audit__viewport svg text {
+  fill: var(--ink);
+  font-size: 12px;
+}
+
+.langgraph-audit__node {
+  cursor: pointer;
+}
+
+.langgraph-audit__node rect {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.langgraph-audit__node.is-observed rect {
+  fill: color-mix(in srgb, #198754 16%, var(--surface));
+  stroke: #198754;
+}
+
+.langgraph-audit__node.is-current rect,
+.langgraph-audit__node.is-selected rect,
+.langgraph-audit__node:focus rect {
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+
+.langgraph-audit__details {
+  padding: 0.8rem;
+  border-left: 4px solid var(--accent);
+  background: var(--surface);
+}
+
+.langgraph-audit__details dl,
+.langgraph-audit__details dl div {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.langgraph-audit__details dl div {
+  grid-template-columns: minmax(8rem, 0.25fr) 1fr;
+}
+
+.langgraph-audit__details dt {
+  font-weight: 700;
+}
+
+.langgraph-audit__execution-list {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.5rem;
+}
+
+.langgraph-audit__execution-list li {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 0.6fr);
+  gap: 0.25rem 1rem;
+  padding: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.langgraph-audit__execution-list button {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.langgraph-audit__execution-list code,
+.langgraph-audit__execution-list small {
+  overflow-wrap: anywhere;
+}
+
 .assistant-thread__viewport {
   flex: 1;
   overflow: auto;

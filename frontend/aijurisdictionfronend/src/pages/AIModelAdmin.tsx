@@ -58,6 +58,7 @@ import {
 } from "../api/adminModelClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { LangGraphAuditGraph } from "../components/LangGraphAuditGraph";
 import AdminFlowPackages from "./AdminFlowPackages";
 
 type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "flowPackages" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
@@ -203,7 +204,8 @@ const AIModelAdmin: React.FC = () => {
   const [error, setError] = React.useState("");
   const [debugCorrelationId, setDebugCorrelationId] = React.useState("");
   const [debugTrace, setDebugTrace] = React.useState<AdminDebugTrace | null>(null);
-  const [debugView, setDebugView] = React.useState<"timeline" | "flow">("timeline");
+  const [debugView, setDebugView] = React.useState<"timeline" | "flow" | "langgraph">("timeline");
+  const debugRequestRef = React.useRef(0);
   const [formSubmitting, setFormSubmitting] = React.useState(false);
   const formSubmittingRef = React.useRef(false);
   const editFormRef = React.useRef<HTMLFormElement | null>(null);
@@ -940,7 +942,7 @@ const AIModelAdmin: React.FC = () => {
       void loadCaseCatalog();
     } else if (section === "flowPackages") {
       void loadWorkflowGraphs();
-    } else if (dashboardLoadState !== "success") {
+    } else if (section !== "debug" && dashboardLoadState !== "success") {
       void reload();
     }
   };
@@ -1008,7 +1010,7 @@ const AIModelAdmin: React.FC = () => {
       </section>
 
       {status ? <p className="form-success">{status}</p> : null}
-      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      {error && !(activeSection === "debug" && debugTrace) ? <p className="form-error" role="alert">{error}</p> : null}
 
       <section className="admin-alert">
         <strong>{t("adminExternalWarningTitle")}</strong>
@@ -1062,13 +1064,13 @@ const AIModelAdmin: React.FC = () => {
           tabIndex={-1}
           aria-busy={dashboardLoadState === "loading" && !dashboard}
         >
-          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && dashboardLoadState === "loading" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && activeSection !== "debug" && dashboardLoadState === "loading" && !dashboard ? (
             <div className="admin-panel admin-load-state" role="status">
               <p>{t("adminLoading")}</p>
             </div>
           ) : null}
 
-          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && dashboardLoadState === "error" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && activeSection !== "debug" && dashboardLoadState === "error" && !dashboard ? (
             <div className="admin-panel admin-load-state">
               <p>{t("adminLoadFailed")}</p>
               <button className="secondary-button" type="button" onClick={() => void reload()}>
@@ -1077,7 +1079,7 @@ const AIModelAdmin: React.FC = () => {
             </div>
           ) : null}
 
-          {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" || activeSection === "flowPackages" ? <>
+          {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" || activeSection === "flowPackages" || activeSection === "debug" ? <>
           {activeSection === "users" ? (
             <section className="admin-table-section">
               <h2>{t("adminUsersTitle")}</h2>
@@ -2025,9 +2027,11 @@ const AIModelAdmin: React.FC = () => {
               <form className="admin-debug__search" onSubmit={(event) => {
                 event.preventDefault();
                 setError("");
+                const requestId = ++debugRequestRef.current;
+                setDebugTrace(null);
                 void fetchAdminDebugTrace(adminAuth, debugCorrelationId.trim())
-                  .then(setDebugTrace)
-                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+                  .then((trace) => { if (requestId === debugRequestRef.current) setDebugTrace(trace); })
+                  .catch((reason: unknown) => { if (requestId === debugRequestRef.current) setError(reason instanceof Error ? reason.message : String(reason)); });
               }}>
                 <label>{t("adminDebugCorrelationId")}<input value={debugCorrelationId} onChange={(event) => setDebugCorrelationId(event.target.value)} required /></label>
                 <button className="primary-button" type="submit"><FaSearch aria-hidden="true" />{t("adminDebugSearch")}</button>
@@ -2036,6 +2040,7 @@ const AIModelAdmin: React.FC = () => {
                 <div className="admin-inline-actions">
                   <button className="button ghost" type="button" onClick={() => setDebugView("timeline")}>{t("adminDebugTimeline")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("flow")}>{t("adminDebugFlow")}</button>
+                  <button className="button ghost" type="button" onClick={() => setDebugView("langgraph")}>{t("adminDebugLangGraph")}</button>
                   <button className="button ghost" type="button" onClick={() => void fetchAdminDebugExport(adminAuth, debugTrace.correlation_id).then(({ blob, filename }) => {
                     const url = URL.createObjectURL(blob);
                     const anchor = document.createElement("a");
@@ -2055,13 +2060,13 @@ const AIModelAdmin: React.FC = () => {
                       <details><summary>{t("adminDebugDetails")}</summary><pre>{JSON.stringify(item.payload, null, 2)}</pre></details>
                     </li>)}
                   </ol>
-                ) : (
+                ) : debugView === "flow" ? (
                   <div className="admin-debug__flow" aria-label={t("adminDebugFlow")}>
                     {debugTrace.flow.nodes.map((node, index) => <React.Fragment key={node.id}>
                       {index > 0 ? <span aria-hidden="true">→</span> : null}<strong>{node.label}</strong>
                     </React.Fragment>)}
                   </div>
-                )}
+                ) : <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} />}
               </> : null}
             </section>
           ) : null}
