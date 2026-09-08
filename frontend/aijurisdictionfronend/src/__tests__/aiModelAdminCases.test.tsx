@@ -136,6 +136,59 @@ describe("AIModelAdmin case reset panel", () => {
         nodes: [{ id: "retrieval:case_document_post_filter", label: "retrieval → case_document_post_filter" }],
         edges: []
       },
+      langgraph_evidence: {
+        schema_version: 1,
+        completeness: "complete",
+        page: { limit: 1000, offset: 0, returned_events: 2, next_offset: null, has_more: false },
+        runs: [{
+          workflow_run_id: "run-788",
+          parent_run_id: "",
+          session_id: "session-1",
+          turn_id: "",
+          graph_key: "legal_document_workflow",
+          graph_version: 4,
+          flow_key: "sk.test",
+          flow_version: 1,
+          run_status: "completed",
+          current_node_id: "verify_input",
+          topology_status: "pinned",
+          topology_digest: "abc123",
+          topology: {
+            schema_version: 1,
+            graph_key: "legal_document_workflow",
+            graph_version: 4,
+            digest_algorithm: "sha256",
+            digest: "abc123",
+            nodes: [
+              { id: "__start__", label: "Start" },
+              { id: "verify_input", label: "Verify Input" }
+            ],
+            edges: [{ id: "__start__->verify_input:verify", source: "__start__", target: "verify_input", conditional: true, branch: "verify" }]
+          },
+          occurrences: [{
+            occurrence_id: "run-788:002:verify_input",
+            node_id: "verify_input",
+            attempt: 1,
+            sequence: 1,
+            event_id: "event-workflow-1",
+            event_type: "input_validation_completed",
+            status: "completed",
+            started_at: "2026-09-05T12:00:00Z",
+            ended_at: "2026-09-05T12:00:00Z",
+            duration_ms: null,
+            source_node_id: "__start__",
+            transition_id: "__start__->verify_input:verify",
+            reason_code: "",
+            evidence_refs: [{ type: "workflow_event", id: "event-workflow-1" }]
+          }],
+          observed_transition_ids: ["__start__->verify_input:verify"],
+          evidence_completeness: "complete",
+          evidence_gaps: [],
+          unmapped_event_count: 0,
+          created_at: "2026-09-05T12:00:00Z",
+          updated_at: "2026-09-05T12:00:00Z"
+        }]
+      },
       warnings: []
     });
 
@@ -152,6 +205,9 @@ describe("AIModelAdmin case reset panel", () => {
     );
     await user.click(screen.getByRole("button", { name: /adminDebugFlow/ }));
     expect(screen.getByText("retrieval → case_document_post_filter")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: /adminDebugLangGraph/ }));
+    expect(screen.getAllByText(/legal_document_workflow@4/).length).toBeGreaterThan(0);
+    expect(screen.getByText("event-workflow-1")).not.toBeNull();
   });
 
   it("downloads an audited admin case export from each case row", async () => {

@@ -33,6 +33,7 @@ from .tool_policy import (
     get_tool_policy,
     validate_tool_policy,
 )
+from .graph_evidence import serialize_compiled_graph, transition_id
 
 
 WorkflowStatus = Literal[
@@ -94,6 +95,8 @@ class CaseWorkflowState(TypedDict, total=False):
     flow_key: str
     flow_version: int
     flow_definition: dict[str, Any]
+    graph_topology: dict[str, Any]
+    graph_topology_digest: str
     required_facts: list[str]
     conditional_facts: list[dict[str, Any]]
     facts: dict[str, str]
@@ -308,6 +311,20 @@ class CaseWorkflowRuntime:
     def start(self, state: CaseWorkflowState) -> CaseWorkflowOutcome:
         _validate_initial_state(state)
         graph = self._graph(state["graph_key"], state["graph_version"])
+        topology = serialize_compiled_graph(
+            graph,
+            graph_key=state["graph_key"],
+            graph_version=state["graph_version"],
+        )
+        state = cast(
+            CaseWorkflowState,
+            {
+                **state,
+                "schema_version": 3,
+                "graph_topology": topology,
+                "graph_topology_digest": topology["digest"],
+            },
+        )
         deadline_reason = _deadline_termination_reason(state)
         if deadline_reason:
             return CaseWorkflowOutcome(
@@ -1276,6 +1293,13 @@ def _terminate(
     else:
         status = "human_review_required"
     events = list(state.get("events", []))
+    event_details: dict[str, str | int | float | bool | None] = {
+        "termination_reason": reason,
+        "input_attempt_count": state.get("input_attempt_count", 0),
+        "quality_revision_count": state.get("quality_revision_count", 0),
+        "technical_retry_count": state.get("technical_retry_count", 0),
+    }
+    event_details.update(_execution_metadata(state, stage=stage, event_sequence=999))
     events.append(
         WorkflowEvent(
             event_id=f"{state['workflow_run_id']}:999:workflow_terminated",
@@ -1283,12 +1307,7 @@ def _terminate(
             stage=stage,
             status=status,
             created_at=datetime.now(timezone.utc).isoformat(),
-            details={
-                "termination_reason": reason,
-                "input_attempt_count": state.get("input_attempt_count", 0),
-                "quality_revision_count": state.get("quality_revision_count", 0),
-                "technical_retry_count": state.get("technical_retry_count", 0),
-            },
+            details=event_details,
         )
     )
     return cast(
@@ -1341,18 +1360,51 @@ def _update(
         events,
         resuming=event_type in {"workflow_resumed", "tool_consent_recorded"},
     )
+    safe_details = dict(details)
+    safe_details.update(_execution_metadata(state, stage=stage, event_sequence=sequence))
     event = WorkflowEvent(
         event_id=f"{state['workflow_run_id']}:{sequence:03d}:{event_type}",
         event_type=event_type,
         stage=stage,
         status=event_status or status,
         created_at=datetime.now(timezone.utc).isoformat(),
-        details=details,
+        details=safe_details,
     )
     events.append(event)
     result = dict(changes)
     result.update({"stage": stage, "status": status, "events": events})
     return cast(CaseWorkflowState, result)
+
+
+def _execution_metadata(
+    state: CaseWorkflowState, *, stage: str, event_sequence: int
+) -> dict[str, str | int]:
+    """Capture traversal when the node emits its durable event; never infer it later."""
+
+    topology = state.get("graph_topology", {})
+    node_ids = {
+        str(node.get("id", ""))
+        for node in topology.get("nodes", [])
+        if isinstance(node, Mapping)
+    }
+    if stage not in node_ids:
+        return {}
+    prior = str(state.get("stage", ""))
+    source = "__start__" if prior == "created" else prior
+    edge_id = transition_id(topology, source=source, target=stage)
+    attempts = 1 + sum(
+        str(event.get("details", {}).get("execution_node_id", "")) == stage
+        for event in state.get("events", [])
+    )
+    metadata: dict[str, str | int] = {
+        "execution_occurrence_id": f"{state['workflow_run_id']}:{event_sequence:03d}:{stage}",
+        "execution_node_id": stage,
+        "execution_attempt": attempts,
+    }
+    if edge_id:
+        metadata["execution_source_node_id"] = source
+        metadata["execution_transition_id"] = edge_id
+    return metadata
 
 
 def _outcome(result: Mapping[str, Any]) -> CaseWorkflowOutcome:
@@ -1372,25 +1424,37 @@ def _outcome(result: Mapping[str, Any]) -> CaseWorkflowOutcome:
         events = list(state.get("events", []))
         if not events or events[-1]["event_type"] != "workflow_interrupted":
             sequence = _next_event_sequence(events)
+            interrupt_stage = (
+                "offer_optional_verification"
+                if str(interrupts[0].get("type", "")) == "tool_consent"
+                else "collect_missing_facts"
+            )
+            interrupt_details: dict[str, str | int | float | bool | None] = {
+                "action_type": str(interrupts[0].get("type", "input_required")),
+                "field": str(interrupts[0].get("field", "")),
+            }
+            interrupt_details.update(
+                _execution_metadata(
+                    state, stage=interrupt_stage, event_sequence=sequence
+                )
+            )
             events.append(
                 WorkflowEvent(
                     event_id=(
                         f"{state['workflow_run_id']}:{sequence:03d}:workflow_interrupted"
                     ),
                     event_type="workflow_interrupted",
-                    stage=state.get("stage", "collect_missing_facts"),
-                    status="waiting_for_user",
+                    stage=interrupt_stage,
+                    status="interrupted",
                     created_at=datetime.now(timezone.utc).isoformat(),
-                    details={
-                        "action_type": str(interrupts[0].get("type", "input_required")),
-                        "field": str(interrupts[0].get("field", "")),
-                    },
+                    details=interrupt_details,
                 )
             )
         state = cast(
             CaseWorkflowState,
             {
                 **state,
+                "stage": interrupt_stage,
                 "status": "waiting_for_user",
                 "pending_action": interrupts[0],
                 "events": events,

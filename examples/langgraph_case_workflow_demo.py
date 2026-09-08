@@ -99,6 +99,28 @@ def main() -> None:
     print(f"status => {outcome.state['status']}")
     print(outcome.state["final_answer"])
     print("events => " + ", ".join(event["event_type"] for event in outcome.state["events"]))
+    topology = outcome.state["graph_topology"]
+    print(
+        "topology => "
+        f"{topology['graph_key']}@{topology['graph_version']} "
+        f"sha256={topology['digest']}"
+    )
+    print(
+        "conditional edges => "
+        + ", ".join(
+            f"{edge['source']} -[{edge['branch']}]-> {edge['target']}"
+            for edge in topology["edges"]
+            if edge["conditional"]
+        )
+    )
+    print(
+        "recorded execution => "
+        + ", ".join(
+            str(event["details"]["execution_node_id"])
+            for event in outcome.state["events"]
+            if event["details"].get("execution_node_id")
+        )
+    )
     decision_trace = serialize_decision_trace(
         workflow_event_to_decision_trace(outcome.state, outcome.state["events"][-1])
     )

@@ -424,6 +424,140 @@ class CaseWorkflowStore:
             for row in rows
         ]
 
+    def list_graph_evidence_by_correlation(
+        self, *, correlation_id: str, limit: int = 500, offset: int = 0
+    ) -> dict[str, Any]:
+        """Return bounded, run-grouped topology and explicitly recorded executions."""
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        event_limit = min(max(limit, 1), 1000)
+        event_offset = max(offset, 0)
+        with self._connect() as conn:
+            run_rows = conn.execute(
+                self._sql(
+                    "SELECT * FROM case_workflow_runs WHERE correlation_id = ? "
+                    "AND created_at >= ? ORDER BY created_at DESC, workflow_run_id DESC LIMIT 101"
+                ),
+                (correlation_id.strip(), cutoff),
+            ).fetchall()
+            event_rows = conn.execute(
+                self._sql(
+                    "SELECT event_id, workflow_run_id, event_type, stage, status, "
+                    "details_json, created_at FROM case_workflow_events "
+                    "WHERE correlation_id = ? AND created_at >= ? "
+                    "ORDER BY created_at, event_id LIMIT ? OFFSET ?"
+                ),
+                (correlation_id.strip(), cutoff, event_limit + 1, event_offset),
+            ).fetchall()
+
+        has_more_events = len(event_rows) > event_limit
+        visible_events = event_rows[:event_limit]
+        grouped_events: dict[str, list[dict[str, Any]]] = {}
+        for raw_event in visible_events:
+            event = _row(raw_event)
+            grouped_events.setdefault(str(event["workflow_run_id"]), []).append(event)
+
+        runs: list[dict[str, Any]] = []
+        for raw_run in run_rows[:100]:
+            run = _row(raw_run)
+            run_id = str(run["workflow_run_id"])
+            state = json.loads(str(run["state_json"]))
+            topology = state.get("graph_topology")
+            pinned = (
+                isinstance(topology, dict)
+                and bool(topology.get("digest"))
+                and topology.get("digest") == state.get("graph_topology_digest")
+            )
+            occurrences: list[dict[str, Any]] = []
+            unmapped_event_count = 0
+            topology_node_ids = {
+                str(node.get("id", ""))
+                for node in topology.get("nodes", [])
+                if pinned and isinstance(node, dict)
+            } if isinstance(topology, dict) else set()
+            for event in grouped_events.get(run_id, []):
+                details = json.loads(str(event["details_json"]))
+                node_id = str(details.get("execution_node_id", ""))
+                occurrence_id = str(details.get("execution_occurrence_id", ""))
+                if not node_id or not occurrence_id:
+                    if not pinned or str(event["stage"]) in topology_node_ids:
+                        unmapped_event_count += 1
+                    continue
+                transition = str(details.get("execution_transition_id", ""))
+                occurrences.append(
+                    {
+                        "occurrence_id": occurrence_id,
+                        "node_id": node_id,
+                        "attempt": int(details.get("execution_attempt", 1)),
+                        "sequence": len(occurrences) + 1,
+                        "event_id": str(event["event_id"]),
+                        "event_type": str(event["event_type"]),
+                        "status": str(event["status"]),
+                        "started_at": str(event["created_at"]),
+                        "ended_at": str(event["created_at"]),
+                        "duration_ms": None,
+                        "source_node_id": str(details.get("execution_source_node_id", "")),
+                        "transition_id": transition,
+                        "reason_code": _event_reason_code(details),
+                        "evidence_refs": [
+                            {"type": "workflow_event", "id": str(event["event_id"])}
+                        ],
+                    }
+                )
+            gaps: list[str] = []
+            if not pinned:
+                gaps.append("pinned_topology_unavailable_for_historical_run")
+            if unmapped_event_count:
+                gaps.append("events_without_execution_instrumentation")
+            if event_offset > 0 or has_more_events or len(run_rows) > 100:
+                gaps.append("bounded_result_page")
+            runs.append(
+                {
+                    "workflow_run_id": run_id,
+                    "parent_run_id": "",
+                    "session_id": str(run["session_id"]),
+                    "turn_id": "",
+                    "graph_key": str(run["graph_key"]),
+                    "graph_version": int(run["graph_version"]),
+                    "flow_key": str(run["flow_key"]),
+                    "flow_version": int(run["flow_version"]),
+                    "run_status": str(run["status"]),
+                    "current_node_id": str(run["current_stage"]),
+                    "topology_status": "pinned" if pinned else "unavailable",
+                    "topology": topology if pinned else None,
+                    "topology_digest": str(state.get("graph_topology_digest", "")),
+                    "occurrences": occurrences,
+                    "observed_transition_ids": list(
+                        dict.fromkeys(
+                            item["transition_id"]
+                            for item in occurrences
+                            if item["transition_id"]
+                        )
+                    ),
+                    "evidence_completeness": "complete" if not gaps else "partial",
+                    "evidence_gaps": gaps,
+                    "unmapped_event_count": unmapped_event_count,
+                    "created_at": str(run["created_at"]),
+                    "updated_at": str(run["updated_at"]),
+                }
+            )
+        return {
+            "schema_version": 1,
+            "runs": runs,
+            "page": {
+                "limit": event_limit,
+                "offset": event_offset,
+                "returned_events": len(visible_events),
+                "next_offset": event_offset + event_limit if has_more_events else None,
+                "has_more": has_more_events or len(run_rows) > 100,
+            },
+            "completeness": (
+                "partial"
+                if event_offset > 0 or has_more_events or len(run_rows) > 100
+                else "complete"
+            ),
+        }
+
     def record_debug_event(
         self,
         *,
@@ -784,6 +918,14 @@ def _event(row: dict[str, Any]) -> WorkflowEventResponse:
         details=json.loads(str(row["details_json"])),
         created_at=_datetime(str(row["created_at"])),
     )
+
+
+def _event_reason_code(details: dict[str, Any]) -> str:
+    for key in ("reason", "termination_reason", "failure_category", "disposition"):
+        value = details.get(key)
+        if isinstance(value, str) and value:
+            return value[:100]
+    return ""
 
 
 def _row(value: Any) -> dict[str, Any]:

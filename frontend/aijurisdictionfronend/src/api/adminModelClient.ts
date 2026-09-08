@@ -517,7 +517,82 @@ export interface AdminDebugTrace {
   messages: Array<Record<string, unknown>>;
   timeline: AdminDebugTimelineEvent[];
   flow: { nodes: Array<{ id: string; label: string }>; edges: Array<{ from: string; to: string }> };
+  langgraph_evidence: AdminLangGraphEvidence;
   warnings: string[];
+}
+
+export interface AdminLangGraphNode {
+  id: string;
+  label: string;
+}
+
+export interface AdminLangGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  conditional: boolean;
+  branch: string;
+}
+
+export interface AdminLangGraphOccurrence {
+  occurrence_id: string;
+  node_id: string;
+  attempt: number;
+  sequence: number;
+  event_id: string;
+  event_type: string;
+  status: string;
+  started_at: string;
+  ended_at: string;
+  duration_ms: number | null;
+  source_node_id: string;
+  transition_id: string;
+  reason_code: string;
+  evidence_refs: Array<{ type: string; id: string }>;
+}
+
+export interface AdminLangGraphRunEvidence {
+  workflow_run_id: string;
+  parent_run_id: string;
+  session_id: string;
+  turn_id: string;
+  graph_key: string;
+  graph_version: number;
+  flow_key: string;
+  flow_version: number;
+  run_status: string;
+  current_node_id: string;
+  topology_status: "pinned" | "unavailable";
+  topology: {
+    schema_version: number;
+    graph_key: string;
+    graph_version: number;
+    nodes: AdminLangGraphNode[];
+    edges: AdminLangGraphEdge[];
+    digest_algorithm: "sha256";
+    digest: string;
+  } | null;
+  topology_digest: string;
+  occurrences: AdminLangGraphOccurrence[];
+  observed_transition_ids: string[];
+  evidence_completeness: "complete" | "partial";
+  evidence_gaps: string[];
+  unmapped_event_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminLangGraphEvidence {
+  schema_version: number;
+  runs: AdminLangGraphRunEvidence[];
+  page: {
+    limit: number;
+    offset: number;
+    returned_events: number;
+    next_offset: number | null;
+    has_more: boolean;
+  };
+  completeness: "complete" | "partial";
 }
 
 type AdminAuthInput = AdminAuthContext | string;

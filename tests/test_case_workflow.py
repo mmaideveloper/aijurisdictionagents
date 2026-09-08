@@ -126,6 +126,37 @@ def test_case_workflow_completes_and_records_ordered_review_events() -> None:
     assert outcome.state["termination_reason"] == "quality_approved"
 
 
+def test_executable_topology_and_execution_are_pinned_to_run() -> None:
+    outcome = _runtime().start(
+        _state(
+            graph_version=4,
+            facts={"payer": "A", "recipient": "B", "amount": "100 EUR"},
+        )
+    )
+
+    topology = outcome.state["graph_topology"]
+    assert topology["graph_key"] == "legal_document_workflow"
+    assert topology["graph_version"] == 4
+    assert topology["digest"] == outcome.state["graph_topology_digest"]
+    assert any(
+        edge["source"] == "verify_input"
+        and edge["target"] == "retrieve_legal_requirements"
+        and edge["conditional"] is True
+        and edge["branch"] == "retrieve"
+        for edge in topology["edges"]
+    )
+    recorded = [
+        event["details"]
+        for event in outcome.state["events"]
+        if event["details"].get("execution_node_id")
+    ]
+    assert recorded[0]["execution_node_id"] == "route_case_type"
+    assert recorded[0]["execution_transition_id"] == "__start__->route_case_type"
+    assert recorded[-1]["execution_node_id"] == "finalize_or_escalate"
+    assert "request_text" not in topology
+    assert "facts" not in topology
+
+
 def test_case_workflow_interrupts_and_resumes_without_losing_pinned_versions() -> None:
     runtime = _runtime()
     first = runtime.start(_state(facts={"payer": "A", "recipient": "B"}))

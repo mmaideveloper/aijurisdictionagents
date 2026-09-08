@@ -96,6 +96,14 @@ counts/enums, policy versions, bounded reason codes, source references, and over
 not copy `request_text`, facts, draft content, prompts, source bodies, or tool inputs/results from
 workflow state. Existing `case_workflow_events` remain readable during the additive migration.
 
+Every newly started run also pins a privacy-minimized serialization obtained directly from the
+compiled LangGraph (`get_graph().to_json()`), not from registry display names or timeline
+adjacency. It includes explicit START/END nodes, ordinary edges, conditional branch labels, schema
+and graph versions, plus a canonical SHA-256 identity. Each node's durable workflow event records
+an occurrence ID, attempt, source node, and exact transition ID when the executable topology makes
+that transition unambiguous. Interrupt/resume occurrences remain distinct. These fields prove only
+what the runtime recorded; absent instrumentation is reported as unknown.
+
 ## API and channels
 
 - `GET /v1/case-workflows/graphs` lists reviewed graph versions.
@@ -109,6 +117,10 @@ workflow state. Existing `case_workflow_events` remain readable during the addit
   exact-session, chronological, paginated decision timeline. Authorization runs before lookup, so
   ordinary users receive the same `403` for existing and unknown sessions; empty/unknown timelines
   return the same `404` to an authorized administrator.
+- Admin-only `GET /v1/admin/debug/{correlation_id}` adds run-grouped LangGraph evidence with bounded
+  paging and explicit completeness. The paired ZIP export contains the same evidence JSON.
+  Admin → Debug renders the topology locally and provides equivalent evidence as an ordered,
+  keyboard-accessible execution list.
 
 ## Termination contract
 

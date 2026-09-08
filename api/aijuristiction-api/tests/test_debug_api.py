@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from io import BytesIO
+import json
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +15,12 @@ from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
 from app.decision_trace_api import require_decision_trace_admin
 from app.main import app
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
+from aijurisdictionagents.orchestration.case_workflow import (
+    CaseWorkflowRuntime,
+    DeterministicCaseWorkflowServices,
+    build_initial_case_workflow_state,
+)
+from langgraph.checkpoint.memory import InMemorySaver
 
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
@@ -137,3 +146,90 @@ def test_admin_can_view_and_export_exact_correlation_trace(
         "view_debug_trace",
         "export_debug_trace",
     ]
+
+
+def test_admin_graph_evidence_uses_pinned_topology_and_recorded_transitions(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    store = _store(tmp_path)
+    runtime = CaseWorkflowRuntime(
+        services=DeterministicCaseWorkflowServices(
+            legal_requirements=({"requirement": "Synthetic requirement"},),
+            legal_source_ids=("source-788",),
+        ),
+        checkpointer=InMemorySaver(),
+    )
+    state = build_initial_case_workflow_state(
+        workflow_run_id="run-788",
+        correlation_id="corr-788",
+        case_id="case-788",
+        session_id="session-788",
+        user_id="user-788",
+        jurisdiction="SK",
+        language="en",
+        request_text="Create a payment confirmation.",
+        case_type_key="sk.civil.payment_confirmation",
+        routing_confidence=1.0,
+        routing_evidence=("synthetic",),
+        graph_key="legal_document_workflow",
+        graph_version=2,
+        flow_key="sk.civil.payment_confirmation",
+        flow_version=3,
+        flow_definition={
+            "required_facts": ["payer"],
+            "mcp_retrieval": {
+                "schema_version": 1,
+                "policy_id": "test.788.v1",
+                "required": True,
+                "case_type_keys": ["sk.civil.payment_confirmation"],
+                "jurisdictions": ["SK"],
+                "query_keys": ["payment_confirmation_legal_requirements"],
+                "default_query": "payment confirmation",
+            },
+        },
+        facts={"payer": "Synthetic payer"},
+    )
+    store.save_run(assignment_id="assignment-788", outcome=runtime.start(state))
+    audit_store = _AuditStore()
+    monkeypatch.setattr(
+        AzureApplicationInsightsLogService,
+        "from_env",
+        lambda: (_ for _ in ()).throw(
+            ObservabilityConfigurationError("Application Insights is not configured")
+        ),
+    )
+    app.dependency_overrides[require_decision_trace_admin] = lambda: AdminContext(
+        user_id="admin-1", email="admin@example.test"
+    )
+    app.dependency_overrides[get_case_workflow_service] = lambda: SimpleNamespace(store=store)
+    app.dependency_overrides[get_admin_store] = lambda: audit_store
+    client = TestClient(app)
+    try:
+        response = client.get("/v1/admin/debug/corr-788", headers=AUTH_HEADERS)
+        paged = client.get(
+            "/v1/admin/debug/corr-788?limit=1&offset=1", headers=AUTH_HEADERS
+        )
+        exported = client.get("/v1/admin/debug/corr-788/export", headers=AUTH_HEADERS)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    evidence = response.json()["langgraph_evidence"]
+    assert evidence["completeness"] == "complete"
+    run = evidence["runs"][0]
+    assert run["workflow_run_id"] == "run-788"
+    assert run["topology_status"] == "pinned"
+    assert len(run["topology"]["digest"]) == 64
+    assert any(edge["conditional"] for edge in run["topology"]["edges"])
+    assert run["occurrences"][0]["node_id"] == "route_case_type"
+    assert run["occurrences"][0]["transition_id"] == "__start__->route_case_type"
+    assert paged.status_code == 200
+    assert paged.json()["langgraph_evidence"]["completeness"] == "partial"
+    assert "bounded_result_page" in paged.json()["langgraph_evidence"]["runs"][0]["evidence_gaps"]
+    with ZipFile(BytesIO(exported.content)) as archive:
+        assert "langgraph_evidence.json" in archive.namelist()
+        manifest = json.loads(archive.read("manifest.json"))
+        exported_evidence = json.loads(archive.read("langgraph_evidence.json"))
+    assert manifest["schema_version"] == 2
+    assert manifest["evidence_completeness"] == "complete"
+    assert exported_evidence == evidence
