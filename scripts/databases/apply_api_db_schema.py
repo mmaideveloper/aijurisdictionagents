@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 import argparse
+from urllib.parse import unquote, urlsplit
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
+from app.flow_packs.store import FlowPackStore
+
+
+def _redacted_target(target: str) -> str:
+    parsed = urlsplit(target)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        return target
+    username = unquote(parsed.username or "postgres")
+    hostname = parsed.hostname or "unknown-host"
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{username}:***@{hostname}{port}{parsed.path}"
 
 
 def main() -> None:
@@ -21,7 +33,7 @@ def main() -> None:
     target = store.db_cloud if store.uses_postgres else str(store.db_path)
 
     print(f"DB_OPTION={store.db_option}")
-    print(f"Schema target: {target}")
+    print(f"Schema target: {_redacted_target(target)}")
 
     if args.dry_run:
         if store.uses_postgres:
@@ -42,6 +54,9 @@ def main() -> None:
         return
 
     if store.uses_postgres:
+        # Later migrations reference immutable flow-pack definitions. Bootstrap only that
+        # prerequisite schema before the ordered migration runner handles the remaining API DB.
+        FlowPackStore.from_env()
         pending = apply_sql_migrations(
             project="api",
             db_option=store.db_option,

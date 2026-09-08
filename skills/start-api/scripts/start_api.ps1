@@ -274,7 +274,9 @@ function Ensure-LocalPostgresReady {
     $shellPath = Resolve-PowerShellPath
 
     $parsed = Get-LocalPostgresSettingsFromConnectionString -ConnectionString $ExistingDbCloud
-    $shellArgs = @("-NoProfile", "-File", $skillScript, "-ProjectName", "api")
+    $shellArgs = @(
+        "-NoProfile", "-File", $skillScript, "-ProjectName", "api", "-EmitConnectionString"
+    )
     if ($parsed) {
         $shellArgs += @(
             "-DatabaseName", $parsed.DatabaseName,

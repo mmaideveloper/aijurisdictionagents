@@ -151,6 +151,12 @@ PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 DB_OPTION=postgres DB_CLOUD=postgresql://postgres:postgres@localhost:5432/aijurisdiction STORAGE_OPTION=local PYTHONPATH=src python scripts/databases/apply_api_db_schema.py
 ```
 
+When `start-api` receives an explicit loopback `-DbCloud` URI, its database name remains
+authoritative even if `aijurisdiction-postgres-local` is already running with another default
+database. The PostgreSQL launcher validates the requested identifier, creates the database when
+missing, and applies the API schema to that exact database. Interactive output redacts the
+password. Failure to inspect, create, or migrate the requested database stops API startup.
+
 ### Cloud rollout checklist (Azure)
 
 1. Deploy code/image to Container Apps.

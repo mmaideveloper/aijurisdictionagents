@@ -5,7 +5,8 @@ param(
     [string]$DatabaseUser = "postgres",
     [string]$DatabasePassword = "postgres",
     [int]$DatabasePort = 0,
-    [switch]$SkipSchemaUpdate
+    [switch]$SkipSchemaUpdate,
+    [switch]$EmitConnectionString
 )
 
 $ErrorActionPreference = "Stop"
@@ -194,6 +195,41 @@ function Wait-ContainerHealthy {
     throw "Container '$ContainerName' did not become healthy within $TimeoutSeconds seconds."
 }
 
+function Assert-DatabaseName {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    if ($Name -notmatch "^[a-z_][a-z0-9_]{0,62}$") {
+        throw (
+            "DatabaseName must be a lowercase PostgreSQL identifier containing only " +
+            "letters, digits, and underscores (maximum 63 characters)."
+        )
+    }
+}
+
+function Ensure-PostgresDatabase {
+    param(
+        [Parameter(Mandatory = $true)][string]$ContainerName,
+        [Parameter(Mandatory = $true)][string]$DatabaseUser,
+        [Parameter(Mandatory = $true)][string]$DatabaseName
+    )
+
+    Assert-DatabaseName -Name $DatabaseName
+    $databaseExists = & docker exec $ContainerName `
+        psql -U $DatabaseUser -d postgres -tAc `
+        "SELECT 1 FROM pg_database WHERE datname = '$DatabaseName'"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect databases in local PostgreSQL container '$ContainerName'."
+    }
+    if ((@($databaseExists) -join "").Trim() -eq "1") {
+        return
+    }
+
+    & docker exec $ContainerName createdb -U $DatabaseUser $DatabaseName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not create requested local PostgreSQL database '$DatabaseName'."
+    }
+}
+
 function Test-DirectoryHasContent {
     param([string]$Path)
 
@@ -301,7 +337,9 @@ $python = Resolve-PythonPath -RepoRoot $repoRoot
 Assert-DockerInstalled
 
 $projectSettings = Resolve-ProjectSettings -RepoRoot $repoRoot -ProjectName $ProjectName
-$effectiveDbName = if ($DatabaseName) { $DatabaseName } else { $projectSettings.DefaultDbName }
+$requestedDbName = $DatabaseName.Trim()
+$effectiveDbName = if ($requestedDbName) { $requestedDbName } else { $projectSettings.DefaultDbName }
+Assert-DatabaseName -Name $effectiveDbName
 $effectivePort = if ($DatabasePort -gt 0) { $DatabasePort } else { [int]$projectSettings.DefaultPort }
 $dataRoot = [string]$projectSettings.DataRoot
 $initdbRoot = [string]$projectSettings.InitdbRoot
@@ -374,10 +412,15 @@ if ($existingLegacyStorageRoot) {
     Write-Warning "Container '$runtimeName' is still using legacy storage under '$existingLegacyStorageRoot'. Stop and rerun this script to migrate it to '$dataRoot'."
 }
 
-$effectiveDbName = Get-ContainerEnvValue -Container $existing -Name "POSTGRES_DB" -DefaultValue $effectiveDbName
+$containerDefaultDbName = Get-ContainerEnvValue -Container $existing -Name "POSTGRES_DB" -DefaultValue $effectiveDbName
+$effectiveDbName = if ($requestedDbName) { $requestedDbName } else { $containerDefaultDbName }
 $effectiveDbUser = Get-ContainerEnvValue -Container $existing -Name "POSTGRES_USER" -DefaultValue $DatabaseUser
 $effectiveDbPassword = Get-ContainerEnvValue -Container $existing -Name "POSTGRES_PASSWORD" -DefaultValue $DatabasePassword
 $effectivePort = Get-ContainerHostPort -Container $existing -DefaultPort $effectivePort
+Ensure-PostgresDatabase `
+    -ContainerName $runtimeName `
+    -DatabaseUser $effectiveDbUser `
+    -DatabaseName $effectiveDbName
 $dbCloud = "postgresql://${effectiveDbUser}:${effectiveDbPassword}@127.0.0.1:${effectivePort}/${effectiveDbName}"
 
 if ($ProjectName -eq "laws-collector") {
@@ -420,7 +463,10 @@ Write-Output "Database: $effectiveDbName"
 Write-Output "User: $effectiveDbUser"
 Write-Output "Persistent storage: $dataRoot"
 Write-Output "Init SQL: $initdbRoot"
-Write-Output "Connection string: $dbCloud"
+Write-Output "Connection: postgresql://${effectiveDbUser}:***@127.0.0.1:${effectivePort}/${effectiveDbName}"
+if ($EmitConnectionString) {
+    Write-Output "Connection string: $dbCloud"
+}
 foreach ($legacyRoot in $migratedLegacyRoots) {
     Write-Output "Legacy data copied from: $legacyRoot"
 }
