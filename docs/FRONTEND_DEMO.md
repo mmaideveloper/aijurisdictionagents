@@ -75,6 +75,23 @@ Internal `LangGraph...` agent identifiers and audit event types remain unchanged
 for traceability. The user-facing assistant history, live processing text, and role
 label display them as `AI Orchestrator Agent`.
 
+### Admin flow-package offline testing
+
+Open `/app/admin/ai-models`, authenticate as an enabled server-authorized administrator, and choose
+**Flow packages**. Select a jurisdiction and an existing version, then clone it to create an editable draft.
+The workspace validates routing metadata, examples, clarification/human-oversight policy, JSON structure,
+and the selected registered LangGraph version before save or lock. Once locked, the version is immutable.
+
+For an offline test, create a confirmed synthetic suite (or load a known suite ID), select the provider/model
+route and routing policy, enter sanitized runner observations, confirm human review, and run the evaluation.
+The result shows the pinned version and graph plus each server-evaluated gate. This screen cannot publish or
+assign a version to production. The production assignment selector elsewhere in the admin UI accepts only
+enabled `published` versions.
+
+Privacy and legal-risk guardrail: use synthetic questions and minimized observations only. Never enter real
+case facts, credentials, full prompts/responses, source bodies, or hidden model reasoning. A passing offline
+run is evidence for a later human-controlled promotion; it is not production authorization by itself.
+
 Minimal focused example and regression check:
 
 ```powershell

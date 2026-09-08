@@ -314,17 +314,84 @@ export interface CaseWorkflowAssignmentInput {
 }
 
 export interface FlowPackCatalogItem {
+  flow_id?: string;
   flow_key: string;
   version: number;
   jurisdiction: string;
   title: string;
   description: string;
   definition: Record<string, unknown>;
+  domain?: string;
+  question_kind?: string;
+  legal_domain?: string;
+  requested_outcome?: string;
+  positive_examples?: string[];
+  negative_examples?: string[];
+  clarification_policy?: Record<string, unknown>;
+  definition_hash?: string | null;
+  locked_at?: string | null;
+  locked_by?: string | null;
+  locked_reason?: string | null;
   is_enabled: boolean;
-  lifecycle_state: "draft" | "published" | "retired";
+  lifecycle_state: "draft" | "test_ready" | "testing" | "test_passed" | "production_approved" | "published" | "retired";
   is_deleted: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface FlowPackDraftInput {
+  jurisdiction?: string;
+  domain?: string;
+  title?: string;
+  description?: string;
+  definition?: Record<string, unknown>;
+  question_kind?: string;
+  legal_domain?: string;
+  requested_outcome?: string;
+  positive_examples?: string[];
+  negative_examples?: string[];
+  clarification_policy?: Record<string, unknown>;
+}
+
+export interface FlowEvaluationSuite {
+  suite_id: string;
+  suite_key: string;
+  version: number;
+  jurisdiction: string;
+  title: string;
+  synthetic_only: boolean;
+  routing_accuracy_threshold: number;
+  retention_days: number;
+  suite_hash: string;
+  case_count: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface FlowEvaluationRun {
+  run_id: string;
+  idempotency_key: string;
+  synthetic_run_id: string;
+  suite_id: string;
+  suite_key: string;
+  suite_version: number;
+  suite_hash: string;
+  flow_id: string;
+  flow_key: string;
+  flow_version: number;
+  flow_definition_hash: string;
+  graph_version: string;
+  routing_policy_hash: string;
+  provider: string;
+  model: string;
+  provider_route: string;
+  mode: "routing_only" | "full_graph";
+  status: "passed" | "failed";
+  metrics: Record<string, unknown>;
+  gates: Record<string, boolean>;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
 }
 
 export interface CaseCatalogDocumentTemplateListResponse {
@@ -894,6 +961,60 @@ export const createDraftFlowPackVersion = (
     adminAuth,
     { method: "POST", body: JSON.stringify({ is_enabled: false }) }
   );
+
+export const updateDraftFlowPackVersion = (
+  adminAuth: AdminAuthInput,
+  flowKey: string,
+  version: number,
+  jurisdiction: string,
+  input: FlowPackDraftInput
+): Promise<FlowPackCatalogItem> =>
+  adminRequest<FlowPackCatalogItem>(
+    `/v1/flow-packs/${encodeURIComponent(flowKey)}/versions/${version}?jurisdiction=${encodeURIComponent(jurisdiction)}`,
+    adminAuth,
+    { method: "PATCH", body: JSON.stringify(input) }
+  );
+
+export const lockFlowPackVersionForTesting = (
+  adminAuth: AdminAuthInput,
+  flowKey: string,
+  version: number,
+  jurisdiction: string,
+  reason: string
+): Promise<FlowPackCatalogItem> =>
+  adminRequest<FlowPackCatalogItem>(
+    `/v1/flow-packs/${encodeURIComponent(flowKey)}/versions/${version}/lock-for-testing?jurisdiction=${encodeURIComponent(jurisdiction)}`,
+    adminAuth,
+    { method: "POST", body: JSON.stringify({ reason }) }
+  );
+
+export const createFlowEvaluationSuite = (
+  adminAuth: AdminAuthInput,
+  input: Record<string, unknown>
+): Promise<FlowEvaluationSuite> =>
+  adminRequest<FlowEvaluationSuite>("/v1/flow-evaluations/suites", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const fetchFlowEvaluationSuite = (
+  adminAuth: AdminAuthInput,
+  suiteId: string
+): Promise<FlowEvaluationSuite> =>
+  adminRequest<FlowEvaluationSuite>(
+    `/v1/flow-evaluations/suites/${encodeURIComponent(suiteId)}`,
+    adminAuth,
+    { method: "GET" }
+  );
+
+export const createFlowEvaluationRun = (
+  adminAuth: AdminAuthInput,
+  input: Record<string, unknown>
+): Promise<FlowEvaluationRun> =>
+  adminRequest<FlowEvaluationRun>("/v1/flow-evaluations/runs", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 
 export const fetchAdminCaseCatalogDocumentTemplates = (
   adminUserId: AdminAuthInput,
