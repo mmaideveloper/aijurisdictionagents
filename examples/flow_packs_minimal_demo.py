@@ -34,7 +34,13 @@ def main() -> None:
             title="Predžalobná výzva (demo)",
             description="Demo flow pack for pre-litigation notice.",
             definition={"required_facts": ["counterparty", "claim_summary"]},
-            is_enabled=True,
+            question_kind="general_legal_question",
+            legal_domain="civil_dispute",
+            requested_outcome="draft_notice",
+            positive_examples=["How do I send a pre-action notice?"],
+            negative_examples=["Prepare a sale contract"],
+            clarification_policy={"on_low_confidence": "ask_user"},
+            is_enabled=False,
         )
     )
     print("Created:", created.flow_key, "v", created.version)

@@ -71,6 +71,11 @@ print(
     "bodies, raw tool payloads, external data, or credentials."
 )
 print(
+    "flow_offline_evaluation => run python examples/flow_evaluation_minimal_demo.py; admin flow "
+    "versions are hash-locked, tested only with confirmed synthetic suites, human-approved, and "
+    "published without editing code or touching production case assignments."
+)
+print(
     "langgraph_termination_contract => every loop has persisted input, quality-revision, "
     "technical-retry, and no-progress counters; cancellation, expiry, deadlines, privacy, "
     "provenance, retry exhaustion, and recursion overflow produce one sanitized "

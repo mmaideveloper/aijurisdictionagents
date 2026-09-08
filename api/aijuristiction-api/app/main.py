@@ -33,6 +33,7 @@ from app.document_templates.api import router as document_templates_router
 from app.document_shares_api import router as document_shares_router
 from app.effective_model_routing_api import router as effective_model_routing_router
 from app.flow_packs.api import router as flow_packs_router
+from app.flow_evaluations.api import router as flow_evaluations_router
 from app.laws_api import router as laws_router
 from app.logging_config import configure_logging
 from app.model_routing_api import router as model_routing_router
@@ -278,6 +279,7 @@ app.include_router(document_templates_router)
 app.include_router(document_shares_router)
 app.include_router(effective_model_routing_router)
 app.include_router(flow_packs_router)
+app.include_router(flow_evaluations_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)

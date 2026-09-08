@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.ai_model_admin_api import AdminContext, require_ai_model_admin
 from app.flow_packs.api import get_flow_pack_store
+from app.flow_evaluations.api import get_flow_evaluation_store
 from app.main import app
 
 client = TestClient(app)
@@ -27,9 +28,11 @@ def isolated_flow_pack_store() -> Iterator[None]:
             user_id="test-admin", email="admin@example.test"
         )
         get_flow_pack_store.cache_clear()
+        get_flow_evaluation_store.cache_clear()
         app.dependency_overrides.pop(require_ai_model_admin, None)
         yield
         get_flow_pack_store.cache_clear()
+        get_flow_evaluation_store.cache_clear()
         os.environ.pop("API_FLOW_PACKS_SQLITE_PATH", None)
         os.environ.pop("JURISDIGTA_ADMIN_API_KEY", None)
 
@@ -57,6 +60,12 @@ def test_create_update_enable_disable_soft_delete_and_version() -> None:
             "title": "Predžalobná výzva",
             "description": "Flow pre predzalobnu vyzvu",
             "definition": {"required_facts": ["counterparty", "claim_summary"]},
+            "question_kind": "general_legal_question",
+            "legal_domain": "civil_dispute",
+            "requested_outcome": "draft_notice",
+            "positive_examples": ["How do I send a pre-action notice?"],
+            "negative_examples": ["Draft a sale contract"],
+            "clarification_policy": {"on_low_confidence": "ask_user"},
             "is_enabled": False,
         },
     )
@@ -76,9 +85,16 @@ def test_create_update_enable_disable_soft_delete_and_version() -> None:
         f"/v1/flow-packs/{flow_key}/versions/1/enable",
         headers=AUTH_HEADERS,
     )
-    assert enable_response.status_code == 200
-    assert enable_response.json()["is_enabled"] is True
-    assert enable_response.json()["lifecycle_state"] == "published"
+    assert enable_response.status_code == 409
+
+    lock_response = client.post(
+        f"/v1/flow-packs/{flow_key}/versions/1/lock-for-testing",
+        headers=AUTH_HEADERS,
+        json={"reason": "Ready for synthetic offline evaluation"},
+    )
+    assert lock_response.status_code == 200
+    assert lock_response.json()["lifecycle_state"] == "test_ready"
+    assert len(lock_response.json()["definition_hash"]) == 64
 
     immutable_response = client.patch(
         f"/v1/flow-packs/{flow_key}/versions/1",
@@ -86,14 +102,6 @@ def test_create_update_enable_disable_soft_delete_and_version() -> None:
         json={"title": "Published versions cannot change"},
     )
     assert immutable_response.status_code == 409
-
-    disable_response = client.post(
-        f"/v1/flow-packs/{flow_key}/versions/1/disable",
-        headers=AUTH_HEADERS,
-    )
-    assert disable_response.status_code == 200
-    assert disable_response.json()["is_enabled"] is False
-    assert disable_response.json()["lifecycle_state"] == "retired"
 
     create_version_response = client.post(
         f"/v1/flow-packs/{flow_key}/versions",
@@ -140,7 +148,13 @@ def test_same_flow_key_can_exist_in_multiple_jurisdictions() -> None:
                 "title": f"Kupna zmluva {jurisdiction}",
                 "description": f"Flow for {jurisdiction}",
                 "definition": {"required_facts": ["seller_identification", "buyer_identification"]},
-                "is_enabled": True,
+                "question_kind": "general_legal_question",
+                "legal_domain": "contract",
+                "requested_outcome": "draft_contract",
+                "positive_examples": [f"Create a sale contract in {jurisdiction}"],
+                "negative_examples": [],
+                "clarification_policy": {"on_low_confidence": "ask_user"},
+                "is_enabled": False,
             },
         )
         assert response.status_code == 201
