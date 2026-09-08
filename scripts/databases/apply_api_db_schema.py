@@ -5,7 +5,6 @@ from urllib.parse import unquote, urlsplit
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
-from app.flow_packs.store import FlowPackStore
 
 
 def _redacted_target(target: str) -> str:
@@ -56,6 +55,8 @@ def main() -> None:
     if store.uses_postgres:
         # Later migrations reference immutable flow-pack definitions. Bootstrap only that
         # prerequisite schema before the ordered migration runner handles the remaining API DB.
+        from app.flow_packs.store import FlowPackStore
+
         FlowPackStore.from_env()
         pending = apply_sql_migrations(
             project="api",
