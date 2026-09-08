@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.case_workflows.models import WorkflowAssignmentResponse
+
 EvaluationMode = Literal["routing_only", "full_graph"]
 
 
@@ -110,3 +112,81 @@ class ProductionApprovalResponse(BaseModel):
     approved_by: str
     reason: str
     approved_at: datetime
+
+
+class FlowPromotionPreviewRequest(BaseModel):
+    case_type_key: str = Field(min_length=3, max_length=200)
+    jurisdiction: str = Field(min_length=2, max_length=8)
+    graph_key: str = Field(min_length=3, max_length=100)
+    graph_version: int = Field(ge=1)
+    flow_key: str = Field(min_length=3, max_length=200)
+    flow_version: int = Field(ge=1)
+
+
+class FlowPromotionRequest(FlowPromotionPreviewRequest):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+    approval_id: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=5, max_length=1000)
+    confirmation: Literal[True]
+    expected_current_assignment_id: str | None = Field(default=None, max_length=200)
+
+
+class FlowRollbackRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+    reason: str = Field(min_length=5, max_length=1000)
+    confirmation: Literal[True]
+    expected_current_assignment_id: str = Field(min_length=1, max_length=200)
+
+
+class PromotionApprovalSummary(BaseModel):
+    approval_id: str
+    run_id: str
+    definition_hash: str
+    approved_by: str
+    approval_reason: str
+    approved_at: datetime
+    run_expires_at: datetime
+    suite_key: str
+    suite_version: int
+    suite_hash: str
+    graph_version: str
+    routing_policy_hash: str
+    provider: str
+    model: str
+    provider_route: str
+    gates: dict[str, bool]
+
+
+class FlowPromotionPreviewResponse(BaseModel):
+    candidate_flow_id: str
+    candidate_definition_hash: str
+    candidate_lifecycle_state: str
+    requested_assignment: FlowPromotionPreviewRequest
+    current_assignment: WorkflowAssignmentResponse | None
+    approval: PromotionApprovalSummary | None
+    compatibility_status: str
+    compatibility_message: str
+    blockers: list[str]
+    impact: str
+    can_promote: bool
+
+
+class FlowPromotionResponse(BaseModel):
+    promotion_id: str
+    idempotency_key: str
+    action: Literal["promote", "rollback"]
+    request_hash: str
+    flow_id: str
+    approval: PromotionApprovalSummary
+    prior_assignment: WorkflowAssignmentResponse | None
+    target_assignment: WorkflowAssignmentResponse
+    target_assignment_hash: str
+    promoted_by: str
+    reason: str
+    promoted_at: datetime
+    retention_until: datetime
+    rollback_of_promotion_id: str | None
+
+
+class FlowPromotionListResponse(BaseModel):
+    items: list[FlowPromotionResponse]

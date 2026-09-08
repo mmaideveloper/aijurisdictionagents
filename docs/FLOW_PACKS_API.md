@@ -106,8 +106,39 @@ and a synthetic run ID. Hard gates cover routing threshold, schema/policy, requi
 zero privacy violations, no unsupported automatic finalization, and required human review. Failed or stale
 runs cannot be approved. Evaluation never reads or changes production case-flow assignments or user sessions.
 Stored results omit prompts, generated response text, source bodies, credentials, and personal facts.
-The migration also creates immutable promotion-provenance storage (approval, prior/target assignment hash,
-actor, time, and rollback link) for the separate production assignment workflow.
+The migration also creates immutable promotion-provenance storage: idempotency/request hashes, action,
+approval and run pins, prior/target assignment snapshots, target assignment hash, actor, reason, time,
+and rollback link.
+
+## Audited production promotion and rollback
+
+All endpoints require API and server-authorized admin access:
+
+- `POST /v1/flow-evaluations/promotions/preview` validates the case type, registered graph, exact
+  immutable flow hash, latest approval, non-expired run, suite/version/hash, provider/model route,
+  all hard gates, and current assignment. It returns blockers and impact without changing production.
+- `POST /v1/flow-evaluations/promotions` requires the previewed approval, an idempotency key, explicit
+  confirmation, reason, and expected current assignment ID. One database transaction publishes the
+  candidate, closes the prior active assignment, creates the new unique active assignment, and records
+  provenance. Concurrent changes fail closed.
+- `GET /v1/flow-evaluations/promotions` returns minimized audited history by jurisdiction/case type.
+- `DELETE /v1/flow-evaluations/promotions/expired` removes promotion records after the six-year audit
+  retention window, oldest rollback leaves first, then removes their now-unreferenced expired approvals
+  and evaluation runs.
+- `POST /v1/flow-evaluations/promotions/{promotion_id}/rollback` restores that promotion's prior
+  immutable assignment through the same compatibility, approval, evaluation-expiry, graph, and hash
+  gates. It cannot roll back stale history over a newer active assignment.
+
+Only new runs resolve the new active assignment. Existing workflow-run state continues to hold its
+original assignment, graph, and flow versions. Previous published versions remain immutable and available
+for a validated rollback. A published version can be evaluated again without changing live routing, so an
+expired review can be renewed before rollback. Direct `POST /v1/case-workflows/assignments` mutation is
+disabled; trusted startup seeding remains an internal bootstrap path.
+
+Promotion records contain identifiers, hashes, minimized assignment metadata, actors, and reasons only.
+They do not store prompts, answers, case facts, source bodies, credentials, or hidden reasoning. Each record
+has an explicit six-year `retention_until`; authorized expiry cleanup preserves referenced chains and deletes
+only after that boundary. Legal-risk outputs continue to require human review.
 
 ## Admin authoring and offline test workspace
 
@@ -117,12 +148,13 @@ requested outcome, lifecycle, and registered-graph compatibility. Administrators
 into a new draft, edit the structured routing fields or validated JSON, compare it with the prior version,
 validate it, and lock it for testing. Locked versions are read-only and must be cloned before changing them.
 
-Offline evaluation remains separate from production assignment. The workspace creates or loads an immutable
+Offline evaluation remains separate from production assignment until an administrator enters the explicit
+production panel. The workspace creates or loads an immutable
 synthetic suite, records the selected graph, routing policy, provider/model route, and sanitized observations,
-and displays the server-evaluated gates. A human-review confirmation is mandatory before submission. The UI
-does not expose production approval or assignment; that is a separate audited workflow. In the existing case
-assignment screen, only enabled versions whose lifecycle is exactly `published` are labelled and offered as
-published flow packages.
+and displays the server-evaluated gates. A human-review confirmation is mandatory before submission. The
+production panel then records approval, previews the exact case-type assignment and current rollback target,
+and requires a second explicit confirmation and reason. The former direct case-catalog assignment control is
+disabled so an admin cannot bypass current evaluation provenance.
 
 The evaluation API intentionally has no suite-list endpoint yet. An administrator creates a suite in the
 workspace or loads a known immutable suite ID. Test inputs must be synthetic and minimized: do not paste

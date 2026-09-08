@@ -457,7 +457,12 @@ class CaseWorkflowApplicationService:
         self.runtime = runtime
         self.api_store = api_store
 
-    def validate_assignment(self, payload: WorkflowAssignmentRequest) -> tuple[str, str]:
+    def validate_assignment(
+        self,
+        payload: WorkflowAssignmentRequest,
+        *,
+        allowed_flow_states: frozenset[str] = frozenset({"published"}),
+    ) -> tuple[str, str]:
         graph = get_registered_graph(payload.graph_key, payload.graph_version)
         if graph is None:
             raise WorkflowConfigurationError(
@@ -480,12 +485,42 @@ class CaseWorkflowApplicationService:
             )
         except FlowPackNotFoundError as exc:
             raise WorkflowConfigurationError(str(exc)) from exc
-        if not flow.is_enabled or flow.is_deleted or flow.lifecycle_state != "published":
+        candidate_is_publishable = (
+            flow.lifecycle_state == "production_approved"
+            and "production_approved" in allowed_flow_states
+        )
+        candidate_is_executable = (
+            flow.is_enabled and flow.lifecycle_state in allowed_flow_states
+        )
+        if flow.is_deleted or not (candidate_is_publishable or candidate_is_executable):
             raise WorkflowConfigurationError("Flow-pack version is not executable")
         if payload.graph_key == "legal_document_workflow":
             required_facts = flow.definition.get("required_facts")
             if not isinstance(required_facts, list):
                 raise WorkflowConfigurationError("Flow pack has no valid required_facts list")
+            required_templates = flow.definition.get("templates", [])
+            if not isinstance(required_templates, list) or not all(
+                isinstance(item, str) and item.strip() for item in required_templates
+            ):
+                raise WorkflowConfigurationError("Flow pack has no valid templates list")
+            declared_outputs = flow.definition.get("outputs", [])
+            if not isinstance(declared_outputs, list) or not set(required_templates).issubset(
+                set(declared_outputs)
+            ):
+                raise WorkflowConfigurationError(
+                    "Flow templates must reference declared output artifacts"
+                )
+            linked_templates = [
+                template
+                for template in case_type.templates
+                if template.is_enabled
+                and not template.is_deleted
+                and flow.flow_key in template.flow_keys
+            ]
+            if required_templates and not linked_templates:
+                raise WorkflowConfigurationError(
+                    "Case type is missing an enabled document template linked to this flow"
+                )
             try:
                 validate_mcp_retrieval_policy(
                     flow.definition.get("mcp_retrieval"),

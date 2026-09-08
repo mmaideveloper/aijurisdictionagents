@@ -235,6 +235,14 @@ Admin management is exposed through `GET/POST /v1/admin/ai-models...`, `GET/PATC
 Production admin access is server-authorized from `cf-access-authenticated-user-email` with either database `role=admin` or `JURISDIGTA_ADMIN_EMAILS`; local development may send `x-jurisdigta-admin-user-id` from loopback only.
 For the production web app, email/password or MFA sign-in returns a device-bound token when the browser supplies `device_id`; `/app/admin` sends `x-jurisdigta-admin-user-id`, `x-jurisdigta-device-id`, and `x-jurisdigta-device-token`, and the API verifies the hashed device token before accepting the admin role. Do not trust the browser-stored role by itself for admin API authorization.
 
+Flow production changes use `flow_promotion_provenance` plus `case_workflow_assignments`. The promotion
+transaction verifies the immutable definition hash, latest human approval, non-expired synthetic run, suite
+and graph pins, hard gates, case-type compatibility, and optimistic current-assignment ID before it closes
+the old assignment and creates the new unique active row. Provenance stores only minimized identifiers,
+hashes, actors, reasons, and prior/target assignment snapshots. Workflow runs retain their original
+`assignment_id`, `graph_version`, and `flow_version`; promotion affects only new runs. Rollback creates a new
+audited assignment and never rewrites or deletes prior run history.
+
 Web MFA login challenges expire after 10 minutes and are single-use, including after an unsuccessful verification attempt. This limits replay and brute-force opportunities. When verification reports an invalid or expired challenge, the web client must discard its challenge token, remove the MFA form, and re-enable password sign-in so the user can obtain a fresh challenge without refreshing the page. Client and server logs must not include the MFA token, TOTP secret, or verification code; this preserves data minimization while keeping the authentication transition traceable at the request level.
 Keep external-provider API keys in backend secrets and store only provider references, base URLs, deployment names, data-zone flags, prices, and health URLs in these tables.
 

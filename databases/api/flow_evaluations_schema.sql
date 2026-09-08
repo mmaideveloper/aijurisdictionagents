@@ -37,18 +37,24 @@ CREATE TABLE IF NOT EXISTS flow_evaluation_results (
 CREATE TABLE IF NOT EXISTS flow_evaluation_approvals (
     approval_id TEXT PRIMARY KEY, flow_id TEXT NOT NULL, run_id TEXT NOT NULL,
     definition_hash TEXT NOT NULL, approved_by TEXT NOT NULL, reason TEXT NOT NULL,
-    approved_at TEXT NOT NULL, UNIQUE(flow_id, definition_hash),
+    approved_at TEXT NOT NULL, UNIQUE(flow_id, run_id),
     FOREIGN KEY(flow_id) REFERENCES flow_packs(flow_id),
     FOREIGN KEY(run_id) REFERENCES flow_evaluation_runs(run_id)
 );
 CREATE TABLE IF NOT EXISTS flow_promotion_provenance (
-    promotion_id TEXT PRIMARY KEY, flow_id TEXT NOT NULL, approval_id TEXT NOT NULL,
+    promotion_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE,
+    request_hash TEXT NOT NULL, action TEXT NOT NULL,
+    flow_id TEXT NOT NULL, approval_id TEXT NOT NULL, run_id TEXT NOT NULL,
+    case_type_key TEXT NOT NULL, jurisdiction TEXT NOT NULL, reason TEXT NOT NULL,
     prior_assignment_json TEXT NULL, target_assignment_json TEXT NOT NULL,
     target_assignment_hash TEXT NOT NULL, promoted_by TEXT NOT NULL, promoted_at TEXT NOT NULL,
+    retention_until TEXT NOT NULL,
     rollback_of_promotion_id TEXT NULL, FOREIGN KEY(flow_id) REFERENCES flow_packs(flow_id),
     FOREIGN KEY(approval_id) REFERENCES flow_evaluation_approvals(approval_id),
+    FOREIGN KEY(run_id) REFERENCES flow_evaluation_runs(run_id),
     FOREIGN KEY(rollback_of_promotion_id) REFERENCES flow_promotion_provenance(promotion_id)
 );
 CREATE INDEX IF NOT EXISTS idx_flow_evaluation_runs_flow ON flow_evaluation_runs(flow_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_flow_evaluation_runs_expiry ON flow_evaluation_runs(expires_at);
 CREATE INDEX IF NOT EXISTS idx_flow_promotion_provenance_flow ON flow_promotion_provenance(flow_id, promoted_at);
+CREATE INDEX IF NOT EXISTS idx_flow_promotion_provenance_assignment ON flow_promotion_provenance(jurisdiction, case_type_key, promoted_at);

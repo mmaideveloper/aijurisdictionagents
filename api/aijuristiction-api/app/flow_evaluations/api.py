@@ -10,9 +10,16 @@ from app.flow_evaluations.models import (
     EvaluationRunResponse,
     EvaluationSuiteCreate,
     EvaluationSuiteResponse,
+    FlowPromotionListResponse,
+    FlowPromotionPreviewRequest,
+    FlowPromotionPreviewResponse,
+    FlowPromotionRequest,
+    FlowPromotionResponse,
+    FlowRollbackRequest,
     ProductionApprovalRequest,
     ProductionApprovalResponse,
 )
+from app.case_workflows.service import CaseWorkflowApplicationService, get_case_workflow_service
 from app.flow_evaluations.service import FlowEvaluationService
 from app.flow_evaluations.store import (
     EvaluationConflictError,
@@ -45,6 +52,14 @@ def _service(
     evaluations: FlowEvaluationStore = Depends(get_flow_evaluation_store),
 ) -> FlowEvaluationService:
     return FlowEvaluationService(flows, evaluations)
+
+
+def _promotion_service(
+    flows: FlowPackStore = Depends(get_flow_pack_store),
+    evaluations: FlowEvaluationStore = Depends(get_flow_evaluation_store),
+    workflows: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
+) -> FlowEvaluationService:
+    return FlowEvaluationService(flows, evaluations, workflows)
 
 
 @router.post("/suites", response_model=EvaluationSuiteResponse, status_code=status.HTTP_201_CREATED)
@@ -116,6 +131,78 @@ def approve_flow_for_production(
             flow_key=flow_key, version=version, jurisdiction=jurisdiction,
             run_id=payload.run_id, actor_id=admin.user_id, reason=payload.reason,
         )
+    except (FlowPackNotFoundError, EvaluationNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (FlowPackImmutableError, EvaluationConflictError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post("/promotions/preview", response_model=FlowPromotionPreviewResponse)
+def preview_flow_promotion(
+    payload: FlowPromotionPreviewRequest,
+    _: AdminContext = Depends(require_ai_model_admin),
+    service: FlowEvaluationService = Depends(_promotion_service),
+) -> FlowPromotionPreviewResponse:
+    try:
+        return service.preview_promotion(payload)
+    except FlowPackNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/promotions",
+    response_model=FlowPromotionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def promote_flow(
+    payload: FlowPromotionRequest,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    service: FlowEvaluationService = Depends(_promotion_service),
+) -> FlowPromotionResponse:
+    try:
+        return service.promote(payload, actor_id=admin.user_id)
+    except (FlowPackNotFoundError, EvaluationNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (FlowPackImmutableError, EvaluationConflictError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get("/promotions", response_model=FlowPromotionListResponse)
+def list_flow_promotions(
+    _: AdminContext = Depends(require_ai_model_admin),
+    jurisdiction: str | None = Query(default=None, min_length=2, max_length=8),
+    case_type_key: str | None = Query(default=None, min_length=3, max_length=200),
+    store: FlowEvaluationStore = Depends(get_flow_evaluation_store),
+) -> FlowPromotionListResponse:
+    return FlowPromotionListResponse(
+        items=store.list_promotions(
+            jurisdiction=jurisdiction,
+            case_type_key=case_type_key,
+        )
+    )
+
+
+@router.delete("/promotions/expired")
+def purge_expired_flow_promotions(
+    _: AdminContext = Depends(require_ai_model_admin),
+    store: FlowEvaluationStore = Depends(get_flow_evaluation_store),
+) -> dict[str, int]:
+    return {"deleted_promotions": store.purge_expired_promotions()}
+
+
+@router.post(
+    "/promotions/{promotion_id}/rollback",
+    response_model=FlowPromotionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def rollback_flow_promotion(
+    promotion_id: str,
+    payload: FlowRollbackRequest,
+    admin: AdminContext = Depends(require_ai_model_admin),
+    service: FlowEvaluationService = Depends(_promotion_service),
+) -> FlowPromotionResponse:
+    try:
+        return service.rollback(promotion_id, payload, actor_id=admin.user_id)
     except (FlowPackNotFoundError, EvaluationNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (FlowPackImmutableError, EvaluationConflictError) as exc:

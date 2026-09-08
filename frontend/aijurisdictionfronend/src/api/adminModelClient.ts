@@ -394,6 +394,75 @@ export interface FlowEvaluationRun {
   expires_at: string;
 }
 
+export interface FlowProductionApproval {
+  approval_id: string;
+  flow_id: string;
+  run_id: string;
+  definition_hash: string;
+  approved_by: string;
+  reason: string;
+  approved_at: string;
+}
+
+export interface FlowPromotionApprovalSummary {
+  approval_id: string;
+  run_id: string;
+  definition_hash: string;
+  approved_by: string;
+  approval_reason: string;
+  approved_at: string;
+  run_expires_at: string;
+  suite_key: string;
+  suite_version: number;
+  suite_hash: string;
+  graph_version: string;
+  routing_policy_hash: string;
+  provider: string;
+  model: string;
+  provider_route: string;
+  gates: Record<string, boolean>;
+}
+
+export interface FlowPromotionTargetInput {
+  case_type_key: string;
+  jurisdiction: string;
+  graph_key: string;
+  graph_version: number;
+  flow_key: string;
+  flow_version: number;
+}
+
+export interface FlowPromotionPreview {
+  candidate_flow_id: string;
+  candidate_definition_hash: string;
+  candidate_lifecycle_state: string;
+  requested_assignment: FlowPromotionTargetInput;
+  current_assignment: CaseWorkflowAssignment | null;
+  approval: FlowPromotionApprovalSummary | null;
+  compatibility_status: string;
+  compatibility_message: string;
+  blockers: string[];
+  impact: string;
+  can_promote: boolean;
+}
+
+export interface FlowPromotion {
+  promotion_id: string;
+  idempotency_key: string;
+  action: "promote" | "rollback";
+  request_hash: string;
+  flow_id: string;
+  approval: FlowPromotionApprovalSummary;
+  prior_assignment: CaseWorkflowAssignment | null;
+  target_assignment: CaseWorkflowAssignment;
+  target_assignment_hash: string;
+  promoted_by: string;
+  reason: string;
+  promoted_at: string;
+  retention_until: string;
+  rollback_of_promotion_id: string | null;
+}
+
 export interface CaseCatalogDocumentTemplateListResponse {
   items: DocumentTemplateCatalogItem[];
 }
@@ -1015,6 +1084,74 @@ export const createFlowEvaluationRun = (
     method: "POST",
     body: JSON.stringify(input)
   });
+
+export const approveFlowForProduction = (
+  adminAuth: AdminAuthInput,
+  flowKey: string,
+  version: number,
+  jurisdiction: string,
+  runId: string,
+  reason: string
+): Promise<FlowProductionApproval> =>
+  adminRequest<FlowProductionApproval>(
+    `/v1/flow-evaluations/flows/${encodeURIComponent(flowKey)}/versions/${version}/production-approval?jurisdiction=${encodeURIComponent(jurisdiction)}`,
+    adminAuth,
+    { method: "POST", body: JSON.stringify({ run_id: runId, reason }) }
+  );
+
+export const previewFlowPromotion = (
+  adminAuth: AdminAuthInput,
+  input: FlowPromotionTargetInput
+): Promise<FlowPromotionPreview> =>
+  adminRequest<FlowPromotionPreview>("/v1/flow-evaluations/promotions/preview", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const promoteFlow = (
+  adminAuth: AdminAuthInput,
+  input: FlowPromotionTargetInput & {
+    idempotency_key: string;
+    approval_id: string;
+    reason: string;
+    confirmation: true;
+    expected_current_assignment_id: string | null;
+  }
+): Promise<FlowPromotion> =>
+  adminRequest<FlowPromotion>("/v1/flow-evaluations/promotions", adminAuth, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+
+export const fetchFlowPromotions = (
+  adminAuth: AdminAuthInput,
+  jurisdiction: string,
+  caseTypeKey?: string
+): Promise<{ items: FlowPromotion[] }> => {
+  const params = new URLSearchParams({ jurisdiction });
+  if (caseTypeKey) params.set("case_type_key", caseTypeKey);
+  return adminRequest<{ items: FlowPromotion[] }>(
+    `/v1/flow-evaluations/promotions?${params.toString()}`,
+    adminAuth,
+    { method: "GET" }
+  );
+};
+
+export const rollbackFlowPromotion = (
+  adminAuth: AdminAuthInput,
+  promotionId: string,
+  input: {
+    idempotency_key: string;
+    reason: string;
+    confirmation: true;
+    expected_current_assignment_id: string;
+  }
+): Promise<FlowPromotion> =>
+  adminRequest<FlowPromotion>(
+    `/v1/flow-evaluations/promotions/${encodeURIComponent(promotionId)}/rollback`,
+    adminAuth,
+    { method: "POST", body: JSON.stringify(input) }
+  );
 
 export const fetchAdminCaseCatalogDocumentTemplates = (
   adminUserId: AdminAuthInput,

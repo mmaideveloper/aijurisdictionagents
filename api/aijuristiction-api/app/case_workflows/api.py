@@ -76,13 +76,16 @@ def validate_assignment(
 )
 def create_assignment(
     payload: WorkflowAssignmentRequest,
-    admin: AdminContext = Depends(require_ai_model_admin),
-    service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
+    _: AdminContext = Depends(require_ai_model_admin),
 ) -> WorkflowAssignmentResponse:
-    try:
-        return service.assign(payload, actor=admin.user_id)
-    except WorkflowConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    del payload
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Direct production assignment is disabled; use the audited flow promotion API "
+            "with a current immutable evaluation approval"
+        ),
+    )
 
 
 @router.post("/runs", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED)

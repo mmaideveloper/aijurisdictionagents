@@ -26,7 +26,6 @@ import {
   fetchFlowPackCatalog,
   fetchRegisteredCaseWorkflowGraphs,
   validateCaseWorkflowAssignment,
-  assignCaseWorkflow,
   createDraftFlowPackVersion,
   fetchAdminUsers,
   fetchAdminCaseExportBlob,
@@ -184,7 +183,6 @@ const AIModelAdmin: React.FC = () => {
   const [workflowCaseTypeKey, setWorkflowCaseTypeKey] = React.useState("");
   const [workflowGraphRef, setWorkflowGraphRef] = React.useState("legal_document_workflow@1");
   const [workflowFlowRef, setWorkflowFlowRef] = React.useState("");
-  const [workflowReplacementConfirmed, setWorkflowReplacementConfirmed] = React.useState(false);
   const [workflowValidation, setWorkflowValidation] = React.useState("");
   const [catalogLoadState, setCatalogLoadState] = React.useState<AdminCaseCatalogLoadState>("idle");
   const [activeCatalogSection, setActiveCatalogSection] = React.useState<AdminCaseCatalogSection>("caseTypes");
@@ -423,9 +421,9 @@ const AIModelAdmin: React.FC = () => {
       graph_version: Number(graphVersion),
       flow_key: flowKey ?? "",
       flow_version: Number(flowVersion),
-      confirmation: workflowReplacementConfirmed
+      confirmation: true
     };
-  }, [workflowCaseTypeKey, workflowFlowRef, workflowGraphRef, workflowReplacementConfirmed]);
+  }, [workflowCaseTypeKey, workflowFlowRef, workflowGraphRef]);
 
   const validateWorkflowAssignment = async () => {
     setError("");
@@ -435,20 +433,6 @@ const AIModelAdmin: React.FC = () => {
     } catch (validationError) {
       setWorkflowValidation("");
       setError(validationError instanceof Error ? validationError.message : t("adminCaseCatalogLoadFailed"));
-    }
-  };
-
-  const saveWorkflowAssignment = async () => {
-    setError("");
-    try {
-      await assignCaseWorkflow(adminAuth, workflowAssignmentInput());
-      setWorkflowValidation("");
-      setWorkflowReplacementConfirmed(false);
-      setCatalogLoadState("idle");
-      await loadCaseCatalog();
-      setStatus(t("adminSaved"));
-    } catch (assignmentError) {
-      setError(assignmentError instanceof Error ? assignmentError.message : t("adminCaseCatalogLoadFailed"));
     }
   };
 
@@ -1445,7 +1429,6 @@ const AIModelAdmin: React.FC = () => {
                                 setWorkflowGraphRef(`${assignment.graph_key}@${assignment.graph_version}`);
                                 setWorkflowFlowRef(`${assignment.flow_key}@${assignment.flow_version}`);
                               }
-                              setWorkflowReplacementConfirmed(false);
                               setWorkflowValidation("");
                             }}
                           >
@@ -1490,14 +1473,10 @@ const AIModelAdmin: React.FC = () => {
                           ))}
                         </select>
                       </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={workflowReplacementConfirmed}
-                          onChange={(event) => setWorkflowReplacementConfirmed(event.target.checked)}
-                        />
-                        Confirm prospective replacement of the active default assignment
-                      </label>
+                      <p className="admin-alert">
+                        Production assignment changes are available only in Flow packages after a current
+                        synthetic evaluation and human production approval. Direct assignment is disabled.
+                      </p>
                       {workflowValidation ? <p className="form-success">{workflowValidation}</p> : null}
                       <div className="admin-inline-actions">
                         <button className="secondary-button" type="button" disabled={!workflowFlowRef} onClick={() => void cloneWorkflowFlowDraft()}>
@@ -1505,9 +1484,6 @@ const AIModelAdmin: React.FC = () => {
                         </button>
                         <button className="secondary-button" type="button" disabled={!workflowCaseTypeKey || !workflowFlowRef} onClick={() => void validateWorkflowAssignment()}>
                           Validate compatibility
-                        </button>
-                        <button className="primary-button" type="button" disabled={!workflowCaseTypeKey || !workflowFlowRef || !workflowReplacementConfirmed} onClick={() => void saveWorkflowAssignment()}>
-                          Assign for new cases
                         </button>
                       </div>
                     </form>
