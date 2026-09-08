@@ -2,7 +2,7 @@
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
 import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, fetchSelectableModelProfiles, streamSession } from "../api/chatClient";
 
@@ -96,7 +96,10 @@ vi.mock("../auth/webAuth", () => ({
 const caseActions = vi.hoisted(() => ({
   setCaseRole: vi.fn(),
   setCaseCommunicationMode: vi.fn(),
-  loadCaseData: vi.fn()
+  loadCaseData: vi.fn(),
+  selectCase: vi.fn(),
+  cases: [] as { id: string }[],
+  activeCaseId: "case-1" as string | null
 }));
 
 vi.mock("../state/CaseProvider", () => ({
@@ -105,7 +108,7 @@ vi.mock("../state/CaseProvider", () => ({
     !document.originalFilename.toLowerCase().startsWith("assistant-technical-"),
   useCases: () => ({
     activeCase: {
-      id: "case-1",
+      id: caseActions.activeCaseId,
       title: "Case 1",
       documents: [],
       interactionHistory: [
@@ -125,9 +128,11 @@ vi.mock("../state/CaseProvider", () => ({
       selectedCommunicationMode: "Chat",
       selectedRole: "AI Lawyer"
     },
+    cases: caseActions.cases,
     loadCaseData: caseActions.loadCaseData,
     setCaseRole: caseActions.setCaseRole,
-    setCaseCommunicationMode: caseActions.setCaseCommunicationMode
+    setCaseCommunicationMode: caseActions.setCaseCommunicationMode,
+    selectCase: caseActions.selectCase
   })
 }));
 
@@ -213,6 +218,10 @@ describe("AssistantWorkspace", () => {
     caseActions.setCaseRole.mockReset();
     caseActions.setCaseCommunicationMode.mockReset();
     caseActions.loadCaseData.mockReset();
+    caseActions.selectCase.mockReset();
+    caseActions.cases = [];
+    caseActions.activeCaseId = "case-1";
+    window.history.replaceState({}, "", "/");
     vi.mocked(createChatSession).mockReset();
     vi.mocked(fetchEffectiveModelRoute).mockReset();
     vi.mocked(fetchSelectableModelProfiles).mockReset();
@@ -243,6 +252,19 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByText("AI lawyer")).toBeDefined();
     expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
+  });
+
+  it("reconciles a persisted case deep link that is absent from the initial case list", async () => {
+    window.history.replaceState({}, "", "/case/persisted-case");
+    caseActions.activeCaseId = null;
+    caseActions.loadCaseData.mockResolvedValue(null);
+
+    render(<AssistantWorkspace />);
+
+    await waitFor(() => {
+      expect(caseActions.loadCaseData).toHaveBeenCalledWith("persisted-case");
+    });
+    expect(caseActions.selectCase).not.toHaveBeenCalled();
   });
 
   it("keeps chat selected and voice/video communication modes unavailable", async () => {

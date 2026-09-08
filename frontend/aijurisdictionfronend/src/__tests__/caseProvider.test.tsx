@@ -260,6 +260,17 @@ const RefreshCaseDataConsumer: React.FC = () => {
   );
 };
 
+const RouteCaseConsumer: React.FC = () => {
+  const { activeCase, loadCaseData } = useCases();
+
+  return (
+    <div>
+      <button type="button" onClick={() => void loadCaseData("case-route")}>Hydrate route case</button>
+      <div data-testid="active-route-case">{activeCase?.title ?? ""}</div>
+    </div>
+  );
+};
+
 describe("CaseProvider", () => {
   beforeEach(() => {
     cleanup();
@@ -621,5 +632,46 @@ describe("CaseProvider", () => {
     });
     expect(screen.getByTestId("latest-document").textContent).toBe("splnomocnenie-sk-en.pdf");
     expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-api", 200);
+  });
+
+  it("hydrates and selects a persisted route case missing from the initial client state", async () => {
+    const user = userEvent.setup();
+    authState.isAuthenticated = true;
+    authState.user = {
+      userId: "user-1",
+      email: "client@example.test",
+      name: "Client"
+    };
+    vi.mocked(listCases)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          case_id: "case-route",
+          user_id: "user-1",
+          company_id: null,
+          title: "Persisted route case",
+          status: "in_progress",
+          created_at: "2026-09-08T10:00:00.000Z",
+          updated_at: "2026-09-08T10:00:00.000Z"
+        }
+      ]);
+    vi.mocked(getCaseHistory).mockResolvedValue({ messages: [], has_more: false, documents: [], citations: [] });
+
+    render(
+      <LanguageProvider>
+        <CaseProvider>
+          <RouteCaseConsumer />
+        </CaseProvider>
+      </LanguageProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("active-route-case").textContent).toBe(""));
+    await user.click(screen.getByRole("button", { name: "Hydrate route case" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-route-case").textContent).toBe("Persisted route case");
+    });
+    expect(listCases).toHaveBeenNthCalledWith(2, "user-1");
+    expect(getCaseHistory).toHaveBeenCalledWith("user-1", "case-route", 200);
   });
 });

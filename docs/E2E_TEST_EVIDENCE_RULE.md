@@ -35,6 +35,8 @@ missing persisted case from a case that the frontend did not render; do not mask
 using a longer unbounded UI timeout. A case title may legitimately appear in both the case-list control
 and selected-case details, so visibility assertions must select one deterministic occurrence rather
 than fail Playwright strict mode merely because both authorized UI surfaces render the same title.
+The frontend must reconcile a route-selected case that is absent from its initial client list by
+re-reading the authenticated user's authorized case list and hydrating only a matching returned case.
 
 Minimal runnable verification, with the documented production E2E environment already configured:
 
