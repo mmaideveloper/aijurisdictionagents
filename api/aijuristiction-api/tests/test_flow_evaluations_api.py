@@ -184,7 +184,9 @@ def test_privacy_gate_failure_cannot_be_approved() -> None:
     assert current.json()["lifecycle_state"] == "test_ready"
 
 
-def _approve(flow_key: str) -> dict[str, object]:
+def _approve(
+    flow_key: str, *, reason: str = "Human reviewer accepted all gates"
+) -> dict[str, object]:
     suite = _create_suite(flow_key)
     run = client.post(
         "/v1/flow-evaluations/runs",
@@ -196,7 +198,7 @@ def _approve(flow_key: str) -> dict[str, object]:
         f"/v1/flow-evaluations/flows/{flow_key}/versions/1/production-approval",
         params={"jurisdiction": "SK"},
         headers=HEADERS,
-        json={"run_id": run.json()["run_id"], "reason": "Human reviewer accepted all gates"},
+        json={"run_id": run.json()["run_id"], "reason": reason},
     )
     assert approval.status_code == 200
     return approval.json()
@@ -204,13 +206,14 @@ def _approve(flow_key: str) -> dict[str, object]:
 
 def test_promotion_is_atomic_idempotent_audited_and_rollback_uses_same_gates() -> None:
     prior_key, _ = _create_and_lock_flow()
-    _approve(prior_key)
+    initial_prior_approval = _approve(prior_key)
     prior_publish = client.post(
         f"/v1/flow-packs/{prior_key}/versions/1/enable", headers=HEADERS
     )
     assert prior_publish.status_code == 200
     refreshed_prior_approval = _approve(prior_key)
-    assert refreshed_prior_approval["approval_id"]
+    assert refreshed_prior_approval["approval_id"] == initial_prior_approval["approval_id"]
+    assert refreshed_prior_approval["run_id"] != initial_prior_approval["run_id"]
     still_published = client.get(
         f"/v1/flow-packs/{prior_key}/versions/1",
         params={"jurisdiction": "SK"},
@@ -290,6 +293,19 @@ def test_promotion_is_atomic_idempotent_audited_and_rollback_uses_same_gates() -
     )
     assert repeated.status_code == 201
     assert repeated.json()["promotion_id"] == promoted_body["promotion_id"]
+    refreshed_candidate_approval = _approve(
+        candidate_key, reason="Renewed approval after the audited promotion"
+    )
+    assert refreshed_candidate_approval["approval_id"] == approval["approval_id"]
+    assert refreshed_candidate_approval["run_id"] != approval["run_id"]
+    pre_rollback_history = client.get(
+        "/v1/flow-evaluations/promotions",
+        params={"jurisdiction": "SK", "case_type_key": "sk.synthetic.urbanism"},
+        headers=HEADERS,
+    )
+    historical_approval = pre_rollback_history.json()["items"][0]["approval"]
+    assert historical_approval["run_id"] == approval["run_id"]
+    assert historical_approval["approval_reason"] == "Human reviewer accepted all gates"
     active = workflow_store.get_active_assignment(
         case_type_key="sk.synthetic.urbanism", jurisdiction="SK"
     )

@@ -224,16 +224,39 @@ class FlowEvaluationStore:
         approved_at = _utc_now()
         with self._connect() as conn:
             try:
-                conn.execute(
+                lock = " FOR UPDATE" if self._is_postgres else ""
+                existing = conn.execute(
                     self._sql(
-                        "INSERT INTO flow_evaluation_approvals "
-                        "(approval_id, flow_id, run_id, definition_hash, approved_by, reason, approved_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)"
-                    ), self._params(
-                        approval_id, flow_id, run.run_id, run.flow_definition_hash,
-                        actor_id, reason.strip(), approved_at,
+                        "SELECT approval_id, run_id FROM flow_evaluation_approvals "
+                        "WHERE flow_id = ? AND definition_hash = ?" + lock
                     ),
-                )
+                    self._params(flow_id, run.flow_definition_hash),
+                ).fetchone()
+                if existing is not None:
+                    existing_item = _mapping(existing)
+                    if str(existing_item["run_id"]) == run.run_id:
+                        raise EvaluationConflictError("This evaluation run is already approved")
+                    approval_id = str(existing_item["approval_id"])
+                    conn.execute(
+                        self._sql(
+                            "UPDATE flow_evaluation_approvals SET run_id = ?, approved_by = ?, "
+                            "reason = ?, approved_at = ? WHERE approval_id = ?"
+                        ),
+                        self._params(
+                            run.run_id, actor_id, reason.strip(), approved_at, approval_id
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        self._sql(
+                            "INSERT INTO flow_evaluation_approvals "
+                            "(approval_id, flow_id, run_id, definition_hash, approved_by, reason, approved_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)"
+                        ), self._params(
+                            approval_id, flow_id, run.run_id, run.flow_definition_hash,
+                            actor_id, reason.strip(), approved_at,
+                        ),
+                    )
                 cursor = conn.execute(
                     self._sql(
                         "UPDATE flow_packs SET lifecycle_state = CASE "
@@ -366,6 +389,7 @@ class FlowEvaluationStore:
                         "SELECT f.flow_id, f.flow_key, f.version AS flow_version, f.jurisdiction, "
                         "f.definition_hash AS current_definition_hash, f.lifecycle_state, f.is_deleted, "
                         "a.approval_id, a.run_id, a.definition_hash, r.status AS run_status, "
+                        "a.approved_by, a.reason AS approval_reason, a.approved_at, "
                         "r.expires_at, r.graph_version AS tested_graph_version, r.gates_json "
                         "FROM flow_packs f JOIN flow_evaluation_approvals a ON a.flow_id = f.flow_id "
                         "JOIN flow_evaluation_runs r ON r.run_id = a.run_id "
@@ -474,8 +498,9 @@ class FlowEvaluationStore:
                         "INSERT INTO flow_promotion_provenance (promotion_id, idempotency_key, "
                         "request_hash, action, flow_id, approval_id, run_id, case_type_key, jurisdiction, "
                         "reason, prior_assignment_json, target_assignment_json, target_assignment_hash, "
-                        "promoted_by, promoted_at, retention_until, rollback_of_promotion_id) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        "promoted_by, promoted_at, approved_by_snapshot, approval_reason_snapshot, "
+                        "approved_at_snapshot, retention_until, rollback_of_promotion_id) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     ),
                     self._params(
                         promotion_id,
@@ -493,6 +518,9 @@ class FlowEvaluationStore:
                         _hash(target_assignment),
                         actor_id,
                         now,
+                        str(candidate_item["approved_by"]),
+                        str(candidate_item["approval_reason"]),
+                        str(candidate_item["approved_at"]),
                         retention_until,
                         rollback_of_promotion_id,
                     ),
@@ -510,7 +538,9 @@ class FlowEvaluationStore:
                 self._sql(
                     "DELETE FROM flow_evaluation_runs WHERE expires_at < ? AND NOT EXISTS "
                     "(SELECT 1 FROM flow_evaluation_approvals a "
-                    "WHERE a.run_id = flow_evaluation_runs.run_id)"
+                    "WHERE a.run_id = flow_evaluation_runs.run_id) AND NOT EXISTS "
+                    "(SELECT 1 FROM flow_promotion_provenance p "
+                    "WHERE p.run_id = flow_evaluation_runs.run_id)"
                 ), self._params(now)
             )
             conn.commit()
@@ -579,6 +609,9 @@ class FlowEvaluationStore:
             "jurisdiction": "TEXT",
             "reason": "TEXT",
             "retention_until": "TEXT",
+            "approved_by_snapshot": "TEXT",
+            "approval_reason_snapshot": "TEXT",
+            "approved_at_snapshot": "TEXT",
         }
         if self._is_postgres:
             for name, sql_type in columns.items():
@@ -597,6 +630,9 @@ class FlowEvaluationStore:
                 "jurisdiction = COALESCE(promotion.jurisdiction, "
                 "promotion.target_assignment_json::jsonb ->> 'jurisdiction', 'UNKNOWN'), "
                 "reason = COALESCE(promotion.reason, 'Migrated legacy promotion provenance'), "
+                "approved_by_snapshot = COALESCE(promotion.approved_by_snapshot, approval.approved_by), "
+                "approval_reason_snapshot = COALESCE(promotion.approval_reason_snapshot, approval.reason), "
+                "approved_at_snapshot = COALESCE(promotion.approved_at_snapshot, approval.approved_at), "
                 "retention_until = COALESCE(promotion.retention_until, "
                 "(promotion.promoted_at::timestamptz + INTERVAL '6 years')::text) "
                 "FROM flow_evaluation_approvals AS approval "
@@ -623,6 +659,12 @@ class FlowEvaluationStore:
                 "jurisdiction = COALESCE(jurisdiction, "
                 "json_extract(target_assignment_json, '$.jurisdiction'), 'UNKNOWN'), "
                 "reason = COALESCE(reason, 'Migrated legacy promotion provenance'), "
+                "approved_by_snapshot = COALESCE(approved_by_snapshot, (SELECT approved_by "
+                "FROM flow_evaluation_approvals WHERE approval_id = flow_promotion_provenance.approval_id)), "
+                "approval_reason_snapshot = COALESCE(approval_reason_snapshot, (SELECT reason "
+                "FROM flow_evaluation_approvals WHERE approval_id = flow_promotion_provenance.approval_id)), "
+                "approved_at_snapshot = COALESCE(approved_at_snapshot, (SELECT approved_at "
+                "FROM flow_evaluation_approvals WHERE approval_id = flow_promotion_provenance.approval_id)), "
                 "retention_until = COALESCE(retention_until, datetime(promoted_at, '+6 years'))"
             )
         conn.execute(
@@ -716,8 +758,11 @@ class FlowEvaluationStore:
     @staticmethod
     def _promotion_select() -> str:
         return (
-            "SELECT p.*, a.definition_hash, a.approved_by, a.reason AS approval_reason, "
-            "a.approved_at, r.expires_at AS run_expires_at, r.suite_key, r.suite_version, "
+            "SELECT p.*, a.definition_hash, "
+            "COALESCE(p.approved_by_snapshot, a.approved_by) AS approved_by, "
+            "COALESCE(p.approval_reason_snapshot, a.reason) AS approval_reason, "
+            "COALESCE(p.approved_at_snapshot, a.approved_at) AS approved_at, "
+            "r.expires_at AS run_expires_at, r.suite_key, r.suite_version, "
             "r.suite_hash, r.graph_version, r.routing_policy_hash, r.provider, r.model, "
             "r.provider_route, r.gates_json FROM flow_promotion_provenance p "
             "JOIN flow_evaluation_approvals a ON a.approval_id = p.approval_id "
