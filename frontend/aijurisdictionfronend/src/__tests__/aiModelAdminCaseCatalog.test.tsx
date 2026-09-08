@@ -124,6 +124,18 @@ describe("AIModelAdmin case catalog", () => {
         is_deleted: false,
         created_at: "2026-08-26T00:00:00Z",
         updated_at: "2026-08-26T00:00:00Z"
+      }, {
+        flow_key: "sk.employment.claim",
+        version: 2,
+        jurisdiction: "SK",
+        title: "Unreviewed employment draft",
+        description: "Must never appear as a published assignment option",
+        definition: {},
+        is_enabled: false,
+        lifecycle_state: "draft",
+        is_deleted: false,
+        created_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-27T00:00:00Z"
       }]
     });
     vi.mocked(fetchRegisteredCaseWorkflowGraphs).mockResolvedValue([{
@@ -269,6 +281,8 @@ describe("AIModelAdmin case catalog", () => {
     expect(screen.getByText("adminCaseCatalogNoLinkedTemplates")).toBeDefined();
     expect(screen.getByText("adminCaseCatalogPromptMissing")).toBeDefined();
     expect(screen.getByText("legal_document_workflow@1 / sk.employment.claim@1")).toBeDefined();
+    const publishedFlowSelector = screen.getByLabelText("adminFlowPublishedVersion");
+    expect(within(publishedFlowSelector).queryByText(/Unreviewed employment draft/)).toBeNull();
 
     await user.click(screen.getAllByRole("button", { name: "adminEdit" })[0]!);
     await user.click(screen.getByRole("checkbox", { name: /Confirm prospective replacement/i }));
@@ -291,5 +305,22 @@ describe("AIModelAdmin case catalog", () => {
     const promptDetails = screen.getByText("adminCaseCatalogViewPrompt").closest("details");
     expect(promptDetails).not.toBeNull();
     expect(within(promptDetails as HTMLDetailsElement).getByText(/Collect the employment timeline/)).toBeDefined();
+  });
+
+  it("loads only graph and flow metadata when opening the flow-package workspace", async () => {
+    const user = userEvent.setup();
+    vi.mocked(fetchAIModelAdminDashboard).mockResolvedValue(dashboard);
+    vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
+    vi.mocked(fetchRegisteredCaseWorkflowGraphs).mockResolvedValue([]);
+    vi.mocked(fetchFlowPackCatalog).mockResolvedValue({ items: [] });
+
+    render(<AIModelAdmin />);
+    await user.click(await screen.findByRole("button", { name: /adminFlowPackagesTitle/ }));
+
+    await waitFor(() => expect(fetchRegisteredCaseWorkflowGraphs).toHaveBeenCalled());
+    await waitFor(() => expect(fetchFlowPackCatalog).toHaveBeenCalled());
+    expect(fetchAdminCaseCatalogCaseTypes).not.toHaveBeenCalled();
+    expect(fetchAdminCaseCatalogDocumentTemplates).not.toHaveBeenCalled();
+    expect(fetchCaseWorkflowAssignments).not.toHaveBeenCalled();
   });
 });

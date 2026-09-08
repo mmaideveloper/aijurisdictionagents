@@ -461,8 +461,119 @@
 
 .admin-panel input,
 .admin-panel select,
+.admin-panel textarea,
 .admin-field input {
   min-height: 40px;
+}
+
+.admin-panel textarea {
+  min-width: 0;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.admin-flow-filters {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-input-icon {
+  align-items: center;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+
+.admin-code-input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  min-height: 150px;
+  white-space: pre;
+}
+
+.admin-flow-state {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 9px;
+}
+
+.admin-flow-state--draft,
+.admin-flow-state--test_ready,
+.admin-flow-state--testing {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.admin-flow-state--test_passed,
+.admin-flow-state--production_approved,
+.admin-flow-state--published {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.admin-flow-lock,
+.admin-flow-inline-load {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.admin-flow-diff {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.admin-flow-diff > div {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 5px;
+  padding-bottom: 10px;
+}
+
+.admin-flow-diff dt {
+  font-weight: 700;
+}
+
+.admin-flow-diff dd {
+  display: grid;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.75rem;
+  gap: 4px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-flow-diff del {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.admin-flow-diff ins {
+  background: #ecfdf5;
+  color: #166534;
+  text-decoration: none;
+}
+
+.admin-flow-result {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+}
+
+.admin-flow-result--passed {
+  background: #ecfdf5;
+  border-color: #86efac;
+}
+
+.admin-flow-result--failed {
+  background: #fef2f2;
+  border-color: #fca5a5;
 }
 
 .admin-toggle-row {
@@ -4295,7 +4406,8 @@ textarea {
 
 @media (max-width: 860px) {
   .admin-grid,
-  .admin-price-grid {
+  .admin-price-grid,
+  .admin-flow-filters {
     grid-template-columns: 1fr;
   }
 
@@ -4305,6 +4417,14 @@ textarea {
 
   .admin-models .page-heading {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-flow-lock,
+  .admin-flow-inline-load {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 }
 

@@ -59,8 +59,9 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { LangGraphAuditGraph } from "../components/LangGraphAuditGraph";
+import AdminFlowPackages from "./AdminFlowPackages";
 
-type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
+type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "flowPackages" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
 type AdminFormMode = "table" | "create" | "edit";
 type AdminDashboardLoadState = "idle" | "loading" | "success" | "error";
 type AdminCaseCatalogLoadState = "idle" | "loading" | "success" | "error";
@@ -403,6 +404,16 @@ const AIModelAdmin: React.FC = () => {
       setError(loadError instanceof Error ? loadError.message : t("adminCaseCatalogLoadFailed"));
     }
   }, [adminAuth, adminUserId, catalogLoadState, t]);
+
+  const loadWorkflowGraphs = React.useCallback(async () => {
+    if (!adminUserId) return;
+    setError("");
+    try {
+      setWorkflowGraphs(await fetchRegisteredCaseWorkflowGraphs(adminAuth));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("adminCaseCatalogLoadFailed"));
+    }
+  }, [adminAuth, adminUserId, t]);
 
   const workflowAssignmentInput = React.useCallback(() => {
     const [graphKey, graphVersion] = workflowGraphRef.split("@");
@@ -929,6 +940,8 @@ const AIModelAdmin: React.FC = () => {
       void reloadOllama();
     } else if (section === "caseCatalog") {
       void loadCaseCatalog();
+    } else if (section === "flowPackages") {
+      void loadWorkflowGraphs();
     } else if (section !== "debug" && dashboardLoadState !== "success") {
       void reload();
     }
@@ -963,6 +976,7 @@ const AIModelAdmin: React.FC = () => {
     { key: "assignments", label: t("adminAssignmentTitle"), icon: <FaUserCog aria-hidden="true" /> },
     { key: "cases", label: t("adminCasesTitle"), icon: <FaBriefcase aria-hidden="true" /> },
     { key: "caseCatalog", label: t("adminCaseCatalogTitle"), icon: <FaBriefcase aria-hidden="true" /> },
+    { key: "flowPackages", label: t("adminFlowPackagesTitle"), icon: <FaRoute aria-hidden="true" /> },
     { key: "providers", label: t("adminProvidersTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "profiles", label: t("adminProfilesTitle"), icon: <FaServer aria-hidden="true" /> },
     { key: "credentials", label: t("adminCredentialsTitle"), icon: <FaKey aria-hidden="true" /> },
@@ -1050,13 +1064,13 @@ const AIModelAdmin: React.FC = () => {
           tabIndex={-1}
           aria-busy={dashboardLoadState === "loading" && !dashboard}
         >
-          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "debug" && dashboardLoadState === "loading" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && activeSection !== "debug" && dashboardLoadState === "loading" && !dashboard ? (
             <div className="admin-panel admin-load-state" role="status">
               <p>{t("adminLoading")}</p>
             </div>
           ) : null}
 
-          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "debug" && dashboardLoadState === "error" && !dashboard ? (
+          {activeSection !== "ollama" && activeSection !== "caseCatalog" && activeSection !== "flowPackages" && activeSection !== "debug" && dashboardLoadState === "error" && !dashboard ? (
             <div className="admin-panel admin-load-state">
               <p>{t("adminLoadFailed")}</p>
               <button className="secondary-button" type="button" onClick={() => void reload()}>
@@ -1065,7 +1079,7 @@ const AIModelAdmin: React.FC = () => {
             </div>
           ) : null}
 
-          {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" || activeSection === "debug" ? <>
+          {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" || activeSection === "flowPackages" || activeSection === "debug" ? <>
           {activeSection === "users" ? (
             <section className="admin-table-section">
               <h2>{t("adminUsersTitle")}</h2>
@@ -1468,10 +1482,10 @@ const AIModelAdmin: React.FC = () => {
                         </select>
                       </label>
                       <label>
-                        Published flow pack
+                        {t("adminFlowPublishedVersion")}
                         <select value={workflowFlowRef} onChange={(event) => setWorkflowFlowRef(event.target.value)}>
                           <option value="">{t("adminNotConfigured")}</option>
-                          {flowPacks.map((flow) => (
+                          {flowPacks.filter((flow) => flow.lifecycle_state === "published" && flow.is_enabled).map((flow) => (
                             <option key={`${flow.flow_key}@${flow.version}`} value={`${flow.flow_key}@${flow.version}`}>
                               {flow.title} — {flow.flow_key}@{flow.version} ({flow.lifecycle_state})
                             </option>
@@ -1571,6 +1585,15 @@ const AIModelAdmin: React.FC = () => {
                 </>
               ) : null}
             </section>
+          ) : null}
+
+          {activeSection === "flowPackages" ? (
+            <AdminFlowPackages
+              adminAuth={adminAuth}
+              graphs={workflowGraphs}
+              onStatus={setStatus}
+              onError={setError}
+            />
           ) : null}
 
           {activeSection === "providers" ? (
