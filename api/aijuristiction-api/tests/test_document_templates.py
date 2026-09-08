@@ -62,6 +62,8 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert official_form.source_review_status == "reviewed_metadata_only"
     assert official_form.body_completeness_status == "metadata_only"
     assert official_form.body == ""
+    assert official_form.source_url == "https://www.justice.gov.sk/dokumenty/2021/05/oslobodenie_od_sudnych_poplatkov_FO.pdf"
+    assert official_form.source_refs[0].source_kind == "official_form"
     assert "JurisDigta z nej negeneruje náhradné úplné podanie" in official_form.disclaimer_text
 
     employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
