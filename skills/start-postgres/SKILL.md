@@ -44,5 +44,10 @@ description: Start and verify the local PostgreSQL database for `aijurisdictiona
 - API init SQL lives under `databases/api/initdb`.
 - Laws collector init SQL lives under `databases/laws-collector/initdb`.
 - The schema update step uses `DB_OPTION=postgres` and `DB_CLOUD=postgresql://...`.
+- An explicit `-DatabaseName` is preserved when an existing project container is reused. The
+  launcher creates that database when needed, applies the selected project's schema to it, and
+  reports only a redacted connection summary.
+- `-EmitConnectionString` is reserved for trusted launcher-to-launcher handoff. Do not use it in
+  an interactive terminal because its captured output contains the database password.
 - If legacy data exists under earlier local PostgreSQL folders, the startup script copies the missing local layout into `runs/storage/<project>/postgres` before creating a fresh managed container.
 - If an already-running managed container still mounts one of the legacy folders, stop it and rerun the script once so it can switch to `runs/storage/<project>/postgres`.
