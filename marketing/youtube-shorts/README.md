@@ -14,6 +14,9 @@ verification notes. Follow repository branch/worktree rules for new episodes.
 - Use the same presenter shown in `assets/presenter-reference.png` for every guide.
   Reuse the owner's existing `corporate-web/assets/jurisdigta-sk.mp4` footage for
   appearance consistency. Do not infer her identity or clone her voice.
+- `assets/presenter-base-4s.mp4` is the prepared four-second, muted 650 × 1080
+  presenter source for future lip-sync generation. Generate new mouth movement for
+  each new narration; the current episode's lip-sync is specific to its words.
 - Preserve the reference's white background and navy styling; finish with the
   shield logo and `www.jurisdigta.eu` on black.
 - `assets/logo-black-hires.png` is the cleaned 1254 × 1254 generated logo master
