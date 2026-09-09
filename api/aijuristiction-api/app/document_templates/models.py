@@ -88,6 +88,7 @@ class DocumentTemplateDefinition(BaseModel):
     source_profile: str = ""
     source_captured_at: datetime | None = None
     source_review_status: str = "unreviewed"
+    source_drift_status: str = "capture_missing"
     reviewed_by: str = ""
     normalization_notes: str = ""
     legal_basis_refs: tuple[str, ...] = ()
@@ -127,6 +128,7 @@ class DocumentTemplateResponse(BaseModel):
     source_profile: str = ""
     source_captured_at: datetime | None = None
     source_review_status: str = "unreviewed"
+    source_drift_status: str = "capture_missing"
     reviewed_by: str = ""
     normalization_notes: str = ""
     legal_basis_refs: list[str]
@@ -167,6 +169,7 @@ class DocumentTemplateResponse(BaseModel):
             source_profile=item.source_profile,
             source_captured_at=item.source_captured_at,
             source_review_status=item.source_review_status,
+            source_drift_status=item.source_drift_status,
             reviewed_by=item.reviewed_by,
             normalization_notes=item.normalization_notes,
             legal_basis_refs=list(item.legal_basis_refs),
@@ -225,6 +228,7 @@ class TemplateSourceCaptureManifest(BaseModel):
     source_url: str
     captured_at: datetime
     content_sha256: str = Field(default="", max_length=64)
+    previous_content_sha256: str = Field(default="", max_length=64)
     artifact_reference: str = Field(default="", max_length=1000)
     capture_status: str = Field(min_length=2, max_length=64)
     failure_code: str = Field(default="", max_length=128)

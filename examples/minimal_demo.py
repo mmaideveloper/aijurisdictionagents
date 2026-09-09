@@ -115,6 +115,10 @@ print(
     "distinct salary/payday wording, signature blocks, and a visible human-review warning without external data."
 )
 print(
+    "template_source_drift => admin catalogue source warnings use only capture timestamps and SHA-256 "
+    "metadata; a changed hash or stale review requires human review and never changes legal clauses automatically."
+)
+print(
     "api_test_isolation => focused tests patch imported dependencies with pytest monkeypatch; "
     "they never replace shared sys.modules entries, so the full API suite remains order-independent."
 )

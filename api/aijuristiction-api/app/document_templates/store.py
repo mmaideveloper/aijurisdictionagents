@@ -3,7 +3,7 @@ from __future__ import annotations
 import builtins
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -121,7 +121,7 @@ class DocumentTemplateStore:
                 conn,
                 [str(_row_to_mapping(row).get("lineage_key") or "") for row in rows],
             )
-        return [self._row_to_definition(_row_to_mapping(row), latest_versions) for row in rows]
+        return [self._with_source_drift_status(self._row_to_definition(_row_to_mapping(row), latest_versions)) for row in rows]
 
     def upsert_source_capture_manifest(
         self,
@@ -135,20 +135,27 @@ class DocumentTemplateStore:
     ) -> TemplateSourceCaptureManifest:
         """Persist source metadata only; never persist fetched source bodies or user facts."""
         captured_at = _utc_now_iso()
+        with self._connect() as conn:
+            previous = conn.execute(
+                self._sql("SELECT content_sha256 FROM document_template_source_captures WHERE template_key = ? AND source_url = ?"),
+                self._params(template_key.strip(), source_url.strip()),
+            ).fetchone()
+        previous_hash = str(_row_to_mapping(previous).get("content_sha256") or "") if previous else ""
         values = (
             template_key.strip(), source_url.strip(), captured_at, content_sha256.strip().lower(),
-            artifact_reference.strip(), capture_status.strip(), failure_code.strip(),
+            previous_hash, artifact_reference.strip(), capture_status.strip(), failure_code.strip(),
         )
         with self._connect() as conn:
             conn.execute(
                 self._sql(
                     """
                     INSERT INTO document_template_source_captures (
-                        template_key, source_url, captured_at, content_sha256, artifact_reference, capture_status, failure_code
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        template_key, source_url, captured_at, content_sha256, previous_content_sha256, artifact_reference, capture_status, failure_code
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(template_key, source_url) DO UPDATE SET
                         captured_at = excluded.captured_at,
                         content_sha256 = excluded.content_sha256,
+                        previous_content_sha256 = excluded.previous_content_sha256,
                         artifact_reference = excluded.artifact_reference,
                         capture_status = excluded.capture_status,
                         failure_code = excluded.failure_code
@@ -159,7 +166,7 @@ class DocumentTemplateStore:
             conn.commit()
         return TemplateSourceCaptureManifest(
             template_key=values[0], source_url=values[1], captured_at=datetime.fromisoformat(captured_at),
-            content_sha256=values[3], artifact_reference=values[4], capture_status=values[5], failure_code=values[6],
+            content_sha256=values[3], previous_content_sha256=values[4], artifact_reference=values[5], capture_status=values[6], failure_code=values[7],
         )
 
     def get(
@@ -199,7 +206,7 @@ class DocumentTemplateStore:
                     conn,
                     [str(_row_to_mapping(row).get("lineage_key") or "")],
                 )
-                return self._row_to_definition(_row_to_mapping(row), latest_versions)
+                return self._with_source_drift_status(self._row_to_definition(_row_to_mapping(row), latest_versions))
             rows = conn.execute(
                 self._sql("SELECT * FROM document_templates WHERE template_key = ? ORDER BY jurisdiction ASC, version DESC"),
                 self._params(template_key.strip()),
@@ -216,7 +223,7 @@ class DocumentTemplateStore:
                 conn,
                 [str(_row_to_mapping(rows[0]).get("lineage_key") or "")],
             )
-        return self._row_to_definition(_row_to_mapping(rows[0]), latest_versions)
+        return self._with_source_drift_status(self._row_to_definition(_row_to_mapping(rows[0]), latest_versions))
 
     def create(self, payload: DocumentTemplateCreateRequest) -> DocumentTemplateDefinition:
         template_key = payload.template_key.strip()
@@ -464,7 +471,7 @@ class DocumentTemplateStore:
                 conn,
                 [str(_row_to_mapping(row).get('lineage_key') or '') for row in rows],
             )
-        return [self._row_to_definition(_row_to_mapping(row), latest_versions) for row in rows]
+        return [self._with_source_drift_status(self._row_to_definition(_row_to_mapping(row), latest_versions)) for row in rows]
 
     def list_case_types(
         self,
@@ -1220,6 +1227,31 @@ class DocumentTemplateStore:
             deleted_at=_parse_timestamp(row.get("deleted_at")),
         )
 
+    def _with_source_drift_status(self, item: DocumentTemplateDefinition) -> DocumentTemplateDefinition:
+        """Return source-review metadata only; source content is never exposed or stored here."""
+        with self._connect() as conn:
+            row = conn.execute(
+                self._sql(
+                    "SELECT captured_at, content_sha256, previous_content_sha256, capture_status "
+                    "FROM document_template_source_captures WHERE template_key = ? AND source_url = ?"
+                ),
+                self._params(item.template_key, item.source_url),
+            ).fetchone()
+        if row is None:
+            return item.model_copy(update={"source_drift_status": "capture_missing"})
+        capture = _row_to_mapping(row)
+        if str(capture.get("capture_status") or "") != "captured":
+            return item.model_copy(update={"source_drift_status": "capture_failed"})
+        if (
+            str(capture.get("content_sha256") or "")
+            and str(capture.get("previous_content_sha256") or "")
+            and capture["content_sha256"] != capture["previous_content_sha256"]
+        ):
+            return item.model_copy(update={"source_drift_status": "source_hash_changed"})
+        if item.source_captured_at is None or item.source_captured_at < datetime.now(timezone.utc) - timedelta(days=180):
+            return item.model_copy(update={"source_drift_status": "review_stale"})
+        return item.model_copy(update={"source_drift_status": "current"})
+
     def _case_row_to_definition(self, row: dict[str, Any]) -> CaseTypeDefinition:
         case_type_id = str(row["case_type_id"])
         prompt = self._get_case_prompt(case_type_id=case_type_id)
@@ -1265,6 +1297,14 @@ class DocumentTemplateStore:
             conn.execute(
                 self._sql(f"ALTER TABLE document_templates ADD COLUMN {column_name} {definition}")
             )
+        capture_columns = self._existing_columns(conn, table_name="document_template_source_captures")
+        if "previous_content_sha256" not in capture_columns:
+            conn.execute(
+                self._sql(
+                    "ALTER TABLE document_template_source_captures "
+                    "ADD COLUMN previous_content_sha256 TEXT NOT NULL DEFAULT ''"
+                )
+            )
         conn.execute(
             self._sql(
                 """
@@ -1298,7 +1338,7 @@ class DocumentTemplateStore:
                 ),
             )
 
-    def _existing_columns(self, conn: Any) -> set[str]:
+    def _existing_columns(self, conn: Any, table_name: str = "document_templates") -> set[str]:
         if self._is_postgres:
             rows = conn.execute(
                 self._sql(
@@ -1308,10 +1348,10 @@ class DocumentTemplateStore:
                     WHERE table_name = ? AND table_schema = current_schema()
                     """
                 ),
-                self._params("document_templates"),
+                self._params(table_name),
             ).fetchall()
             return {str(row["column_name"]) for row in rows}
-        rows = conn.execute(self._sql("PRAGMA table_info(document_templates)")).fetchall()
+        rows = conn.execute(self._sql(f"PRAGMA table_info({table_name})")).fetchall()
         return {str(row["name"]) for row in rows}
 
     def _get_case_prompt(self, *, case_type_id: str) -> CasePromptDefinition | None:

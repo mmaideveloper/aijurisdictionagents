@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS document_template_source_captures (
     source_url TEXT NOT NULL,
     captured_at TEXT NOT NULL,
     content_sha256 TEXT NOT NULL DEFAULT '',
+    previous_content_sha256 TEXT NOT NULL DEFAULT '',
     artifact_reference TEXT NOT NULL DEFAULT '',
     capture_status TEXT NOT NULL,
     failure_code TEXT NOT NULL DEFAULT '',
