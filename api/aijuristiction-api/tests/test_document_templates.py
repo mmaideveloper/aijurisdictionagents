@@ -114,6 +114,27 @@ def test_seeded_templates_and_source_capture_manifest_upsert(tmp_path: Path) -> 
     }
     assert "ľudskú a právnu kontrolu" in employment.disclaimer_footer
 
+
+def test_source_capture_hash_change_is_exposed_as_admin_drift_warning(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
+
+    store.upsert_source_capture_manifest(
+        template_key=employment.template_key,
+        source_url=employment.source_url,
+        content_sha256="a" * 64,
+        capture_status="captured",
+    )
+    store.upsert_source_capture_manifest(
+        template_key=employment.template_key,
+        source_url=employment.source_url,
+        content_sha256="b" * 64,
+        capture_status="captured",
+    )
+
+    refreshed = store.get(template_key=employment.template_key, jurisdiction="SK")
+    assert refreshed.source_drift_status == "source_hash_changed"
+
     lease = store.get(template_key="sk.real_estate.lease_agreement", jurisdiction="SK")
     assert lease.source_url == "https://www.aksamec.sk/najomna-zmluva-vzor-2026/"
     assert "§ 685 a nasl. zákona č. 40/1964 Zb." in lease.body

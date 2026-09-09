@@ -1506,6 +1506,7 @@ const AIModelAdmin: React.FC = () => {
                         t("adminCaseCatalogSourceProfile"),
                         t("adminCaseCatalogSourceCaptured"),
                         t("adminCaseCatalogLegalReview"),
+                        t("adminCaseCatalogSourceWarning"),
                         t("adminCaseCatalogStoredAt"),
                         t("adminStatus")
                       ]}
@@ -1523,6 +1524,7 @@ const AIModelAdmin: React.FC = () => {
                         item.source_review_status === "reviewed_full_body"
                           ? `${t("adminCaseCatalogReviewed")}${item.reviewed_by ? `: ${item.reviewed_by}` : ""}`
                           : (item.source_review_status ?? "unreviewed").replaceAll("_", " "),
+                        (item.source_drift_status ?? "capture_missing").replaceAll("_", " "),
                         item.stored_at ?? item.created_at ?? t("adminNotConfigured"),
                         item.is_enabled
                           ? item.newer_version_available

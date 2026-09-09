@@ -226,6 +226,7 @@ export interface DocumentTemplateCatalogItem {
   source_profile?: string;
   source_captured_at?: string | null;
   source_review_status?: string;
+  source_drift_status?: string;
   reviewed_by?: string;
   normalization_notes?: string;
   legal_basis_refs?: string[];
