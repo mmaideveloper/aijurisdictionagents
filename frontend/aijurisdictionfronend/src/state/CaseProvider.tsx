@@ -1037,32 +1037,42 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return null;
       }
       try {
-        const apiCase = storedCases.find((caseItem) => caseItem.id === caseId);
-        const history = await getCaseHistory(user.userId, caseId, 200);
-        const refreshedCase = apiCase
-          ? mapApiCase(
-              {
-                case_id: apiCase.id,
-                user_id: user.userId,
-                company_id: null,
-                title: apiCase.title,
-                status: apiCase.status,
-                created_at: apiCase.createdAt,
-                updated_at: apiCase.createdAt
-              },
-              history.messages,
-              history.documents,
-              history.citations ?? []
-            )
-          : null;
-        setStoredCases((prev) =>
-          prev.map((caseItem) =>
-            caseItem.id === caseId && refreshedCase ? refreshedCase : caseItem
-          )
-        );
+        let apiCase = storedCases.find((caseItem) => caseItem.id === caseId);
         if (!apiCase) {
-          consoleLogger.info("Loaded selected case data", { caseId });
+          // A direct case route can win the initial case-list hydration race. Re-read the
+          // authenticated user's list before accepting a route ID into local state.
+          const refreshedCases = await listCases(user.userId);
+          const matchedCase = refreshedCases.find((item) => item.case_id === caseId);
+          if (!matchedCase) {
+            consoleLogger.warn("Requested case was not returned for the authenticated user", { caseId });
+            return null;
+          }
+          apiCase = mapApiCase(matchedCase);
         }
+        const history = await getCaseHistory(user.userId, caseId, 200);
+        const refreshedCase = mapApiCase(
+          {
+            case_id: apiCase.id,
+            user_id: user.userId,
+            company_id: null,
+            title: apiCase.title,
+            status: apiCase.status,
+            created_at: apiCase.createdAt,
+            updated_at: apiCase.createdAt
+          },
+          history.messages,
+          history.documents,
+          history.citations ?? []
+        );
+        setStoredCases((prev) =>
+          prev.some((caseItem) => caseItem.id === caseId)
+            ? prev.map((caseItem) => (caseItem.id === caseId ? refreshedCase : caseItem))
+            : [refreshedCase, ...prev]
+        );
+        setActiveCaseId(caseId);
+        setHasSelectedCase(true);
+        setContinueRequested(false);
+        consoleLogger.info("Loaded selected case data", { caseId });
         return refreshedCase;
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Unable to load selected case.";

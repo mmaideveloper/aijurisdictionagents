@@ -1142,9 +1142,11 @@ const AssistantWorkspace: React.FC = () => {
     activeCase,
     cases = [],
     isLoadingCases = false,
+    loadCaseData = async () => null,
     selectCase = () => undefined
   } = caseState;
   const routeCaseId = currentCaseDeepLinkId();
+  const reconciledRouteCaseIds = React.useRef(new Set<string>());
   const threadKey = React.useMemo(() => caseThreadKey(activeCase), [activeCase]);
   const fallbackModelLabel = React.useMemo(() => chatApiRuntimeConfig().chatModelLabel, []);
   const pendingModelLabel = t("assistantModelDisclosurePending");
@@ -1220,8 +1222,14 @@ const AssistantWorkspace: React.FC = () => {
     }
     if (cases.some((caseItem) => caseItem.id === requestedCaseId)) {
       selectCase(requestedCaseId);
+      return;
     }
-  }, [activeCase?.id, cases, isLoadingCases, routeCaseId, selectCase]);
+    if (reconciledRouteCaseIds.current.has(requestedCaseId)) {
+      return;
+    }
+    reconciledRouteCaseIds.current.add(requestedCaseId);
+    void loadCaseData(requestedCaseId);
+  }, [activeCase?.id, cases, isLoadingCases, loadCaseData, routeCaseId, selectCase]);
 
   return (
     <div className="page assistant-workspace-page">
