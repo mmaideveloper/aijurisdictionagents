@@ -6,6 +6,58 @@ from app.document_templates.models import DocumentTemplateDefinition, TemplateSo
 
 _MINISTRY_PAGE_URL = "https://www.justice.gov.sk/sluzby/vzory-a-formulare/vzory-pre-fo-a-po/"
 
+# Captured from the Ministry catalogue on 2026-09-08. Values are published targets,
+# not filename-derived guesses; entries absent here intentionally retain the index URL.
+_EXACT_SOURCE_URLS = {
+    "sk.justice.company.sro_articles": "https://sluzby.orsr.sk/Sluzby/SpolocenskaZmluva",
+    "sk.justice.fees.exemption_fo": "https://www.justice.gov.sk/dokumenty/2021/05/oslobodenie_od_sudnych_poplatkov_FO.pdf",
+    "sk.justice.fees.exemption_po": "https://www.justice.gov.sk/dokumenty/2022/06/oslobodenie_od_sudnych_poplatkov_PO.rtf.pdf",
+    "sk.justice.maintenance.minor_child": "https://www.justice.gov.sk/dokumenty/2021/06/vyzivne_pre_malolete_dieta.pdf",
+    "sk.justice.maintenance.increase_decrease": "https://www.justice.gov.sk/dokumenty/2021/06/zvysenie-znizenie_vyzivneho.pdf",
+    "sk.justice.maintenance.spouses": "https://www.justice.gov.sk/dokumenty/2021/06/vyzivne_medzi_manzelmi.pdf",
+    "sk.justice.payment_order.single_defendant": "https://www.justice.gov.sk/dokumenty/2021/06/Platobny-rozkaz_jeden-zalovany-1.rtf",
+    "sk.justice.payment_order.multiple_defendants": "https://www.justice.gov.sk/dokumenty/2021/06/Platobny-rozkaz_viac-zalovanych.rtf",
+    "sk.justice.bill_of_exchange_order.single_defendant": "https://www.justice.gov.sk/dokumenty/2021/06/Zmenkovy-platobny-rozkaz_jeden-zalovany.rtf",
+    "sk.justice.bill_of_exchange_order.multiple_defendants": "https://www.justice.gov.sk/dokumenty/2021/06/Zmenkovy-platobny-rozkaz_viac-zalovanych.rtf",
+    "sk.justice.insolvency.asset_list": "https://www.justice.gov.sk/dokumenty/2021/06/zoznam_majetku.rtf",
+    "sk.justice.insolvency.summary_overview": "https://www.justice.gov.sk/dokumenty/2021/06/suhrnny_prehlad.rtf",
+    "sk.justice.insolvency.liability_list": "https://www.justice.gov.sk/dokumenty/2021/06/zoznam_zavazkov.rtf",
+    "sk.justice.insolvency.contract_overview": "https://www.justice.gov.sk/dokumenty/2021/06/zmluvne_a-ine_prehlady.rtf",
+    "sk.justice.insolvency.claim_priority_objection": "https://www.justice.gov.sk/dokumenty/2021/06/namietka_poradia_pohladavky.rtf",
+    "sk.justice.insolvency.claim_denial": "https://www.justice.gov.sk/dokumenty/2021/06/popretie_pohladavky.rtf",
+    "sk.justice.insolvency.free_attachment": "https://www.justice.gov.sk/dokumenty/2021/06/volna_priloha.rtf",
+    "sk.justice.preventive_restructuring.coverage_gap_projection": "https://www.justice.gov.sk/dokumenty/2022/11/Zjednoduseny-formular-projekcie-mesacneho-vyvoja-medzery-krytia.xlsx",
+    "sk.justice.company_registry.initial_registration": "https://sluzby.orsr.sk/Sluzby/Zapis",
+    "sk.justice.company_registry.change_registration": "https://sluzby.orsr.sk/Sluzby/Zmena",
+    "sk.justice.company_registry.deletion_registration": "https://sluzby.orsr.sk/Sluzby/Vymaz",
+    "sk.justice.company_registry.legal_form_change": "https://sluzby.orsr.sk/Sluzby/ZmenaPravnejFormy",
+    "sk.justice.company_registry.registration_objection": "https://sluzby.orsr.sk/Sluzby/NamietkyProtiOdmietnutiuVykonaniaZapisu",
+    "sk.justice.company_registry.objection_appeal": "https://sluzby.orsr.sk/Sluzby/OdvolanieProtiUzneseniuSudu",
+    "sk.justice.company_registry.data_alignment": "https://sluzby.orsr.sk/Sluzby/ZosuladenieUdajovSoSkutocnymPravnymStavom",
+    "sk.justice.company_registry.beneficial_owner_change": "https://sluzby.orsr.sk/Sluzby/ZmenaKuv",
+    "sk.justice.judge.annual_statistical_report": "https://www.justice.gov.sk/dokumenty/2021/06/sudcovia_vykaz_2011_VZOR.rtf",
+    "sk.justice.enforcement.authorization_request": "https://www.justice.gov.sk/dokumenty/2021/06/Ziadost_o_udelenie_poverenia-1.rtf",
+    "sk.justice.enforcement.execution_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Upovedomenie_o_zacati_exekucie.rtf",
+    "sk.justice.enforcement.salary_deduction_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Upovedomenie_o_sposobe_zrazky_zo_mzdy.rtf",
+    "sk.justice.enforcement.other_income_deduction_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Upovedomenie_o_sposobe_zrazky_iny_prijem.rtf",
+    "sk.justice.enforcement.account_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Upovedomenie_o_sposobe_ucet.rtf",
+    "sk.justice.enforcement.salary_deduction_order": "https://www.justice.gov.sk/dokumenty/2021/06/Prikaz_na_zacatie_exekucie_zrazky_zo_mzdy.rtf",
+    "sk.justice.enforcement.other_income_deduction_order": "https://www.justice.gov.sk/dokumenty/2021/06/Prikaz_na_zacatie_exekucie_zrazky_iny_prijem.rtf",
+    "sk.justice.enforcement.account_order": "https://www.justice.gov.sk/dokumenty/2021/06/Prikaz_na_zacatie_exekucie_ucet.rtf",
+    "sk.justice.enforcement.account_execution_order": "https://www.justice.gov.sk/dokumenty/2021/06/Exekucny_prikaz_ucet.rtf",
+    "sk.justice.enforcement.movable_property_inventory": "https://www.justice.gov.sk/dokumenty/2021/06/Supis_hnutelnych_veci.rtf",
+    "sk.justice.enforcement.inventory_execution_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Upovedomenie_o_vykonani_supisu_HV.rtf",
+    "sk.justice.enforcement.auction_schedule_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Oznamenie_terminu_drazby_HV.rtf",
+    "sk.justice.enforcement.auction_record_movable": "https://www.justice.gov.sk/dokumenty/2021/06/Zapisnica_o_drazbe_HV.rtf",
+    "sk.justice.enforcement.real_estate_auction_notice": "https://www.justice.gov.sk/dokumenty/2021/06/Vyhlaska_o_drazbe_nehnutelnosti.rtf",
+    "sk.justice.enforcement.hammer_award_record": "https://www.justice.gov.sk/dokumenty/2021/06/Zapisnica_o_udeleni_priklepu_pri_drazbe_nehn.rtf",
+    "sk.justice.enforcement.hammer_approval_motion": "https://www.justice.gov.sk/dokumenty/2021/06/Navrh_na_schvalenie_priklepu_na_drazbe_nehn.rtf",
+    "sk.justice.enforcement.proceeds_distribution_record": "https://www.justice.gov.sk/dokumenty/2021/06/Zapisnica_o_rozvrhu_vytazku_z_drazby_nehn.rtf",
+    "sk.justice.enforcement.debt_fulfillment_confirmation": "https://www.justice.gov.sk/dokumenty/2021/06/VZOR_POTVRDENIE-O-SPLNENI-DLHU.rtf",
+    "sk.justice.payment_order.objection_banska_bystrica": "https://www.justice.gov.sk/dokumenty/2021/06/50_Odpor_FOPOStat.pdf",
+    "sk.justice.payment_order.installment_request_banska_bystrica": "https://www.justice.gov.sk/dokumenty/2021/06/52_Splatka_FOPO-1.pdf",
+}
+
 
 def build_ministry_page_document_templates() -> list[DocumentTemplateDefinition]:
     entries = [
@@ -446,6 +498,8 @@ def _entry(
     description: str,
     keywords: tuple[str, ...],
 ) -> DocumentTemplateDefinition:
+    source_url = _EXACT_SOURCE_URLS.get(template_key, _MINISTRY_PAGE_URL)
+    is_exact_source = source_url != _MINISTRY_PAGE_URL
     return DocumentTemplateDefinition(
         template_id=f"seed-{template_key.replace('.', '-')}",
         template_key=template_key,
@@ -456,7 +510,7 @@ def _entry(
         template_kind=template_kind,
         description=description,
         source_format=source_format,
-        source_url=_MINISTRY_PAGE_URL,
+        source_url=source_url,
         source_profile="official_governed_form",
         source_captured_at=datetime(2026, 8, 14, tzinfo=timezone.utc),
         source_review_status="reviewed_metadata_only",
@@ -473,10 +527,14 @@ def _entry(
         source_refs=(
             TemplateSourceReference(
                 label="Vzory pre fyzicke a pravnicke osoby",
-                url=_MINISTRY_PAGE_URL,
+                url=source_url,
                 publisher="Ministerstvo spravodlivosti SR",
-                source_kind="official_form_index",
-                notes="Priama polozka zo stranky k 2026-08-14; bez importu z externych subkatalogov.",
+                source_kind="official_form" if is_exact_source else "official_form_index",
+                notes=(
+                    "Exact published target captured from the Ministry catalogue on 2026-09-08."
+                    if is_exact_source
+                    else "Index-only source; no verified exact target was captured."
+                ),
             ),
         ),
         disclaimer_title="Oficiálny formulár vyžaduje kontrolu",
