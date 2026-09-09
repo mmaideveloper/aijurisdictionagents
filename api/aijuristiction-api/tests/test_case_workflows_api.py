@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import InMemorySaver
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 from pypdf import PdfReader
 
 from app.ai_model_admin_api import AdminContext, require_ai_model_admin
@@ -17,6 +17,7 @@ from app.case_workflows.models import WorkflowAssignmentRequest, WorkflowAssignm
 from app.case_workflows.service import (
     CaseWorkflowApplicationService,
     ProductionCaseWorkflowServices,
+    WorkflowConfigurationError,
     _normalize_generated_draft,
     get_case_workflow_service,
     route_primary_chat_workflow_turn,
@@ -630,6 +631,21 @@ def test_every_enabled_slovak_case_type_has_a_valid_active_assignment(tmp_path: 
         assert status == "valid"
 
 
+def test_assignment_validation_rejects_a_missing_flow_template(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    assignment = service.store.get_active_assignment(
+        case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
+    )
+    with sqlite3.connect(tmp_path / "templates.sqlite3") as connection:
+        connection.execute(
+            "UPDATE document_templates SET is_enabled = 0 WHERE template_key = ?",
+            ("sk.civil.payment_confirmation",),
+        )
+
+    with raises(WorkflowConfigurationError, match="missing an enabled document template"):
+        service.validate_assignment(_assignment_payload(assignment))
+
+
 def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
@@ -761,7 +777,7 @@ def test_api_cancel_is_persisted_and_does_not_duplicate_terminal_event(tmp_path:
         app.dependency_overrides.clear()
 
 
-def test_assignment_replacement_requires_confirmation_and_admin_key(
+def test_direct_assignment_replacement_is_blocked_in_favor_of_audited_promotion(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     monkeypatch.setenv("JURISDIGTA_ADMIN_API_KEY", "admin-secret")
@@ -794,11 +810,12 @@ def test_assignment_replacement_requires_confirmation_and_admin_key(
         replacement = client.post(
             "/v1/case-workflows/assignments", headers=ADMIN_HEADERS, json=payload
         )
-        assert replacement.status_code == 201
+        assert replacement.status_code == 409
+        assert "audited flow promotion API" in replacement.json()["detail"]
         history = service.store.list_assignments(
             case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
         )
-        assert len(history) == 2
+        assert len(history) == 1
         assert sum(item.is_active for item in history) == 1
     finally:
         app.dependency_overrides.clear()

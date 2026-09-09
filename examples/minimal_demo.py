@@ -73,7 +73,8 @@ print(
 print(
     "flow_offline_evaluation => run python examples/flow_evaluation_minimal_demo.py; admin flow "
     "versions are hash-locked, tested only with confirmed synthetic suites, human-approved, and "
-    "published without editing code or touching production case assignments."
+    "atomically promoted for new runs with audited rollback, without editing code; existing runs "
+    "remain pinned to their original assignment."
 )
 print(
     "langgraph_termination_contract => every loop has persisted input, quality-revision, "

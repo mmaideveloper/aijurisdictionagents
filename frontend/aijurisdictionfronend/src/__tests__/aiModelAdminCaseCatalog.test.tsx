@@ -10,9 +10,9 @@ import {
   fetchAdminCaseCatalogDocumentTemplates,
   fetchCaseWorkflowAssignments,
   fetchFlowPackCatalog,
+  fetchFlowPromotions,
   fetchRegisteredCaseWorkflowGraphs,
   validateCaseWorkflowAssignment,
-  assignCaseWorkflow,
   fetchAIModelAdminDashboard,
   fetchOllamaModels
 } from "../api/adminModelClient";
@@ -38,9 +38,9 @@ vi.mock("../api/adminModelClient", () => ({
   fetchAdminCaseCatalogDocumentTemplates: vi.fn(),
   fetchCaseWorkflowAssignments: vi.fn(),
   fetchFlowPackCatalog: vi.fn(),
+  fetchFlowPromotions: vi.fn(),
   fetchRegisteredCaseWorkflowGraphs: vi.fn(),
   validateCaseWorkflowAssignment: vi.fn(),
-  assignCaseWorkflow: vi.fn(),
   createDraftFlowPackVersion: vi.fn(),
   fetchAdminUserCases: vi.fn(),
   fetchAIModelAdminDashboard: vi.fn(),
@@ -146,7 +146,6 @@ describe("AIModelAdmin case catalog", () => {
       supports_automated_finalization: true
     }]);
     vi.mocked(validateCaseWorkflowAssignment).mockResolvedValue({ status: "valid", message: "compatible" });
-    vi.mocked(assignCaseWorkflow).mockResolvedValue(assignment);
     vi.mocked(fetchAdminCaseCatalogDocumentTemplates).mockResolvedValue({
       items: [
         {
@@ -285,14 +284,9 @@ describe("AIModelAdmin case catalog", () => {
     expect(within(publishedFlowSelector).queryByText(/Unreviewed employment draft/)).toBeNull();
 
     await user.click(screen.getAllByRole("button", { name: "adminEdit" })[0]!);
-    await user.click(screen.getByRole("checkbox", { name: /Confirm prospective replacement/i }));
     await user.click(screen.getByRole("button", { name: "Validate compatibility" }));
     await waitFor(() => expect(validateCaseWorkflowAssignment).toHaveBeenCalled());
-    await user.click(screen.getByRole("button", { name: "Assign for new cases" }));
-    await waitFor(() => expect(assignCaseWorkflow).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ confirmation: true, flow_key: "sk.employment.claim" })
-    ));
+    expect(screen.getByText(/Direct assignment is disabled/)).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "adminCaseCatalogTemplatesTitle" }));
     expect(screen.getByText("Employment claim")).toBeDefined();
@@ -313,13 +307,18 @@ describe("AIModelAdmin case catalog", () => {
     vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
     vi.mocked(fetchRegisteredCaseWorkflowGraphs).mockResolvedValue([]);
     vi.mocked(fetchFlowPackCatalog).mockResolvedValue({ items: [] });
+    vi.mocked(fetchFlowPromotions).mockResolvedValue({ items: [] });
+    vi.mocked(fetchAdminCaseCatalogCaseTypes).mockResolvedValue({ items: [] });
 
     render(<AIModelAdmin />);
     await user.click(await screen.findByRole("button", { name: /adminFlowPackagesTitle/ }));
 
     await waitFor(() => expect(fetchRegisteredCaseWorkflowGraphs).toHaveBeenCalled());
     await waitFor(() => expect(fetchFlowPackCatalog).toHaveBeenCalled());
-    expect(fetchAdminCaseCatalogCaseTypes).not.toHaveBeenCalled();
+    expect(fetchAdminCaseCatalogCaseTypes).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "admin-1", deviceAuthToken: "token-1" }),
+      "SK"
+    );
     expect(fetchAdminCaseCatalogDocumentTemplates).not.toHaveBeenCalled();
     expect(fetchCaseWorkflowAssignments).not.toHaveBeenCalled();
   });

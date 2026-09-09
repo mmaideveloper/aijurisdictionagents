@@ -1,18 +1,28 @@
 import React from "react";
-import { FaCheck, FaClone, FaLock, FaPlay, FaSearch, FaSyncAlt } from "react-icons/fa";
+import { FaCheck, FaClone, FaLock, FaPlay, FaSearch, FaSyncAlt, FaUndo } from "react-icons/fa";
 
 import {
   AdminAuthContext,
+  CaseCatalogCaseType,
   FlowEvaluationRun,
   FlowEvaluationSuite,
   FlowPackCatalogItem,
+  FlowProductionApproval,
+  FlowPromotion,
+  FlowPromotionPreview,
   RegisteredCaseWorkflowGraph,
+  approveFlowForProduction,
   createDraftFlowPackVersion,
   createFlowEvaluationRun,
   createFlowEvaluationSuite,
+  fetchAdminCaseCatalogCaseTypes,
   fetchFlowEvaluationSuite,
   fetchFlowPackCatalog,
+  fetchFlowPromotions,
   lockFlowPackVersionForTesting,
+  previewFlowPromotion,
+  promoteFlow,
+  rollbackFlowPromotion,
   updateDraftFlowPackVersion
 } from "../api/adminModelClient";
 import { useLanguage } from "../components/LanguageProvider";
@@ -142,7 +152,15 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
   const [observationsJson, setObservationsJson] = React.useState("[]");
   const [humanReviewed, setHumanReviewed] = React.useState(false);
   const [run, setRun] = React.useState<FlowEvaluationRun | null>(null);
-  const [busy, setBusy] = React.useState<"" | "save" | "lock" | "suite" | "run">("");
+  const [caseTypes, setCaseTypes] = React.useState<CaseCatalogCaseType[]>([]);
+  const [caseTypeKey, setCaseTypeKey] = React.useState("");
+  const [approvalReason, setApprovalReason] = React.useState("");
+  const [productionApproval, setProductionApproval] = React.useState<FlowProductionApproval | null>(null);
+  const [promotionReason, setPromotionReason] = React.useState("");
+  const [promotionConfirmed, setPromotionConfirmed] = React.useState(false);
+  const [promotionPreview, setPromotionPreview] = React.useState<FlowPromotionPreview | null>(null);
+  const [promotions, setPromotions] = React.useState<FlowPromotion[]>([]);
+  const [busy, setBusy] = React.useState<"" | "save" | "lock" | "suite" | "run" | "approve" | "preview" | "promote" | "rollback">("");
   const pendingRunId = React.useRef("");
   const onErrorRef = React.useRef(onError);
   const translateRef = React.useRef(t);
@@ -180,6 +198,9 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
     setDraft(toDraft(selected));
     setValidation([]);
     setRun(null);
+    setProductionApproval(null);
+    setPromotionPreview(null);
+    setPromotionConfirmed(false);
     pendingRunId.current = "";
     setSuiteCasesJson(JSON.stringify([{
       case_key: "synthetic-routing-case",
@@ -200,6 +221,22 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
       human_review_present: true
     }], null, 2));
   }, [selectedRef]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    const loadProductionData = async () => {
+      try {
+        const [caseTypeResponse, promotionResponse] = await Promise.all([
+          fetchAdminCaseCatalogCaseTypes(adminAuth, jurisdiction),
+          fetchFlowPromotions(adminAuth, jurisdiction)
+        ]);
+        setCaseTypes(caseTypeResponse.items.filter((item) => item.is_enabled && !item.is_deleted));
+        setPromotions(promotionResponse.items);
+      } catch (reason) {
+        onErrorRef.current(reason instanceof Error ? reason.message : translateRef.current("adminFlowPackagesLoadFailed"));
+      }
+    };
+    void loadProductionData();
+  }, [adminAuth, jurisdiction]);
 
   const visibleFlows = React.useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -304,7 +341,7 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
   };
 
   const runEvaluation = async () => {
-    if (!selected || selected.lifecycle_state !== "test_ready" || !suite || !humanReviewed || !model.trim()) return;
+    if (!selected || !["test_ready", "published"].includes(selected.lifecycle_state) || !suite || !humanReviewed || !model.trim()) return;
     setBusy("run");
     onError("");
     try {
@@ -324,6 +361,92 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
       pendingRunId.current = "";
       await loadFlows();
       onStatus(result.status === "passed" ? t("adminFlowRunPassed") : t("adminFlowRunFailed"));
+    } catch (reason) { onError(reason instanceof Error ? reason.message : t("adminSaveFailed")); }
+    finally { setBusy(""); }
+  };
+
+  const promotionTarget = () => {
+    if (!selected) throw new Error(t("adminFlowPromotionSelectionRequired"));
+    const [graphKey, version] = graphRef.split("@");
+    if (!caseTypeKey || !graphKey || !version) {
+      throw new Error(t("adminFlowPromotionSelectionRequired"));
+    }
+    return {
+      case_type_key: caseTypeKey,
+      jurisdiction: selected.jurisdiction,
+      graph_key: graphKey,
+      graph_version: Number(version),
+      flow_key: selected.flow_key,
+      flow_version: selected.version
+    };
+  };
+
+  const approveForProduction = async () => {
+    if (!selected || !run || run.status !== "passed" || !approvalReason.trim()) return;
+    setBusy("approve");
+    onError("");
+    try {
+      const approval = await approveFlowForProduction(
+        adminAuth, selected.flow_key, selected.version, selected.jurisdiction,
+        run.run_id, approvalReason.trim()
+      );
+      setProductionApproval(approval);
+      await loadFlows();
+      onStatus(t("adminFlowApprovalRecorded"));
+    } catch (reason) { onError(reason instanceof Error ? reason.message : t("adminSaveFailed")); }
+    finally { setBusy(""); }
+  };
+
+  const previewPromotion = async () => {
+    setBusy("preview");
+    onError("");
+    try {
+      setPromotionPreview(await previewFlowPromotion(adminAuth, promotionTarget()));
+    } catch (reason) { onError(reason instanceof Error ? reason.message : t("adminSaveFailed")); }
+    finally { setBusy(""); }
+  };
+
+  const confirmPromotion = async () => {
+    if (!promotionPreview?.can_promote || !promotionPreview.approval || !promotionConfirmed || !promotionReason.trim()) return;
+    setBusy("promote");
+    onError("");
+    try {
+      const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-promotion`;
+      const result = await promoteFlow(adminAuth, {
+        ...promotionTarget(),
+        idempotency_key: `admin-promotion-${requestId}`,
+        approval_id: promotionPreview.approval.approval_id,
+        reason: promotionReason.trim(),
+        confirmation: true,
+        expected_current_assignment_id: promotionPreview.current_assignment?.assignment_id ?? null
+      });
+      setPromotions((items) => [result, ...items]);
+      setPromotionPreview(null);
+      setPromotionConfirmed(false);
+      setPromotionReason("");
+      await loadFlows();
+      onStatus(t("adminFlowPromoted"));
+    } catch (reason) { onError(reason instanceof Error ? reason.message : t("adminSaveFailed")); }
+    finally { setBusy(""); }
+  };
+
+  const rollbackPromotion = async (promotion: FlowPromotion) => {
+    if (!promotion.prior_assignment || !promotionReason.trim() || !promotionConfirmed) return;
+    setBusy("rollback");
+    onError("");
+    try {
+      const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-rollback`;
+      const result = await rollbackFlowPromotion(adminAuth, promotion.promotion_id, {
+        idempotency_key: `admin-rollback-${requestId}`,
+        reason: promotionReason.trim(),
+        confirmation: true,
+        expected_current_assignment_id: promotion.target_assignment.assignment_id
+      });
+      setPromotions((items) => [result, ...items]);
+      setPromotionConfirmed(false);
+      setPromotionReason("");
+      await loadFlows();
+      onStatus(t("adminFlowRolledBack"));
     } catch (reason) { onError(reason instanceof Error ? reason.message : t("adminSaveFailed")); }
     finally { setBusy(""); }
   };
@@ -402,9 +525,37 @@ const AdminFlowPackages: React.FC<AdminFlowPackagesProps> = ({ adminAuth, graphs
           <label>{t("adminFlowRoutingPolicyJson")}<textarea className="admin-code-input" value={routingPolicyJson} onChange={(event) => setRoutingPolicyJson(event.target.value)} /></label>
           <label>{t("adminFlowObservationsJson")}<textarea className="admin-code-input" value={observationsJson} onChange={(event) => setObservationsJson(event.target.value)} /></label>
           <label><input type="checkbox" checked={humanReviewed} onChange={(event) => setHumanReviewed(event.target.checked)} />{t("adminFlowHumanReview")}</label>
-          <button className="primary-button" type="button" disabled={selected.lifecycle_state !== "test_ready" || !suite || !humanReviewed || !model.trim() || Boolean(busy)} onClick={() => void runEvaluation()}><FaPlay aria-hidden="true" />{busy === "run" ? t("adminFlowRunning") : t("adminFlowRun")}</button>
+          <button className="primary-button" type="button" disabled={!["test_ready", "published"].includes(selected.lifecycle_state) || !suite || !humanReviewed || !model.trim() || Boolean(busy)} onClick={() => void runEvaluation()}><FaPlay aria-hidden="true" />{busy === "run" ? t("adminFlowRunning") : t("adminFlowRun")}</button>
           {busy === "run" ? <p role="status" aria-live="polite">{t("adminFlowRunning")}</p> : null}
           {run ? <div className={`admin-flow-result admin-flow-result--${run.status}`}><h4>{run.status === "passed" ? t("adminFlowRunPassed") : t("adminFlowRunFailed")}</h4><p>{run.flow_key}@{run.flow_version} · {run.graph_version} · {run.provider}/{run.model}</p><ul>{Object.entries(run.gates).map(([gate, passed]) => <li key={gate}>{passed ? "✓" : "✕"} {gate}</li>)}</ul><small>{run.run_id} · {t("adminFlowExpires")} {run.expires_at}</small></div> : null}
+        </section>
+
+        <section className="admin-panel admin-panel--wide" aria-labelledby="flow-production-title">
+          <h3 id="flow-production-title">{t("adminFlowProductionTitle")}</h3>
+          <p className="admin-alert"><strong>{t("adminFlowProductionWarning")}</strong><span>{t("adminFlowProductionImpact")}</span></p>
+          {run?.status === "passed" && ["test_passed", "published"].includes(selected.lifecycle_state) ? <div className="admin-flow-lock">
+            <label>{t("adminFlowApprovalReason")}<input value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} /></label>
+            <button className="secondary-button" type="button" disabled={!approvalReason.trim() || Boolean(busy)} onClick={() => void approveForProduction()}><FaCheck aria-hidden="true" />{t("adminFlowApproveProduction")}</button>
+          </div> : null}
+          {productionApproval ? <p className="form-success">{t("adminFlowApprovalRecorded")} · {productionApproval.approval_id}</p> : null}
+          <div className="admin-price-grid">
+            <label>{t("adminCaseCatalogCaseType")}<select value={caseTypeKey} onChange={(event) => { setCaseTypeKey(event.target.value); setPromotionPreview(null); }}><option value="">{t("adminSelect")}</option>{caseTypes.map((item) => <option key={item.case_type_key} value={item.case_type_key}>{item.name} — {item.case_type_key}</option>)}</select></label>
+            <label>{t("adminFlowPromotionGraph")}<select value={graphRef} onChange={(event) => { setGraphRef(event.target.value); setPromotionPreview(null); }}><option value="">{t("adminSelect")}</option>{graphs.map((graph) => <option key={`${graph.graph_key}@${graph.graph_version}`} value={`${graph.graph_key}@${graph.graph_version}`}>{graph.graph_key}@{graph.graph_version}</option>)}</select></label>
+          </div>
+          <button className="secondary-button" type="button" disabled={!caseTypeKey || !graphRef || !["production_approved", "published"].includes(selected.lifecycle_state) || Boolean(busy)} onClick={() => void previewPromotion()}>{t("adminFlowPreviewPromotion")}</button>
+          {promotionPreview ? <div className={`admin-flow-result admin-flow-result--${promotionPreview.can_promote ? "passed" : "failed"}`}>
+            <h4>{promotionPreview.can_promote ? t("adminFlowPromotionReady") : t("adminFlowPromotionBlocked")}</h4>
+            <p>{promotionPreview.impact}</p>
+            <p>{promotionPreview.compatibility_status}: {promotionPreview.compatibility_message}</p>
+            {promotionPreview.current_assignment ? <p>{t("adminFlowCurrentAssignment")}: {promotionPreview.current_assignment.flow_key}@{promotionPreview.current_assignment.flow_version}</p> : <p>{t("adminFlowNoCurrentAssignment")}</p>}
+            {promotionPreview.approval ? <p>{t("adminFlowApproval")}: {promotionPreview.approval.approval_id} · {promotionPreview.approval.suite_key}@{promotionPreview.approval.suite_version} · {promotionPreview.approval.provider}/{promotionPreview.approval.model}</p> : null}
+            {promotionPreview.blockers.length ? <ul>{promotionPreview.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : null}
+          </div> : null}
+          <label>{t("adminFlowPromotionReason")}<input value={promotionReason} onChange={(event) => setPromotionReason(event.target.value)} /></label>
+          <label><input type="checkbox" checked={promotionConfirmed} onChange={(event) => setPromotionConfirmed(event.target.checked)} />{t("adminFlowPromotionConfirm")}</label>
+          <button className="primary-button" type="button" disabled={!promotionPreview?.can_promote || !promotionReason.trim() || !promotionConfirmed || Boolean(busy)} onClick={() => void confirmPromotion()}>{t("adminFlowPromote")}</button>
+          <h4>{t("adminFlowPromotionHistory")}</h4>
+          {!promotions.length ? <p className="admin-muted">{t("adminFlowNoPromotions")}</p> : <ul className="admin-flow-promotion-history">{promotions.map((promotion, index) => <li key={promotion.promotion_id}><div className="admin-flow-promotion-summary"><strong>{promotion.action}</strong> · {promotion.target_assignment.case_type_key} · {promotion.target_assignment.flow_key}@{promotion.target_assignment.flow_version} · {promotion.promoted_at}<small>{promotion.promotion_id} · {promotion.target_assignment_hash.slice(0, 16)}…</small></div>{index === 0 && promotion.prior_assignment ? <button className="secondary-button" type="button" disabled={!promotionReason.trim() || !promotionConfirmed || Boolean(busy)} onClick={() => void rollbackPromotion(promotion)}><FaUndo aria-hidden="true" />{t("adminFlowRollback")}</button> : null}</li>)}</ul>}
         </section>
       </> : <section className="admin-panel"><p>{t("adminFlowNoFlows")}</p></section>}
     </section>

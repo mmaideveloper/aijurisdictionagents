@@ -185,11 +185,14 @@ primary router discovers it automatically after activation.
 
 ## Operations and rollback
 
-Production deployment has no orchestration-mode input. Roll back configuration by assigning a
-previously reviewed immutable flow version or the registered safe flow for new runs; never change a
-running case's pinned versions. Code rollback still requires the exact commit to pass every build
-and acceptance gate. A retired flow version cannot be republished, and a published version cannot
-be edited.
+Production deployment has no orchestration-mode input. The admin Flow packages workspace promotes or
+rolls back only an immutable version with a current human approval and non-expired passing synthetic run.
+It previews case-type/graph compatibility and then atomically replaces the unique active assignment while
+recording hash-pinned provenance. Concurrent assignment changes fail closed. Direct assignment mutation is
+disabled. Never change a running case's pinned versions; configuration changes apply only to new runs.
+Published versions can be re-evaluated without changing routing so an expired rollback review can be
+renewed. Code rollback still requires the exact commit to pass every build and acceptance gate. A retired
+flow version cannot be republished, and a published version cannot be edited.
 
 Deployments can contain the legacy `sk.civil.payment_confirmation@1` definition created before
 the MCP retrieval policy became mandatory and the compatible `@2` definition with query keys.

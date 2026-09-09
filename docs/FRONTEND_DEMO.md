@@ -84,13 +84,22 @@ and the selected registered LangGraph version before save or lock. Once locked, 
 
 For an offline test, create a confirmed synthetic suite (or load a known suite ID), select the provider/model
 route and routing policy, enter sanitized runner observations, confirm human review, and run the evaluation.
-The result shows the pinned version and graph plus each server-evaluated gate. This screen cannot publish or
-assign a version to production. The production assignment selector elsewhere in the admin UI accepts only
-enabled `published` versions.
+The result shows the pinned version and graph plus each server-evaluated gate. After every gate passes, enter
+a human approval reason. Select the target case type and exact registered graph, then choose **Review
+production impact**. The preview shows the current assignment, candidate, approval/suite/model provenance,
+compatibility result, blockers, and new-runs-only impact. Production assignment requires a separate
+confirmation and reason. The history exposes the assignment hash and offers rollback only for the latest
+assignment through the same validation path.
+
+Direct assignment from Case Catalog is disabled. Published flows may be re-evaluated without changing live
+routing when a review has expired; only a subsequent approved and confirmed promotion or rollback changes
+the active assignment. Existing runs remain pinned throughout.
 
 Privacy and legal-risk guardrail: use synthetic questions and minimized observations only. Never enter real
 case facts, credentials, full prompts/responses, source bodies, or hidden model reasoning. A passing offline
 run is evidence for a later human-controlled promotion; it is not production authorization by itself.
+Promotion history contains minimized identifiers and hashes, never case content, credentials, prompts,
+responses, source bodies, or hidden reasoning.
 
 Minimal focused example and regression check:
 
