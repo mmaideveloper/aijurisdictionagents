@@ -67,7 +67,7 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert "JurisDigta z nej negeneruje náhradné úplné podanie" in official_form.disclaimer_text
 
 
-def test_source_capture_manifest_upserts_metadata_and_preserves_failures(tmp_path: Path) -> None:
+def test_seeded_templates_and_source_capture_manifest_upsert(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     source_url = "https://www.justice.gov.sk/dokumenty/example.rtf"
 
