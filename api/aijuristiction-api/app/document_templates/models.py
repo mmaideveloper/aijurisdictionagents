@@ -219,3 +219,13 @@ class DownloadedTemplateSource(BaseModel):
     source_url: str
     downloaded_to: Path
 
+
+class TemplateSourceCaptureManifest(BaseModel):
+    template_key: str
+    source_url: str
+    captured_at: datetime
+    content_sha256: str = Field(default="", max_length=64)
+    artifact_reference: str = Field(default="", max_length=1000)
+    capture_status: str = Field(min_length=2, max_length=64)
+    failure_code: str = Field(default="", max_length=128)
+

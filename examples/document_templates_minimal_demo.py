@@ -34,6 +34,14 @@ def main() -> None:
         raise SystemExit("No template matched the demo request.")
     print("Matched template:", matched.template_key, "score=", score)
     print("Matched source:", matched.source_url)
+    manifest = store.upsert_source_capture_manifest(
+        template_key=matched.template_key,
+        source_url=matched.source_url,
+        content_sha256="",
+        artifact_reference="runs/storage/api/template-sources/demo-metadata-only",
+        capture_status="metadata_recorded",
+    )
+    print("Capture manifest status:", manifest.capture_status)
 
     if os.getenv("DOWNLOAD_TEMPLATE_SOURCES", "").strip() == "1":
         download_dir = repo_root / "runs" / "storage" / "api" / "template_sources"

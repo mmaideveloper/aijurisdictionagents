@@ -66,6 +66,32 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert official_form.source_refs[0].source_kind == "official_form"
     assert "JurisDigta z nej negeneruje náhradné úplné podanie" in official_form.disclaimer_text
 
+
+def test_seeded_templates_and_source_capture_manifest_upsert(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    source_url = "https://www.justice.gov.sk/dokumenty/example.rtf"
+
+    captured = store.upsert_source_capture_manifest(
+        template_key="sk.justice.example",
+        source_url=source_url,
+        content_sha256="a" * 64,
+        artifact_reference="runs/storage/api/template-sources/example.rtf",
+        capture_status="captured",
+    )
+    failed = store.upsert_source_capture_manifest(
+        template_key="sk.justice.example",
+        source_url=source_url,
+        capture_status="failed",
+        failure_code="unsupported_content_type",
+    )
+
+    assert captured.content_sha256 == "a" * 64
+    assert failed.capture_status == "failed"
+    assert failed.failure_code == "unsupported_content_type"
+    with store._connect() as conn:  # noqa: SLF001 - verifies the unique storage contract.
+        count = conn.execute("SELECT COUNT(*) FROM document_template_source_captures").fetchone()[0]
+    assert count == 1
+
     employment = store.get(template_key="sk.employment.employment_contract", jurisdiction="SK")
     assert employment.source_url == "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/"
     assert "§ 42 a nasl. zákona č. 311/2001 Z. z." in employment.body

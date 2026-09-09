@@ -27,6 +27,7 @@ from app.document_templates.models import (
     DocumentTemplateDefinition,
     DocumentTemplateResponse,
     DocumentTemplateUpdateRequest,
+    TemplateSourceCaptureManifest,
     TemplateSourceReference,
 )
 
@@ -121,6 +122,45 @@ class DocumentTemplateStore:
                 [str(_row_to_mapping(row).get("lineage_key") or "") for row in rows],
             )
         return [self._row_to_definition(_row_to_mapping(row), latest_versions) for row in rows]
+
+    def upsert_source_capture_manifest(
+        self,
+        *,
+        template_key: str,
+        source_url: str,
+        content_sha256: str = "",
+        artifact_reference: str = "",
+        capture_status: str,
+        failure_code: str = "",
+    ) -> TemplateSourceCaptureManifest:
+        """Persist source metadata only; never persist fetched source bodies or user facts."""
+        captured_at = _utc_now_iso()
+        values = (
+            template_key.strip(), source_url.strip(), captured_at, content_sha256.strip().lower(),
+            artifact_reference.strip(), capture_status.strip(), failure_code.strip(),
+        )
+        with self._connect() as conn:
+            conn.execute(
+                self._sql(
+                    """
+                    INSERT INTO document_template_source_captures (
+                        template_key, source_url, captured_at, content_sha256, artifact_reference, capture_status, failure_code
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(template_key, source_url) DO UPDATE SET
+                        captured_at = excluded.captured_at,
+                        content_sha256 = excluded.content_sha256,
+                        artifact_reference = excluded.artifact_reference,
+                        capture_status = excluded.capture_status,
+                        failure_code = excluded.failure_code
+                    """
+                ),
+                self._params(*values),
+            )
+            conn.commit()
+        return TemplateSourceCaptureManifest(
+            template_key=values[0], source_url=values[1], captured_at=datetime.fromisoformat(captured_at),
+            content_sha256=values[3], artifact_reference=values[4], capture_status=values[5], failure_code=values[6],
+        )
 
     def get(
         self,
