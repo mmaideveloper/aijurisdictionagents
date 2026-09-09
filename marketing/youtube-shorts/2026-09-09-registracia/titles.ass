@@ -1,0 +1,29 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Title,Arial,76,&H00351A0A,&H00351A0A,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,1,0,0,8,70,120,200,1
+Style: Body,Arial,48,&H00351A0A,&H00351A0A,&H00FFFFFF,&H00FFFFFF,0,0,0,0,100,100,0,0,1,0,0,8,70,120,200,1
+Style: White,Arial,50,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,8,70,120,200,1
+Style: Label,Arial,30,&H00866B53,&H00866B53,&H00FFFFFF,&H00FFFFFF,0,0,0,0,100,100,3,0,1,0,0,8,70,120,200,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:10.68,Label,,0,0,0,,{\pos(515,145)}JURISDIGTA  /  RÝCHLY SPRIEVODCA
+Dialogue: 0,0:00:00.00,0:00:03.67,Title,,0,0,0,,{\pos(515,290)\fad(180,120)}Registrácia?\NJednoducho.
+Dialogue: 0,0:00:00.00,0:00:03.67,Body,,0,0,0,,{\pos(515,510)\fad(200,120)}Otvorte aplikáciu a kliknite\Nna „Registrácia“.
+Dialogue: 0,0:00:03.67,0:00:06.80,Title,,0,0,0,,{\pos(515,245)\fad(150,100)}Vyplňte údaje
+Dialogue: 0,0:00:03.67,0:00:06.80,Body,,0,0,0,,{\pos(515,345)\fad(150,100)}Telefón · e-mail · heslo
+Dialogue: 0,0:00:06.80,0:00:10.68,Title,,0,0,0,,{\pos(515,290)\fad(150,100)}Overte e-mail
+Dialogue: 0,0:00:06.80,0:00:10.68,Body,,0,0,0,,{\pos(515,430)\fad(150,100)}Zadajte kód z e-mailu.\NPotom kliknite na\N„Vytvoriť účet“.
+Dialogue: 0,0:00:06.80,0:00:10.68,Title,,0,0,0,,{\pos(515,740)\fs80\c&H00BD660B&}•  •  •  •  •  •
+Dialogue: 0,0:00:06.80,0:00:10.68,Title,,0,0,0,,{\pos(515,930)\fnSegoe UI Symbol\fs300\c&H00BD660B&\fad(150,100)}✉
+Dialogue: 0,0:00:00.00,0:00:10.68,Body,,0,0,0,,{\pos(515,1580)\fs39}agent.jurisdigta.eu
+Dialogue: 0,0:00:00.00,0:00:10.68,Label,,0,0,0,,{\pos(515,1660)\fs25\fsp0}Ilustračná sprievodkyňa • ukážka postupu
+Dialogue: 0,0:00:10.68,0:00:15.00,White,,0,0,0,,{\pos(515,280)\fs68\b1\fad(180,0)}Začnite s JurisDigta
+Dialogue: 0,0:00:10.68,0:00:15.00,White,,0,0,0,,{\pos(515,1280)\fs55\fad(180,0)}www.jurisdigta.eu
+Dialogue: 0,0:00:10.68,0:00:15.00,White,,0,0,0,,{\pos(515,1390)\fs34\fad(180,0)}Registrácia: agent.jurisdigta.eu

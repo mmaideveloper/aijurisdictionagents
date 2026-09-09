@@ -1067,6 +1067,84 @@
     let activeLanguage = "sk";
     const articles = [
       {
+        slug: "registracia-krok-za-krokom",
+        dateLabel: {
+          sk: "9. september 2026",
+          de: "9. September 2026",
+          en: "September 9, 2026"
+        },
+        title: {
+          sk: "Ako sa zaregistrovať do JurisDigta",
+          de: "So registrieren Sie sich bei JurisDigta",
+          en: "How to register with JurisDigta"
+        },
+        summary: {
+          sk: "Pozrite si krátky slovenský videonávod a vytvorte si účet pomocou telefónneho čísla, e-mailu, hesla a overenia e-mailu.",
+          de: "Ein kurzes slowakisches Video zeigt die Registrierung mit Telefonnummer, E-Mail, Passwort und E-Mail-Bestätigung.",
+          en: "A short Slovak video walks through registration using a phone number, email, password and email verification."
+        },
+        standfirst: {
+          sk: "Začnite otvorením registrácie, vyplňte údaje a potvrďte svoj e-mail. Tu nájdete celý postup aj 15-sekundový videonávod so slovenským hlasom.",
+          de: "Öffnen Sie die Registrierung, geben Sie Ihre Daten ein und bestätigen Sie Ihre E-Mail. Der slowakische Leitfaden enthält ein 15-sekündiges Video.",
+          en: "Open registration, enter your details and verify your email. This Slovak guide includes a 15-second narrated video."
+        },
+        body: [
+          {
+            type: "video",
+            src: "assets/jurisdigta-registracia-sk.mp4",
+            poster: "assets/jurisdigta-registracia-poster.png",
+            captions: "assets/jurisdigta-registracia-sk.vtt",
+            muted: false,
+            label: "Videonávod: registrácia do JurisDigta so slovenským hlasom a titulkami"
+          },
+          {
+            type: "p",
+            text: "Video spustíte tlačidlom prehrávania. Obsahuje slovenský komentár a titulky. Sprievodkyňa aj hlas sú vytvorené pomocou AI; formulár vo videu je ukážkou skutočnej registračnej stránky bez vyplnených osobných údajov."
+          },
+          {
+            type: "h3",
+            text: "1. Otvorte registráciu"
+          },
+          {
+            type: "p",
+            text: "Otvorte aplikáciu JurisDigta. Na prihlasovacej stránke vyberte možnosť Registrácia. Zobrazí sa formulár na vytvorenie účtu. Ak už účet máte, použite Prihlásiť sa."
+          },
+          {
+            type: "link",
+            href: "https://agent.jurisdigta.eu/auth",
+            text: "Otvoriť aplikáciu a registráciu"
+          },
+          {
+            type: "h3",
+            text: "2. Vyplňte telefónne číslo, e-mail a heslo"
+          },
+          {
+            type: "p",
+            text: "Zadajte svoje telefónne číslo a e-mailovú adresu, ku ktorej máte prístup. Zvoľte si silné heslo, ktoré nepoužívate v iných službách. Pred pokračovaním skontrolujte, či je e-mail napísaný správne — príde naň overovací kód."
+          },
+          {
+            type: "h3",
+            text: "3. Overte e-mail a vytvorte si účet"
+          },
+          {
+            type: "p",
+            text: "Kliknite na Pokračovať na overenie e-mailu. Otvorte svoju e-mailovú schránku, skopírujte doručený kód a zadajte ho do overovacieho poľa v aplikácii. Registráciu dokončíte tlačidlom Vytvoriť účet."
+          },
+          {
+            type: "h3",
+            text: "Čo ak overovací e-mail neprišiel?"
+          },
+          {
+            type: "p",
+            text: "Skontrolujte priečinok so spamom a správnosť zadanej adresy. Na overovacej obrazovke môžete požiadať o opätovné odoslanie kódu alebo sa vrátiť k úprave registračných údajov. Heslo ani overovací kód nikomu neposielajte."
+          },
+          {
+            type: "p",
+            text: "Videonávod trvá 15 sekúnd. Čas potrebný na samotnú registráciu závisí aj od doručenia overovacieho e-mailu. Pred vytvorením účtu si môžete na stránke aplikácie prečítať podmienky služby a informácie o ochrane súkromia."
+          }
+        ]
+      },
+      {
         slug: "pravna-pomoc-pre-kazdeho",
         dateLabel: {
           sk: "1. september 2026",
@@ -1518,15 +1596,36 @@
         const video = document.createElement("video");
         video.className = "article-video";
         video.controls = true;
-        video.muted = true;
+        video.muted = block.muted !== false;
         video.playsInline = true;
         video.preload = "metadata";
         video.setAttribute("aria-label", block.label || "JurisDigta video");
+        if (block.poster) {
+          video.poster = block.poster;
+        }
         const source = document.createElement("source");
         source.src = block.src;
         source.type = "video/mp4";
         video.appendChild(source);
+        if (block.captions) {
+          const track = document.createElement("track");
+          track.kind = "captions";
+          track.src = block.captions;
+          track.srclang = "sk";
+          track.label = "Slovenčina";
+          video.appendChild(track);
+        }
         articleDetailContent.appendChild(video);
+        return;
+      }
+      if (block.type === "link") {
+        const paragraph = document.createElement("p");
+        const link = document.createElement("a");
+        link.href = block.href;
+        link.textContent = block.text;
+        link.className = "article-read-link";
+        paragraph.appendChild(link);
+        articleDetailContent.appendChild(paragraph);
         return;
       }
       const paragraph = document.createElement("p");
