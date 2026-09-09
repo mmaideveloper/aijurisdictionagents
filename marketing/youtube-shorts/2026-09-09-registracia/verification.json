@@ -1,0 +1,29 @@
+{
+  "status": "review-draft",
+  "duration_seconds": 15,
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "frames": 450,
+  "audio_codec": "AAC",
+  "sample_rate": 48000,
+  "mean_dbfs": -17.5,
+  "peak_dbfs": -1.5,
+  "voice": "sk-SK-ViktoriaNeural",
+  "speech_tool": "edge-tts 7.2.8",
+  "speech_rate": "+8%",
+  "lip_sync_tool": "MuseTalk 1.5",
+  "lip_sync_visible_seconds": [
+    0,
+    3.67
+  ],
+  "full_decode_passed": true,
+  "scene_contact_sheet_reviewed": true,
+  "listening_review": "owner review pending",
+  "uploaded_to_youtube": false,
+  "hashes": {
+    "presenter-lipsync.mp4": "74468C46248BFBE74C4887E39BB3F51D87ED8A631CEE7E77BE78DA8E727111AF",
+    "registracia-sk.mp4": "D8ACF2B434782858CEAB57C2DB51B33ACE9814C7066847939F12B561B44535D2",
+    "narration-viktoria.mp3": "C33B9708ED074B7FBBEC5E87826FD3256A1F4AB444A555DA6211EA06D98F985F"
+  }
+}

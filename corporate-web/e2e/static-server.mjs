@@ -10,7 +10,8 @@ const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".mp4": "video/mp4",
   ".png": "image/png",
-  ".svg": "image/svg+xml"
+  ".svg": "image/svg+xml",
+  ".vtt": "text/vtt; charset=utf-8"
 };
 
 if (!Number.isInteger(port) || port < 1 || port > 65_535) {

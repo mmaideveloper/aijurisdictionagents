@@ -1,0 +1,4 @@
+interface:
+  display_name: "JurisDigta Video Guide"
+  short_description: "Create a Slovak JurisDigta guide and blog"
+  default_prompt: "Use $jurisdigta-video-guide to create the next Slovak JurisDigta video guide and corporate blog article."

@@ -13,6 +13,7 @@ Generic architecture skills are maintained separately in [AI Architect Toolkit](
 - `start-mobile-app`: project-native Flutter mobile launcher
 - `laws-collector`: starts and verifies the local laws collector worker loop
 - `prepare-task`: prepares ideas or GitHub Project tasks for implementation by reviewing repository context, asking required questions, and updating or creating the task description
+- `jurisdigta-video-guide`: creates one requested Slovak 10–15 second feature guide with the Viktória narrator, reusable presenter format, corporate article, evidence, and YouTube handoff
 - `youtube-shorts-upload`: stages a local or HTTPS video, validates Short eligibility when media probing is available, and guides a confirmed, privacy-aware YouTube Studio publication
 
 The repository-local `idea-task` and `prepare-task` are JurisDigta adapters. The external toolkit provides `architecture-change`, `generate-bdr`, `generate-use-case`, `generate-add`, `generate-c4`, `generate-adr`, and `review-architecture-conformance`.
@@ -37,6 +38,14 @@ Each skill lives under `skills/<name>/` and contains:
 - `scripts/`: optional executable helpers when the workflow needs deterministic startup logic
 
 ### YouTube Shorts upload
+
+Create a new JurisDigta guide scaffold with the stable narrator and media contract:
+
+```powershell
+.\skills\jurisdigta-video-guide\scripts\new_jurisdigta_video_guide.ps1 -Slug "feature-name" -Title "Slovenský názov" -NarrationText "Text komentára"
+```
+
+The scaffold records `sk-SK-ViktoriaNeural` at `+8%`, the reusable presenter source, portrait format, and expected episode files. Add `-Synthesize` when `edge-tts` is available. The skill then guides media rendering, the corporate article, tests and the confirmed YouTube handoff.
 
 Prepare an HTTPS-hosted video from the repository root:
 

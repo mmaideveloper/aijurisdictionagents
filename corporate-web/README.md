@@ -145,5 +145,40 @@ checklist are documented in
 
 ## Minimal runnable example
 
+### Registration guide (9 September 2026)
+
+The article `#article-registracia-krok-za-krokom` contains the accepted 15-second
+Slovak registration Short, a written step-by-step guide, and a direct application
+link. Its video, poster and optional Slovak WebVTT captions are served from
+`assets/jurisdigta-registracia-*`. Playback starts only on user interaction and
+has sound enabled. Existing article videos retain their default muted behavior.
+Article video blocks accept `poster`, `captions`, and `muted`; `link` blocks
+provide normal same-tab links.
+
+The presenter and voice are disclosed as AI-generated. The recording uses an
+empty registration form and illustrative verification steps, with no customer
+data. Fifteen seconds describes the video length, not a guaranteed registration
+time. Metadata is localized; the article body and narration are Slovak.
+
+Editable sources, narration, verification metadata, and both requested logo
+versions are in `../marketing/youtube-shorts/`. No recurring job is configured.
+The static browser regression checks real video playback, captions, the article
+link and mobile/desktop rendering; it does not test account creation or backend
+services. Its screenshots under ignored `test-results/` can be deleted after
+review. Run it from this directory with:
+
+```bash
+npm ci
+npx playwright test registration-guide.spec.ts
+```
+
+Minimal preview without Python (from the repository root):
+
+```bash
+node corporate-web/e2e/static-server.mjs 8001
+```
+
+Open `http://127.0.0.1:8001/#article-registracia-krok-za-krokom`.
+
 Repo default: `python examples/minimal_demo.py`
 Corporate web preview: `python -m http.server 8000` from `corporate-web`.

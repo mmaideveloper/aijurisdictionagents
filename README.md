@@ -43,6 +43,7 @@ Available repo-local skills:
 - `start-api`
 - `start-mobile`
 - `start-mobile-app`
+- `jurisdigta-video-guide`
 - `youtube-shorts-upload`
 
 Preview the skills that would be synced into your local Codex profile:
