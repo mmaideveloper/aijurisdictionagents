@@ -28,7 +28,9 @@ The pinned generic set also includes security, Azure, and final-solution review 
 
 ## Validate a use case in GitHub Actions
 
-Run the `Validate architecture use case` workflow manually with a synthetic `UC-NNN` identifier. The caller in `.github/workflows/validate-architecture-use-case.yml` invokes the reusable toolkit workflow at the exact commit recorded in `architecture/toolkit.lock.json` and uploads the validation report, rendered Mermaid diagrams, and PDF.
+The `Validate architecture documents` workflow runs automatically for pull requests and `main` pushes that change `architecture/**`. It validates artifact identifiers, lifecycle states, references, relative links, and the traceability index, renders every Mermaid source, and uploads the rendered diagrams.
+
+The same workflow can be run manually with a synthetic `UC-NNN` identifier. Manual execution invokes the reusable toolkit use-case workflow at the exact commit recorded in `architecture/toolkit.lock.json` and uploads the detailed validation report, linked Mermaid diagrams, and PDF.
 
 The pinned toolkit commit must exist in `mmaideveloper/aiarchitecttoolkit` before the workflow can run. Keep the workflow `uses` value, its `toolkit_ref`, and `architecture/toolkit.lock.json` aligned.
 
