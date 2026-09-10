@@ -25,6 +25,11 @@ The localized privacy notice for `https://agent.jurisdigta.eu/privacy` is mainta
 
 ## Retention criteria
 
+Document-review proposals, source/version evidence and accept/reject decisions are
+derived case content. They follow source document/case deletion rather than forming
+an independent archive. Review model bodies are excluded from diagnostic payload
+capture. See [ADR-002](../architecture/decisions/ADR-002-case-document-review-revisions.md).
+
 Do not advertise a universal retention period. The notice uses category-specific criteria:
 
 - account data: active-account lifetime plus the period needed to close the account;

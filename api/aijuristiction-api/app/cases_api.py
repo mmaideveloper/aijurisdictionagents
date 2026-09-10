@@ -41,6 +41,7 @@ from aijurisdictionagents.api_db import (
 )
 from services.document_processor.service import DocumentProcessor
 from services.document_processor.runtime import render_documents_for_prompt
+from services.document_processor.uploads import MAX_UPLOAD_BYTES, validate_upload
 from app.services.email_scheduler import EmailScheduler
 
 router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
@@ -441,9 +442,16 @@ async def upload_case_documents(
     uploaded: list[CaseDocumentResponse] = []
     uploaded_documents: list[CaseDocument] = []
     next_version = existing + 1
+    validated_files: list[tuple[str, bytes]] = []
     for file in files:
         filename = Path(file.filename or 'document').name or 'document'
-        payload = await file.read()
+        payload = await file.read(MAX_UPLOAD_BYTES + 1)
+        try:
+            validate_upload(filename, payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        validated_files.append((filename, payload))
+    for filename, payload in validated_files:
         doc_id = store.add_case_document(
             case_id=case_id,
             kind='uploaded',

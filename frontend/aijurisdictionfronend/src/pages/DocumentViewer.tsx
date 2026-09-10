@@ -1,4 +1,5 @@
 import React from "react";
+import { DocumentReview } from "../components/DocumentReview";
 import { useSearchParams } from "react-router-dom";
 import { fetchCaseDocumentBlob, sendCaseDocumentEmail } from "../api/caseClient";
 import { useAuth } from "../auth/webAuth";
@@ -93,7 +94,7 @@ const DocumentViewer: React.FC = () => {
   }, [canLoadDocument, caseId, docId, documentFormat, documentKind, t, userId]);
 
   const handlePrint = () => {
-    if (previewText) {
+    if (previewText || /\.(png|jpe?g)$/i.test(filename)) {
       window.print();
       return;
     }
@@ -181,6 +182,7 @@ const DocumentViewer: React.FC = () => {
             </button>
           </div>
         </header>
+        {canLoadDocument && documentKind === "uploaded" && <DocumentReview key={`${caseId}:${docId}`} caseId={caseId} docId={docId} userId={userId} />}
         <div className="document-viewer-email">
           <label>
             <span>{t("documentViewerRecipient")}</span>
@@ -209,7 +211,9 @@ const DocumentViewer: React.FC = () => {
                   previewLabel={t("assistantDocumentPreviewLabel")}
                   pageLabel={t("assistantDocumentPreviewPage", { number: 1 })}
                 />
-              ) : (
+              ) : documentKind === "uploaded" && /\.(png|jpe?g)$/i.test(filename) ? (
+                <img src={previewUrl} alt={filename} style={{ maxWidth: "100%", height: "auto" }} />
+              ) : documentKind === "uploaded" && filename.toLowerCase().endsWith(".docx") ? null : (
                 <iframe
                   ref={iframeRef}
                   className="document-viewer-frame"

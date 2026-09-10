@@ -2,6 +2,9 @@
 
 ## Testing
 
+Document upload, authenticated legal review and revised DOCX/PDF contracts:
+[Document review #800/#623](../../docs/DOCUMENT_REVIEW_800.md).
+
 Run the API unit tests from the repo-managed Python environment:
 
 ```powershell
