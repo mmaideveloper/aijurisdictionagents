@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
-from pypdf import PdfWriter
+from reportlab.pdfgen.canvas import Canvas
 
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult
 from services.court_decision_collector.domain import CourtDecisionRecord, StoredCourtDecision
@@ -56,9 +56,9 @@ class FakeStore:
 
 def _pdf() -> bytes:
     output = BytesIO()
-    writer = PdfWriter()
-    writer.add_blank_page(width=72, height=72)
-    writer.write(output)
+    writer = Canvas(output)
+    writer.drawString(40, 740, "Synthetic court decision: the claim is granted and payment is due.")
+    writer.save()
     return output.getvalue()
 
 

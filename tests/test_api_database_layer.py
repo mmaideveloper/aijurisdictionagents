@@ -81,7 +81,16 @@ def test_api_database_layer_end_to_end(tmp_path: Path) -> None:
 
     case_root = tmp_path / "blob" / case.case_id
     assert case_root.exists()
-    assert (case_root / "source" / "v1_invoice.pdf").exists()
+    original_path = case_root / "source" / doc_id / "v1_invoice.pdf"
+    assert original_path.read_bytes() == b"file-content"
+    second_id = store.add_case_document(
+        case_id=case.case_id, kind="source", version=1,
+        original_filename="invoice.pdf", payload=b"second-content",
+        uploaded_by_user_id=user.user_id,
+    )
+    assert second_id != doc_id
+    assert original_path.read_bytes() == b"file-content"
+    assert (case_root / "source" / second_id / "v1_invoice.pdf").read_bytes() == b"second-content"
 
 
 def test_api_database_config_from_env_local(monkeypatch, tmp_path: Path) -> None:
@@ -149,7 +158,7 @@ def test_azure_storage_uri_keeps_case_folder_prefix(tmp_path: Path) -> None:
     )
     case = store.create_case(user_id=user.user_id, company_id=None, title="Cloud case")
 
-    store.add_case_document(
+    doc_id = store.add_case_document(
         case_id=case.case_id,
         kind="generated",
         version=2,
@@ -165,7 +174,7 @@ def test_azure_storage_uri_keeps_case_folder_prefix(tmp_path: Path) -> None:
     uri = row[0]
     assert uri.startswith("https://example.blob.core.windows.net/cases/")
     assert f"/{case.case_id}/generated/" in uri
-    assert (tmp_path / "blob" / case.case_id / "generated" / "v2_memo.docx").exists()
+    assert (tmp_path / "blob" / case.case_id / "generated" / doc_id / "v2_memo.docx").exists()
 
 
 def test_api_database_config_accepts_postgres_and_postgress_alias(monkeypatch) -> None:

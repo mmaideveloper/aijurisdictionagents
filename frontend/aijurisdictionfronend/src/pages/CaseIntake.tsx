@@ -1,4 +1,5 @@
 import React from "react";
+import { FiUpload } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../components/LanguageProvider";
 import { useCases } from "../state/CaseProvider";
@@ -156,6 +157,7 @@ const CaseIntake: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSubmitting}
                 >
+                  <FiUpload aria-hidden="true" size={20} />
                   {t("caseUploadButton")}
                 </button>
                 <small className="hint">{t("caseUploadOptional")}</small>

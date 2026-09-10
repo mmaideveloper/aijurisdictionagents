@@ -81,6 +81,7 @@ export function DocumentReview({ caseId, docId, userId }: { caseId: string; docI
       })}>Skontrolovať podľa slovenského práva</button>
     </>}
     {review && <>
+      <h3>Kontrola zmien · verzia v{review.revision}</h3>
       <p role="status">{review.warning} · Dátum kontroly: {review.review_date}</p>
       {review.questions.map((question, index) => <p key={index}>{question}</p>)}
       {review.proposals.length === 0 && <p>Neboli pripravené žiadne zmeny. To neznamená potvrdenie právnej správnosti.</p>}
@@ -97,7 +98,14 @@ export function DocumentReview({ caseId, docId, userId }: { caseId: string; docI
         <button type="button" disabled={busy} onClick={() => void decide(change, "accepted")}>Prijať</button>
         <button type="button" disabled={busy} onClick={() => void decide(change, "rejected")}>Odmietnuť</button>
       </article>)}
-      <details open><summary>Náhľad s prijatými zmenami</summary><pre style={{ whiteSpace: "pre-wrap" }}>{review.preview_text || accepted}</pre></details>
+      <details open><summary>Náhľad s prijatými zmenami · verzia v{review.revision}</summary>
+        <div className="document-review-comparison">
+          <section aria-label="Pôvodný dokument"><h3>Pôvodný dokument · originál</h3>
+            <pre style={{ whiteSpace: "pre-wrap" }}>{review.paragraphs.join("\n\n")}</pre></section>
+          <section aria-label="Nový dokument"><h3>Nový dokument · verzia v{review.revision}</h3>
+            <pre style={{ whiteSpace: "pre-wrap" }}>{review.preview_text || accepted}</pre></section>
+        </div>
+      </details>
       <button type="button" disabled={busy || review.proposals.some(item => item.decision === "pending")} onClick={() => void download("docx")}>Stiahnuť DOCX</button>
       <button type="button" disabled={busy || review.proposals.some(item => item.decision === "pending")} onClick={() => void download("pdf")}>Stiahnuť PDF</button>
     </>}

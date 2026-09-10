@@ -122,3 +122,30 @@ Retain evidence for seven days at most. Task databases were removed after valida
 cleanup of remaining synthetic source files was rejected by automatic execution policy.
 Those files remain under ignored task storage with the same maximum seven-day retention.
 Reproduction requires reseeding and the approved credential helper.
+
+## Screenshot acceptance follow-up (10 September 2026)
+
+The upload button now includes a visible upload icon. The review displays its
+persisted version beside the change controls and in the side-by-side original/new
+preview. The new pane includes only accepted changes and the server legal basis.
+
+A fresh synthetic run recreated the isolated databases above and used the approved
+real Azure Foundry model. DOCX, PNG and scanned PDF uploads all reached `processed`.
+Rejection persisted as v2 with the original 30-day clause; acceptance persisted as
+v3 with 15 days in the revised pane and 30 days in the original pane. Both controls
+remain available for reconsideration. The original bytes stayed unchanged; v3
+DOCX/PDF exports contain the expected amount, revised clause and source citation.
+The one-page PDF was rendered and visually checked.
+
+Evidence is under ignored `runs/document-review-screenshots-20260910/`:
+`01-upload.png`, `02-uploaded-files.png`, `03-approved-v3.png`,
+`04-rejected-v2.png`, `accepted-v3.pdf`, `accepted-v3.docx`,
+`accepted-v3-first-page.png` and sanitized `manifest.json`.
+The same seven-day retention applies. This follow-up leaves its isolated local
+services/databases available for inspection; it does not deploy or publish data.
+
+The complete root test suite passes (316 passed, two skips), including regression
+checks that same-name uploads preserve both files, processor errors omit raw
+exception messages, and court PDF enrichment receives an actually readable PDF.
+All 157 frontend tests, frontend lint (existing warnings only), production build,
+and both minimal examples pass.

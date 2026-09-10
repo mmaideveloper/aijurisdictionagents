@@ -24,3 +24,6 @@
 .document-review pre { font: inherit; overflow-wrap: anywhere; margin-top: 18px; }
 .document-review [role="status"] { background: #fff6dd; border-left: 4px solid #ba861d; padding: 12px; }
 .document-review [role="alert"] { background: #fff1f0; color: #842b30; padding: 12px; }
+.document-review-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 16px; }
+.document-review-comparison > section { padding: 16px; background: #f5f8fc; border: 1px solid #d8e2ef; border-radius: 8px; }
+@media (max-width: 760px) { .document-review-comparison { grid-template-columns: 1fr; } }
