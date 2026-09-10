@@ -9,6 +9,7 @@ import sqlite3
 from typing import Any
 import unicodedata
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
@@ -65,6 +66,60 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
     assert official_form.source_url == "https://www.justice.gov.sk/dokumenty/2021/05/oslobodenie_od_sudnych_poplatkov_FO.pdf"
     assert official_form.source_refs[0].source_kind == "official_form"
     assert "JurisDigta z nej negeneruje náhradné úplné podanie" in official_form.disclaimer_text
+
+
+@pytest.mark.parametrize(
+    ("template_key", "source_url", "required_clauses"),
+    [
+        (
+            "sk.employment.employment_contract",
+            "https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
+            ("Článok I", "Článok VII", "§ 42 a nasl. zákona č. 311/2001 Z. z."),
+        ),
+        (
+            "sk.real_estate.lease_agreement",
+            "https://www.aksamec.sk/najomna-zmluva-vzor-2026/",
+            ("Článok I", "Článok VI", "§ 685 a nasl. zákona č. 40/1964 Zb."),
+        ),
+        (
+            "sk.real_estate.sale_purchase",
+            "https://www.aksamec.sk/kupna-zmluva-2026/",
+            ("Článok I", "Článok V", "§ 588 a nasl. zákona č. 40/1964 Zb."),
+        ),
+    ],
+)
+def test_priority_one_templates_keep_reviewed_body_and_exact_provenance(
+    tmp_path: Path,
+    template_key: str,
+    source_url: str,
+    required_clauses: tuple[str, ...],
+) -> None:
+    """Fail closed if a Priority 1 template loses reviewed canonical provenance."""
+    template = _build_store(tmp_path).get(template_key=template_key, jurisdiction="SK")
+
+    assert template.source_url == source_url
+    assert template.source_review_status == "reviewed_full_body"
+    assert template.body_completeness_status == "reviewed_full_body"
+    assert all(clause in template.body for clause in required_clauses)
+    assert "ľudskú a právnu kontrolu" in template.disclaimer_footer
+
+
+def test_seed_refresh_upgrades_only_canonical_priority_one_review_metadata(tmp_path: Path) -> None:
+    config = DocumentTemplateStoreConfig(db_option="sqlite", db_cloud="", sqlite_path=tmp_path / "templates.sqlite3")
+    store = DocumentTemplateStore(config)
+    store.update(
+        template_key="sk.employment.employment_contract",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(
+            source_review_status="unreviewed", body_completeness_status="metadata_only"
+        ),
+    )
+
+    refreshed = DocumentTemplateStore(config).get(
+        template_key="sk.employment.employment_contract", jurisdiction="SK"
+    )
+    assert refreshed.source_review_status == "reviewed_full_body"
+    assert refreshed.body_completeness_status == "reviewed_full_body"
 
 
 def test_seeded_templates_and_source_capture_manifest_upsert(tmp_path: Path) -> None:

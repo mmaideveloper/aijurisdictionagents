@@ -137,6 +137,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             ),
             source_format="HTML/LAW",
             source_url="https://www.aksamec.sk/vzory/pracovna-zmluva-vzor/",
+            source_review_status="reviewed_full_body",
+            body_completeness_status="reviewed_full_body",
             body=(
                 "PRACOVNÁ ZMLUVA\n"
                 "uzatvorená podľa § 42 a nasl. zákona č. 311/2001 Z. z. Zákonník práce\n\n"
@@ -508,6 +510,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             ),
             source_format="HTML/LAW",
             source_url="https://www.aksamec.sk/kupna-zmluva-2026/",
+            source_review_status="reviewed_full_body",
+            body_completeness_status="reviewed_full_body",
             body=(
                 "KÚPNA ZMLUVA\n"
                 "uzatvorená podľa § 588 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"
@@ -660,6 +664,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
             ),
             source_format="HTML/LAW",
             source_url="https://www.aksamec.sk/najomna-zmluva-vzor-2026/",
+            source_review_status="reviewed_full_body",
+            body_completeness_status="reviewed_full_body",
             body=(
                 "NÁJOMNÁ ZMLUVA\n"
                 "uzatvorená podľa § 685 a nasl. zákona č. 40/1964 Zb. Občiansky zákonník\n\n"

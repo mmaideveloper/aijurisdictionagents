@@ -914,7 +914,14 @@ class DocumentTemplateStore:
                 current.body.strip().startswith(prefix)
                 for prefix in legacy_seed_prefixes.get(template_key, ())
             )
-            if not body_missing and not legacy_seed_needs_upgrade:
+            metadata_needs_upgrade = (
+                current.body == canonical.body
+                and (
+                    current.source_review_status != canonical.source_review_status
+                    or current.body_completeness_status != canonical.body_completeness_status
+                )
+            )
+            if not body_missing and not legacy_seed_needs_upgrade and not metadata_needs_upgrade:
                 continue
             self.update(
                 template_key=template_key,
@@ -927,6 +934,13 @@ class DocumentTemplateStore:
                     description=canonical.description,
                     source_format=canonical.source_format,
                     source_url=canonical.source_url,
+                    source_profile=canonical.source_profile,
+                    source_captured_at=canonical.source_captured_at,
+                    source_review_status=canonical.source_review_status,
+                    reviewed_by=canonical.reviewed_by,
+                    normalization_notes=canonical.normalization_notes,
+                    legal_basis_refs=list(canonical.legal_basis_refs),
+                    body_completeness_status=canonical.body_completeness_status,
                     body=canonical.body,
                     keywords=list(canonical.keywords),
                     flow_keys=list(canonical.flow_keys),
