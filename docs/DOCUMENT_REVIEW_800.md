@@ -149,3 +149,6 @@ checks that same-name uploads preserve both files, processor errors omit raw
 exception messages, and court PDF enrichment receives an actually readable PDF.
 All 157 frontend tests, frontend lint (existing warnings only), production build,
 and both minimal examples pass.
+
+The readable court-PDF fixture uses the declared core PyMuPDF dependency; it does
+not require the API-only ReportLab package when running the root test suite.

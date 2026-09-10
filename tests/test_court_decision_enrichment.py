@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from io import BytesIO
 from pathlib import Path
 
 import pytest
-from reportlab.pdfgen.canvas import Canvas
+import pymupdf
 
 from aijurisdictionagents.llm.embeddings import EmbeddingBatchResult
 from services.court_decision_collector.domain import CourtDecisionRecord, StoredCourtDecision
@@ -55,11 +54,11 @@ class FakeStore:
 
 
 def _pdf() -> bytes:
-    output = BytesIO()
-    writer = Canvas(output)
-    writer.drawString(40, 740, "Synthetic court decision: the claim is granted and payment is due.")
-    writer.save()
-    return output.getvalue()
+    # Use the declared core PDF dependency so core-only CI can collect this fixture.
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((40, 80), "Synthetic court decision: the claim is granted and payment is due.")
+        return document.tobytes()
 
 
 def _record(pdf_size: int) -> CourtDecisionRecord:
