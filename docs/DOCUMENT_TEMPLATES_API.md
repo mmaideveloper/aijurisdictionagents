@@ -4,6 +4,10 @@
 
 Admin catalogue responses include `source_drift_status`. It is derived from metadata-only source captures and can be `current`, `source_hash_changed`, `review_stale`, `capture_missing`, or `capture_failed`. A warning requires human review; it never changes a template body automatically.
 
+## Priority 1 contract gate
+
+`test_priority_one_templates_keep_reviewed_body_and_exact_provenance` protects the employment, lease, and sale-purchase templates. CI fails if one loses its reviewed full body, exact approved source URL, core article/legal clauses, or human-review disclosure.
+
 This API adds a persistent catalog of legal-document templates that can be seeded from public source indexes,
 matched against a client request, and later extended with full template bodies for contract generation.
 
