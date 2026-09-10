@@ -113,14 +113,14 @@ class DocumentProcessor:
                     )
                 )
             except Exception as exc:  # noqa: BLE001
-                self.store.mark_document_processing(doc_id=document.doc_id, status='failed', error=str(exc)[:500])
+                self.store.mark_document_processing(doc_id=document.doc_id, status='failed',
+                    error="Document processing failed. Check the format and readability, then retry.")
                 logger.warning(
                     "[document-processor] document failed "
-                    "doc_id=%s case_id=%s original_filename=%s error=%s",
+                    "doc_id=%s case_id=%s error_type=%s",
                     document.doc_id,
                     document.case_id,
-                    document.original_filename,
-                    str(exc)[:500],
+                    type(exc).__name__,
                 )
                 results.append(
                     ProcessedDocumentResult(

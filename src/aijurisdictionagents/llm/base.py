@@ -5,6 +5,9 @@ import logging
 import math
 import os
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from collections.abc import Iterator
 from typing import Any, Callable, Protocol, Sequence, TypeVar
 
 from ..schemas import Document, Message
@@ -13,6 +16,17 @@ from ..correlation import child_operation, current_correlation_context, record_d
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
+_PRIVATE_MODEL_IO: ContextVar[bool] = ContextVar("private_model_io", default=False)
+
+
+@contextmanager
+def private_model_io() -> Iterator[None]:
+    """Keep private legal-review content out of logs and debug bundles."""
+    token = _PRIVATE_MODEL_IO.set(True)
+    try:
+        yield
+    finally:
+        _PRIVATE_MODEL_IO.reset(token)
 
 
 class LLMClient(Protocol):
@@ -68,6 +82,8 @@ def elapsed_seconds(started_at: float) -> float:
 
 
 def should_log_llm_io() -> bool:
+    if _PRIVATE_MODEL_IO.get():
+        return False
     value = os.getenv("LOCAL_LLM_IO_LOGGING", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
 
@@ -105,6 +121,8 @@ def log_llm_response(
     agent_name: str,
     raw_response: str,
 ) -> None:
+    if _PRIVATE_MODEL_IO.get():
+        return
     record_debug_event(
         "model", "response_content", "completed",
         {"provider": provider, "agent_name": agent_name, "content": raw_response},
@@ -136,7 +154,7 @@ def execute_correlated_model_call(
                 "provider": provider,
                 "model": model,
                 "agent_name": agent_name,
-                "effective_messages": list(request_payload),
+                "effective_messages": [] if _PRIVATE_MODEL_IO.get() else list(request_payload),
             },
         )
         try:
@@ -149,7 +167,7 @@ def execute_correlated_model_call(
                     "model": model,
                     "agent_name": agent_name,
                     "error_type": type(exc).__name__,
-                    "message": str(exc),
+                    "message": "Private model call failed" if _PRIVATE_MODEL_IO.get() else str(exc),
                 },
             )
             raise

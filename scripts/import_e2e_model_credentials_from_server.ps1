@@ -83,7 +83,18 @@ try {
     Pop-Location
 }
 
-& (Join-Path $repoRoot "skills\start-postgres\scripts\start_postgres.ps1")
+$startupParameters = @{}
+if ($DatabaseUrl) {
+    $startupUri = [Uri]$DatabaseUrl
+    $startupDatabaseName = $startupUri.AbsolutePath.Trim("/")
+    if ($startupUri.Scheme -notin @("postgres", "postgresql") -or
+        $startupUri.Host -notin @("127.0.0.1", "localhost", "::1") -or
+        $startupDatabaseName -notmatch "^[a-z_][a-z0-9_]{0,62}$") {
+        throw "The E2E destination must be a named loopback PostgreSQL database."
+    }
+    $startupParameters.DatabaseName = $startupDatabaseName
+}
+& (Join-Path $repoRoot "skills\start-postgres\scripts\start_postgres.ps1") @startupParameters
 if ($LASTEXITCODE -ne 0) {
     throw "Local PostgreSQL startup or base migration failed."
 }

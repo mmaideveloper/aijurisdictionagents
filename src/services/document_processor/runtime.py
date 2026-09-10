@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from .uploads import IMAGE_SUFFIXES, extract_docx, extract_image, recognize_image, validate_upload
+
 
 @dataclass(frozen=True)
 class ExtractedDocumentContent:
@@ -29,7 +31,13 @@ class DocumentChunk:
 
 
 def extract_document_text(*, filename: str, payload: bytes) -> ExtractedDocumentContent:
+    validate_upload(filename, payload)
     suffix = Path(filename).suffix.lower()
+    if suffix == ".docx" or suffix in IMAGE_SUFFIXES:
+        text = extract_docx(payload) if suffix == ".docx" else extract_image(payload)
+        if not text.strip():
+            raise ValueError("No readable text found. Upload a clearer image or a text document.")
+        return ExtractedDocumentContent(text=text, extraction_method="docx" if suffix == ".docx" else "image_ocr")
     if suffix in {".txt", ".md", ".json", ".csv", ".html", ".xml"}:
         return ExtractedDocumentContent(
             text=payload.decode("utf-8", errors="replace"),
@@ -48,15 +56,8 @@ def extract_document_text(*, filename: str, payload: bytes) -> ExtractedDocument
                 text=ocr_text,
                 extraction_method="pdf_ocr",
             )
-        fallback = direct_text.strip() or f"PDF document: {filename}"
-        return ExtractedDocumentContent(
-            text=fallback,
-            extraction_method="pdf_fallback",
-        )
-    return ExtractedDocumentContent(
-        text=payload.decode("utf-8", errors="replace"),
-        extraction_method="binary_decode",
-    )
+        raise ValueError("No readable PDF text found. Upload a clearer scan or a text document.")
+    raise ValueError("Unsupported document format.")
 
 
 def build_embedding_vector(text: str, *, dimensions: int = 32) -> str:
@@ -219,15 +220,27 @@ def _extract_pdf_text(payload: bytes) -> str:
         try:
             text_parts.append(page.extract_text() or "")
         except Exception:
-            continue
-    return "\n".join(part for part in text_parts if part).strip()
+            text_parts.append("")
+    if any(part.strip() for part in text_parts) and any(not part.strip() for part in text_parts):
+        from pypdf import PdfWriter
+        for index, part in enumerate(text_parts):
+            if part.strip():
+                continue
+            writer = PdfWriter()
+            writer.add_page(reader.pages[index])
+            buffer = io.BytesIO()
+            writer.write(buffer)
+            recovered = _extract_pdf_text_with_ocr(buffer.getvalue())
+            if not recovered.strip():
+                raise ValueError("A PDF page has no readable text. Remove blank pages or upload a clearer scan.")
+            text_parts[index] = recovered
+    return "\n\n".join(part for part in text_parts if part).strip()
 
 
 def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     try:
         from PIL import Image
 
-        np = importlib.import_module("numpy")
         rapidocr_module = importlib.import_module("rapidocr")
         rapidocr_factory = getattr(rapidocr_module, "RapidOCR")
     except Exception:
@@ -244,18 +257,14 @@ def _extract_pdf_text_with_ocr(payload: bytes) -> str:
     for page_png in rendered_pages:
         try:
             image = Image.open(io.BytesIO(page_png))
-            image_array = np.array(image)
-            result = ocr_engine(image_array)
-            recognized_text = getattr(result, "txts", None)
-            if not recognized_text:
-                continue
-            page_lines = [str(line).strip() for line in recognized_text]
-            page_text = "\n".join(line for line in page_lines if line)
+            page_text = recognize_image(image.convert("RGB"), ocr_engine)
+            if not page_text.strip():
+                raise ValueError("A scanned PDF page is unreadable. Upload a clearer scan or remove blank pages.")
             if page_text.strip():
                 text_parts.append(page_text)
-        except Exception:
-            continue
-    return "\n".join(text_parts).strip()
+        except Exception as exc:
+            raise ValueError("A scanned PDF page could not be read. Upload a clearer scan.") from exc
+    return "\n\n".join(text_parts).strip()
 
 
 def _render_pdf_pages_with_poppler(
@@ -296,7 +305,7 @@ def _render_pdf_pages_with_poppler(
         except (OSError, subprocess.SubprocessError):
             return []
 
-        pages = sorted(temp_path.glob("page-*.png"))
+        pages = sorted(temp_path.glob("page-*.png"), key=lambda path: int(path.stem.rsplit("-", 1)[1]))
         return [page_path.read_bytes() for page_path in pages]
 
 

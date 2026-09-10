@@ -27,6 +27,8 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 
 ## Current use cases
 
+- [UC-002: Review an uploaded Slovak legal document](use-cases/UC-002-review-uploaded-legal-document.md)
+
 - [UC-001: Submit questions and safely execute commands by speech](use-cases/UC-001-speech-input-and-safe-command-execution.md) — Draft
 
 ## Current designs
@@ -35,6 +37,8 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 - [ADD-001 implementation task plan](design/ADD-001-implementation-task-plan.md) — Prepared; six dependency-gated GitHub tasks
 
 ## Current decisions
+
+- [ADR-002: Case-private extraction and explicit document revisions](decisions/ADR-002-case-document-review-revisions.md) — Accepted for #800/#623
 
 - [ADR-001: Route speech-derived commands only through policy-enforced registered capabilities](decisions/ADR-001-route-speech-commands-through-policy-enforced-capabilities.md) — Accepted
 

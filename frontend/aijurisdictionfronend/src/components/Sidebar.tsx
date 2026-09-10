@@ -53,7 +53,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
       caseTitle: activeCase.title,
       userId: user?.userId ?? ""
     });
-    window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
+    if (document.kind === "uploaded") {
+      navigate(`/app/documents/view?${params.toString()}`);
+    } else {
+      window.open(`/app/documents/view?${params.toString()}`, "_blank", "noopener,noreferrer");
+    }
   };
 
   const exportActiveCase = async (event: React.MouseEvent<HTMLButtonElement>) => {

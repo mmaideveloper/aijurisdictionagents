@@ -746,6 +746,17 @@ class ApiDatabaseStore:
                     FOREIGN KEY(uploaded_by_user_id) REFERENCES users(user_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS document_reviews (
+                    review_id TEXT PRIMARY KEY,
+                    doc_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS document_shares (
                     share_id TEXT PRIMARY KEY,
                     token_hash TEXT UNIQUE NOT NULL,
@@ -4896,6 +4907,39 @@ class ApiDatabaseStore:
             uploaded_by_user_id=uploaded_by_user_id,
         )
 
+    def create_document_review(self, *, case_id: str, doc_id: str, payload: dict[str, Any], review_id: str | None = None) -> dict[str, Any]:
+        self.get_case_document(case_id=case_id, doc_id=doc_id)
+        review_id = review_id or str(uuid.uuid4())
+        result = dict(payload, review_id=review_id, revision=1, doc_id=doc_id, case_id=case_id)
+        with self._connect() as conn:
+            self._execute(conn, """
+                INSERT INTO document_reviews(review_id, doc_id, case_id, revision, payload_json, created_at)
+                VALUES (?, ?, ?, 1, ?, ?)
+                ON CONFLICT(review_id) DO NOTHING
+            """, (review_id, doc_id, case_id, json.dumps(result, ensure_ascii=False), _now_iso()))
+        return self.get_document_review(case_id=case_id, doc_id=doc_id, review_id=review_id) or result
+
+    def get_document_review(self, *, case_id: str, doc_id: str, review_id: str | None = None) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            clause = " AND review_id = ?" if review_id else ""
+            args: tuple[Any, ...] = (case_id, doc_id, review_id) if review_id else (case_id, doc_id)
+            row = self._fetchone(conn, "SELECT payload_json FROM document_reviews WHERE case_id = ? AND doc_id = ?"
+                                 + clause + " ORDER BY created_at DESC LIMIT 1", args)
+        return json.loads(str(row[0])) if row else None
+
+    def update_document_review(self, *, case_id: str, doc_id: str, review_id: str,
+                               expected_revision: int, payload: dict[str, Any]) -> dict[str, Any]:
+        result = dict(payload, review_id=review_id, case_id=case_id, doc_id=doc_id, revision=expected_revision + 1)
+        with self._connect() as conn:
+            updated = self._execute(conn, """
+                UPDATE document_reviews SET payload_json = ?, revision = ?
+                WHERE review_id = ? AND case_id = ? AND doc_id = ? AND revision = ?
+            """, (json.dumps(result, ensure_ascii=False), expected_revision + 1,
+                  review_id, case_id, doc_id, expected_revision))
+            if updated.rowcount != 1:
+                raise ValueError("Review changed. Reload before saving your decisions.")
+        return result
+
     def add_case_document(
         self,
         *,
@@ -4907,7 +4951,7 @@ class ApiDatabaseStore:
         uploaded_by_user_id: str | None = None,
     ) -> str:
         doc_id = str(uuid.uuid4())
-        relative_uri = Path(case_id) / kind / f"v{version}_{original_filename}"
+        relative_uri = Path(case_id) / kind / doc_id / f"v{version}_{Path(original_filename).name}"
         storage_uri = self._store_payload(relative_uri=relative_uri, payload=payload)
         with self._connect() as conn:
             self._execute(

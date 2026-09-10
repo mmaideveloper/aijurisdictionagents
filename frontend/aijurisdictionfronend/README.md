@@ -6,6 +6,9 @@ screens.
 
 ## Runtime
 
+Case upload/OCR, change preview and revised downloads:
+[Document review #800/#623](../../docs/DOCUMENT_REVIEW_800.md).
+
 - Node.js 18+
 - npm 9+
 - Python 3.13 with `PyMuPDF==1.28.2`, `pypdf==6.16.1`, and `reportlab==5.0.0` for

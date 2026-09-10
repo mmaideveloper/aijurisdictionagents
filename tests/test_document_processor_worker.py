@@ -111,4 +111,6 @@ def test_document_processor_logs_failure_reason(monkeypatch, caplog) -> None:
 
     assert results[0].status == "failed"
     assert "document failed" in caplog.text
-    assert "OCR engine unavailable" in caplog.text
+    assert "error_type=ValueError" in caplog.text
+    assert "OCR engine unavailable" not in caplog.text
+    assert store.status_updates[-1][2] == "Document processing failed. Check the format and readability, then retry."

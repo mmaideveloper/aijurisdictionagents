@@ -587,7 +587,9 @@ def _load_case_documents_for_llm(
             processed_documents = [
                 CoreDocument(
                     doc_id=chunk.doc_id,
-                    path=f"{processed_names_by_doc_id[chunk.doc_id]}#chunk-{chunk.chunk_index + 1}",
+                    path=(f"{processed_names_by_doc_id[chunk.doc_id]}#chunk-{chunk.chunk_index + 1}"
+                          f";paragraph-{contents_by_doc_id[chunk.doc_id][1][:chunk.start_offset].count(chr(10) * 2) + 1}"
+                          f"-{contents_by_doc_id[chunk.doc_id][1][:chunk.end_offset].count(chr(10) * 2) + 1}"),
                     content=chunk.chunk_text,
                 )
                 for chunk in selected_chunks
@@ -4020,13 +4022,14 @@ def _persist_generated_case_document_drafts(
         store = _get_store()
         version = _next_generated_case_document_version(store=store, case_id=case_id)
         doc_ids: list[str] = []
+        from app.legal_basis import annotate_document
         for offset, draft in enumerate(drafts):
             doc_id = store.add_case_document(
                 case_id=case_id,
                 kind="generated_document",
                 version=version + offset,
                 original_filename=draft.filename,
-                payload=draft.body.encode("utf-8"),
+                payload=annotate_document(draft.body, country=session.country).encode("utf-8"),
                 uploaded_by_user_id=str(session.user_id) if session.user_id else None,
             )
             if isinstance(doc_id, str):
@@ -5890,6 +5893,11 @@ def _build_professional_document_pdf(
     verification_score: str | None = None,
     disclaimer: tuple[str, str, str] | None = None,
 ) -> bytes:
+    from app.legal_basis import WARNING, annotate_document
+    annotated = annotate_document("\n".join(lines), country=country)
+    lines = annotated.splitlines()
+    if WARNING in annotated and _document_verification_score_value(verification_score) is not None:
+        verification_score = "0%"
     return _build_simple_pdf(
         title=title,
         lines=lines,

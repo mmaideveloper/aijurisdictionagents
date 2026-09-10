@@ -1,4 +1,5 @@
 import sys
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -24,10 +25,12 @@ def test_extract_document_text_uses_ocr_for_scanned_pdf(monkeypatch) -> None:
         lambda _payload: "This scanned contract was recovered with OCR and contains the meaningful body text.",
     )
 
-    extracted = runtime.extract_document_text(
-        filename="scan.pdf",
-        payload=b"%PDF-fake",
-    )
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    writer.add_blank_page(width=595, height=842)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    extracted = runtime.extract_document_text(filename="scan.pdf", payload=buffer.getvalue())
 
     assert extracted.extraction_method == "pdf_ocr"
     assert "recovered with OCR" in extracted.text
@@ -37,7 +40,7 @@ def test_pdf_ocr_renders_pages_with_poppler_before_rapidocr(monkeypatch) -> None
     poppler_calls = []
 
     class FakeRapidOCR:
-        def __call__(self, _image_array):
+        def __call__(self, _image_array, **_options):
             return SimpleNamespace(txts=("Text recovered from a rendered scanned page.",))
 
     class FakeNumpy:
@@ -45,7 +48,7 @@ def test_pdf_ocr_renders_pages_with_poppler_before_rapidocr(monkeypatch) -> None
         def array(value):
             return value
 
-    fake_image_module = SimpleNamespace(open=lambda _buffer: object())
+    fake_image_module = SimpleNamespace(open=lambda _buffer: SimpleNamespace(convert=lambda _mode: object()))
     monkeypatch.setitem(sys.modules, "PIL", SimpleNamespace(Image=fake_image_module))
     monkeypatch.setitem(sys.modules, "PIL.Image", fake_image_module)
 

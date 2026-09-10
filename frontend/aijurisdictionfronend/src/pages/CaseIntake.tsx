@@ -1,4 +1,5 @@
 import React from "react";
+import { FiUpload } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../components/LanguageProvider";
 import { useCases } from "../state/CaseProvider";
@@ -23,6 +24,7 @@ const CaseIntake: React.FC = () => {
   const [files, setFiles] = React.useState<File[]>([]);
   const [showErrors, setShowErrors] = React.useState(false);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState("");
 
   const errors: IntakeErrors = {
     title: title.trim().length === 0,
@@ -60,6 +62,7 @@ const CaseIntake: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    setSubmitError("");
     try {
       await createCase({
         title,
@@ -73,6 +76,8 @@ const CaseIntake: React.FC = () => {
         }))
       });
       navigate("/app/assistant", { replace: true });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Upload failed.");
     } finally {
       setIsSubmitting(false);
     }
@@ -84,6 +89,7 @@ const CaseIntake: React.FC = () => {
         <h1>{t("caseTitle")}</h1>
         <p>{t("caseSubtitle")}</p>
       </section>
+      {submitError && <p role="alert" className="form-error">{submitError}</p>}
       <section className="case-grid">
         <div className="card">
           <h3>{t("caseDetailsTitle")}</h3>
@@ -140,7 +146,7 @@ const CaseIntake: React.FC = () => {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                accept=".pdf,.docx,.jpg,.jpeg,.png"
                 hidden
                 onChange={handleFilesSelected}
               />
@@ -151,6 +157,7 @@ const CaseIntake: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isSubmitting}
                 >
+                  <FiUpload aria-hidden="true" size={20} />
                   {t("caseUploadButton")}
                 </button>
                 <small className="hint">{t("caseUploadOptional")}</small>

@@ -4,6 +4,11 @@ This service scans uploaded case documents, extracts best-effort text, creates e
 
 Current extraction behavior:
 
+- Case uploads validate file contents with a 20 MiB limit before storing the batch.
+- DOCX paragraphs and table-cell text are extracted in reading order; JPG/PNG use local OCR.
+- Corrupt, encrypted, unsupported and unreadable documents fail visibly, rather than indexing filenames or binary data.
+- PDF inputs are limited to 20 pages; images to 25 million pixels; expanded DOCX content to 40 MiB.
+
 - Plain-text formats are decoded directly.
 - PDFs first use embedded text extraction (`pypdf`).
 - If a PDF appears scanned/image-only, the service falls back to OCR using `RapidOCR` over rendered PDF pages.
@@ -31,6 +36,10 @@ Embedding model env vars:
 - `SYSTEM_EMBEDDING_DEVICE=auto`
 - You can still set `SYSTEM_EMBEDDING_MODEL_OPTION=cloud` explicitly to keep Azure/OpenAI embeddings
 - When the Azure job runs in `local` mode, the worker no longer requires Azure OpenAI embedding settings.
+
+The web document viewer supports explicit legal review and per-change decisions.
+See [document review](../../../docs/DOCUMENT_REVIEW_800.md) for source qualifications,
+revision concurrency, authentication, and acceptance evidence.
 
 ## Run locally
 

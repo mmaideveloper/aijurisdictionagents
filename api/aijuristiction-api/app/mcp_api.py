@@ -2729,7 +2729,8 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
             JOIN law_versions AS v ON v.document_id = d.document_id
             LEFT JOIN source_artifacts AS s ON s.version_id = v.version_id AND s.artifact_kind = 'html'
             WHERE d.document_id = {laws.param}
-            ORDER BY v.effective_from DESC
+              AND v.effective_from <= CURRENT_DATE
+            ORDER BY v.effective_from DESC, v.version_token DESC
             LIMIT 1
             """,
             (document_id,),

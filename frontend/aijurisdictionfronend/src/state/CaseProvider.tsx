@@ -1085,6 +1085,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const createCase = React.useCallback(async (input: CreateCaseInput) => {
+    setCaseLoadError(null);
     const createdAt = new Date().toISOString();
     let newCase: CaseRecord;
     if (user?.userId) {
@@ -1107,8 +1108,8 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Unable to create API case.";
         setCaseLoadError(detail);
-        consoleLogger.warn("Unable to create API case; using local fallback case", { detail });
-        newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
+        consoleLogger.warn("Unable to create API case", { detail });
+        throw error;
       }
     } else {
       newCase = createMockCase(input, createdAt, `case-${Date.now()}`);
@@ -1117,7 +1118,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveCaseId(newCase.id);
     setHasSelectedCase(true);
     setContinueRequested(false);
-    consoleLogger.info("Created mock case in frontend state", {
+    consoleLogger.info("Created case in frontend state", {
       caseId: newCase.id,
       documentCount: newCase.documents.length
     });
