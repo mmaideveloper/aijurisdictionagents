@@ -139,6 +139,7 @@ type CaseContextValue = {
   createCase: (input: CreateCaseInput) => Promise<CaseRecord>;
   deleteCase: (caseId: string) => Promise<void>;
   deleteDocument: (caseId: string, docId: string) => Promise<void>;
+  uploadDocumentsToCase: (caseId: string, files: File[]) => Promise<CaseRecord | null>;
   loadCaseData: (caseId: string) => Promise<CaseRecord | null>;
   setActiveCase: (caseId: string) => void;
   selectCase: (caseId: string) => void;
@@ -1212,6 +1213,30 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [storedCases, user?.userId]
   );
 
+  const uploadDocumentsToCase = React.useCallback(
+    async (caseId: string, files: File[]) => {
+      const target = storedCases.find((caseItem) => caseItem.id === caseId);
+      if (!target) {
+        throw new Error(`Case ${caseId} was not found.`);
+      }
+      if (target.source !== "api" || !user?.userId) {
+        throw new Error("Sign in before uploading documents to a case.");
+      }
+      const refreshedTarget = (await loadCaseData(caseId)) ?? target;
+      const failedDocuments = refreshedTarget.documents.filter(
+        (document) =>
+          document.sizeLabel === "failed" &&
+          files.some((file) => file.name === document.originalFilename)
+      );
+      await uploadApiCaseDocuments({ userId: user.userId, caseId, files });
+      for (const document of failedDocuments) {
+        await deleteApiCaseDocument(user.userId, caseId, document.id);
+      }
+      return loadCaseData(caseId);
+    },
+    [loadCaseData, storedCases, user?.userId]
+  );
+
   const setActiveCase = React.useCallback((caseId: string) => {
     setActiveCaseId(caseId);
   }, []);
@@ -1352,6 +1377,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createCase,
       deleteCase,
       deleteDocument,
+      uploadDocumentsToCase,
       loadCaseData,
       setActiveCase,
       selectCase,
@@ -1375,6 +1401,7 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createCase,
       deleteCase,
       deleteDocument,
+      uploadDocumentsToCase,
       loadCaseData,
       setActiveCase,
       selectCase,

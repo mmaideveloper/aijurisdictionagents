@@ -11,6 +11,7 @@ import {
   type ThreadMessageLike
 } from "@assistant-ui/react";
 import { BsArrowUpCircle } from "react-icons/bs";
+import { FiPaperclip } from "react-icons/fi";
 import { FiActivity, FiCopy, FiMessageSquare, FiMic, FiVideo, FiX } from "react-icons/fi";
 import {
   ApiRequestError,
@@ -598,8 +599,20 @@ const AssistantThread: React.FC<{
 }> = ({ selectedModelProfileId, onCorrelationIdChange }) => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
-  const { activeCase, loadCaseData } = useCases();
+  const { activeCase, loadCaseData, uploadDocumentsToCase } = useCases();
   const activeCaseId = activeCase?.id;
+  const [documentImport, setDocumentImport] = React.useState<{
+    filenames: string[];
+    state: "uploading" | "processing" | "processed" | "failed";
+    error?: string;
+  } | null>(null);
+  const documentInputRef = React.useRef<HTMLInputElement | null>(null);
+  const importGeneration = React.useRef(0);
+
+  React.useEffect(() => {
+    setDocumentImport(null);
+    return () => { importGeneration.current += 1; };
+  }, [activeCaseId]);
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string; correlationId: string } | null>(
     null
   );
@@ -820,6 +833,58 @@ const AssistantThread: React.FC<{
     initialMessages: assistantMessages
   });
 
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (files.length === 0) return;
+    const generation = ++importGeneration.current;
+    if (!activeCaseId || !uploadDocumentsToCase) {
+      setDocumentImport({ filenames: files.map((file) => file.name), state: "failed", error: t("assistantUploadNoCase") });
+      return;
+    }
+    setDocumentImport({ filenames: files.map((file) => file.name), state: "uploading" });
+    try {
+      const previousDocumentIds = new Set(activeCase?.documents.map((document) => document.id) ?? []);
+      await uploadDocumentsToCase(activeCaseId, files);
+      if (generation !== importGeneration.current) return;
+      setDocumentImport({ filenames: files.map((file) => file.name), state: "processing" });
+      while (generation === importGeneration.current) {
+        const refreshed = await loadCaseData(activeCaseId);
+        if (generation !== importGeneration.current) return;
+        const imported = refreshed?.documents.filter(
+          (document) =>
+            !previousDocumentIds.has(document.id) &&
+            files.some((file) => file.name === document.originalFilename)
+        ) ?? [];
+        if (imported.length >= files.length && imported.every((document) => document.sizeLabel === "processed")) {
+          setDocumentImport({ filenames: files.map((file) => file.name), state: "processed" });
+          return;
+        }
+        if (imported.some((document) => document.sizeLabel === "failed")) {
+          throw new Error(t("assistantUploadFailed"));
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+      }
+    } catch {
+      if (generation !== importGeneration.current) return;
+      setDocumentImport({
+        filenames: files.map((file) => file.name),
+        state: "failed",
+        error: t("assistantUploadFailed")
+      });
+    }
+  };
+
+  const documentStatusText = documentImport
+    ? documentImport.state === "uploading"
+      ? t("assistantUploadUploading", { filenames: documentImport.filenames.join(", ") })
+      : documentImport.state === "processing"
+        ? t("assistantUploadProcessing", { filenames: documentImport.filenames.join(", ") })
+        : documentImport.state === "processed"
+          ? t("assistantUploadProcessed", { filenames: documentImport.filenames.join(", ") })
+          : documentImport.error || t("assistantUploadFailed")
+    : "";
+
   const Message: React.FC = () => (
     <MessagePrimitive.Root className="assistant-message">
       <MessagePrimitive.If user>
@@ -846,6 +911,10 @@ const AssistantThread: React.FC<{
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>
         <ComposerPrimitive.Root className="assistant-composer">
+          <input ref={documentInputRef} type="file" multiple hidden accept=".pdf,.docx,.jpg,.jpeg,.png,.txt,.md,.json,.csv,.html,.xml" onChange={(event) => void handleDocumentUpload(event)} />
+          <button type="button" className="assistant-composer__upload" aria-label={t("assistantUploadDocuments")} onClick={() => documentInputRef.current?.click()}>
+            <FiPaperclip aria-hidden="true" />
+          </button>
           <ComposerPrimitive.Input
             className="assistant-composer__input"
             placeholder={t("assistantComposerPlaceholder")}
@@ -854,6 +923,7 @@ const AssistantThread: React.FC<{
           <ComposerPrimitive.Send className="assistant-composer__send" aria-label={t("assistantSend")}>
             <BsArrowUpCircle aria-hidden="true" />
           </ComposerPrimitive.Send>
+          {documentStatusText && <div className={`assistant-composer__status assistant-composer__status--${documentImport?.state}`} role={documentImport?.state === "failed" ? "alert" : "status"}>{documentStatusText}</div>}
         </ComposerPrimitive.Root>
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>

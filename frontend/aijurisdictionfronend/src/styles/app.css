@@ -1715,11 +1715,38 @@
 
 .assistant-composer {
   display: grid;
-  grid-template-columns: 1fr 44px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
   gap: 0.6rem;
+  align-items: start;
   padding: 0.9rem max(1.2rem, calc((100% - 820px) / 2));
   border-top: 1px solid var(--border);
   background: #fff;
+}
+
+.assistant-composer__upload {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.assistant-composer__upload:hover {
+  background: var(--surface-muted);
+}
+
+.assistant-composer__upload:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.assistant-composer__upload svg {
+  width: 21px;
+  height: 21px;
 }
 
 .assistant-composer__input {
@@ -1748,6 +1775,26 @@
 .assistant-composer__send svg {
   width: 24px;
   height: 24px;
+}
+
+.assistant-composer__status {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.assistant-composer__status--processed {
+  color: var(--success, #176b45);
+}
+
+.assistant-composer__status--failed {
+  color: var(--danger, #9f2d2d);
+  background: #fff1f1;
 }
 
 .assistant-gateway-card {
