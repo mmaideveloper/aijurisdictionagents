@@ -607,9 +607,11 @@ const AssistantThread: React.FC<{
     error?: string;
   } | null>(null);
   const documentInputRef = React.useRef<HTMLInputElement | null>(null);
+  const importGeneration = React.useRef(0);
 
   React.useEffect(() => {
     setDocumentImport(null);
+    return () => { importGeneration.current += 1; };
   }, [activeCaseId]);
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string; correlationId: string } | null>(
     null
@@ -835,6 +837,7 @@ const AssistantThread: React.FC<{
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     if (files.length === 0) return;
+    const generation = ++importGeneration.current;
     if (!activeCaseId || !uploadDocumentsToCase) {
       setDocumentImport({ filenames: files.map((file) => file.name), state: "failed", error: t("assistantUploadNoCase") });
       return;
@@ -843,9 +846,11 @@ const AssistantThread: React.FC<{
     try {
       const previousDocumentIds = new Set(activeCase?.documents.map((document) => document.id) ?? []);
       await uploadDocumentsToCase(activeCaseId, files);
+      if (generation !== importGeneration.current) return;
       setDocumentImport({ filenames: files.map((file) => file.name), state: "processing" });
-      for (let attempt = 0; attempt < 30; attempt += 1) {
+      while (generation === importGeneration.current) {
         const refreshed = await loadCaseData(activeCaseId);
+        if (generation !== importGeneration.current) return;
         const imported = refreshed?.documents.filter(
           (document) =>
             !previousDocumentIds.has(document.id) &&
@@ -858,14 +863,14 @@ const AssistantThread: React.FC<{
         if (imported.some((document) => document.sizeLabel === "failed")) {
           throw new Error(t("assistantUploadFailed"));
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
       }
-      throw new Error(t("assistantUploadStillProcessing"));
-    } catch (error) {
+    } catch {
+      if (generation !== importGeneration.current) return;
       setDocumentImport({
         filenames: files.map((file) => file.name),
         state: "failed",
-        error: error instanceof Error ? error.message : t("assistantUploadFailed")
+        error: t("assistantUploadFailed")
       });
     }
   };

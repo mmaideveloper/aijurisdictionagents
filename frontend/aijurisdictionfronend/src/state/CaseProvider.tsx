@@ -1228,10 +1228,10 @@ export const CaseProvider: React.FC<{ children: React.ReactNode }> = ({ children
           document.sizeLabel === "failed" &&
           files.some((file) => file.name === document.originalFilename)
       );
+      await uploadApiCaseDocuments({ userId: user.userId, caseId, files });
       for (const document of failedDocuments) {
         await deleteApiCaseDocument(user.userId, caseId, document.id);
       }
-      await uploadApiCaseDocuments({ userId: user.userId, caseId, files });
       return loadCaseData(caseId);
     },
     [loadCaseData, storedCases, user?.userId]
