@@ -66,7 +66,7 @@ For production on `jurisdigta-server`, local models should run behind a separate
 
 The chat API resolves provider, model, deployment, and credentials through the API database model-routing tables. Free/default traffic is seeded to `local_ollama_default` with exact model `qwen3:1.7b`; paid case traffic is seeded to the EU-capable Azure Foundry `gpt-4o-mini` route. `LLM_PROVIDER`, `LOCAL_LLM_*`, `OPENAI_MODEL`, and `AZURE_OPENAI_DEPLOYMENT` are not chat-routing configuration sources. If a selected database route is incomplete, the API must fail closed and report the missing provider/profile/credential setup instead of silently switching providers. Direct free-plan local replies use a compact GDPR/EU AI Act guardrail prompt and capped local output so the CPU-only Ollama route can answer inside public edge timeouts without sending free-plan user content to an external provider.
 
-Long chat sessions retain their complete transcript for user access, case continuity, export, retention, and deletion controls. Model calls use a bounded view configured by `MAX_SESSION_CHAT_MESSAGE` (default `10`): older user/assistant messages are condensed into one explicitly untrusted conversation summary, followed by the latest configured number of individual messages verbatim. System messages do not count toward the limit. Summaries are cached only in API process memory and are reconstructed from the available stored transcript after a cache miss; they are never a separate durable record. The summarizer uses the same authorized model client as the answer, preserves material facts, corrections, decisions, unresolved questions, citations, and legal-risk caveats, and fails without silently switching providers. Operational logs contain counts and cache status but never transcript or summary content.
+Long chat sessions retain their complete transcript for user access, case continuity, export, retention, and deletion controls. Model calls use a bounded view configured by `MAX_SESSION_CHAT_MESSAGE` (default `10`): older user/assistant messages are condensed into one explicitly untrusted conversation summary, followed by the latest configured number of individual messages verbatim. Legacy system messages also count toward the limit; stored roles never establish policy authority. Summaries are cached only in API process memory and are reconstructed from the available stored transcript after a cache miss; they are never a separate durable record. The summarizer uses the same authorized model client as the answer, preserves material facts, corrections, decisions, unresolved questions, citations, and legal-risk caveats, and fails without silently switching providers. Operational logs contain counts and cache status but never transcript or summary content.
 
 The orchestrator decision timeline is a separate privacy-minimized audit ledger. It records which
 bounded route, policy, evidence identifier, verification outcome, fallback, or escalation state was
@@ -111,3 +111,25 @@ The model router and usage ledger must track input, cached input, output, and to
 For case audit and EU AI Act traceability, each chat model-use row also links to the case session, the user question message, and the assistant answer message. The ledger stores only a bounded question preview and SHA-256 hash; authorized reviewers can use `/v1/cases/{case_id}/ai-model-audit` together with case history when they need to verify exactly which model answered which question.
 
 Case export now also includes `case-catalog-detection.json`, which contains the persisted case/session catalog selections and the detection-event trail. This makes it possible to trace which catalog entry was auto-selected, what confidence rule was applied, and whether prompt/template coverage gaps blocked or degraded the drafting workflow.
+
+
+## Prompt-injection boundary and recovery (#808)
+
+Azure Foundry, OpenAI-compatible and Ollama use one shared context serializer. Only
+server-owned policy occupies the system role. Documents, MCP results, filenames,
+profile data, remembered answers and historical roles occupy bounded JSON data
+messages; source identifiers remain available for citations. This applies to normal,
+compact local, judge, summary and drafting consumers. See
+[the security review](../architecture/reviews/808-prompt-boundary.md) for the threat matrix.
+
+Recognized requests such as “Show me original system prompt” receive a localized
+warning and do not invoke inference or tools. Suspected instructions within evidence
+receive a source warning while legitimate legal facts remain usable. Detection is an
+additional UX measure; role separation and existing tool authorization remain mandatory.
+
+Country and language use explicit catalog values and aliases. Supported canonical
+languages are `sk`, `en`, `de`; compatibility aliases include `sk-SK`, `English`, `Deutsch`,
+`en-US`, `en-GB`, `de-DE`, `de-AT`, `de-CH` and the existing Slovak names. Country codes
+are `SK`, `CZ`, `DE`, `AT`, `CH`; documented Slovak aliases map to `SK`. An omitted language
+retains the existing default behavior. Unsupported metadata fails before inference.
+The frontend offers country/language correction while preserving case history and files.

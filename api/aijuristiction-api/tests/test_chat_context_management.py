@@ -84,7 +84,7 @@ def test_older_messages_become_one_summary_before_latest_ten(monkeypatch) -> Non
     ]
 
 
-def test_system_messages_do_not_count_and_are_preserved(monkeypatch) -> None:
+def test_legacy_system_messages_are_bounded_and_summarized_as_data(monkeypatch) -> None:
     monkeypatch.setenv("MAX_SESSION_CHAT_MESSAGE", "2")
     client = RecordingClient()
     manager = SessionContextManager()
@@ -94,9 +94,9 @@ def test_system_messages_do_not_count_and_are_preserved(monkeypatch) -> None:
         session_id=uuid4(), client=client, conversation=[system, *_messages(3)]
     )
 
-    assert compacted[0] == system
-    assert compacted[1].agent_name == "ConversationHistory"
-    assert [message.content for message in compacted[2:]] == ["message-2", "message-3"]
+    assert system in client.calls[0][2]
+    assert compacted[0].agent_name == "ConversationHistory"
+    assert [message.content for message in compacted[1:]] == ["message-2", "message-3"]
 
 
 def test_cache_updates_only_with_newly_evicted_messages(monkeypatch) -> None:

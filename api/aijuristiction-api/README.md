@@ -1094,3 +1094,25 @@ Document-generation intent is evaluated from the current user turn. Prior reques
 context, but they do not authorize another PDF. Questions such as `Aké sú chýbajúce údaje?`, model-selection
 questions, and MCP capability questions continue through the normal answer route unless the current message
 explicitly requests a new or updated document.
+
+
+### Chat security contract (#808)
+
+`POST /v1/chat/messages` accepts only `role: "user"`; public assistant/system/developer
+roles return HTTP 422 before persistence. Internal assistant generation continues through
+server code, not a public bypass. Do not submit historic assistant messages through this endpoint.
+
+Session country/language values are validated with exact allowlists (see
+`src/aijurisdictionagents/locales.py`). Invalid stored metadata returns HTTP 422 with
+`detail.code = "invalid_session_metadata"` and a localized `detail.message` before a
+reply or stream starts. `PATCH /v1/chat/sessions/{session_id}/metadata` takes
+`{"country":"SK","language":"English"}` and returns the corrected session. It uses the
+existing API-key and case-write access checks, preserves history/documents, and performs
+no inference. Retry the question after the user corrects the metadata. New invalid
+session inputs return ordinary field-level HTTP 422 validation errors.
+
+Prompt extraction attempts receive a normal assistant warning message in SK/EN/DE.
+The warning itself uses deterministic server logic; it is not evidence of a real model
+call. Source warnings accompany answers but cannot authorize actions or disclosure.
+
+Offline example: `python examples/prompt_boundary_demo.py` from the repository root.
