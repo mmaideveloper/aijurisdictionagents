@@ -40,6 +40,13 @@ const labels: Record<string, string> = {
   assistantComposerLabel: "Assistant message",
   assistantComposerPlaceholder: "Ask for legal research or document preparation...",
   assistantSend: "Send message",
+  assistantUploadDocuments: "Upload documents to this case",
+  assistantUploadNoCase: "Select a case before uploading documents.",
+  assistantUploadUploading: "Uploading {filenames} to this case…",
+  assistantUploadProcessing: "{filenames} are being imported and indexed.",
+  assistantUploadProcessed: "{filenames} are ready for semantic search.",
+  assistantUploadFailed: "Document import failed. Try again.",
+  assistantUploadStillProcessing: "Document import is taking longer than expected.",
   assistantCorrelationId: "Correlation ID",
   assistantCopyCorrelationId: "Copy ID",
   diagnosticsButton: "Diagnostics",
@@ -111,6 +118,7 @@ const caseActions = vi.hoisted(() => ({
   setCaseRole: vi.fn(),
   setCaseCommunicationMode: vi.fn(),
   loadCaseData: vi.fn(),
+  uploadDocumentsToCase: vi.fn(),
   selectCase: vi.fn(),
   cases: [] as { id: string }[],
   activeCaseId: "case-1" as string | null
@@ -144,6 +152,7 @@ vi.mock("../state/CaseProvider", () => ({
     },
     cases: caseActions.cases,
     loadCaseData: caseActions.loadCaseData,
+    uploadDocumentsToCase: caseActions.uploadDocumentsToCase,
     setCaseRole: caseActions.setCaseRole,
     setCaseCommunicationMode: caseActions.setCaseCommunicationMode,
     selectCase: caseActions.selectCase
@@ -275,6 +284,7 @@ describe("AssistantWorkspace", () => {
     caseActions.setCaseRole.mockReset();
     caseActions.setCaseCommunicationMode.mockReset();
     caseActions.loadCaseData.mockReset();
+    caseActions.uploadDocumentsToCase.mockReset();
     caseActions.selectCase.mockReset();
     caseActions.cases = [];
     caseActions.activeCaseId = "case-1";
@@ -310,6 +320,35 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByText("AI lawyer")).toBeDefined();
     expect(screen.getByText("Opposing party")).toBeDefined();
     expect(screen.queryByText("Production access uses JurisDigta account login")).toBeNull();
+  });
+
+  it("uploads a document for the selected case and reports when indexing is ready", async () => {
+    const uploadedFile = new File(["Kupno a predaj"], "contract.txt", { type: "text/plain" });
+    caseActions.uploadDocumentsToCase.mockResolvedValue(null);
+    caseActions.loadCaseData.mockResolvedValue({
+      id: "case-1",
+      title: "Case 1",
+      documents: [
+        {
+          id: "document-1",
+          kind: "uploaded",
+          originalFilename: "contract.txt",
+          sizeLabel: "processed"
+        }
+      ],
+      interactionHistory: []
+    });
+
+    render(<AssistantWorkspace />);
+    const input = document.querySelector('input[type="file"]');
+    expect(input).not.toBeNull();
+
+    fireEvent.change(input as HTMLInputElement, { target: { files: [uploadedFile] } });
+
+    await waitFor(() => {
+      expect(caseActions.uploadDocumentsToCase).toHaveBeenCalledWith("case-1", [uploadedFile]);
+      expect(screen.getByRole("status").textContent).toBe("contract.txt are ready for semantic search.");
+    });
   });
 
   it("reconciles a persisted case deep link that is absent from the initial case list", async () => {
