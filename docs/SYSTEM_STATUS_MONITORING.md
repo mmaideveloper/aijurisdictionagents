@@ -238,6 +238,9 @@ Keep Grafana and Prometheus private by default. Do not expose ports `3000`,
 `admin.jurisdigta.eu` is enabled, require Cloudflare Access before Grafana and
 keep Grafana's own login enabled.
 
+For private user-ID reporting, see [Admin user reporting](ADMIN_USER_REPORTING.md).
+It uses an admin-only organization; identifiers never enter Prometheus.
+
 Useful Grafana panels:
 
 - `jurisdigta_component_status{component="overall"}`

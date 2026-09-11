@@ -1,5 +1,44 @@
 # Manual Infrastructure Setup
 
+## Private Grafana user reporting (#806)
+
+Apply these steps separately in test and prod; production changes require the exact
+commit's successful deployment gates. Owners: database administrator, Grafana server
+administrator, and privacy owner. Privacy owner approves purpose/basis, notice,
+90-day daily-activity retention and backup expiry before rollout.
+
+1. Apply current API migrations, including `806_admin_user_reporting.sql`, as the
+   trusted schema owner. Apply `databases/api/admin_reporting_access.sql` using
+   `psql --single-transaction --file` against the intended database.
+2. Set the dedicated login password with interactive psql `\password jurisdigta_user_report`.
+   Store it in the approved secret manager. Never pass it on a command line or in Git.
+   Limit login access to the API reporting database via pg_hba/firewall rules and TLS.
+3. Create a dedicated Grafana organization (ID greater than 1), add only individually
+   authorized admins, disable anonymous access, invitations/automatic role sync,
+   public sharing, snapshots and query caching. Keep shared viewers in the original
+   organization. Review membership and privileged changes operationally.
+4. Add Prometheus/Loki sources to the private organization with UIDs
+   `jurisdigta-prometheus` and `jurisdigta-loki`, using approved internal endpoints.
+   Connect Grafana to the database network; never publish PostgreSQL externally.
+5. Run `python Deployment/monitoring/user_reporting.py --org-id <id> --grafana-url <https-url> --database-host <host:port> --database-name <database>`.
+   It prompts for Grafana server-admin credentials and the reporting password.
+   Database TLS is required. A loopback HTTP URL through an SSH tunnel is supported.
+6. Schedule a daily owner-authorized `SELECT admin_reporting.prune_activity()` using
+   the existing secured scheduler/database credential mechanism. Verify old and
+   excluded facts disappear even with no new application activity. Apply exclusions
+   via `admin_reporting.excluded_users` for service/synthetic/deleted/restricted IDs.
+7. Configure minimized authenticated query-access logs at the Grafana gateway (actor,
+   org, action/path, time, status, correlation ID; no bodies/SQL/results/secrets).
+8. Validate all panels, DST boundaries, page selection and reconciliation. Test an
+   ordinary monitoring user's direct query/proxy requests against the report source:
+   they must fail. Verify the database login cannot select users or ledger tables.
+
+Rollback: delete the private dashboard/data source, revoke the reporting login's
+access, and disable the daily job. Preserve source accounts/ledger. If removing
+activity collection, drop only the two `admin_reporting_*_activity` triggers;
+delete the reporting schema/facts only after the approved retention/rollback review.
+See `docs/ADMIN_USER_REPORTING.md` for definitions and evidence requirements.
+
 This document tracks infrastructure setup that cannot be completed only by repository code, CI, or local scripts.
 
 ## Rule

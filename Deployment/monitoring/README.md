@@ -1,5 +1,8 @@
 # JurisDigta Prometheus, Loki, Alloy, And Grafana Monitoring
 
+For private account totals, daily activity/registrations, latest registrations and
+per-user tokens, see [Admin user reporting](../../docs/ADMIN_USER_REPORTING.md).
+
 This stack is the recommended self-managed monitoring layer for `jurisdigta-server`.
 
 It complements the protected API endpoint documented in `docs/SYSTEM_STATUS_MONITORING.md`:
