@@ -1,5 +1,11 @@
 # API database layer (local + PostgreSQL Docker + Azure-ready)
 
+The PostgreSQL `admin_reporting` schema provides bounded, restricted Grafana account
+and token reports through explicit read functions. Its activity triggers retain only
+user/day facts. See [Admin user reporting](ADMIN_USER_REPORTING.md) for definitions,
+exclusion/deletion behavior, role grants and retention setup. SQLite initialization
+does not install this optional Grafana reporting schema.
+
 ## Recommended approach
 
 For your feature set, use a **hybrid model**:

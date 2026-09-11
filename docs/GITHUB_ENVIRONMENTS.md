@@ -1,5 +1,11 @@
 # GitHub Environments Checklist
 
+For #806 user reporting, both test and prod require the manually isolated Grafana
+organization, dedicated read login/TLS network access, daily retention job and access
+audit configuration described in `docs/manual_infrastucture_setup.md`. No new GitHub
+workflow inputs, environment variables or secrets are introduced. Reporting and
+Grafana passwords stay in the approved runtime secret manager, not GitHub task bodies.
+
 Use this guide to create `test` and `prod` GitHub Environments that mirror the existing `dev` setup for this repository.
 
 Maintenance rule:
