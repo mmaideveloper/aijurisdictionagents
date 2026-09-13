@@ -234,6 +234,15 @@ export const translations = {
     assistantComposerLabel: "Assistant message",
     assistantComposerPlaceholder: "Ask for legal research or document preparation...",
     assistantSend: "Send message",
+    assistantUploadDocuments: "Upload documents to this case",
+    assistantUploadNoCase: "Select a case before uploading documents.",
+    assistantUploadUploading: "Uploading {filenames} to this case…",
+    assistantUploadProcessing:
+      "{filenames} are being imported and indexed. You can continue chatting; they are not available for retrieval yet.",
+    assistantUploadProcessed: "{filenames} are ready for semantic search.",
+    assistantUploadFailed: "Document import failed. Try again.",
+    assistantUploadStillProcessing:
+      "Document import is taking longer than expected. Check the case documents and try again.",
     assistantDocumentPreviewLabel: "Document preview",
     assistantDocumentPreviewPage: "A4 preview {number}",
     assistantPresentationNoticesLabel: "Important notices",
@@ -1131,6 +1140,15 @@ export const translations = {
     assistantComposerLabel: "Správa asistentovi",
     assistantComposerPlaceholder: "Požiadajte o právny výskum alebo prípravu dokumentu...",
     assistantSend: "Odoslať správu",
+    assistantUploadDocuments: "Nahrať dokumenty do prípadu",
+    assistantUploadNoCase: "Pred nahrávaním vyberte prípad.",
+    assistantUploadUploading: "Dokumenty {filenames} sa nahrávajú do prípadu…",
+    assistantUploadProcessing:
+      "Dokumenty {filenames} sa importujú a indexujú. Môžete pokračovať v chate; zatiaľ nie sú dostupné na vyhľadávanie.",
+    assistantUploadProcessed: "Dokumenty {filenames} sú pripravené na sémantické vyhľadávanie.",
+    assistantUploadFailed: "Import dokumentov zlyhal. Skúste to znova.",
+    assistantUploadStillProcessing:
+      "Import dokumentov trvá dlhšie. Skontrolujte dokumenty prípadu a skúste to znova.",
     assistantDocumentPreviewLabel: "Náhľad dokumentu",
     assistantDocumentPreviewPage: "Náhľad A4 – strana {number}",
     assistantPresentationNoticesLabel: "Dôležité upozornenia",
@@ -2028,6 +2046,15 @@ export const translations = {
     assistantComposerLabel: "Nachricht an den Assistenten",
     assistantComposerPlaceholder: "Fragen Sie nach Rechtsrecherche oder Dokumentvorbereitung...",
     assistantSend: "Nachricht senden",
+    assistantUploadDocuments: "Dokumente zu diesem Fall hochladen",
+    assistantUploadNoCase: "Wählen Sie vor dem Hochladen einen Fall aus.",
+    assistantUploadUploading: "{filenames} werden in diesen Fall hochgeladen…",
+    assistantUploadProcessing:
+      "{filenames} werden importiert und indexiert. Sie können weiter chatten; die Dokumente sind noch nicht für die Suche verfügbar.",
+    assistantUploadProcessed: "{filenames} sind für die semantische Suche bereit.",
+    assistantUploadFailed: "Der Dokumentimport ist fehlgeschlagen. Versuchen Sie es erneut.",
+    assistantUploadStillProcessing:
+      "Der Dokumentimport dauert länger als erwartet. Prüfen Sie die Falldokumente und versuchen Sie es erneut.",
     assistantDocumentPreviewLabel: "Dokumentvorschau",
     assistantDocumentPreviewPage: "A4-Vorschau – Seite {number}",
     assistantPresentationNoticesLabel: "Wichtige Hinweise",
