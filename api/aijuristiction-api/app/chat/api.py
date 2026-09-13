@@ -25,7 +25,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from reportlab.graphics import renderPDF  # type: ignore[import-untyped]
 from reportlab.graphics.barcode import qr  # type: ignore[import-untyped]
 from reportlab.graphics.shapes import Drawing  # type: ignore[import-untyped]
@@ -36,6 +36,9 @@ from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
+from app.chat.metadata_validation import correction_message, validated_country, validated_language
+from aijurisdictionagents.llm.prompt_guard import suspicious_instruction, warning_message
+from aijurisdictionagents.llm.context_boundary import POLICY_VERSION
 from app.chat.context_management import session_context_manager
 from app.chat.core_runtime import core_message_role, run_orchestration
 from app.chat.country_services import prepare_country_direct_reply
@@ -175,9 +178,20 @@ class CreateSessionRequest(BaseModel):
     )
 
 
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, value: str) -> str:
+        return validated_country(value)
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value: str | None) -> str | None:
+        return validated_language(value)
+
+
 class CreateMessageRequest(BaseModel):
     session_id: UUID
-    role: MessageRole
+    role: Literal[MessageRole.USER]
     content: str
 
 
@@ -1664,6 +1678,7 @@ def _run_direct_lawyer_turn_impl(
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
 ) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
+    _validate_session_metadata(session)
     persisted_user = _repository.add_message(
         Message(
             session_id=session_id,
@@ -1675,6 +1690,21 @@ def _run_direct_lawyer_turn_impl(
     _persist_case_message_if_needed(session=session, role="user", content=content, agent_name="User")
     if user_message_callback is not None:
         user_message_callback(persisted_user)
+    if suspicious_instruction(content):
+        warning = warning_message(session.language)
+        answer = _persist_direct_assistant_message(
+            session_id=session_id, session=session, content=warning,
+            agent_name="Assistant", allow_document_generation=False,
+        )
+        _LOGGER.info(
+            "prompt_boundary reason=instruction_override source=user correlation_id=%s policy_version=%s",
+            session.correlation_id, POLICY_VERSION,
+        )
+        _record_case_ai_model_audit(
+            session=session, question=persisted_user, answer=answer,
+            task_type="chat_security_warning", source="chat.direct_reply", model_used=False,
+        )
+        return persisted_user, answer, _user_visible_text(answer.content), [], None
     _emit_thinking_processing_event(
         session=session,
         processing_event_callback=processing_event_callback,
@@ -1941,8 +1971,12 @@ def _run_direct_lawyer_turn_impl(
         model=str(getattr(routed_llm, "model", "unknown")),
     )
     lawyer = create_lawyer_agent(bounded_llm, session.country)
+    context_documents: list[CoreDocument] = []
     case_memory_note = _build_case_memory_refresh_note(prior_messages)
     user_profile_note = _build_signed_in_user_profile_prompt_note(session)
+    for source_id, note in (("case-memory", case_memory_note), ("user-profile", user_profile_note)):
+        if note:
+            context_documents.append(CoreDocument(doc_id=source_id, path=source_id, content=note))
     _LOGGER.info(
         "Chat route selected",
         extra={
@@ -1955,15 +1989,16 @@ def _run_direct_lawyer_turn_impl(
     if use_compact_local_prompt:
         prompt_override = _build_compact_free_local_lawyer_prompt(
             session=session,
-            case_memory_note=case_memory_note,
-            user_profile_note=user_profile_note,
-            preparation_prompt_note=preparation.prompt_note,
+            case_memory_note="",
+            user_profile_note="",
+            preparation_prompt_note="",
             document_generation_requested=document_generation_requested,
         )
     else:
         prompt_override = lawyer.system_prompt
         if session.language and session.language.strip():
-            prompt_override = f"{lawyer.system_prompt}\nRespond in {session.language.strip()}."
+            language_name = {"sk": "Slovak", "en": "English", "de": "German"}[session.language]
+            prompt_override = f"{lawyer.system_prompt}\nAll visible replies must be in {language_name}."
         prompt_override = (
             f"{prompt_override}\n\n"
             "SINGLE-QUESTION CLARIFICATION POLICY:\n"
@@ -1973,10 +2008,6 @@ def _run_direct_lawyer_turn_impl(
             "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
         )
         prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
-        if case_memory_note:
-            prompt_override = f"{prompt_override}\n\n{case_memory_note}"
-        if user_profile_note:
-            prompt_override = f"{prompt_override}\n\n{user_profile_note}"
         if document_generation_requested:
             prompt_override = (
                 f"{prompt_override}\n\n"
@@ -1992,8 +2023,10 @@ def _run_direct_lawyer_turn_impl(
                 "- Never output unresolved placeholders in square brackets (for example [Vase meno], [address], [ico]).\n"
                 "- If any required field is missing, ask for it explicitly instead of using placeholders."
             )
-        if preparation.prompt_note:
-            prompt_override = f"{prompt_override}\n\n{preparation.prompt_note}"
+    if preparation.prompt_note:
+        context_documents.append(CoreDocument(
+            doc_id="country-preparation", path="country-preparation", content=preparation.prompt_note,
+        ))
     case_documents: list[CoreDocument] = []
     processed_names: list[str] = []
     unprocessed_names: list[str] = []
@@ -2009,7 +2042,9 @@ def _run_direct_lawyer_turn_impl(
                 f"Unprocessed documents: {', '.join(unprocessed_names) if unprocessed_names else 'none'}.\n"
                 'Use processed documents as case evidence and explicitly mention any unprocessed documents.'
             )
-            prompt_override = f"{prompt_override}{context_note}"
+            context_documents.append(CoreDocument(
+                doc_id="document-status", path="document-status", content=context_note,
+            ))
     if not use_compact_local_prompt:
         task_plan_note = build_document_task_plan_note(
             query=content,
@@ -2020,12 +2055,12 @@ def _run_direct_lawyer_turn_impl(
         if task_plan_note:
             prompt_override = f"{prompt_override}{task_plan_note}"
 
-    all_documents = list(preparation.supplemental_documents)
+    all_documents = context_documents + list(preparation.supplemental_documents)
     all_documents.extend(supplemental_documents or [])
     all_documents.extend(case_documents)
     uploaded_contract_note = _build_uploaded_document_contract_confirmation_note(
         content=content,
-        documents=all_documents,
+        documents=[*preparation.supplemental_documents, *(supplemental_documents or []), *case_documents],
     )
     if uploaded_contract_note:
         prompt_override = f"{prompt_override}\n\n{uploaded_contract_note}"
@@ -2061,7 +2096,9 @@ def _run_direct_lawyer_turn_impl(
             routed_llm,
         )
     if mcp_status_context is not None:
-        prompt_override = f"{prompt_override}\n\n{mcp_status_context.prompt_note}"
+        all_documents.append(CoreDocument(
+            doc_id="mcp_status_context-note", path="mcp_status_context-note", content=mcp_status_context.prompt_note,
+        ))
         if mcp_status_context.document is not None:
             all_documents.append(mcp_status_context.document)
         processing_events.append(mcp_status_context.processing_event)
@@ -2073,7 +2110,9 @@ def _run_direct_lawyer_turn_impl(
         language=session.language,
     )
     if mcp_law_context is not None:
-        prompt_override = f"{prompt_override}\n\n{mcp_law_context.prompt_note}"
+        all_documents.append(CoreDocument(
+            doc_id="mcp_law_context-note", path="mcp_law_context-note", content=mcp_law_context.prompt_note,
+        ))
         if mcp_law_context.document is not None:
             all_documents.append(mcp_law_context.document)
         processing_events.append(mcp_law_context.processing_event)
@@ -2085,7 +2124,9 @@ def _run_direct_lawyer_turn_impl(
             country=session.country,
         )
         if legal_document_policy_note:
-            prompt_override = f"{prompt_override}\n\n{legal_document_policy_note}"
+            all_documents.append(CoreDocument(
+                doc_id="drafting-guidance", path="drafting-guidance", content=legal_document_policy_note,
+            ))
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
@@ -2118,6 +2159,12 @@ def _run_direct_lawyer_turn_impl(
                 if isinstance(mcp_event_details, dict)
                 else None,
             },
+        )
+    if any(suspicious_instruction(doc.content + " " + doc.path) for doc in all_documents):
+        normalized_lawyer_content = warning_message(session.language, source=True) + "\n\n" + normalized_lawyer_content
+        _LOGGER.info(
+            "prompt_boundary reason=instruction_override source=evidence correlation_id=%s policy_version=%s",
+            session.correlation_id, POLICY_VERSION,
         )
     persisted_lawyer = _persist_direct_assistant_message(
         session_id=session_id,
@@ -2237,15 +2284,6 @@ def _build_compact_free_local_lawyer_prompt(
         if document_generation_requested
         else "- If a downloadable legal document is requested, ask whether the user wants it prepared now before drafting."
     )
-    optional_notes = "\n".join(
-        note
-        for note in (
-            _clamp_prompt_note("Case memory", case_memory_note, max_chars=700),
-            _clamp_prompt_note("Signed-in user profile", user_profile_note, max_chars=500),
-            _clamp_prompt_note("Country-specific note", preparation_prompt_note, max_chars=900),
-        )
-        if note
-    )
     return textwrap.dedent(
         f"""
         You are JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing.
@@ -2272,7 +2310,6 @@ def _build_compact_free_local_lawyer_prompt(
         - Keep open_questions to at most one item.
 
         {_build_current_date_prompt_note()}
-        {optional_notes}
         """
     ).strip()
 
@@ -2315,6 +2352,45 @@ class StartSessionStreamRequest(BaseModel):
     user_id: UUID | None = None
     user_email: str | None = None
     model_profile_id: str | None = None
+
+
+class CorrectSessionMetadataRequest(BaseModel):
+    country: str
+    language: str
+
+    @field_validator("country")
+    @classmethod
+    def validate_country(cls, value: str) -> str:
+        return validated_country(value)
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        return validated_language(value) or "en"
+
+
+def _validate_session_metadata(session: Session) -> None:
+    try:
+        country = validated_country(session.country)
+        language = validated_language(session.language)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={
+            "code": "invalid_session_metadata",
+            "message": correction_message(session.language),
+        }) from exc
+    session.country = country
+    session.language = language
+
+
+@router.patch("/sessions/{session_id}/metadata", response_model=Session)
+def correct_session_metadata(session_id: UUID, payload: CorrectSessionMetadataRequest) -> Session:
+    session = _repository.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _ensure_case_write_access_for_session(session)
+    session.country = payload.country
+    session.language = payload.language
+    return session
 
 
 @router.post("/sessions", response_model=Session)
@@ -2366,6 +2442,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     if session.user_id is None and payload.user_id is not None:
         session.user_id = payload.user_id
     _ensure_case_write_access_for_session(session)
+    _validate_session_metadata(session)
 
     content = payload.content.strip()
     if not content:
@@ -2423,8 +2500,9 @@ def stream_session(
     if payload.model_profile_id is not None:
         session.selected_model_profile_id = payload.model_profile_id.strip() or None
     _ensure_case_write_access_for_session(session)
+    _validate_session_metadata(session)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
-    if payload.user_simulation_mode == "ReadUser":
+    if payload.user_simulation_mode == "ReadUser" or suspicious_instruction(payload.instruction):
         return _stream_read_user_session(
             session_id=session_id,
             session=session,
@@ -2740,7 +2818,7 @@ def _stream_read_user_session(
         try:
             existing_result = _get_or_build_session_result(session_id)
             previous_messages = _repository.list_messages(session_id)
-            if _is_document_email_flow_message(
+            if not suspicious_instruction(payload.instruction) and _is_document_email_flow_message(
                 content=payload.instruction,
                 previous_messages=previous_messages,
             ):

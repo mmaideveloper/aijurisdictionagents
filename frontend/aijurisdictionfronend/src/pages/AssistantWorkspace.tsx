@@ -15,6 +15,7 @@ import { FiPaperclip } from "react-icons/fi";
 import { FiActivity, FiCopy, FiMessageSquare, FiMic, FiVideo, FiX } from "react-icons/fi";
 import {
   ApiRequestError,
+  correctSessionMetadata,
   chatApiRuntimeConfig,
   createChatSession,
   fetchEffectiveModelRoute,
@@ -601,6 +602,15 @@ const AssistantThread: React.FC<{
   const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData, uploadDocumentsToCase } = useCases();
   const activeCaseId = activeCase?.id;
+  const [metadataError, setMetadataError] = React.useState<string | null>(null);
+  const [correctionCountry, setCorrectionCountry] = React.useState("SK");
+  const [correctionLanguage, setCorrectionLanguage] = React.useState(language);
+  const [isCorrectingMetadata, setIsCorrectingMetadata] = React.useState(false);
+  const correctionLabels = {
+    en: { country: "Country", language: "Language", save: "Save and continue" },
+    sk: { country: "Krajina", language: "Jazyk", save: "Uložiť a pokračovať" },
+    de: { country: "Land", language: "Sprache", save: "Speichern und fortfahren" }
+  }[language];
   const [documentImport, setDocumentImport] = React.useState<{
     filenames: string[];
     state: "uploading" | "processing" | "processed" | "failed";
@@ -793,6 +803,9 @@ const AssistantThread: React.FC<{
           };
         } catch (error) {
           const detail = localizeApiErrorDetail(error, t);
+          if (error instanceof ApiRequestError && error.code === "invalid_session_metadata") {
+            setMetadataError(detail);
+          }
           const isModelTimeout =
             error instanceof ApiRequestError &&
             (error.code === "local_model_timeout" || error.code === "external_model_timeout");
@@ -907,6 +920,35 @@ const AssistantThread: React.FC<{
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="assistant-thread">
+        {metadataError && (
+          <form className="panel-card" onSubmit={async (event) => {
+            event.preventDefault();
+            const session = sessionRef.current;
+            if (!session) return;
+            setIsCorrectingMetadata(true);
+            try {
+              await correctSessionMetadata(session.sessionId, correctionCountry, correctionLanguage);
+              setMetadataError(null);
+            } catch (error) {
+              setMetadataError(localizeApiErrorDetail(error, t));
+            } finally {
+              setIsCorrectingMetadata(false);
+            }
+          }}>
+            <p role="alert">{metadataError}</p>
+            <label>{correctionLabels.country}
+              <select value={correctionCountry} onChange={(event) => setCorrectionCountry(event.target.value)}>
+                {["SK", "CZ", "DE", "AT", "CH"].map((code) => <option key={code}>{code}</option>)}
+              </select>
+            </label>
+            <label>{correctionLabels.language}
+              <select value={correctionLanguage} onChange={(event) => setCorrectionLanguage(event.target.value as typeof language)}>
+                {["sk", "en", "de"].map((code) => <option key={code}>{code}</option>)}
+              </select>
+            </label>
+            <button type="submit" disabled={isCorrectingMetadata}>{correctionLabels.save}</button>
+          </form>
+        )}
         <ThreadPrimitive.Viewport className="assistant-thread__viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>

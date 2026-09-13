@@ -483,3 +483,10 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
 }
 
 export const chatApiRuntimeConfig = resolveApiConfig;
+
+
+export const correctSessionMetadata = (sessionId: string, country: string, language: string) =>
+  requestJson<ChatSession>(`/v1/chat/sessions/${sessionId}/metadata`, {
+    method: "PATCH",
+    body: JSON.stringify({ country, language })
+  });

@@ -8,6 +8,7 @@ import time
 from typing import Any, Iterable, Sequence, cast
 from urllib import error, request
 
+from .context_boundary import build_provider_messages
 from .base import (
     ModelProcessingTimeout,
     elapsed_seconds,
@@ -49,16 +50,7 @@ class OllamaClient:
         conversation: Sequence[Message],
         documents: Sequence[Document],
     ) -> str:
-        messages = [{"role": "system", "content": system_prompt}]
-        if documents:
-            messages.append({"role": "system", "content": _render_documents(documents)})
-        for message in conversation:
-            messages.append(
-                {
-                    "role": _to_ollama_role(message.role),
-                    "content": f"{message.agent_name}: {message.content}",
-                }
-            )
+        messages = build_provider_messages(system_prompt, conversation, documents)
 
         log_llm_request(
             logger,

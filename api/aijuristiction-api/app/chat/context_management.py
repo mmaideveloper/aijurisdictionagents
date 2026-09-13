@@ -66,11 +66,10 @@ class SessionContextManager:
         model: str = "unknown",
     ) -> list[Message]:
         max_messages = max_session_chat_messages()
-        eligible = [message for message in conversation if _is_chat_message(message)]
+        eligible = list(conversation)  # Every stored role is bounded conversation data.
         if len(eligible) <= max_messages:
             return list(conversation)
 
-        system_messages = [message for message in conversation if not _is_chat_message(message)]
         older = eligible[:-max_messages]
         recent = eligible[-max_messages:]
         older_digests = tuple(_message_digest(message) for message in older)
@@ -119,7 +118,7 @@ class SessionContextManager:
             provider,
             model,
         )
-        return [*system_messages, _summary_message(summary), *recent]
+        return [_summary_message(summary), *recent]
 
 
 class _BoundedContextClient:
@@ -175,10 +174,6 @@ def max_session_chat_messages() -> int:
             f"got {raw_value!r}."
         )
     return value
-
-
-def _is_chat_message(message: Message) -> bool:
-    return message.role.strip().lower() in {"user", "assistant"}
 
 
 def _message_digest(message: Message) -> str:

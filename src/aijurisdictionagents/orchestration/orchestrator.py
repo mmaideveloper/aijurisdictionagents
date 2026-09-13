@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..locales import validated_country, validated_language
+
 import logging
 import re
 import time
@@ -42,6 +44,8 @@ class Orchestrator:
         session_id: str | None = None,
         correlation_id: str | None = None,
     ) -> OrchestrationResult:
+        country = validated_country(country)
+        language = validated_language(language)
         if not country.strip():
             raise ValueError("country is required.")
         if question_timeout_seconds <= 0:

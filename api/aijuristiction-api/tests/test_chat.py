@@ -1763,13 +1763,14 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -1799,9 +1800,9 @@ def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(mon
     )
 
     assert reply_response.status_code == 200
-    assert captured_prompts
-    assert "SIGNED-IN USER PROFILE DEFAULTS" in captured_prompts[-1]
-    assert "Client full name: Marek Matonok" in captured_prompts[-1]
+    assert captured_context
+    assert "SIGNED-IN USER PROFILE DEFAULTS" in captured_context[-1]
+    assert "Client full name: Marek Matonok" in captured_context[-1]
 
 
 def test_reply_endpoint_does_not_activate_unassigned_case_catalog_flow(
@@ -2087,7 +2088,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
             json={
                 "user_id": user_id,
                 "case_id": case_id,
-                "country": "US",
+                "country": "DE",
                 "discussion_type": "advice",
                 "language": "EN",
             },
@@ -3070,7 +3071,7 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
 
     repository = InMemoryChatRepository()
     session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
     captured_document_paths: list[str] = []
     calls: list[tuple[str, dict[str, object]]] = []
 
@@ -3078,7 +3079,8 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             captured_document_paths.extend(document.path for document in documents)
             return SimpleNamespace(
                 content=(
@@ -3164,8 +3166,8 @@ def test_free_plan_latest_law_question_gets_mcp_context_before_ollama_prompt(mon
             "include_summaries": True,
         },
     )
-    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
-    assert "Do not show raw MCP JSON" in captured_prompts[-1]
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_context[-1]
+    assert "Do not show raw MCP JSON" in captured_context[-1]
     assert "internal-mcp-law-context.txt" in captured_document_paths
     assert any(event.get("stage") == "mcp_law_context" for event in events)
 
@@ -3440,7 +3442,7 @@ def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
     captured_document_paths: list[str] = []
     captured_events: list[dict[str, object]] = []
 
@@ -3448,7 +3450,8 @@ def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             captured_document_paths.extend(document.path for document in documents)
             return SimpleNamespace(content="MODEL_REPLY_WITH_LAW_CONTEXT", agent_name="LawyerSlovakia")
 
@@ -3504,9 +3507,9 @@ def test_reply_endpoint_injects_internal_mcp_law_context_in_prompt_and_documents
 
     assert lawyer.agent_name == "LawyerSlovakia"
     assert visible == "MODEL_REPLY_WITH_LAW_CONTEXT"
-    assert captured_prompts
-    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
-    assert "40/1964 Zb." in captured_prompts[-1]
+    assert captured_context
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_context[-1]
+    assert "40/1964 Zb." in captured_context[-1]
     assert "internal-mcp-law-context.txt" in captured_document_paths
     assert any(event.get("stage") == "mcp_law_context" for event in captured_events)
 
@@ -3520,7 +3523,7 @@ def test_free_local_reply_injects_internal_mcp_law_context_before_ollama_prompt(
 
     repository = InMemoryChatRepository()
     session = repository.create_session(Session(country="SK", language="sk-SK", discussion_type="advice"))
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
     captured_document_paths: list[str] = []
     captured_events: list[dict[str, object]] = []
 
@@ -3528,7 +3531,8 @@ def test_free_local_reply_injects_internal_mcp_law_context_before_ollama_prompt(
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             captured_document_paths.extend(document.path for document in documents)
             return SimpleNamespace(content="FREE_LOCAL_MODEL_REPLY_WITH_MCP", agent_name="LawyerSlovakia")
 
@@ -3580,10 +3584,10 @@ def test_free_local_reply_injects_internal_mcp_law_context_before_ollama_prompt(
     assert route.provider == "local_ollama"
     assert lawyer.agent_name == "LawyerSlovakia"
     assert visible == "FREE_LOCAL_MODEL_REPLY_WITH_MCP"
-    assert captured_prompts
-    assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in captured_prompts[-1]
-    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_prompts[-1]
-    assert "40/1964 Zb." in captured_prompts[-1]
+    assert captured_context
+    assert "JurisDigta Assistant, a Slovak legal intake assistant for free-plan local model routing" in captured_context[-1]
+    assert "INTERNAL MCP LAW TOOL CONTEXT" in captured_context[-1]
+    assert "40/1964 Zb." in captured_context[-1]
     assert "internal-mcp-law-context.txt" in captured_document_paths
     assert any(event.get("stage") == "mcp_law_context" for event in captured_events)
     assert any(event.get("stage") == "mcp_law_context" for event in events)
@@ -3597,14 +3601,15 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
     import app.chat.api as chat_api
 
     repository = InMemoryChatRepository()
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
     captured_document_paths: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             captured_document_paths.extend(document.path for document in documents)
             return SimpleNamespace(content="MODEL_CONFIRM_EXTRACTED_DATA_REPLY", agent_name="LawyerSlovakia")
 
@@ -3669,9 +3674,9 @@ def test_uploaded_documents_contract_request_requires_extract_then_confirm_promp
     assert visible == "MODEL_CONFIRM_EXTRACTED_DATA_REPLY"
     assert lawyer.agent_name == "LawyerSlovakia"
     assert any(event.get("stage") == "mcp_law_context" for event in events)
-    assert captured_document_paths == ["podklady-najom.txt", "internal-mcp-law-context.txt"]
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_document_paths == ["podklady-najom.txt", "mcp_law_context-note", "internal-mcp-law-context.txt", "drafting-guidance"]
+    assert captured_context
+    prompt = captured_context[-1]
     assert "UPLOADED DOCUMENT CONTRACT INTAKE MODE" in prompt
     assert "INTERNAL MCP LAW TOOL CONTEXT" in prompt
     assert "review every available uploaded document" in prompt
@@ -4114,13 +4119,14 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_SHARE_TRANSFER_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -4151,8 +4157,8 @@ def test_reply_endpoint_share_transfer_uses_registry_first(monkeypatch) -> None:
     )
     assert reply_response.status_code == 200
     assert reply_response.json()["content"] == "MODEL_SHARE_TRANSFER_REPLY"
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
     assert "Verified company name: ESolutions SK s.r.o." in prompt
     assert "Verified registration number: 12345678" in prompt
@@ -4186,13 +4192,14 @@ def test_reply_endpoint_share_transfer_keeps_registry_context_for_short_followup
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_SHARE_TRANSFER_REPLY", agent_name="LawyerSlovakia")
 
     fake_registry = _FakeRegistry()
@@ -4241,10 +4248,10 @@ def test_reply_endpoint_share_transfer_keeps_registry_context_for_short_followup
     )
     assert third_reply.status_code == 200
 
-    assert len(captured_prompts) == 3
+    assert len(captured_context) == 3
     assert fake_registry.calls == 1
-    assert all("SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt for prompt in captured_prompts)
-    assert "Verified registration number: 12345678" in captured_prompts[-1]
+    assert all("SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt for prompt in captured_context)
+    assert "Verified registration number: 12345678" in captured_context[-1]
     slovakia_service._ORSR_CACHE.clear()
 
 
@@ -4280,13 +4287,14 @@ def test_reply_endpoint_company_owner_question_uses_registry_summary(monkeypatch
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_OWNER_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -4312,8 +4320,8 @@ def test_reply_endpoint_company_owner_question_uses_registry_summary(monkeypatch
     )
     assert reply_response.status_code == 200
     assert reply_response.json()["content"] == "MODEL_OWNER_REPLY"
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     assert "SLOVAK ORSR REGISTRY ANSWER MODE" in prompt
     assert "Verified company name: ESolutions SK s.r.o." in prompt
     assert "Verified registration number: 46491261" in prompt
@@ -4345,13 +4353,14 @@ def test_reply_endpoint_company_owner_question_is_not_overridden_by_prior_share_
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_GENERIC_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -4388,9 +4397,9 @@ def test_reply_endpoint_company_owner_question_is_not_overridden_by_prior_share_
         headers=AUTH_HEADERS,
     )
     assert owner_response.status_code == 200
-    assert len(captured_prompts) >= 2
-    first_prompt = captured_prompts[-2]
-    second_prompt = captured_prompts[-1]
+    assert len(captured_context) >= 2
+    first_prompt = captured_context[-2]
+    second_prompt = captured_context[-1]
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in first_prompt
     assert "SLOVAK ORSR REGISTRY ANSWER MODE" in second_prompt
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" not in second_prompt
@@ -4416,13 +4425,14 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_STREAM_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -4481,9 +4491,9 @@ def test_stream_share_transfer_with_labeled_company_name_uses_registry_first(mon
     ]
     lowered = assistant_content.lower()
     assert "model_stream_reply" in lowered
-    assert captured_prompts
-    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in captured_prompts[-1]
-    assert "Verified registration number: 46491261" in captured_prompts[-1]
+    assert captured_context
+    assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in captured_context[-1]
+    assert "Verified registration number: 46491261" in captured_context[-1]
     assert any(payload.get("tool_name") == "obchodny_register_company_check" for payload in processing_payloads)
     assert any(payload.get("stage") == "processing" for payload in processing_payloads)
     assert any("spracovavam" in str(payload.get("message", "")).lower() for payload in processing_payloads)
@@ -5265,13 +5275,14 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_MISSING_FIELDS_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -5309,8 +5320,8 @@ def test_reply_endpoint_share_transfer_asks_only_for_missing_items(monkeypatch) 
     )
     assert reply_response.status_code == 200
     assert reply_response.json()["content"] == "MODEL_MISSING_FIELDS_REPLY"
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     assert "Already captured inputs: transferee identification, share scope, transfer price / gratuitous flag, management-change flag" in prompt
     assert "Still missing inputs: transferor identification" in prompt
     assert "Share scope is already captured" in prompt
@@ -5338,13 +5349,14 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_INLINE_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -5380,8 +5392,8 @@ def test_reply_endpoint_share_transfer_inline_numbered_text_detects_transferee_a
     )
     assert reply_response.status_code == 200
     assert reply_response.json()["content"] == "MODEL_INLINE_REPLY"
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     normalized_prompt = _canonical_text(prompt)
     assert "already captured inputs:" in normalized_prompt
     assert "transferee identification" in normalized_prompt
@@ -5628,13 +5640,14 @@ def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transf
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(content="MODEL_TRANSFEROR_DEFAULT_REPLY", agent_name="LawyerSlovakia")
 
     monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
@@ -5671,8 +5684,8 @@ def test_reply_endpoint_share_transfer_uses_single_current_stakeholder_as_transf
     )
     assert reply_response.status_code == 200
     assert reply_response.json()["content"] == "MODEL_TRANSFEROR_DEFAULT_REPLY"
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     normalized_prompt = _canonical_text(prompt)
     assert "still missing inputs:" in normalized_prompt
     assert "share" in normalized_prompt
@@ -5932,13 +5945,14 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
                 ),
             )
 
-    captured_prompts: list[str] = []
+    captured_context: list[str] = []
 
     class _SpyLawyer:
         system_prompt = "fake-system"
 
         def respond(self, *, conversation, documents, sources, system_prompt_override):
-            captured_prompts.append(system_prompt_override)
+            assert all(doc.content not in system_prompt_override for doc in documents if doc.content)
+            captured_context.append(system_prompt_override + "\n" + "\n".join(doc.content for doc in documents))
             return SimpleNamespace(
                 content="Pripravil som finÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡lny nÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡vrh dokumentÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡cie.\nCASE_UPDATE_JSON:\n{}",
                 agent_name="LawyerSlovakia",
@@ -6027,8 +6041,8 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
         message.role == MessageRole.ASSISTANT and "case_update_json" in message.content.lower()
         for message in persisted_messages
     )
-    assert captured_prompts
-    prompt = captured_prompts[-1]
+    assert captured_context
+    prompt = captured_context[-1]
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
     assert "The user confirmed document generation in this turn" in prompt
     assert "DOCUMENT GENERATION MODE" in prompt
