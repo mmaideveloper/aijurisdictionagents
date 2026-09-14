@@ -25,3 +25,20 @@ recorded failed comparison; never delete or relabel a failed run as successful.
 No new data collection, production configuration or schema migration. Privacy improvement:
 general explanation prompts no longer receive signed-in profile defaults. Sources remain
 untrusted, model identity/citations remain auditable, and human legal oversight remains.
+
+## Acceptance result
+
+The repaired real-model scenario passed on 2026-09-14, run
+`issue-810-legal-explanation-20260914T104251Z-256f7ee0`, using the server-verified
+`azurefoundryeu / gpt-5-mini` profile with no fallback. The real local frontend, API,
+MCP and migrated PostgreSQL databases were used. API history retained the original
+question and full answer, direct MCP and answer citations matched the synthetic seed,
+and the model audit confirmed the required route. Browser checks found five headings,
+one table, matching source links and stable reloaded history, without intake or internal
+IDs. Visual/text review confirmed that missing procedural details were left unresolved
+instead of being supplied as facts. Evidence and the final screenshot are under the
+ignored run directory in the acceptance worktree.
+
+The earlier failed runs remain failed evidence. This test validates the bounded
+synthetic scenario and presentation; it does not certify current Slovak legal advice
+or guarantee every future model output. Existing human oversight remains necessary.

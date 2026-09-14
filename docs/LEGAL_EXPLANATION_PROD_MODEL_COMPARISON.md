@@ -1,5 +1,9 @@
 # Production-model comparison for #810
 
+Historical failed comparison, superseded by the successful
+[acceptance repair](LEGAL_EXPLANATION_ACCEPTANCE_REPAIR.md). The failures below describe
+the earlier implementation and remain recorded for traceability.
+
 On 2026-09-14, the full local browser -> API -> MCP -> migrated PostgreSQL flow was
 rerun with the original question and the exact production profile shown in the
 user's screenshot: `azurefoundryeu:gpt-5-mini`. Read-only server inspection confirmed

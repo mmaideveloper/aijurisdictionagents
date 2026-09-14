@@ -1,8 +1,9 @@
 # General legal explanations (#810)
 
-Current acceptance status: **failed quality comparison on the production model**.
-The earlier GPT-4o-mini run below is historical evidence, not final acceptance.
-See [production-model comparison](LEGAL_EXPLANATION_PROD_MODEL_COMPARISON.md).
+Current acceptance status: **repaired scenario passed on the production GPT-5-mini model**.
+See [acceptance repair](LEGAL_EXPLANATION_ACCEPTANCE_REPAIR.md). The earlier GPT-4o-mini
+run and [failed production-model comparison](LEGAL_EXPLANATION_PROD_MODEL_COMPARISON.md)
+are retained as historical evidence, not relabeled as successful runs.
 
 General questions should receive a useful conditional explanation before optional
 clarification. Intake about parties, identity, dates and documents is reserved for
