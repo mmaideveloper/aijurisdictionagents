@@ -45,6 +45,33 @@ def _canonical_text(value: str) -> str:
     return " ".join(plain.split())
 
 
+@pytest.mark.parametrize(
+    ("template_key", "required_text"),
+    [
+        ("sk.employment.employment_contract", ("DRUH PRÁCE A JEHO STRUČNÁ CHARAKTERISTIKA", "MZDOVÉ PODMIENKY", "Fiktíva Digital Solutions", "Lucia Vzorová")),
+        ("sk.real_estate.lease_agreement", ("PREDMET NÁJMU", "NÁJOMNÉ A PLATOBNÉ PODMIENKY", "Ján Novák", "Mária Kováčová")),
+        ("sk.real_estate.sale_purchase", ("PREDMET PREVODU", "KÚPNA CENA A PLATOBNÉ PODMIENKY", "Peter Horváth", "Jana Černá")),
+    ],
+)
+def test_priority_one_preview_pdf_keeps_headings_clauses_and_review_disclosure(
+    tmp_path: Path,
+    template_key: str,
+    required_text: tuple[str, ...],
+) -> None:
+    """Keep reviewed preview PDFs clause-complete and visibly subject to human review."""
+    client = _build_client(_build_store(tmp_path))
+    response = client.get(f"/v1/document-templates/{template_key}/preview/pdf", params={"jurisdiction": "SK"})
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"%PDF")
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+    normalized = _canonical_text(text)
+    assert all(value in text for value in required_text)
+    assert "ludsku kontrolu" in normalized
+    assert "Táto šablóna zatiaľ nemá uložené telo dokumentu" not in text
+    assert "Nevyriešené polia náhľadu" not in text
+
+
 def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
 
