@@ -31,6 +31,8 @@ def main() -> None:
         normalized = "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
         assert "prac" in normalized and "nakup" in normalized, "Work and shopping must both be explained"
         assert "USER-FACING" not in text and "CASE_UPDATE_JSON" not in text
+        assert data["expectedSource"]["documentId"] not in text, "Internal source IDs must stay in citation metadata"
+        assert "internal-mcp-" not in text, "Internal retrieval wrapper must not appear in the answer"
         assert "osobne, alebo" not in normalized
         assert "intake" not in normalized and "kontrolny zoznam" not in normalized
         assert len(re.findall(r"^#{1,6}\s+", text, re.MULTILINE)) >= 2, "Expected Markdown topic headings"

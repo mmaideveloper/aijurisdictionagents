@@ -37,6 +37,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
 from app.chat.metadata_validation import correction_message, validated_country, validated_language
+from app.chat.explanation_policy import explanation_prompt, is_general_explanation_request
 from aijurisdictionagents.llm.prompt_guard import suspicious_instruction, warning_message
 from aijurisdictionagents.llm.context_boundary import POLICY_VERSION
 from app.chat.context_management import session_context_manager
@@ -2136,6 +2137,24 @@ def _run_direct_lawyer_turn_impl(
             all_documents.append(CoreDocument(
                 doc_id="drafting-guidance", path="drafting-guidance", content=legal_document_policy_note,
             ))
+    if (
+        not document_generation_requested
+        and not (case_documents or supplemental_documents or preparation.supplemental_documents)
+        and not _is_legal_document_preparation_request(content)
+        and is_general_explanation_request(content)
+        and mcp_law_context is not None
+    ):
+        # A separate mode avoids contradictory intake/drafting instructions.
+        # Retrieval evidence remains untrusted and is never promoted to policy.
+        prompt_override = explanation_prompt(
+            country=session.country,
+            language=session.language or {"SK": "sk", "DE": "de"}.get(session.country, "en"),
+            source_available=mcp_law_context.document is not None,
+        )
+        prompt_override += "\n" + _build_current_date_prompt_note()
+        all_documents = [CoreDocument(
+            doc_id="Legal sources", path="Legal sources", content=mcp_law_context.document.content,
+        )] if mcp_law_context.document is not None else []
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,

@@ -986,8 +986,7 @@ def _document_content(
     for result in laws:
         lines.append(
             f"- {result.get('law_identifier_text', '')}: "
-            f"{result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''} "
-            f"(document_id={result.get('document_id', '')})"
+            f"{result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''}"
         )
     if court_decisions:
         lines.extend(["", "Court-decision search results:"])

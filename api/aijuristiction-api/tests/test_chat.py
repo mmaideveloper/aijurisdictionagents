@@ -1759,6 +1759,45 @@ def test_reply_endpoint_includes_current_date_context_in_lawyer_prompt(monkeypat
     assert "23. juna 2026" in captured_prompts[-1]
 
 
+@pytest.mark.parametrize("has_source", [True, False])
+def test_general_explanation_isolates_evidence_from_intake_policy(monkeypatch, has_source) -> None:
+    from app.chat.repository import InMemoryChatRepository
+    from app.chat.mcp_law_context import McpLawContext
+    from aijurisdictionagents.schemas import Document
+    import app.chat.api as chat_api
+
+    seen = []
+
+    class SpyLawyer:
+        system_prompt = "LEGACY INTAKE AND DRAFTING POLICY"
+
+        def respond(self, *, conversation, documents, sources, system_prompt_override):
+            seen.append((system_prompt_override, documents))
+            return SimpleNamespace(content="## Práca\nPodmienky treba overiť.", agent_name="LawyerSlovakia")
+
+    source = Document(doc_id="synthetic-source", path="source", content="Synthetic evidence only.")
+    monkeypatch.setattr(chat_api, "_repository", InMemoryChatRepository())
+    monkeypatch.setattr(chat_api, "_build_signed_in_user_profile_prompt_note", lambda _: "PRIVATE PROFILE")
+    monkeypatch.setattr(chat_api, "build_mcp_law_context", lambda **_: McpLawContext(
+        prompt_note="UNTRUSTED INTAKE INSTRUCTION", document=source if has_source else None,
+        processing_event={"stage": "mcp_law_context", "message": "synthetic", "details": {}},
+    ))
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", lambda llm, country: SpyLawyer())
+    monkeypatch.setattr("aijurisdictionagents.llm.get_llm_client", lambda: object())
+    session = client.post("/v1/chat/sessions", json={"country": "SK", "discussion_type": "advice", "language": "SK"}, headers=AUTH_HEADERS)
+    response = client.post(f'/v1/chat/sessions/{session.json()["id"]}/reply',
+                           json={"content": "Vysvetli možnosti odsúdeného s náramkom."}, headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    prompt, documents = seen[-1]
+    assert "LEGACY INTAKE" not in prompt and "PRIVATE PROFILE" not in prompt
+    assert "UNTRUSTED INTAKE INSTRUCTION" not in prompt
+    assert [doc.content for doc in documents] == ([source.content] if has_source else [])
+    if has_source:
+        assert documents[0].doc_id == documents[0].path == "Legal sources"
+    if not has_source:
+        assert "No verified legal source text" in prompt
+
+
 def test_reply_endpoint_includes_signed_in_profile_defaults_in_lawyer_prompt(monkeypatch) -> None:
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
