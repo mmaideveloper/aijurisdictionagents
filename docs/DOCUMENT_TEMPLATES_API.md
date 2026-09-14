@@ -8,6 +8,8 @@ Admin catalogue responses include `source_drift_status`. It is derived from meta
 
 `test_priority_one_templates_keep_reviewed_body_and_exact_provenance` protects the employment, lease, and sale-purchase templates. CI fails if one loses its reviewed full body, exact approved source URL, core article/legal clauses, or human-review disclosure.
 
+`test_priority_one_preview_pdf_keeps_headings_clauses_and_review_disclosure` independently protects their rendered preview PDFs, including template-specific headings, populated synthetic facts, and visible human-review disclosure.
+
 This API adds a persistent catalog of legal-document templates that can be seeded from public source indexes,
 matched against a client request, and later extended with full template bodies for contract generation.
 
