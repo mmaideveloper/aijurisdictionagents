@@ -9239,7 +9239,7 @@ def test_is_pdf_format_question_detects_pdf_prompt() -> None:
     assert not _is_pdf_format_question("Please provide your contract date.")
 
 
-def test_enforce_single_question_turn_keeps_only_first_question() -> None:
+def test_enforce_single_question_turn_preserves_text_and_limits_metadata() -> None:
     from app.chat.api import _enforce_single_question_turn, _extract_case_update, _user_visible_text
 
     raw_reply = (
@@ -9254,9 +9254,9 @@ def test_enforce_single_question_turn_keeps_only_first_question() -> None:
     normalized = _enforce_single_question_turn(raw_reply)
     visible = _user_visible_text(normalized)
     assert "RNDr. Marek Matonok?" in visible
-    assert "presny rozsah podielu?" not in visible
-    assert "Meni sa konatel?" not in visible
-    assert visible.count("?") == 1
+    assert "presny rozsah podielu?" in visible
+    assert "Meni sa konatel?" in visible
+    assert visible.count("?") == 3
 
     case_update = _extract_case_update(normalized)
     assert isinstance(case_update, dict)

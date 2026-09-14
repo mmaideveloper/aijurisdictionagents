@@ -49,6 +49,22 @@ _LEGAL_QUERY_MARKERS = (
     "law",
     "statute",
     "section",
+    # Ordinary users describe their situation instead of naming statutes.
+    "odsuden",
+    "domace vazenie",
+    "domaceho vazenia",
+    "vykon trestu",
+    "elektronicky monitoring",
+    "elektronicke monitorovanie",
+    "elektronicke sledovanie",
+    "podmienecne prepusten",
+    "probacn",
+    "vypoved z prace",
+    "prepustenie z prace",
+    "rozvod",
+    "vyzivne",
+    "dedenie",
+    "exekuci",
 )
 _COURT_QUERY_MARKERS = (
     "sudne rozhodnut",

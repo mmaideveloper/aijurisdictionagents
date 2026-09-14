@@ -18,6 +18,12 @@ The internal JurisDigta assistant should use JurisDigta MCP as its source-of-tru
 
 ## Case Citations
 
+General legal explanations follow the answer-first policy documented in
+[Legal explanation quality](LEGAL_EXPLANATION_QUALITY.md). The API preserves complete
+answers containing question marks, and the web client renders safe Markdown for
+ordinary and typed text replies. Internal output labels and technical payload
+documents are excluded from ordinary answer/document presentation.
+
 Chat result metadata now normalizes JurisDigta law lookup results into durable case citations. The API stores only citation metadata and bounded snippets, linked to the case, the latest user case communication, and the assistant case communication. It does not duplicate full law text, court-decision bodies, prompts, or personal data in the citation table.
 
 `POST /v1/chat/sessions/{session_id}/reply` returns assistant messages with `citations[]` when structured legal sources are available. `GET /v1/cases/{case_id}/history` returns the same answer-level `citations[]` on each assistant/system history message plus a case-level aggregate list. `GET /v1/cases/{case_id}/citations` returns the authorized aggregate list for the active case citation panel.
