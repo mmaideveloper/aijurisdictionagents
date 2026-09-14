@@ -1,5 +1,43 @@
 # Manual Infrastructure Setup
 
+## Local legal explanation acceptance (#810)
+
+Owner: developer with Docker Desktop and authorized server SSH access. No test/prod
+GitHub Environment changes or deployment are needed. Use the branch runtime and
+approved `scripts/import_e2e_model_credentials_from_server.ps1` flow; never paste keys.
+For the production-model comparison, use `azurefoundryeu:gpt-5-mini`, verified against
+the enabled production profile. Import it with
+`scripts/import_e2e_model_credentials_from_server.ps1 -RequiredModel gpt-5-mini -UseExistingPostgres -LocalPostgresContainer juris-issue810-postgres -DatabaseUrl <loopback-task-database> -VerifyModel`.
+The importer requires the exact enabled model/deployment and empty parameter overrides,
+resolves the API version using production routing, and never prints credentials.
+Its default remains GPT-4o-mini for existing users. Direct bootstrap accepts
+`--required-model gpt-5-mini`; a mismatched deployment fails instead of falling back.
+
+Create an isolated `pgvector/pgvector:pg16` container named `juris-issue810-postgres`,
+bind only `127.0.0.1:55410:5432`, and bind its data directory to the task worktree's
+`runs/storage/issue810/postgres/data`. Create `issue810_api` and `issue810_laws`.
+Set process-only `DB_OPTION=postgres`, `DB_CLOUD` to the loopback API database and
+`LLM_PROVIDER=azurefoundry`; run `scripts/databases/apply_api_db_schema.py`, then
+`scripts/bootstrap_e2e_model_credentials.py --verify-model`. Apply the `laws` SQL
+migrations to the isolated laws database with the repository migration runner.
+
+Run `python scripts/prepare_issue_810_e2e.py`, then
+`python scripts/run_issue_810_e2e_services.py` (API 8190, MCP 8191). Start the frontend
+on 5190 with `VITE_API_BASE_URL=http://127.0.0.1:8190` and its existing API-key setting.
+Create the run-tagged case through the authenticated UI and send the manifest's
+question. Verify both activities, citations, full history, rendered headings and the
+audited real route. The scenario helper pins the synthetic paid-user route to GPT-5-mini;
+the verifier requires that exact provider/model. The service launcher also checks the
+seeded source through MCP. No test/prod GitHub Environment input changes are needed.
+
+Capture only the final answer screen and sanitized result manifest under ignored
+`runs/e2e/issue-810-legal-explanation/`. Never capture login snapshots: CLI snapshots
+can contain password field values. Remove transient login/OTP material after use.
+Delete synthetic case records according to the normal retention policy after testing;
+stop the task-owned services and container. Retain evidence for at most seven days.
+Rollback is stopping the isolated stack and reverting the task branch; no production
+data or shared provider configuration is changed by the application repair.
+
 ## Private Grafana user reporting (#806)
 
 Apply these steps separately in test and prod; production changes require the exact

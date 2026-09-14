@@ -14,7 +14,11 @@ export const decodeNumericCharacterReferences = (value: string): string =>
   });
 
 export const normalizeAssistantPresentationText = (value: string): string =>
-  decodeNumericCharacterReferences(value).replace(INTERNAL_ORCHESTRATOR_WORD, AI_ORCHESTRATOR_AGENT_LABEL);
+  decodeNumericCharacterReferences(value)
+    .replace(/^\s*(?:#{1,6}\s*)?(?:\*\*USER-FACING(?:\s*\([^\n)]*\))?\s*:\*\*|(?:\*\*)?USER-FACING(?:\s*\([^\n)]*\))?(?:\*\*)?\s*:)\s*/i, "")
+    .replace(INTERNAL_ORCHESTRATOR_WORD, AI_ORCHESTRATOR_AGENT_LABEL);
+
+export const isUserDocument = (document: { kind: string }): boolean => document.kind !== "technical_payload";
 
 export const assistantAgentDisplayName = (agentName: string | null | undefined, fallback: string): string => {
   const normalized = agentName?.trim() ?? "";

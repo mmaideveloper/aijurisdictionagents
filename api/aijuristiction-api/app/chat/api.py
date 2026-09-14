@@ -37,6 +37,7 @@ from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
 from app.chat.metadata_validation import correction_message, validated_country, validated_language
+from app.chat.explanation_policy import explanation_prompt, is_general_explanation_request
 from aijurisdictionagents.llm.prompt_guard import suspicious_instruction, warning_message
 from aijurisdictionagents.llm.context_boundary import POLICY_VERSION
 from app.chat.context_management import session_context_manager
@@ -2004,7 +2005,8 @@ def _run_direct_lawyer_turn_impl(
             "SINGLE-QUESTION CLARIFICATION POLICY:\n"
             "- If clarification is needed, ask exactly one highest-priority question in this turn.\n"
             "- Do not ask multiple numbered questions in one reply.\n"
-            "- Do not include summary/risk/next-step sections while waiting for that single answer.\n"
+            "- Preserve a useful explanation, conditions, sources and next steps before an optional question.\n"
+            "- For general legal questions, explain the alternatives first; do not require personal intake.\n"
             "- Keep CASE_UPDATE_JSON.case.open_questions at maximum one item when awaiting user input."
         )
         prompt_override = f"{prompt_override}\n\n{_build_current_date_prompt_note()}"
@@ -2110,6 +2112,14 @@ def _run_direct_lawyer_turn_impl(
         language=session.language,
     )
     if mcp_law_context is not None:
+        # Source bodies remain untrusted evidence. Only the server-observed
+        # retrieval state may supply this fixed presentation policy.
+        if mcp_law_context.document is None:
+            prompt_override += (
+                "\nCURRENT LEGAL SOURCE STATUS: lookup was unavailable or inconclusive. "
+                "Explicitly tell the user this before giving general information. "
+                "Do not imply that the user's legal conditions were verified."
+            )
         all_documents.append(CoreDocument(
             doc_id="mcp_law_context-note", path="mcp_law_context-note", content=mcp_law_context.prompt_note,
         ))
@@ -2127,6 +2137,24 @@ def _run_direct_lawyer_turn_impl(
             all_documents.append(CoreDocument(
                 doc_id="drafting-guidance", path="drafting-guidance", content=legal_document_policy_note,
             ))
+    if (
+        not document_generation_requested
+        and not (case_documents or supplemental_documents or preparation.supplemental_documents)
+        and not _is_legal_document_preparation_request(content)
+        and is_general_explanation_request(content)
+        and mcp_law_context is not None
+    ):
+        # A separate mode avoids contradictory intake/drafting instructions.
+        # Retrieval evidence remains untrusted and is never promoted to policy.
+        prompt_override = explanation_prompt(
+            country=session.country,
+            language=session.language or {"SK": "sk", "DE": "de"}.get(session.country, "en"),
+            source_available=mcp_law_context.document is not None,
+        )
+        prompt_override += "\n" + _build_current_date_prompt_note()
+        all_documents = [CoreDocument(
+            doc_id="Legal sources", path="Legal sources", content=mcp_law_context.document.content,
+        )] if mcp_law_context.document is not None else []
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
@@ -2297,9 +2325,12 @@ def _build_compact_free_local_lawyer_prompt(
         - Do not help with fraud, evasion, or illegal conduct.
 
         Turn policy:
-        - If facts are missing, ask exactly one highest-priority question.
+        - For general legal questions, explain the relevant alternatives and conditions first.
+        - Do not ask whose case it is or collect identity details for a general explanation.
+        - If a material fact is missing, state assumptions and ask one focused question after the explanation.
         - Do not ask multiple numbered questions in one reply.
-        - If enough facts are present, give a short next-step answer and identify any remaining missing fact.
+        - Address every activity the user asks about, using headings, lists or a small comparison table.
+        - Cite supplied legal sources; disclose unavailable grounding and never invent permissions or citations.
         {document_mode_note}
 
         Output contract:
@@ -4692,6 +4723,14 @@ def _normalize_technical_payload_for_storage(raw_payload: str, *, extension: str
 
 
 def _strip_user_visible_technical_trailer(content: str) -> str:
+    # Legacy prompt envelopes are metadata, not a heading in the legal answer.
+    content = re.sub(
+        r"\A\s*(?:#{1,6}\s*)?(?:\*\*USER-FACING(?:\s*\([^\n)]*\))?\s*:\*\*"
+        r"|(?:\*\*)?USER-FACING(?:\s*\([^\n)]*\))?(?:\*\*)?\s*:)\s*",
+        "",
+        content,
+        flags=re.IGNORECASE,
+    )
     lines = _strip_user_visible_technical_lines(content.strip().splitlines())
     while lines:
         candidate = lines[-1].strip()
@@ -5112,13 +5151,15 @@ def _fallback_missing_info_question(visible_text: str) -> str:
 def _enforce_single_question_turn(content: str) -> str:
     content = _ensure_missing_info_prompt_has_question(content)
     visible_text = _user_visible_text(content)
-    if not _assistant_requests_user_reply(visible_text):
-        return content.strip()
-    first_question = _first_followup_question(visible_text)
     case_update = _extract_case_update(content)
-    if case_update is not None:
-        case_update = _truncate_case_update_open_questions(case_update)
-    return _compose_assistant_content(visible_text=first_question, case_update=case_update)
+    if case_update is None:
+        # Preserve other technical envelopes for the existing storage pipeline.
+        # The response serializer handles visible-label filtering separately.
+        return content.strip()
+    case_update = _truncate_case_update_open_questions(case_update)
+    # Punctuation cannot distinguish a clarification from a heading or quoted
+    # question. Enforce the limit in structured metadata and prompt policy only.
+    return _compose_assistant_content(visible_text=visible_text, case_update=case_update)
 
 
 def _emit_thinking_processing_event(

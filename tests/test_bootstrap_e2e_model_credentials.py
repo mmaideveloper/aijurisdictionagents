@@ -87,3 +87,36 @@ def test_verify_model_uses_secret_reloaded_from_database(
     _MODULE._verify_model(store, different_memory_config)
 
     assert captured["api_key"] == config.secret_value
+
+
+def test_production_model_bootstrap_keeps_exact_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_MODULE, "PROVIDER_ID", "azurefoundryeu")
+    monkeypatch.setattr(_MODULE, "PROFILE_ID", "azurefoundryeu:gpt-5-mini")
+    monkeypatch.setattr(_MODULE, "EXPECTED_MODEL", "gpt-5-mini")
+    store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "files")
+    config = _MODULE.E2EModelConfig(
+        endpoint="https://synthetic-foundry.example.test", api_version="2025-04-01-preview",
+        deployment="gpt-5-mini", secret_type="api_key", secret_value="synthetic-test-only",
+    )
+    _MODULE._bootstrap(store, config)
+    profile = next(p for p in store.list_ai_model_profiles() if p.model_profile_id == _MODULE.PROFILE_ID)
+    assert profile.model_code == profile.deployment_name == "gpt-5-mini"
+    assert profile.model_parameters == {}
+
+    class ProductionModelProbe:
+        def __init__(self, client_config: Any) -> None:
+            assert client_config.deployment == "gpt-5-mini"
+            assert client_config.temperature in (None, 1.0)
+
+        def complete(self, *args: object, **kwargs: object) -> str:
+            return "synthetic acknowledgement"
+
+    monkeypatch.setattr(_MODULE, "AzureFoundryClient", ProductionModelProbe)
+    _MODULE._verify_model(store, config)
+    monkeypatch.setenv("E2E_AZURE_FOUNDRY_ENDPOINT", config.endpoint)
+    monkeypatch.setenv("E2E_AZURE_FOUNDRY_API_VERSION", config.api_version)
+    monkeypatch.setenv("E2E_AZURE_FOUNDRY_DEPLOYMENT", "gpt-4o-mini")
+    monkeypatch.setenv("E2E_AZURE_FOUNDRY_API_KEY", config.secret_value)
+    monkeypatch.delenv("E2E_AZURE_FOUNDRY_AD_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="expects 'gpt-5-mini'"):
+        _MODULE._config_from_env()

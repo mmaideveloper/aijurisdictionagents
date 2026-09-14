@@ -49,6 +49,22 @@ _LEGAL_QUERY_MARKERS = (
     "law",
     "statute",
     "section",
+    # Ordinary users describe their situation instead of naming statutes.
+    "odsuden",
+    "domace vazenie",
+    "domaceho vazenia",
+    "vykon trestu",
+    "elektronicky monitoring",
+    "elektronicke monitorovanie",
+    "elektronicke sledovanie",
+    "podmienecne prepusten",
+    "probacn",
+    "vypoved z prace",
+    "prepustenie z prace",
+    "rozvod",
+    "vyzivne",
+    "dedenie",
+    "exekuci",
 )
 _COURT_QUERY_MARKERS = (
     "sudne rozhodnut",
@@ -970,8 +986,7 @@ def _document_content(
     for result in laws:
         lines.append(
             f"- {result.get('law_identifier_text', '')}: "
-            f"{result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''} "
-            f"(document_id={result.get('document_id', '')})"
+            f"{result.get('title') or result.get('lawyer_title') or result.get('official_name') or ''}"
         )
     if court_decisions:
         lines.extend(["", "Court-decision search results:"])

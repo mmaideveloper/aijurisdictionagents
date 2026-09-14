@@ -4,7 +4,10 @@ param(
     [string]$EnvFilePath = ".env",
     [string]$DatabaseUrl = "",
     [string]$LocalPostgresContainer = "aijurisdiction-postgres-local",
-    [switch]$VerifyModel
+    [switch]$VerifyModel,
+    [ValidateSet('gpt-4o-mini', 'gpt-5-mini')]
+    [string]$RequiredModel = 'gpt-4o-mini',
+    [switch]$UseExistingPostgres
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,9 +97,11 @@ if ($DatabaseUrl) {
     }
     $startupParameters.DatabaseName = $startupDatabaseName
 }
-& (Join-Path $repoRoot "skills\start-postgres\scripts\start_postgres.ps1") @startupParameters
-if ($LASTEXITCODE -ne 0) {
-    throw "Local PostgreSQL startup or base migration failed."
+if (-not $UseExistingPostgres) {
+    & (Join-Path $repoRoot "skills\start-postgres\scripts\start_postgres.ps1") @startupParameters
+    if ($LASTEXITCODE -ne 0) {
+        throw "Local PostgreSQL startup or base migration failed."
+    }
 }
 
 if (-not $DatabaseUrl) {
@@ -142,27 +147,32 @@ if ($databaseExistsText -ne "1") {
 $serverScript = @'
 import json
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.llm.routing import _resolve_azure_openai_api_version
 
 store = ApiDatabaseStore.from_env()
-providers = [item for item in store.list_ai_model_providers() if item.provider_id == "azure_foundry"]
-profiles = [item for item in store.list_ai_model_profiles(provider_id="azure_foundry") if item.model_profile_id == "azure_foundry_gpt_4o_mini"]
-credentials = [item for item in store.list_ai_model_credentials(provider_id="azure_foundry", reveal=True) if item.enabled and item.secret_type == "api_key"]
+required_model = "__REQUIRED_MODEL__"
+provider_id = "azurefoundryeu" if required_model == "gpt-5-mini" else "azure_foundry"
+profile_id = "azurefoundryeu:gpt-5-mini" if required_model == "gpt-5-mini" else "azure_foundry_gpt_4o_mini"
+providers = [item for item in store.list_ai_model_providers() if item.provider_id == provider_id and item.enabled]
+profiles = [item for item in store.list_ai_model_profiles(provider_id=provider_id) if item.model_profile_id == profile_id and item.enabled]
+credentials = [item for item in store.list_ai_model_credentials(provider_id=provider_id, reveal=True) if item.enabled and item.secret_type == "api_key"]
 if len(providers) != 1 or len(profiles) != 1 or len(credentials) != 1:
     raise RuntimeError("Expected one enabled Azure Foundry provider, gpt-4o-mini profile, and API-key credential.")
 provider = providers[0]
 profile = profiles[0]
 credential = credentials[0]
-if profile.model_code != "gpt-4o-mini" or profile.deployment_name != "gpt-4o-mini":
-    raise RuntimeError("The approved server profile is not gpt-4o-mini.")
+if profile.model_code != required_model or profile.deployment_name != required_model or profile.model_parameters:
+    raise RuntimeError("Server model/deployment must match exactly and have the expected empty parameter overrides.")
 if not credential.secret_value:
     raise RuntimeError("The approved server credential could not be revealed.")
 print(json.dumps({
     "endpoint": provider.base_url,
-    "api_version": provider.api_version,
+    "api_version": _resolve_azure_openai_api_version(model=profile.model_code, provider_api_version=provider.api_version),
     "deployment": profile.deployment_name,
     "secret_value": credential.secret_value,
 }))
 '@
+$serverScript = $serverScript.Replace('__REQUIRED_MODEL__', $RequiredModel)
 
 $payloadJson = $null
 $payload = $null
@@ -173,13 +183,13 @@ try {
     }
     $payload = $payloadJson | ConvertFrom-Json
     if (-not $payload.endpoint -or -not $payload.api_version -or
-        $payload.deployment -ne "gpt-4o-mini" -or -not $payload.secret_value) {
+        $payload.deployment -ne $RequiredModel -or -not $payload.secret_value) {
         throw "The server returned incomplete or unexpected model configuration."
     }
 
     Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_ENDPOINT" -Value ([string]$payload.endpoint)
     Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_API_VERSION" -Value ([string]$payload.api_version)
-    Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_DEPLOYMENT" -Value "gpt-4o-mini"
+    Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_DEPLOYMENT" -Value $RequiredModel
     Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_API_KEY" -Value ([string]$payload.secret_value)
     Set-DotEnvValue -Path $resolvedEnvPath -Name "E2E_AZURE_FOUNDRY_AD_TOKEN" -Value "unknown-variable"
     $localEncryptionKey = Get-DotEnvValue -Path $resolvedEnvPath -Name "AI_MODEL_CREDENTIAL_ENCRYPTION_KEY"
@@ -203,7 +213,9 @@ try {
         $arguments = @(
             (Join-Path $repoRoot "scripts\bootstrap_e2e_model_credentials.py"),
             "--env-file",
-            $resolvedEnvPath
+            $resolvedEnvPath,
+            "--required-model",
+            $RequiredModel
         )
         if ($VerifyModel) {
             $arguments += "--verify-model"
@@ -217,7 +229,7 @@ try {
         if ($null -eq $previousDbCloud) { Remove-Item Env:DB_CLOUD -ErrorAction SilentlyContinue } else { $env:DB_CLOUD = $previousDbCloud }
         if ($null -eq $previousLlmProvider) { Remove-Item Env:LLM_PROVIDER -ErrorAction SilentlyContinue } else { $env:LLM_PROVIDER = $previousLlmProvider }
     }
-    Write-Output "Imported approved Azure Foundry gpt-4o-mini credential into branch-local PostgreSQL."
+    Write-Output "Imported approved Azure Foundry $RequiredModel credential into branch-local PostgreSQL."
     Write-Output "Database: $databaseName"
     Write-Output "Secret values were not displayed."
 } finally {
