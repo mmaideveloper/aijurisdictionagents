@@ -87,6 +87,16 @@ def main() -> int:
         password=os.getenv("JURISDIGTA_E2E_TEST_USER_PASSWORD", "").strip(),
     )
     user = next(item for item in users if item.email == E2E_TEST_PAID_EMAIL)
+    # Match the production profile explicitly; acceptance must never pass on fallback.
+    required_model = "gpt-5-mini"
+    for task_type in ("default", "chat_reply"):
+        store.upsert_ai_task_route_policy(
+            policy_id=f"issue810:{task_type}:case", task_type=task_type, plan_code="case",
+            preferred_external_model_profile_id="azurefoundryeu:gpt-5-mini",
+            allow_external=True, require_external_ack=False, require_eu_data_zone=True,
+            fallback_local_on_error=False, fallback_local_on_budget=False,
+            priority=10000, enabled=True,
+        )
     for prior in store.list_cases(user_id=user.user_id):
         if prior.title.startswith("[issue-810-legal-explanation-"):
             store.soft_delete_case(case_id=prior.case_id, user_id=user.user_id)
@@ -100,6 +110,8 @@ def main() -> int:
     )
     if route.provider == "mock" or route.route_type == "mock":
         raise RuntimeError("Real Azure Foundry route is required; mock is prohibited")
+    if route.model != required_model or route.provider != "azurefoundryeu":
+        raise RuntimeError("Production-model comparison requires azurefoundryeu / gpt-5-mini exactly")
 
     evidence_root = REPO_ROOT / "runs" / "e2e" / "issue-810-legal-explanation" / run_id
     evidence_root.mkdir(parents=True, exist_ok=True)

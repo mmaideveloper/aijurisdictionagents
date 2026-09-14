@@ -5,7 +5,13 @@
 Owner: developer with Docker Desktop and authorized server SSH access. No test/prod
 GitHub Environment changes or deployment are needed. Use the branch runtime and
 approved `scripts/import_e2e_model_credentials_from_server.ps1` flow; never paste keys.
-This local profile currently validates the seeded GPT-4o-mini route, not GPT-5-mini.
+For the production-model comparison, use `azurefoundryeu:gpt-5-mini`, verified against
+the enabled production profile. Import it with
+`scripts/import_e2e_model_credentials_from_server.ps1 -RequiredModel gpt-5-mini -UseExistingPostgres -LocalPostgresContainer juris-issue810-postgres -DatabaseUrl <loopback-task-database> -VerifyModel`.
+The importer requires the exact enabled model/deployment and empty parameter overrides,
+resolves the API version using production routing, and never prints credentials.
+Its default remains GPT-4o-mini for existing users. Direct bootstrap accepts
+`--required-model gpt-5-mini`; a mismatched deployment fails instead of falling back.
 
 Create an isolated `pgvector/pgvector:pg16` container named `juris-issue810-postgres`,
 bind only `127.0.0.1:55410:5432`, and bind its data directory to the task worktree's
@@ -20,7 +26,9 @@ Run `python scripts/prepare_issue_810_e2e.py`, then
 on 5190 with `VITE_API_BASE_URL=http://127.0.0.1:8190` and its existing API-key setting.
 Create the run-tagged case through the authenticated UI and send the manifest's
 question. Verify both activities, citations, full history, rendered headings and the
-audited real route. The service launcher also checks the seeded source through MCP.
+audited real route. The scenario helper pins the synthetic paid-user route to GPT-5-mini;
+the verifier requires that exact provider/model. The service launcher also checks the
+seeded source through MCP. No test/prod GitHub Environment input changes are needed.
 
 Capture only the final answer screen and sanitized result manifest under ignored
 `runs/e2e/issue-810-legal-explanation/`. Never capture login snapshots: CLI snapshots

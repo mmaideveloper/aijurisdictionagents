@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 import unicodedata
 
@@ -32,6 +33,10 @@ def main() -> None:
         assert "USER-FACING" not in text and "CASE_UPDATE_JSON" not in text
         assert "osobne, alebo" not in normalized
         assert "intake" not in normalized and "kontrolny zoznam" not in normalized
+        assert len(re.findall(r"^#{1,6}\s+", text, re.MULTILINE)) >= 2, "Expected Markdown topic headings"
+        assert re.search(r"^\|?\s*:?-{3,}", text, re.MULTILINE), "Expected a Markdown comparison table"
+        prose = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(("#", "|")))
+        assert prose.count("?") <= 1, "General explanation must not append multiple follow-ups"
         assert "syntet" in normalized or "testovac" in normalized, "Synthetic source must not appear as real law"
         citations = answer.get("citations", [])
         assert data["expectedSource"]["documentId"] in {item["source_id"] for item in citations}, "Answer citation does not match MCP seed"

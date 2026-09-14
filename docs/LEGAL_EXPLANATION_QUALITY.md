@@ -1,5 +1,9 @@
 # General legal explanations (#810)
 
+Current acceptance status: **failed quality comparison on the production model**.
+The earlier GPT-4o-mini run below is historical evidence, not final acceptance.
+See [production-model comparison](LEGAL_EXPLANATION_PROD_MODEL_COMPARISON.md).
+
 General questions should receive a useful conditional explanation before optional
 clarification. Intake about parties, identity, dates and documents is reserved for
 case-specific work. Document generation still requires its existing confirmation.
