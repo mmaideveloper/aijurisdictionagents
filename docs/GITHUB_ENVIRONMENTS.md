@@ -1,10 +1,19 @@
 # GitHub Environments Checklist
 
-For #806 user reporting, both test and prod require the manually isolated Grafana
+For #806/#815 user reporting, both test and prod require the manually isolated Grafana
 organization, dedicated read login/TLS network access, daily retention job and access
 audit configuration described in `docs/manual_infrastucture_setup.md`. No new GitHub
 workflow inputs, environment variables or secrets are introduced. Reporting and
 Grafana passwords stay in the approved runtime secret manager, not GitHub task bodies.
+Deploy the monitoring `grafana.ini` mount and network attachment with `start_monitoring=true`.
+Before provisioning, configure PostgreSQL TLS with the matching DNS SAN/public CA,
+restrict the reporting login in pg_hba, and select the existing admin account IDs.
+Run `scripts/server/provision_admin_reporting.py` separately in each environment with
+the full successfully validated deployment SHA, database name, public CA file and
+approved administrator IDs. It sets the private dashboard as their organization home.
+This explicit post-deployment step is mandatory: a green application deployment alone
+does not install personal reporting. Record its sanitized readiness result alongside
+the deployment run. See the #815 instructions in `docs/manual_infrastucture_setup.md`.
 
 Use this guide to create `test` and `prod` GitHub Environments that mirror the existing `dev` setup for this repository.
 
