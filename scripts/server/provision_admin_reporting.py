@@ -137,7 +137,7 @@ def main() -> None:
         if not healthy:
             raise RuntimeError("Reporting data source health failed; no rows were logged")
         for user_id in args.admin_user_id:
-            call("POST", f"/api/admin/users/{user_id}/using/{org}")
+            call("POST", f"/api/users/{user_id}/using/{org}")
         print(json.dumps({"status": "provisioned", "commit": args.expected_sha, "orgId": org,
                           "dashboardPath": f"/grafana/d/jurisdigta-admin-users?orgId={org}"}))
 
