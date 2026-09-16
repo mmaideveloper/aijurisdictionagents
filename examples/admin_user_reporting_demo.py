@@ -17,6 +17,9 @@ def main() -> None:
         if panel.get("datasource") == module.DATA_SOURCE:
             print(" -", panel["title"])
     print("Synthetic example: 100 input (40 cached) + 25 output = 125 total")
+    print("Deleted user's retained 375 tokens outrank an active user's 125 tokens.")
+    print("Display: Deleted user (deleted); email is never copied into deletion markers.")
+    print("Selected-date counts include only retained eligible registrations before the range end.")
 
 
 if __name__ == "__main__":

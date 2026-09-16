@@ -2,6 +2,11 @@
 
 For private account totals, daily activity/registrations, latest registrations and
 per-user tokens, see [Admin user reporting](../../docs/ADMIN_USER_REPORTING.md).
+The private report includes latest-registration emails, a selected-end-date user
+total and top-10 token consumers, preserving deleted users' usage without email.
+Its installation is an explicit post-deployment step: see the #815 rollout in
+[Manual setup](../../docs/manual_infrastucture_setup.md). Deploying the application
+or starting this shared monitoring stack alone does not provision personal reports.
 
 This stack is the recommended self-managed monitoring layer for `jurisdigta-server`.
 

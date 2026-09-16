@@ -24,39 +24,44 @@ def build_dashboard() -> dict[str, Any]:
     dashboard["panels"] = [p for p in dashboard["panels"]
                            if not any("jurisdigta_users_" in str(t) for t in p.get("targets", []))]
     for panel in dashboard["panels"]:
-        panel["gridPos"]["y"] += 33
+        panel["gridPos"]["y"] += 43
     panel_id = max(p["id"] for p in dashboard["panels"]) + 1
     period = "to_timestamp(${__from}/1000.0), to_timestamp(${__to}/1000.0)"
     specifications = [
-        ("Total registered users", "stat", "SELECT * FROM admin_reporting.total_users()",
-         "Current eligible accounts, including disabled accounts; independent of the date range."),
+        ("Total users at selected end date", "stat", "SELECT * FROM admin_reporting.users_at(to_timestamp(${__to}/1000.0))",
+         "Retained eligible accounts registered before the selected range end; currently deleted accounts are excluded."),
         ("New registrations per day", "timeseries", f"SELECT * FROM admin_reporting.registrations({period})",
          "Europe/Bratislava calendar days. Range edges may be partial days. Current retained account records."),
         ("Daily active users (complete collection days)", "timeseries", f"SELECT * FROM admin_reporting.daily_active({period})",
          "Distinct users creating a case or submitting a recorded question. Null before collection/retention coverage."),
-        ("Latest 10 new users", "table", f"SELECT * FROM admin_reporting.latest_users({period})",
-         "The latest registrations within the selected range. Restricted personal data: user ID and registration time."),
+        ("Latest 10 new users", "table", f"SELECT * FROM admin_reporting.latest_registrations({period})",
+         "The latest eligible registrations within the selected range. Email is restricted to reporting administrators."),
+        ("Top 10 users by tokens consumed", "table", f"SELECT * FROM admin_reporting.top_token_users({period})",
+         "Recorded tokens within the range. Deleted users retain their rank without email. Cached input is included in input; "
+         "estimated/unspecified entries are not billing statements. Unknown historical identities remain unattributed."),
         ("Tokens per user", "table",
          f"SELECT * FROM admin_reporting.user_tokens({period}, (${{users_page:sqlstring}}::integer - 1)*100, 100, ${{users_sort:sqlstring}})",
          "100 users per page; total_rows gives the available count. Cached input is already included in input. "
          "estimated_entries and unspecified_entries disclose accuracy. All providers and ledger statuses; "
          "each usage_id counted once. Zero usage included. Page selector supports every page."),
         ("Token reconciliation", "table", f"SELECT * FROM admin_reporting.token_reconciliation({period})",
-         "Eligible + excluded + unattributed = ledger total for the range. No excluded/orphaned IDs are exposed."),
+         "Eligible + deleted + excluded + unattributed = ledger total for the range. No deleted/excluded/orphaned IDs are exposed."),
         ("Activity coverage", "table", "SELECT * FROM admin_reporting.activity_coverage()",
          "Collection starts when the migration is installed. Daily facts expire after 90 calendar days; no historical backfill."),
     ]
     layouts = [(0, 0, 6, 8), (6, 0, 18, 8), (0, 8, 12, 8), (12, 8, 12, 8),
-               (0, 16, 24, 10), (0, 26, 12, 7), (12, 26, 12, 7)]
+               (0, 16, 24, 10), (0, 26, 24, 10), (0, 36, 12, 7), (12, 36, 12, 7)]
     for i, (title, kind, query, description) in enumerate(specifications):
         x, y, width, height = layouts[i]
         dashboard["panels"].append({
             "id": panel_id + i, "title": title, "description": description, "type": kind,
             "datasource": DATA_SOURCE, "gridPos": {"x": x, "y": y, "w": width, "h": height},
-            "fieldConfig": {"defaults": {"unit": "short", "noValue": "Unavailable"}, "overrides": [
+            "fieldConfig": {"defaults": {"unit": "short", "noValue":
+                "No rows in selected range" if kind == "table" else "Unavailable"}, "overrides": [
                 {"matcher": {"id": "byName", "options": field}, "properties": [
                     {"id": "displayName", "value": label}, {"id": "custom.width", "value": width}
                 ]} for field, label, width in [
+                    ("email", "Email / deleted user", 330), ("account_status", "Account", 100),
                     ("user_id", "User ID", 330), ("input_tokens", "Input", 85),
                     ("cached_input_tokens", "Cached input", 100), ("output_tokens", "Output", 85),
                     ("total_tokens", "Total", 85), ("ledger_entries", "Entries", 85),
@@ -124,6 +129,7 @@ def provision(base_url: str, org_id: int, session: requests.Session,
         call("POST", "/api/datasources", data_source)
     validate_members(call("GET", f"/api/orgs/{org_id}/users"))
     call("POST", "/api/dashboards/db", {"dashboard": build_dashboard(), "overwrite": True})
+    call("PUT", "/api/org/preferences", {"homeDashboardUID": "jurisdigta-admin-users"})
 
 
 def main() -> None:

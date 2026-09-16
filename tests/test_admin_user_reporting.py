@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import configparser
 from pathlib import Path
 import uuid
 
@@ -19,12 +20,13 @@ spec.loader.exec_module(reporting)
 @pytest.fixture
 def db():
     try:
-        conn = psycopg.connect(host="127.0.0.1", port=5432, dbname="issue806_reporting_tests",
+        conn = psycopg.connect(host="127.0.0.1", port=5815, dbname="issue815_reporting_tests",
                                user="postgres", password="postgres", connect_timeout=2)
     except psycopg.OperationalError:
-        pytest.skip("Dedicated local issue806_reporting_tests PostgreSQL is required")
+        pytest.skip("Dedicated local issue815_reporting_tests PostgreSQL on port 5815 is required")
     try:
         conn.execute((ROOT / "databases/api/migrations/806_admin_user_reporting.sql").read_text())
+        conn.execute((ROOT / "databases/api/migrations/815_admin_user_statistics.sql").read_text())
         conn.execute((ROOT / "databases/api/admin_reporting_access.sql").read_text())
         yield conn
     finally:
@@ -51,8 +53,8 @@ def test_dashboard_has_private_sql_sources_and_all_pages():
     dashboard = reporting.build_dashboard()
     assert dashboard["timezone"] == "Europe/Bratislava"
     sql_panels = [p for p in dashboard["panels"] if p.get("datasource") == reporting.DATA_SOURCE]
-    assert len(sql_panels) == 7
-    assert sum(p["title"] == "Total registered users" for p in dashboard["panels"]) == 1
+    assert len(sql_panels) == 8
+    assert sum(p["title"] == "Total users at selected end date" for p in dashboard["panels"]) == 1
     assert not any("jurisdigta_users_" in str(p) for p in dashboard["panels"])
     assert "generate_series" in next(v["query"] for v in dashboard["templating"]["list"] if v["name"] == "users_page")
 
@@ -160,3 +162,90 @@ def test_activity_deduplicated_retained_and_deleted(db):
     assert rows[0][1] is None and rows[-1][1] == 1
     db.execute("DELETE FROM users WHERE user_id=%s", (uid,))
     assert db.execute("SELECT count(*) FROM admin_reporting.daily_activity WHERE user_id=%s", (uid,)).fetchone()[0] == 0
+
+
+BOUNDS = ("2026-03-01T00:00:00Z", "2026-04-01T00:00:00Z")
+
+
+def test_selected_date_and_latest_email_exclude_deleted_users(db):
+    retained = add_user(db)
+    deleted = add_user(db)
+    add_user(db, created="2026-04-01T00:00:00Z")
+    db.execute("INSERT INTO admin_reporting.excluded_users VALUES(%s,'deleted')", (deleted,))
+    assert db.execute("SELECT * FROM admin_reporting.users_at(%s)", (BOUNDS[1],)).fetchone() == (1,)
+    assert db.execute("SELECT * FROM admin_reporting.users_at(%s)", (BOUNDS[0],)).fetchone() == (0,)
+    rows = db.execute("SELECT * FROM admin_reporting.latest_registrations(%s,%s)", BOUNDS).fetchall()
+    assert len(rows) == 1 and rows[0][0] == retained + "@example.invalid"
+
+
+@pytest.mark.parametrize("hard_delete", [False, True])
+def test_deleted_high_usage_user_keeps_rank_without_email(db, hard_delete):
+    high = add_user(db)
+    for _ in range(3):
+        add_usage(db, high, metadata='{"token_counting":"provider_reported"}')
+    for _ in range(11):
+        uid = add_user(db)
+        add_usage(db, uid)
+    if hard_delete:
+        db.execute("DELETE FROM users WHERE user_id=%s", (high,))
+    else:
+        db.execute("INSERT INTO admin_reporting.excluded_users VALUES(%s,'deleted')", (high,))
+    rows = db.execute("SELECT * FROM admin_reporting.top_token_users(%s,%s)", BOUNDS).fetchall()
+    assert len(rows) == 10
+    assert rows[0] == ("Deleted user (deleted)", "deleted", 300, 120, 75, 375, 3, 0, 0)
+    assert high not in str(rows)
+    assert all(row[1] == "active" and row[5] == 125 for row in rows[1:])
+    assert db.execute("SELECT * FROM admin_reporting.users_at(%s)", (BOUNDS[1],)).fetchone() == (11,)
+    summary = db.execute("SELECT * FROM admin_reporting.token_reconciliation(%s,%s)", BOUNDS).fetchall()
+    assert dict((r[0], r[1]) for r in summary) == {"deleted": 375, "eligible": 1375}
+    assert len(db.execute("SELECT * FROM admin_reporting.top_token_users('2026-01-01','2026-02-01')").fetchall()) == 0
+
+
+@pytest.mark.parametrize("reason", ["service", "synthetic", "restricted"])
+def test_excluded_deletion_does_not_reappear_in_top_tokens(db, reason):
+    uid = add_user(db)
+    add_usage(db, uid)
+    db.execute("INSERT INTO admin_reporting.excluded_users VALUES(%s,%s)", (uid, reason))
+    db.execute("DELETE FROM users WHERE user_id=%s", (uid,))
+    assert db.execute("SELECT * FROM admin_reporting.top_token_users(%s,%s)", BOUNDS).fetchall() == []
+    assert db.execute("SELECT * FROM admin_reporting.token_reconciliation(%s,%s)", BOUNDS).fetchall() == [("excluded", 125, 1)]
+
+
+def test_orphan_is_not_invented_deletion_and_tombstones_follow_ledger_expiry(db):
+    uid = add_user(db)
+    add_usage(db, uid)
+    add_usage(db, "unknown-identity")
+    db.execute("DELETE FROM users WHERE user_id=%s", (uid,))
+    assert db.execute("SELECT count(*) FROM admin_reporting.deleted_users").fetchone() == (1,)
+    rows = db.execute("SELECT * FROM admin_reporting.top_token_users(%s,%s)", BOUNDS).fetchall()
+    assert len(rows) == 1 and rows[0][1] == "deleted"
+    db.execute("DELETE FROM ai_model_usage_ledger WHERE user_id=%s", (uid,))
+    assert db.execute("SELECT count(*) FROM admin_reporting.deleted_users").fetchone() == (0,)
+    assert db.execute("SELECT * FROM admin_reporting.token_reconciliation(%s,%s)", BOUNDS).fetchall() == [("unattributed", 125, 1)]
+
+
+def test_reporting_role_has_only_narrow_email_functions(db):
+    uid = add_user(db)
+    add_usage(db, uid)
+    db.execute("SET LOCAL ROLE jurisdigta_user_report")
+    assert db.execute("SELECT * FROM admin_reporting.latest_registrations(%s,%s)", BOUNDS).fetchone()[0].endswith("@example.invalid")
+    assert db.execute("SELECT * FROM admin_reporting.top_token_users(%s,%s)", BOUNDS).fetchone()[5] == 125
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        db.execute("SELECT * FROM admin_reporting.deleted_users")
+
+
+def test_server_provisioning_requires_private_grafana_settings():
+    module_spec = importlib.util.spec_from_file_location("provision_reporting", ROOT / "scripts/server/provision_admin_reporting.py")
+    assert module_spec and module_spec.loader
+    module = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(module)
+    settings = configparser.ConfigParser()
+    settings.read(ROOT / "Deployment/monitoring/grafana/grafana.ini")
+    safe = {section: dict(settings[section]) for section in settings.sections()}
+    module.validate_settings(safe)
+    for section, key in [("auth.anonymous", "enabled"), ("users", "auto_assign_org"),
+                         ("snapshots", "enabled"), ("public_dashboards", "enabled")]:
+        unsafe = {name: values.copy() for name, values in safe.items()}
+        unsafe[section][key] = "true"
+        with pytest.raises(ValueError, match="Grafana prerequisite"):
+            module.validate_settings(unsafe)
