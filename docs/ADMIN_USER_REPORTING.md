@@ -7,6 +7,62 @@ PostgreSQL migrations `806_admin_user_reporting.sql` and `815_admin_user_statist
 install its reporting contract. The private organization's home dashboard is set during provisioning.
 Shared Grafana provisioning never contains the reporting data source or user IDs.
 
+## Accounts, organizations and dashboard navigation
+
+A Grafana account belongs to the Grafana instance and can be a member of multiple
+organizations. Membership has a role in each organization (Admin, Editor or Viewer);
+the same account can therefore have different access in different organizations.
+The Grafana server administrator role is separate and remains trusted across organizations.
+Organizations contain their own dashboards, folders and data-source configurations.
+See [Grafana organization management](https://grafana.com/docs/grafana/latest/administration/organization-management/).
+
+```text
+Grafana instance: admin.jurisdigta.eu
+  Account -> organization memberships and roles
+    Main org (orgId=1)
+      Operational dashboards and their folders
+      Prometheus and Loki data sources
+    JurisDigta Private Reporting (orgId=2)
+      Admin Users and Performance dashboard
+      Restricted PostgreSQL reporting data source
+      Separate Prometheus and Loki data-source configurations
+```
+
+The production layout established by #815 is:
+
+| Organization | Purpose | Navigation |
+| --- | --- | --- |
+| Main org (`orgId=1`) | Original operational dashboards: Application Performance, AI Model Token Usage, Court Decision Service, Errors, Laws Collector, Ollama And AI Models, Server Performance and System Logs | [Browse original dashboards](https://admin.jurisdigta.eu/grafana/dashboards?orgId=1) |
+| JurisDigta Private Reporting (`orgId=2`) | User statistics, registration emails and individual recorded token usage, with performance panels | [Open user reporting](https://admin.jurisdigta.eu/grafana/d/jurisdigta-admin-users?orgId=2) |
+
+Switching organizations changes the visible dashboard list and available data sources,
+not your account. Use the links above while signed in with an authorized account;
+`orgId` selects the organization context but does not grant membership or bypass access
+checks. Organization IDs here describe this production installation; other installations
+may assign different IDs.
+
+The #815 provisioner selected the private organization for the approved administrator
+and set its home dashboard to **JurisDigta Admin Users and Performance**. That is why
+the original dashboard list no longer appeared on entry. The original dashboards
+remain in Main org. For a minimal navigation example, open
+[Application Performance in Main org](https://admin.jurisdigta.eu/grafana/d/jurisdigta-application-performance?orgId=1),
+then open the user-reporting link above using the same account.
+
+Folders group dashboards within an organization and support dashboard access
+permissions. They do not isolate data-source query access in Grafana OSS: even a
+Viewer can query the organization's available data sources independently of dashboard
+visibility. See [Grafana security guidance](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/).
+The private organization therefore contains only authorized reporting administrators.
+Separate data-source configurations can reference the same underlying metrics/logs
+services; organization separation does not create separate backend databases.
+
+The split protects access to personal reporting data if operational membership later
+expands. Consolidating both areas would require reviewing all members' query access
+and changing the provisioner's explicit organization-1 prohibition, not merely moving
+a dashboard into a folder. This documentation changes no membership, collection,
+retention, consent handling or automated decision-making; the privacy and human
+oversight controls below continue to apply.
+
 ## Definitions and limits
 
 - Total counts retained accounts registered before the selected range end, including
