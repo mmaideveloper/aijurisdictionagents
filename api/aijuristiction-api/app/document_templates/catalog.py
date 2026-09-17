@@ -692,7 +692,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "2. Spôsob úhrady, splatnosť a identifikácia platieb: {{payment_method}}.\n"
                 "3. Zmluvné strany sa dohodli na peňažnej zábezpeke (kaucii) vo výške "
                 "{{security_deposit}}.\n"
-                "4. Vyúčtovanie služieb a nedoplatkov/preplatkov: {{final_settlement_terms}}.\n\n"
+                "4. Platba vopred: {{advance}}.\n"
+                "5. Vyúčtovanie služieb a nedoplatkov/preplatkov: {{final_settlement_terms}}.\n\n"
                 "Článok IV\n"
                 "PRÁVA A POVINNOSTI ZMLUVNÝCH STRÁN\n"
                 "1. Prenajímateľ odovzdá predmet nájmu v stave spôsobilom na riadne užívanie a "
@@ -720,8 +721,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, porozumeli jej obsahu a na "
                 "znak súhlasu ju podpisujú slobodne a vážne.\n\n"
                 "V {{signature_place}}, dňa {{signature_date}}\n\n"
-                "Prenajímateľ: {{landlord_signatory_name}}\n"
-                "Nájomca: {{tenant_signatory_name}}\n"
+                "Podpis prenajímateľa: {{landlord_signatory_name}}\n"
+                "Podpis nájomcu: {{tenant_signatory_name}}\n"
             ),
             keywords=("najomna zmluva", "prenajom", "najom bytu", "najom"),
             flow_keys=("sk.civil.lease_advisory",),
@@ -734,6 +735,7 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "rent_terms",
                 "payment_method",
                 "security_deposit",
+                "advance",
                 "utilities_terms",
                 "maintenance_and_repairs",
                 "handover_conditions",

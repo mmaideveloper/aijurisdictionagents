@@ -7439,10 +7439,11 @@ def _build_document_export_content(
                 fallback_index=1,
             )
         if document_kind == "rental_agreement":
-            return _build_rental_document_asset_content(
+            _template_title, lines = _build_rental_document_asset_content(
                 entry={}, facts=facts, country=country, language=language,
                 law_citation_lines=law_citation_lines, fallback_index=1,
             )
+            return title, _strip_duplicate_body_title(title=title, lines=lines)
         if document_kind == "easement_demand":
             lines = _build_slovak_easement_demand_lines(facts)
             return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
