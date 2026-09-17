@@ -2,6 +2,12 @@
 
 For private account totals, daily activity/registrations, latest registrations and
 per-user tokens, see [Admin user reporting](../../docs/ADMIN_USER_REPORTING.md).
+The original operational dashboards remain in
+[Main org](https://admin.jurisdigta.eu/grafana/dashboards?orgId=1); the new
+[user dashboard](https://admin.jurisdigta.eu/grafana/d/jurisdigta-admin-users?orgId=2)
+is in JurisDigta Private Reporting. One account can belong to both organizations.
+See [accounts, organizations and navigation](../../docs/ADMIN_USER_REPORTING.md#accounts-organizations-and-dashboard-navigation)
+for roles, data-source boundaries and why the default dashboard changed.
 The private report includes latest-registration emails, a selected-end-date user
 total and top-10 token consumers, preserving deleted users' usage without email.
 Its installation is an explicit post-deployment step: see the #815 rollout in
