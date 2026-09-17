@@ -1000,6 +1000,7 @@ def _lease_agreement_render_values(values: dict[str, str]) -> dict[str, str]:
         "lease_purpose": "na riadne bývanie nájomcu a osôb, ktoré s ním budú bývať v súlade so zmluvou",
         "payment_method": "bezhotovostným prevodom na účet prenajímateľa uvedený pri podpise alebo iným preukázateľným spôsobom dohodnutým stranami",
         "security_deposit": "bez zloženej kaucie, ak sa strany písomne nedohodnú inak",
+        "advance": "2 mesačné nájomné vopred, ak sa strany písomne nedohodnú inak",
         "utilities_terms": "podľa skutočnej spotreby a pravidelného vyúčtovania dodávateľov alebo správcu",
         "maintenance_and_repairs": "nájomca znáša bežné drobné opravy a prenajímateľ zabezpečuje odstránenie podstatných vád, ak zákon alebo zmluva neustanovujú inak",
         "handover_conditions": "stav bytu, vybavenie a odpočty meračov budú zachytené v odovzdávacom protokole",
