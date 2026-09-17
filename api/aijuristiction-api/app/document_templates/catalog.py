@@ -907,8 +907,16 @@ def _build_render_context(
             "agent_identification": _value(values, "opponent_name"),
             "scope_of_authority": _value(values, "topic", "urceny pravny ukon"),
             "validity_period": _value(values, "scheduled_for", "do splnenia ukonu"),
-            "seller_identification": _value(values, "transferor_name", _value(values, "client_name")),
-            "buyer_identification": _value(values, "transferee_name", _value(values, "opponent_name")),
+            "seller_identification": _value(
+                values,
+                "seller_identification",
+                _value(values, "transferor_name", _value(values, "client_name")),
+            ),
+            "buyer_identification": _value(
+                values,
+                "buyer_identification",
+                _value(values, "transferee_name", _value(values, "opponent_name")),
+            ),
             "subject_description": _value(values, "topic", _value(values, "facts_summary")),
             "purchase_price": _value(values, "transfer_price", "0 EUR"),
             "payment_terms": _value(values, "estimated_timeline", "dohodou zmluvnych stran"),

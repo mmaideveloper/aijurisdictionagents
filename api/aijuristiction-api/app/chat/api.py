@@ -7398,9 +7398,10 @@ def _build_document_export_content(
                 fallback_index=1,
             )
         if document_kind == "rental_agreement":
-            lines = _build_standard_slovak_agreement_lines(facts)
-            lines = _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
-            return title, _strip_duplicate_body_title(title=title, lines=lines)
+            return _build_rental_document_asset_content(
+                entry={}, facts=facts, country=country, language=language,
+                law_citation_lines=law_citation_lines, fallback_index=1,
+            )
         if document_kind == "easement_demand":
             lines = _build_slovak_easement_demand_lines(facts)
             return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
@@ -7900,6 +7901,11 @@ def _build_sale_purchase_document_asset_content(
     law_citation_lines: list[str],
     fallback_index: int,
 ) -> tuple[str, list[str]]:
+    facts = dict(facts)
+    if not facts.get("seller_identification") and facts.get("predavajuci"):
+        facts["seller_identification"] = facts["predavajuci"]
+    if not facts.get("buyer_identification") and facts.get("kupujuci"):
+        facts["buyer_identification"] = facts["kupujuci"]
     title, lines = _render_sale_purchase_template(
         facts=facts,
         country=country,
@@ -7985,12 +7991,30 @@ def _build_rental_document_asset_content(
             title = "Protokol o odovzdaní a prevzatí bytu"
             lines = _build_slovak_rental_handover_lines(facts)
         else:
-            title = "Nájomná zmluva"
-            lines = _build_standard_slovak_agreement_lines(facts)
+            title, lines = _render_lease_agreement_template(
+                facts=facts, country=country, language=language
+            )
+            if not lines:
+                title = "Nájomná zmluva"
+                lines = _build_standard_slovak_agreement_lines(facts)
     else:
         title = _document_asset_title(entry=entry, language=language, fallback_index=fallback_index)
         lines = _build_standard_english_agreement_lines(facts)
     return title, _append_document_law_citations(lines=lines, citations=law_citation_lines, language=language)
+
+
+def _render_lease_agreement_template(
+    *, facts: dict[str, str], country: str, language: str | None
+) -> tuple[str, list[str]]:
+    try:
+        template = get_document_template_store().get(
+            template_key="sk.real_estate.lease_agreement",
+            jurisdiction=country.strip().upper() or "SK",
+        )
+    except DocumentTemplateNotFoundError:
+        return "", []
+    rendered = render_template(template=template, facts=facts, country=country, language=language)
+    return template.title, rendered.lines
 
 
 def _classify_rental_document_asset(
@@ -8271,6 +8295,14 @@ def _extract_document_facts(
         ("najomca", "nájomca", "podnajomnik", "podnájomník", "tenant", "subtenant"),
         "Najomca [doplnit udaje]",
     )
+    predavajuci = _capture_line_value(
+        ("predavajuci", "predávajúci", "seller", "seller_identification"),
+        "",
+    )
+    kupujuci = _capture_line_value(
+        ("kupujuci", "kupujúci", "buyer", "buyer_identification"),
+        "",
+    )
     if parties_line and "doplnit" in prenajimatel.lower():
         prenajimatel = parties_line
     predmet = _capture_line_value(
@@ -8537,6 +8569,10 @@ def _extract_document_facts(
     return {
         "prenajimatel": prenajimatel,
         "najomca": najomca,
+        "predavajuci": predavajuci,
+        "kupujuci": kupujuci,
+        "seller_identification": predavajuci,
+        "buyer_identification": kupujuci,
         "predmet": predmet,
         "doba": doba,
         "najomne": najomne,
