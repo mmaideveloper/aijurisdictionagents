@@ -32,6 +32,7 @@ class E2EModelConfig:
 
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--required-model", choices=("gpt-4o-mini", "gpt-5-mini"), default="gpt-4o-mini")
     parser.add_argument(
         "--env-file",
         type=Path,
@@ -119,6 +120,12 @@ def _bootstrap(store: ApiDatabaseStore, config: E2EModelConfig) -> None:
         for item in store.list_ai_model_profiles(provider_id=provider.provider_id)
     }
     profile = profiles.get(PROFILE_ID)
+    if profile is None and EXPECTED_MODEL == "gpt-5-mini":
+        profile = store.upsert_ai_model_profile(
+            provider_id=PROVIDER_ID, model_profile_id=PROFILE_ID,
+            model_code=EXPECTED_MODEL, deployment_name=config.deployment,
+            model_parameters={}, eu_data_zone_capable=True, enabled=True,
+        )
     if profile is None:
         raise RuntimeError(f"Required seeded model profile {PROFILE_ID} is missing.")
     if profile.model_code != config.deployment or profile.deployment_name != config.deployment:
@@ -145,7 +152,7 @@ def _verify_model(store: ApiDatabaseStore, config: E2EModelConfig) -> None:
             endpoint=config.endpoint,
             deployment=config.deployment,
             api_version=config.api_version,
-            temperature=0.0,
+            temperature=1.0 if config.deployment == "gpt-5-mini" else 0.0,
             api_key=stored_secret if config.secret_type == "api_key" else None,
             azure_ad_token=stored_secret if config.secret_type == "azure_ad_token" else None,
         )
@@ -167,7 +174,11 @@ def _verify_model(store: ApiDatabaseStore, config: E2EModelConfig) -> None:
 
 
 def main() -> int:
+    global PROVIDER_ID, PROFILE_ID, EXPECTED_MODEL
     args = _arguments()
+    EXPECTED_MODEL = args.required_model
+    if EXPECTED_MODEL == "gpt-5-mini":
+        PROVIDER_ID, PROFILE_ID = "azurefoundryeu", "azurefoundryeu:gpt-5-mini"
     load_dotenv(args.env_file, override=False)
     _assert_safe_local_runtime()
     config = _config_from_env()

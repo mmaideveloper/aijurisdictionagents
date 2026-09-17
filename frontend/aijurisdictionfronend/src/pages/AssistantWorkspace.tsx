@@ -28,6 +28,7 @@ import { useLanguage } from "../components/LanguageProvider";
 import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
 import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
+import { AssistantMarkdown } from "../components/AssistantMarkdown";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
@@ -513,17 +514,14 @@ const AssistantTextPart: React.FC = () => {
     [rawPresentation]
   );
   const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
-  const conversationalText = presentation.conversationalText
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/__([^_]+)__/g, "$1");
+  const conversationalText = presentation.conversationalText;
 
   return (
     <>
       {typedPresentation ? (
         <AssistantPresentationBlock block={typedPresentation} />
       ) : conversationalText ? (
-        <p className="assistant-message__text">{conversationalText}</p>
+        <AssistantMarkdown text={conversationalText} />
       ) : null}
       {!typedPresentation
         ? presentation.documentPreviews.map((preview, index) => (

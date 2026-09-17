@@ -17,6 +17,9 @@ ALTER ROLE jurisdigta_user_report SET default_transaction_read_only = on;
 ALTER ROLE jurisdigta_user_report CONNECTION LIMIT 3;
 GRANT USAGE ON SCHEMA admin_reporting TO jurisdigta_user_report;
 GRANT EXECUTE ON FUNCTION admin_reporting.total_users(),
+    admin_reporting.users_at(timestamptz),
+    admin_reporting.latest_registrations(timestamptz, timestamptz),
+    admin_reporting.top_token_users(timestamptz, timestamptz),
     admin_reporting.registrations(timestamptz, timestamptz),
     admin_reporting.latest_users(timestamptz, timestamptz),
     admin_reporting.user_tokens(timestamptz, timestamptz, integer, integer, text),

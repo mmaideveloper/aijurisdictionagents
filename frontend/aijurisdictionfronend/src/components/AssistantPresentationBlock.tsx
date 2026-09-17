@@ -1,4 +1,5 @@
 import React from "react";
+import { AssistantMarkdown } from "./AssistantMarkdown";
 import { LegalDocumentPreview } from "./LegalDocumentPreview";
 import { useLanguage } from "./LanguageProvider";
 import { displayValue, type PresentationBlock } from "../presentation";
@@ -98,7 +99,7 @@ export const AssistantPresentationBlock: React.FC<{ block: PresentationBlock }> 
       break;
     case "text":
     default:
-      body = <p className="assistant-message__text">{text(data.text, block.fallback_text)}</p>;
+      body = <AssistantMarkdown text={text(data.text, block.fallback_text)} />;
   }
 
   return (

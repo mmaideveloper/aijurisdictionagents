@@ -16,7 +16,7 @@ import { useAuth } from "../auth/webAuth";
 import { getMockCaseTemplate, isSeededCaseTemplateId } from "../content/mockCaseTemplates";
 import { translate, type Language, type TranslationKey, type TranslationValues } from "../data/translations";
 import { consoleLogger } from "../logging/consoleLogger";
-import { assistantAgentDisplayName, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
+import { assistantAgentDisplayName, isUserDocument, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
 import { useLanguage } from "../components/LanguageProvider";
 import { normalizeCaseRole, type CaseRole } from "./caseRoles";
 import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
@@ -603,7 +603,7 @@ const normalizeStoredCase = (value: unknown): CaseRecord | null => {
   const rawDocuments = Array.isArray(candidate.documents) ? candidate.documents : [];
   const documents = rawDocuments
     .map((document) => normalizeStoredDocument(document, candidate.id as string))
-    .filter((document): document is CaseDocumentRecord => document !== null);
+    .filter((document): document is CaseDocumentRecord => document !== null && isUserDocument(document));
 
   const rawWorkspace =
     candidate.workspace && typeof candidate.workspace === "object"
@@ -864,7 +864,7 @@ const mapApiCase = (
   historyDocuments: ApiCaseDocument[] = [],
   historyCitations: ApiCaseCitation[] = []
 ): CaseRecord => {
-  const documents = historyDocuments.map((document) => mapApiDocument(apiCase.case_id, document));
+  const documents = historyDocuments.filter(isUserDocument).map((document) => mapApiDocument(apiCase.case_id, document));
   const legalDocumentCount = documents.filter(isUserVisibleGeneratedDocument).length;
   const messagesWithDocumentLinks = appendGeneratedDocumentLinksToHistory({
     apiCase,

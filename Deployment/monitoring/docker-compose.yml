@@ -109,8 +109,12 @@ services:
       GF_SMTP_STARTTLS_POLICY: ${GRAFANA_SMTP_STARTTLS_POLICY:-OpportunisticStartTLS}
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - default
+      - app-network
     depends_on:
       - prometheus
       - loki

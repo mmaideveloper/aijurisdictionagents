@@ -1429,6 +1429,29 @@
   text-underline-offset: 3px;
 }
 
+.assistant-markdown {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.assistant-markdown :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1.1em;
+  line-height: 1.4;
+  margin: 1.2em 0 0.5em;
+}
+
+.assistant-markdown > :first-child { margin-top: 0; }
+.assistant-markdown > :last-child { margin-bottom: 0; }
+.assistant-markdown p { margin: 0.65em 0; }
+.assistant-markdown :is(ul, ol) { padding-left: 1.5em; }
+.assistant-markdown li { margin: 0.3em 0; }
+.assistant-markdown table { border-collapse: collapse; width: 100%; }
+.assistant-markdown :is(th, td) { padding: 0.6em; border: 1px solid #d5deeb; text-align: left; }
+.assistant-markdown th { background: #f3f6fa; }
+.assistant-markdown a { text-decoration: underline; }
+.assistant-markdown pre { overflow-x: auto; white-space: pre; }
+
 .assistant-presentation {
   display: grid;
   gap: 0.75rem;

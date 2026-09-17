@@ -24,6 +24,11 @@ _STOP_WORDS = {
     "zmluvu",
 }
 _CANONICAL_ROOTS = (
+    "naram",
+    "odsuden",
+    "monitor",
+    "elektronick",
+    "probacn",
     "kup",
     "predaj",
     "zmluv",
@@ -49,6 +54,10 @@ _CANONICAL_ROOTS = (
     "uschov",
 )
 _SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
+    "naram": ("naram", "náram"),
+    "odsuden": ("odsuden", "odsúden"),
+    "elektronick": ("elektronick",),
+    "probacn": ("probacn", "probačn"),
     "kup": ("kup", "kúp"),
     "predaj": ("predaj",),
     "zmluv": ("zmluv",),
@@ -104,6 +113,11 @@ class ProvisionRelevance:
 
 
 _CONCEPTS = (
+    LegalQueryConcept(
+        name="electronic_monitoring",
+        triggers=frozenset({"naram"}),
+        expansions=frozenset({"elektronick", "monitor", "odsuden", "probacn", "trest"}),
+    ),
     LegalQueryConcept(
         name="purchase_contract",
         triggers=frozenset({"kup", "predaj"}),
@@ -197,6 +211,12 @@ def build_postgres_legal_tsqueries(profile: LegalQueryProfile) -> tuple[str, ...
     """Return selective per-concept queries so one concept cannot consume every candidate."""
 
     queries: list[str] = []
+    if "electronic_monitoring" in profile.concepts:
+        queries.append(
+            f"({_tsquery_variant_group('elektronick')} & {_tsquery_variant_group('monitor')})"
+            f" | ({_tsquery_variant_group('odsuden')} & {_tsquery_variant_group('naram')})"
+            f" | ({_tsquery_variant_group('probacn')} & {_tsquery_variant_group('trest')})"
+        )
     if "purchase_contract" in profile.concepts:
         queries.append(
             f"({_tsquery_variant_group('kup')} <-> {_tsquery_variant_group('zmluv')})"

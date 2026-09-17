@@ -1,6 +1,120 @@
 # Manual Infrastructure Setup
 
+## Local legal explanation acceptance (#810)
+
+Owner: developer with Docker Desktop and authorized server SSH access. No test/prod
+GitHub Environment changes or deployment are needed. Use the branch runtime and
+approved `scripts/import_e2e_model_credentials_from_server.ps1` flow; never paste keys.
+For the production-model comparison, use `azurefoundryeu:gpt-5-mini`, verified against
+the enabled production profile. Import it with
+`scripts/import_e2e_model_credentials_from_server.ps1 -RequiredModel gpt-5-mini -UseExistingPostgres -LocalPostgresContainer juris-issue810-postgres -DatabaseUrl <loopback-task-database> -VerifyModel`.
+The importer requires the exact enabled model/deployment and empty parameter overrides,
+resolves the API version using production routing, and never prints credentials.
+Its default remains GPT-4o-mini for existing users. Direct bootstrap accepts
+`--required-model gpt-5-mini`; a mismatched deployment fails instead of falling back.
+
+Create an isolated `pgvector/pgvector:pg16` container named `juris-issue810-postgres`,
+bind only `127.0.0.1:55410:5432`, and bind its data directory to the task worktree's
+`runs/storage/issue810/postgres/data`. Create `issue810_api` and `issue810_laws`.
+Set process-only `DB_OPTION=postgres`, `DB_CLOUD` to the loopback API database and
+`LLM_PROVIDER=azurefoundry`; run `scripts/databases/apply_api_db_schema.py`, then
+`scripts/bootstrap_e2e_model_credentials.py --verify-model`. Apply the `laws` SQL
+migrations to the isolated laws database with the repository migration runner.
+
+Run `python scripts/prepare_issue_810_e2e.py`, then
+`python scripts/run_issue_810_e2e_services.py` (API 8190, MCP 8191). Start the frontend
+on 5190 with `VITE_API_BASE_URL=http://127.0.0.1:8190` and its existing API-key setting.
+Create the run-tagged case through the authenticated UI and send the manifest's
+question. Verify both activities, citations, full history, rendered headings and the
+audited real route. The scenario helper pins the synthetic paid-user route to GPT-5-mini;
+the verifier requires that exact provider/model. The service launcher also checks the
+seeded source through MCP. No test/prod GitHub Environment input changes are needed.
+
+Capture only the final answer screen and sanitized result manifest under ignored
+`runs/e2e/issue-810-legal-explanation/`. Never capture login snapshots: CLI snapshots
+can contain password field values. Remove transient login/OTP material after use.
+Delete synthetic case records according to the normal retention policy after testing;
+stop the task-owned services and container. Retain evidence for at most seven days.
+Rollback is stopping the isolated stack and reverting the task branch; no production
+data or shared provider configuration is changed by the application repair.
+
 ## Private Grafana user reporting (#806)
+
+### Completion and rollout (#815)
+
+Apply in **test first, then prod**, owned by the database/Grafana administrators and
+privacy owner. The user authorized this rollout with email for retained accounts and
+anonymous display labels for deleted accounts. Record the operational processing
+basis/notice coverage in the organization's privacy register; deployment authorization
+does not replace that record. There is no automated assessment or legal decision.
+
+1. Merge after review and successful checks. Verify **all applicable checks for the
+   exact main SHA**, then dispatch `self_managed_prod_deploy.yml` with `repo_ref=<SHA>`,
+   `run_schema_migrations=true`, `start_monitoring=true`. This installs migration 815
+   and the committed Grafana security configuration. Do not expose personal reports
+   from the shared organization. No new environment keys or workflow inputs are needed.
+2. Enable PostgreSQL TLS before provisioning. On the self-managed Docker host, if TLS
+   is currently disabled, generate a private key and public certificate **inside**
+   `aijurisdiction-postgres` as its `postgres` OS user. For the self-managed internal
+   endpoint the certificate must include DNS SAN `aijurisdiction-postgres` (also
+   `postgres` if used). For example, run `openssl req -x509 -newkey rsa:3072 -sha256
+   -nodes -days 365 -subj /CN=aijurisdiction-postgres -addext
+   subjectAltName=DNS:aijurisdiction-postgres,DNS:postgres -keyout "$PGDATA/server.key"
+   -out "$PGDATA/server.crt"`, then `chmod 600 "$PGDATA/server.key"`. Do not overwrite
+   an existing certificate/key. Use the organization's CA instead if already configured.
+   Run `ALTER SYSTEM SET ssl = 'on'; SELECT pg_reload_conf();` through local DBA psql.
+   Validate a new connection's `pg_stat_ssl.ssl=true`; an existing non-TLS connection
+   remains non-TLS. Retain the private key only in PostgreSQL runtime storage, backed
+   up under existing encrypted server policy. Copy only the public certificate to
+   `/srv/jurisdigta/secrets/reporting-postgres-ca.crt`. Calendar certificate renewal
+   at least 30 days before expiry; update Grafana's pinned public CA during rotation.
+3. Prepend pg_hba rules allowing `hostssl <database> jurisdigta_user_report
+   <application-Docker-subnet> scram-sha-256`, followed by `host all
+   jurisdigta_user_report 0.0.0.0/0 reject` and `host all
+   jurisdigta_user_report ::/0 reject`. This restricts the role to encrypted connections
+   from the internal application network shared with Grafana. Preserve all other
+   application rules, check `pg_hba_file_rules.error IS NULL`, and reload. Never open
+   PostgreSQL publicly for this feature. The generated reporting password is stored
+   encrypted in Grafana; do not copy the application's database credential.
+4. Select the existing approved Grafana organization-1 Admin IDs; record membership
+   review without emails in deployment evidence. From the clean deployed checkout:
+
+   ```sh
+   python3 scripts/server/provision_admin_reporting.py \
+     --expected-sha <full-validated-main-SHA> \
+     --admin-user-id <approved-existing-id> \
+     --database-name <API-database> \
+     --ca-file /srv/jurisdigta/secrets/reporting-postgres-ca.crt
+   ```
+
+   Repeat `--admin-user-id` for additional approved admins. The script refuses wrong
+   commits, dirty tracked files, insecure Grafana settings or unexpected private-org
+   members. It generates/rotates the dedicated read password without printing it,
+   verifies database access with `verify-full`, installs the dashboard, selects the
+   private organization for these admins and sets its home dashboard. A rotation
+   failure leaves queries unavailable; fix the prerequisite and rerun the same command.
+   Existing signed-in users may need to reload or switch organization.
+5. Schedule daily DBA execution of `SELECT admin_reporting.prune_activity(); SELECT
+   admin_reporting.prune_deleted_users();` using existing server cron and local
+   `docker exec ... psql -U postgres -d <database> -v ON_ERROR_STOP=1 -c ...`; no password
+   is passed in the command. Store the owned cron entry under `/etc/cron.d/` and retain
+   only status/time output. Mark service/synthetic/restricted accounts explicitly.
+6. Verify anonymous/ordinary-user direct query and proxy denial, data-source health,
+   every panel, and the selected-date count. Inspect minimized Grafana router events
+   for actor/org/method/path/status/time and the gateway's request correlation. Never
+   retain production email rows/screenshots as E2E artifacts. Final UI evidence uses
+   the isolated synthetic local run. Save deployment SHA/check links and sanitized
+   production readiness separately under ignored `runs/` (seven days).
+
+Rollback: remove the private dashboard/data source and private organization selection,
+revoke the reporting role and disable its daily job. Keep existing security settings
+unless their owner explicitly reverts them. Migration 815 is additive: if necessary,
+remove only its user-deletion/ledger-prune triggers and new reporting functions/table
+after retention review; do not remove ledger/accounts. TLS rollback, if required,
+must first disable reporting, then restore backed-up pg_hba/config and reload. Do not
+delete the old certificate/key until the rollback/renewal window closes.
+
+### Original installation details
 
 Apply these steps separately in test and prod; production changes require the exact
 commit's successful deployment gates. Owners: database administrator, Grafana server
