@@ -10,6 +10,8 @@ Admin catalogue responses include `source_drift_status`. It is derived from meta
 
 `test_priority_one_preview_pdf_keeps_headings_clauses_and_review_disclosure` independently protects their rendered preview PDFs, including template-specific headings, populated synthetic facts, and visible human-review disclosure.
 
+`test_priority_template_chat_export_uses_canonical_pdf` protects the user-facing chat export route for the Slovak lease and sale-purchase templates. Explicit party facts supplied in the chat context take precedence over profile-derived fallback identities, and the exported PDF must retain the canonical clauses and human-review disclosure.
+
 This API adds a persistent catalog of legal-document templates that can be seeded from public source indexes,
 matched against a client request, and later extended with full template bodies for contract generation.
 

@@ -692,7 +692,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "2. Spôsob úhrady, splatnosť a identifikácia platieb: {{payment_method}}.\n"
                 "3. Zmluvné strany sa dohodli na peňažnej zábezpeke (kaucii) vo výške "
                 "{{security_deposit}}.\n"
-                "4. Vyúčtovanie služieb a nedoplatkov/preplatkov: {{final_settlement_terms}}.\n\n"
+                "4. Platba vopred: {{advance}}.\n"
+                "5. Vyúčtovanie služieb a nedoplatkov/preplatkov: {{final_settlement_terms}}.\n\n"
                 "Článok IV\n"
                 "PRÁVA A POVINNOSTI ZMLUVNÝCH STRÁN\n"
                 "1. Prenajímateľ odovzdá predmet nájmu v stave spôsobilom na riadne užívanie a "
@@ -720,8 +721,8 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "4. Zmluvné strany potvrdzujú, že si zmluvu prečítali, porozumeli jej obsahu a na "
                 "znak súhlasu ju podpisujú slobodne a vážne.\n\n"
                 "V {{signature_place}}, dňa {{signature_date}}\n\n"
-                "Prenajímateľ: {{landlord_signatory_name}}\n"
-                "Nájomca: {{tenant_signatory_name}}\n"
+                "Podpis prenajímateľa: {{landlord_signatory_name}}\n"
+                "Podpis nájomcu: {{tenant_signatory_name}}\n"
             ),
             keywords=("najomna zmluva", "prenajom", "najom bytu", "najom"),
             flow_keys=("sk.civil.lease_advisory",),
@@ -734,6 +735,7 @@ def build_default_document_templates() -> list[DocumentTemplateDefinition]:
                 "rent_terms",
                 "payment_method",
                 "security_deposit",
+                "advance",
                 "utilities_terms",
                 "maintenance_and_repairs",
                 "handover_conditions",
@@ -907,8 +909,16 @@ def _build_render_context(
             "agent_identification": _value(values, "opponent_name"),
             "scope_of_authority": _value(values, "topic", "urceny pravny ukon"),
             "validity_period": _value(values, "scheduled_for", "do splnenia ukonu"),
-            "seller_identification": _value(values, "transferor_name", _value(values, "client_name")),
-            "buyer_identification": _value(values, "transferee_name", _value(values, "opponent_name")),
+            "seller_identification": _value(
+                values,
+                "seller_identification",
+                _value(values, "transferor_name", _value(values, "client_name")),
+            ),
+            "buyer_identification": _value(
+                values,
+                "buyer_identification",
+                _value(values, "transferee_name", _value(values, "opponent_name")),
+            ),
             "subject_description": _value(values, "topic", _value(values, "facts_summary")),
             "purchase_price": _value(values, "transfer_price", "0 EUR"),
             "payment_terms": _value(values, "estimated_timeline", "dohodou zmluvnych stran"),
@@ -990,6 +1000,7 @@ def _lease_agreement_render_values(values: dict[str, str]) -> dict[str, str]:
         "lease_purpose": "na riadne bývanie nájomcu a osôb, ktoré s ním budú bývať v súlade so zmluvou",
         "payment_method": "bezhotovostným prevodom na účet prenajímateľa uvedený pri podpise alebo iným preukázateľným spôsobom dohodnutým stranami",
         "security_deposit": "bez zloženej kaucie, ak sa strany písomne nedohodnú inak",
+        "advance": "2 mesačné nájomné vopred, ak sa strany písomne nedohodnú inak",
         "utilities_terms": "podľa skutočnej spotreby a pravidelného vyúčtovania dodávateľov alebo správcu",
         "maintenance_and_repairs": "nájomca znáša bežné drobné opravy a prenajímateľ zabezpečuje odstránenie podstatných vád, ak zákon alebo zmluva neustanovujú inak",
         "handover_conditions": "stav bytu, vybavenie a odpočty meračov budú zachytené v odovzdávacom protokole",

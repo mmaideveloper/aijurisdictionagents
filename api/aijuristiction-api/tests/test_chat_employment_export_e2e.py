@@ -9,6 +9,7 @@ import unicodedata
 
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
+import pytest
 
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 
@@ -42,6 +43,8 @@ def _load_chat_api():
         "aijurisdictionagents.llm",
         "aijurisdictionagents.llm.base",
         "aijurisdictionagents.llm.routing",
+        "aijurisdictionagents.llm.prompt_guard",
+        "aijurisdictionagents.llm.context_boundary",
         "services.document_processor.runtime",
         "services.document_processor.service",
     )}
@@ -121,8 +124,22 @@ def _load_chat_api():
     stubbed_modules["app.services.email_scheduler"] = email_scheduler
 
     llm_module = types.ModuleType("aijurisdictionagents.llm")
+    llm_module.__path__ = []
+    class _LLMClient:
+        pass
+
+    llm_module.LLMClient = _LLMClient
     llm_module.get_embedding_client = lambda *args, **kwargs: None
     stubbed_modules["aijurisdictionagents.llm"] = llm_module
+
+    prompt_guard = types.ModuleType("aijurisdictionagents.llm.prompt_guard")
+    prompt_guard.suspicious_instruction = lambda *args, **kwargs: False
+    prompt_guard.warning_message = lambda *args, **kwargs: ""
+    stubbed_modules["aijurisdictionagents.llm.prompt_guard"] = prompt_guard
+
+    context_boundary = types.ModuleType("aijurisdictionagents.llm.context_boundary")
+    context_boundary.POLICY_VERSION = "test"
+    stubbed_modules["aijurisdictionagents.llm.context_boundary"] = context_boundary
 
     llm_base = types.ModuleType("aijurisdictionagents.llm.base")
 
@@ -178,6 +195,79 @@ def _load_chat_api():
                 parent.__dict__.pop(attribute_name, None)
             else:
                 setattr(parent, attribute_name, module)
+
+
+@pytest.mark.parametrize(
+    ("user_request", "recommendation", "required", "expected_party_fields"),
+    [
+        (
+            "Priprav nájomnú zmluvu. Prenajímateľ: Ján Novák, trvale bytom Hlavná 12, 058 01 Poprad. Nájomca: Mária Kováčová, trvale bytom Dunajská 8, 811 08 Bratislava. Nehnuteľnosť: byt v Poprade. Nájomné: 600 EUR mesačne. Doba nájmu: jeden rok.",
+            "Nájomná zmluva je pripravená na export do PDF.",
+            ("najomna zmluva", "clanok i", "predmet najmu", "jan novak", "maria kovacova"),
+            {"prenajimatel": "Ján Novák", "najomca": "Mária Kováčová"},
+        ),
+        (
+            "Priprav kúpno-predajnú zmluvu. seller_identification: Peter Horváth, trvale bytom Hlavná 12, 058 01 Poprad. buyer_identification: Jana Černá, trvale bytom Dunajská 8, 811 08 Bratislava. Nehnuteľnosť: byt v Košiciach. Kúpna cena: 154 000 EUR. Platobné podmienky: notárska úschova.",
+            "Kúpno-predajná zmluva je pripravená na export do PDF.",
+            ("kupno-predajna zmluva", "clanok i", "predmet prevodu", "peter horvath", "jana cerna"),
+            {"seller_identification": "Peter Horváth", "buyer_identification": "Jana Černá"},
+        ),
+    ],
+)
+def test_priority_template_chat_export_uses_canonical_pdf(
+    user_request: str,
+    recommendation: str,
+    required: tuple[str, ...],
+    expected_party_fields: dict[str, str],
+) -> None:
+    from app.chat.models import Message, MessageRole, Session, SessionResult
+    from app.chat.repository import InMemoryChatRepository
+
+    chat_api = _load_chat_api()
+    repository = InMemoryChatRepository()
+    original_repository = chat_api._repository
+    chat_api._repository = repository
+    try:
+        app = FastAPI()
+        app.include_router(chat_api.router)
+        client = TestClient(app)
+        session = repository.create_session(Session(country="SK", discussion_type="advice", language="sk-SK"))
+        repository.add_message(
+            Message(session_id=session.id, role=MessageRole.USER, content=user_request.replace(". ", "\n"))
+        )
+        repository.add_message(Message(session_id=session.id, role=MessageRole.ASSISTANT, content=recommendation))
+        repository.set_result(session.id, SessionResult(final_recommendation=recommendation, judge_rationale="Synthetic export test.", metadata={}))
+
+        _context_lines, _case_update, _document_kind, facts, _citations = chat_api._prepare_document_export_context(
+            messages=repository.list_messages(session.id),
+            result=repository.get_result(session.id),
+            language="sk-SK",
+        )
+        for field_name, expected_value in expected_party_fields.items():
+            assert facts[field_name].startswith(expected_value)
+
+        assets = chat_api._build_document_export_assets(
+            session_id=session.id,
+            messages=repository.list_messages(session.id),
+            result=repository.get_result(session.id),
+            country="SK",
+            language="sk-SK",
+        )
+        asset_text = _canonical_text("\n".join(assets[0].lines))
+        for value in required[1:]:
+            assert value in asset_text
+
+        response = client.get(f"/v1/chat/sessions/{session.id}/export?format=pdf&kind=document", headers=AUTH_HEADERS)
+        assert response.status_code == 200
+        assert response.content.startswith(b"%PDF")
+        text = _canonical_text(_pdf_text(response.content))
+        missing = [value for value in required if value not in text]
+        assert not missing, f"Missing canonical PDF values: {missing}"
+        assert "jurisdigta" in text
+        assert "ludsku kontrolu" in text
+        assert "nevyriesene polia nahladu" not in text
+    finally:
+        chat_api._repository = original_repository
 
 
 def test_employment_chat_export_renders_canonical_template_from_questionnaire(monkeypatch) -> None:

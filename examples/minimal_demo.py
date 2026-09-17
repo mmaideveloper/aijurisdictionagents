@@ -3,6 +3,11 @@ import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
 
+# Allow the checked-out source package to run without a prior editable install.
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
 from aijurisdictionagents.agents.audio_action_tools import AIAudioToolRecognizerAgent
 from aijurisdictionagents.api_db import ApiDatabaseStore, CASE_WRITE_WINDOW_EXPIRED_CODE
 from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
@@ -113,6 +118,12 @@ print(
     "employment_contract_template => run python examples/employment_contract_preview_demo.py; "
     "the generated canonical Slovak fill-in PDF validates exact provenance, mandatory clause structure, "
     "distinct salary/payday wording, signature blocks, and a visible human-review warning without external data."
+)
+print(
+    "priority_template_chat_export => run .\\conda\\python.exe -m pytest "
+    "api/aijuristiction-api/tests/test_chat_employment_export_e2e.py -k priority_template_chat_export; "
+    "the synthetic chat-to-PDF check confirms canonical Slovak lease and sale-purchase clauses, "
+    "explicit party identities, and the human-review disclosure without external data."
 )
 print(
     "template_source_drift => admin catalogue source warnings use only capture timestamps and SHA-256 "
