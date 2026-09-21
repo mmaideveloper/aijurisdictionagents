@@ -1,6 +1,6 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260589"
+version = "1.0.260590"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -11,12 +11,15 @@ dependencies = [
   "azure-storage-blob>=12.26.0",
   "fastapi>=0.116.1",
   "httpx>=0.28.1",
+  "langgraph==1.2.9",
+  "langgraph-checkpoint-postgres==3.1.2",
   "opentelemetry-api>=1.27.0",
   "opentelemetry-exporter-otlp>=1.27.0",
   "opentelemetry-instrumentation-fastapi>=0.48b0",
   "opentelemetry-sdk>=1.27.0",
   "python-dotenv>=1.0",
   "python-multipart>=0.0.9",
+  "psycopg[binary,pool]>=3.2",
   "qrcode>=8.2",
   "reportlab>=4.0",
   "starlette<1.0",

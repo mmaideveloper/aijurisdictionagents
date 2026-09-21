@@ -663,3 +663,7 @@ print(
     "api_container_telemetry_constraints => Azure Monitor and OpenTelemetry container packages "
     "are pinned as one compatible family; run the runtime-baseline test and API Docker build."
 )
+print(
+    "api_mypy_dependency_baseline => the standalone API package declares its LangGraph checkpoint and "
+    "psycopg pool dependencies, so local type checking does not rely on the root package installation."
+)

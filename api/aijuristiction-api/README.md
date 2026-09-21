@@ -21,6 +21,10 @@ Run the local API lint/type-check gate before committing API changes:
 `aijurisdictionagents` and `services` are treated as external dependencies for this gate so unrelated
 type debt outside `api/aijuristiction-api` does not block API CI.
 
+The API package itself declares the LangGraph checkpoint and `psycopg[binary,pool]` dependencies used by
+`app.case_workflows`. This keeps `pip install -e ".[dev]"` sufficient for local API lint and mypy validation;
+do not rely on the root editable package being installed incidentally.
+
 Dedicated API service project for exposing `aijurisdictionagents` to frontend clients.
 
 ## Registration email verification flow

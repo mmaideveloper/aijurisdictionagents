@@ -32,6 +32,16 @@ def test_python_projects_require_python_313() -> None:
         assert metadata["project"]["requires-python"] == ">=3.13", path
 
 
+def test_api_package_declares_its_own_langgraph_checkpoint_dependencies() -> None:
+    with (REPO_ROOT / "api" / "aijuristiction-api" / "pyproject.toml").open("rb") as stream:
+        metadata = tomllib.load(stream)
+
+    dependencies = set(metadata["project"]["dependencies"])
+    assert "langgraph==1.2.9" in dependencies
+    assert "langgraph-checkpoint-postgres==3.1.2" in dependencies
+    assert "psycopg[binary,pool]>=3.2" in dependencies
+
+
 def test_local_and_container_runtimes_use_python_313() -> None:
     assert (REPO_ROOT / ".python-version").read_text(encoding="utf-8").strip() == "3.13"
     environment = (REPO_ROOT / "environment.yml").read_text(encoding="utf-8")

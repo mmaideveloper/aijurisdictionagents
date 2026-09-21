@@ -52,6 +52,11 @@ configured LLM provider, silently select `mock`, expose secrets in logs, or use 
 personal data for validation. Synthetic test data and evidence remain under ignored `runs/`
 or `artifacts/` paths according to `docs/E2E_TEST_EVIDENCE_RULE.md`.
 
+The API project is independently installable: `api/aijuristiction-api/pyproject.toml` owns its LangGraph
+checkpoint and `psycopg[binary,pool]` dependencies. Validate the API after `pip install -e ".[dev]"` from
+that directory, not only after installing the root package, so the local mypy gate cannot accidentally depend
+on transitive packages from another project.
+
 The API image constrains Azure Monitor and OpenTelemetry as one tested compatibility family in
 `api/aijuristiction-api/Dockerfile`. Update the Azure Monitor distribution, exporter, API, SDK,
 OTLP exporters, instrumentation, and semantic-conventions pins together. Leaving only part of this
