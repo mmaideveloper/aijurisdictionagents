@@ -25,6 +25,7 @@ INSTALL_LOG_RETENTION_CRON="${INSTALL_LOG_RETENTION_CRON:-1}"
 LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"
 DOCKER_LOG_MAX_SIZE="${DOCKER_LOG_MAX_SIZE:-50m}"
 DOCKER_LOG_MAX_FILE="${DOCKER_LOG_MAX_FILE:-5}"
+DEPLOY_DIAGNOSTIC_LOG_LINES="${DEPLOY_DIAGNOSTIC_LOG_LINES:-120}"
 START_MONITORING="${START_MONITORING:-0}"
 INSTALL_OLLAMA="${INSTALL_OLLAMA:-1}"
 LOCAL_LLM_PROVIDER="${LOCAL_LLM_PROVIDER:-ollama}"
@@ -378,22 +379,16 @@ start_postgres_and_build_image() {
   docker compose --env-file "$ENV_FILE" build api
 }
 
-start_api_and_mcp() {
-  log "starting API and MCP"
-  compose_env
-  local api_db_cloud
-  local laws_db_cloud
-  local court_decisions_db_cloud
-  local api_cors_allow_origins
-  local prometheus_base_url
-  local local_llm_base_url
-  api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
-  laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
-  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
-  api_cors_allow_origins="$(production_api_cors_origins)"
-  prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
-  local_llm_base_url="$(local_llm_container_base_url)"
-  docker rm -f jurisdigta-api jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
+launch_api_container() {
+  local image="$1"
+  local api_db_cloud="$2"
+  local laws_db_cloud="$3"
+  local court_decisions_db_cloud="$4"
+  local api_cors_allow_origins="$5"
+  local prometheus_base_url="$6"
+  local local_llm_base_url="$7"
+
+  docker rm -f jurisdigta-api >/dev/null 2>&1 || true
   docker run -d \
     --name jurisdigta-api \
     --restart unless-stopped \
@@ -431,7 +426,33 @@ start_api_and_mcp() {
     -e PROMETHEUS_BASE_URL="$prometheus_base_url" \
     -e SYSTEM_STATUS_FILE=/workspace/runs/status/system-status.json \
     -v "$DEPLOY_ROOT/runs:/workspace/runs" \
-    aijuristiction-api:local >/dev/null
+    "$image" >/dev/null
+}
+
+start_api_and_mcp() {
+  log "starting API and MCP"
+  compose_env
+  local api_db_cloud
+  local laws_db_cloud
+  local court_decisions_db_cloud
+  local api_cors_allow_origins
+  local prometheus_base_url
+  local local_llm_base_url
+  api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
+  laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
+  api_cors_allow_origins="$(production_api_cors_origins)"
+  prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
+  local_llm_base_url="$(local_llm_container_base_url)"
+  docker rm -f jurisdigta-mcp jurisdigta-email-scheduler >/dev/null 2>&1 || true
+  launch_api_container \
+    aijuristiction-api:local \
+    "$api_db_cloud" \
+    "$laws_db_cloud" \
+    "$court_decisions_db_cloud" \
+    "$api_cors_allow_origins" \
+    "$prometheus_base_url" \
+    "$local_llm_base_url"
 
   docker run -d \
     --name jurisdigta-mcp \
@@ -1012,6 +1033,80 @@ wait_for_http() {
   curl -fsS "${curl_args[@]}" "$url" >/dev/null
 }
 
+redact_deploy_diagnostics() {
+  sed -E \
+    -e 's#(postgres(ql)?://)[^[:space:]\"]+#\1[REDACTED]#gI' \
+    -e 's#((password|secret|token|api[_-]?key|authorization)[[:space:]]*[:=][[:space:]]*)[^[:space:],;]+#\1[REDACTED]#gI'
+}
+
+capture_container_diagnostics() {
+  local container_name="$1"
+  if ! docker inspect "$container_name" >/dev/null 2>&1; then
+    log "diagnostics: container $container_name does not exist"
+    return
+  fi
+
+  log "diagnostics: state for $container_name"
+  docker inspect --format 'status={{.State.Status}} exit_code={{.State.ExitCode}} restart_count={{.RestartCount}} error={{.State.Error}}' "$container_name" \
+    | redact_deploy_diagnostics
+  log "diagnostics: last $DEPLOY_DIAGNOSTIC_LOG_LINES redacted log lines for $container_name"
+  docker logs --tail "$DEPLOY_DIAGNOSTIC_LOG_LINES" "$container_name" 2>&1 \
+    | redact_deploy_diagnostics || true
+}
+
+rollback_api_after_health_failure() {
+  local candidate="aijuristiction-api:rollback-candidate"
+  local api_db_cloud
+  local laws_db_cloud
+  local court_decisions_db_cloud
+  local api_cors_allow_origins
+  local prometheus_base_url
+  local local_llm_base_url
+
+  if ! docker image inspect "$candidate" >/dev/null 2>&1; then
+    log "API rollback skipped: no preserved rollback candidate is available"
+    return 1
+  fi
+
+  log "restoring API from $candidate after failed health validation"
+  compose_env
+  api_db_cloud="$(postgres_url "postgres" "${LOCAL_POSTGRES_DB:-aijurisdiction}")"
+  laws_db_cloud="$(postgres_url "postgres" "${AZURE_LAWS_POSTGRES_DATABASE_NAME_SK:-laws_sk}")"
+  court_decisions_db_cloud="$(postgres_url "postgres" "$COURT_DECISIONS_DATABASE_NAME")"
+  api_cors_allow_origins="$(production_api_cors_origins)"
+  prometheus_base_url="${API_PROMETHEUS_BASE_URL:-http://jurisdigta-prometheus:9090}"
+  local_llm_base_url="$(local_llm_container_base_url)"
+  launch_api_container \
+    "$candidate" \
+    "$api_db_cloud" \
+    "$laws_db_cloud" \
+    "$court_decisions_db_cloud" \
+    "$api_cors_allow_origins" \
+    "$prometheus_base_url" \
+    "$local_llm_base_url"
+
+  if wait_for_http "restored API" "http://127.0.0.1:${API_PORT}/health"; then
+    log "API rollback restored a healthy previous image"
+    return 0
+  fi
+  capture_container_diagnostics jurisdigta-api
+  log "API rollback candidate did not become healthy"
+  return 1
+}
+
+validate_api_health_or_rollback() {
+  if wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"; then
+    return 0
+  fi
+
+  log "API health validation failed; collecting bounded redacted diagnostics"
+  capture_container_diagnostics jurisdigta-api
+  capture_container_diagnostics jurisdigta-mcp
+  capture_container_diagnostics jurisdigta-email-scheduler
+  rollback_api_after_health_failure || true
+  fail "API health validation failed; attempted API rollback before stopping deployment"
+}
+
 validate_health() {
   log "validating local health endpoints"
   if [ "$INSTALL_OLLAMA" = "1" ]; then
@@ -1021,7 +1116,7 @@ validate_health() {
     curl -fsS "$local_llm_base_url/v1/models" >/dev/null
     OLLAMA_HOST="$(effective_ollama_host_bind)" ollama list | grep -F "$LOCAL_LLM_MODEL" >/dev/null
   fi
-  wait_for_http "API" "http://127.0.0.1:${API_PORT}/health"
+  validate_api_health_or_rollback
   wait_for_http "MCP" "http://127.0.0.1:${MCP_PORT}/health"
   log "validating authenticated API-to-MCP tool path"
   docker exec jurisdigta-api python -c \
