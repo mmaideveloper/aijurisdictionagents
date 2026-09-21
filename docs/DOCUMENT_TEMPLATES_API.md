@@ -15,6 +15,24 @@ Admin catalogue responses include `source_drift_status`. It is derived from meta
 This API adds a persistent catalog of legal-document templates that can be seeded from public source indexes,
 matched against a client request, and later extended with full template bodies for contract generation.
 
+## Priority 3 Release Controls
+
+Priority 3 templates expose persisted release metadata: `risk_tier`, `required_preflight_facts`,
+`human_review_required`, and `submission_mode`. The API enforces `human_review_required=true` for all six
+Priority 3 keys, even if an administrator submits `false` in a create or update payload.
+
+- `sk.contract.commercial_agency`, `sk.company.share_transfer`, and `sk.company.sro_articles` are high-risk
+  internal working drafts. They require the configured preflight facts and legal/human review before signature.
+- `sk.court.alimony_petition` and `sk.court.payment_order` are `official_form_only`: previews identify the
+  official source and explicitly state that they are not ready to file.
+- `sk.court.general_action` is a `human_review_draft`, never a filing-ready document. It requires review of
+  jurisdiction, claim, evidence, and limitation periods.
+
+Company templates distinguish source purposes in `source_refs`: `legal_basis` points to legislation,
+`official_submission` points to the ORSR filing route, and `licensed_style_reference` is optional. Do not use a
+Justice catalogue index as a substitute for any of those source types, and do not copy third-party style content
+unless its licence or permission is recorded in the source reference notes.
+
 ## Purpose
 
 The template catalog is meant to support the next step of document generation:
@@ -57,9 +75,23 @@ Notes:
 - later updates can attach a full template body and richer source references
 - template versions also retain source profile, capture/review metadata, normalization notes, and legal-basis reference URLs; these catalog fields contain no user facts or captured third-party body content
 - `body_completeness_status` explicitly distinguishes `metadata_only`, `partial_body`, and `reviewed_full_body` template versions for safe admin review and generation routing
+- release controls are versioned with the template record; legacy Priority 3 seed rows receive a new version only
+  when they lack this metadata, preserving later operator-managed versions
 - Ministry of Justice catalog entries use the `official_governed_form` source profile. They retain reviewed metadata and the official source, but deliberately do not generate a clause-complete substitute; their preview and disclosure direct users to the current official form and individual legal review.
 - Direct Ministry catalogue entries record the exact published PDF, RTF, XLSX, or official ORSR URL captured on September 8, 2026. The only permitted fallback is the Ministry index URL with `official_form_index`; source URLs are never inferred from a title or filename.
 - Source capture records are metadata-only: template key, official URL, capture timestamp, SHA-256, approved runtime artifact reference, status, and bounded failure code. Operators must delete runtime artifacts when the approved review window expires and preserve only this auditable no-body record. Never store user facts, secrets, or fetched source body text in the manifest.
+
+## Source Retention And Deletion
+
+Captured third-party artifacts are temporary review material, not source-controlled template bodies. Store them only
+under `runs/storage/api/template_sources/`, retain the manifest's URL, capture timestamp, SHA-256, status, and
+bounded failure code, and never put source body text, user facts, or credentials into the manifest, issue, or logs.
+
+The template owner must record the permitted review window and source licence/permission before capture. At expiry,
+or immediately after a rights-holder request, delete the runtime artifact and any derived temporary files, rerun the
+capture with status `capture_missing` or `failed` as appropriate, and retain only the metadata manifest for audit.
+If a source hash changes, treat it as a drift warning requiring legal review; it must never overwrite the internal
+canonical body automatically.
 - `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
 - Sprint C also supplies reviewed canonical bodies for the work-performance agreement, employee-initiated employment termination notice, and general and special powers of attorney; each records an exact reviewed source URL and retains a human-review requirement for legal-risk use
 - Sprint C normalizes structured case, chat, and profile facts through template-specific aliases for those four templates. Their legally material fields are required before the template-first path can draft a final document; missing data is returned as a precise Slovak follow-up question rather than silently leaving an unresolved placeholder. The mapping is deterministic, does not infer facts, and preserves the template's visible source and human-review disclosure.
