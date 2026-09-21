@@ -96,6 +96,60 @@ def test_document_template_store_seeds_initial_template_catalog(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
+    "template_key",
+    (
+        "sk.contract.commercial_agency",
+        "sk.company.share_transfer",
+        "sk.company.sro_articles",
+        "sk.court.alimony_petition",
+        "sk.court.payment_order",
+        "sk.court.general_action",
+    ),
+)
+def test_priority_three_templates_enforce_human_review_and_preflight(template_key: str, tmp_path: Path) -> None:
+    template = _build_store(tmp_path).get(template_key=template_key, jurisdiction="SK")
+
+    assert template.risk_tier == "high"
+    assert template.human_review_required is True
+    assert template.required_preflight_facts
+
+
+def test_priority_three_company_templates_separate_legal_and_submission_sources(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    share_transfer = store.get(template_key="sk.company.share_transfer", jurisdiction="SK")
+    sro_articles = store.get(template_key="sk.company.sro_articles", jurisdiction="SK")
+
+    assert share_transfer.source_url.startswith("https://www.slov-lex.sk/")
+    assert {item.source_kind for item in share_transfer.source_refs} == {"legal_basis", "official_submission"}
+    assert {item.source_kind for item in sro_articles.source_refs} == {"legal_basis", "official_submission"}
+
+
+def test_priority_three_update_cannot_disable_human_review(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+
+    updated = store.update(
+        template_key="sk.company.share_transfer",
+        jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(human_review_required=False, submission_mode="draft"),
+    )
+
+    assert updated.human_review_required is True
+    assert updated.submission_mode == "human_review_draft"
+
+
+def test_priority_three_court_previews_are_never_filing_ready(tmp_path: Path) -> None:
+    client = _build_client(_build_store(tmp_path))
+    response = client.get(
+        "/v1/document-templates/sk.court.payment_order/preview/pdf",
+        params={"jurisdiction": "SK"},
+    )
+
+    assert response.status_code == 200
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(response.content)).pages)
+    assert "nie je pripravený na podanie" in text
+
+
+@pytest.mark.parametrize(
     ("template_key", "source_url", "required_clauses"),
     [
         (

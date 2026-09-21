@@ -667,3 +667,8 @@ print(
     "api_mypy_dependency_baseline => the standalone API package declares its LangGraph checkpoint and "
     "psycopg pool dependencies, so local type checking does not rely on the root package installation."
 )
+print(
+    "template_priority_three_release_controls => company and court Priority 3 templates are high-risk; "
+    "they require explicit preflight facts and human legal review. Court templates are never filing-ready, "
+    "and captured third-party sources retain only a metadata hash after their approved review window."
+)

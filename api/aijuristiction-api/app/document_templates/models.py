@@ -31,6 +31,10 @@ class DocumentTemplateBasePayload(BaseModel):
     normalization_notes: str = Field(default="", max_length=2000)
     legal_basis_refs: list[str] = Field(default_factory=list)
     body_completeness_status: str = Field(default="metadata_only", max_length=32)
+    risk_tier: str = Field(default="standard", max_length=32)
+    required_preflight_facts: list[str] = Field(default_factory=list)
+    human_review_required: bool = False
+    submission_mode: str = Field(default="draft", max_length=64)
     body: str = Field(default="", max_length=50000)
     keywords: list[str] = Field(default_factory=list)
     flow_keys: list[str] = Field(default_factory=list)
@@ -62,6 +66,10 @@ class DocumentTemplateUpdateRequest(BaseModel):
     normalization_notes: str | None = Field(default=None, max_length=2000)
     legal_basis_refs: list[str] | None = None
     body_completeness_status: str | None = Field(default=None, max_length=32)
+    risk_tier: str | None = Field(default=None, max_length=32)
+    required_preflight_facts: list[str] | None = None
+    human_review_required: bool | None = None
+    submission_mode: str | None = Field(default=None, max_length=64)
     body: str | None = Field(default=None, max_length=50000)
     keywords: list[str] | None = None
     flow_keys: list[str] | None = None
@@ -93,6 +101,10 @@ class DocumentTemplateDefinition(BaseModel):
     normalization_notes: str = ""
     legal_basis_refs: tuple[str, ...] = ()
     body_completeness_status: str = "metadata_only"
+    risk_tier: str = "standard"
+    required_preflight_facts: tuple[str, ...] = ()
+    human_review_required: bool = False
+    submission_mode: str = "draft"
     body: str = ""
     keywords: tuple[str, ...] = ()
     flow_keys: tuple[str, ...] = ()
@@ -133,6 +145,10 @@ class DocumentTemplateResponse(BaseModel):
     normalization_notes: str = ""
     legal_basis_refs: list[str]
     body_completeness_status: str = "metadata_only"
+    risk_tier: str = "standard"
+    required_preflight_facts: list[str] = Field(default_factory=list)
+    human_review_required: bool = False
+    submission_mode: str = "draft"
     body: str = ""
     keywords: list[str]
     flow_keys: list[str]
@@ -174,6 +190,10 @@ class DocumentTemplateResponse(BaseModel):
             normalization_notes=item.normalization_notes,
             legal_basis_refs=list(item.legal_basis_refs),
             body_completeness_status=item.body_completeness_status,
+            risk_tier=item.risk_tier,
+            required_preflight_facts=list(item.required_preflight_facts),
+            human_review_required=item.human_review_required,
+            submission_mode=item.submission_mode,
             body=item.body,
             keywords=list(item.keywords),
             flow_keys=list(item.flow_keys),

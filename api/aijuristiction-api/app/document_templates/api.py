@@ -285,17 +285,28 @@ def _template_preview_facts() -> dict[str, str]:
 
 
 def _metadata_only_preview_lines(template: DocumentTemplateDefinition) -> list[str]:
-    if template.source_profile == "official_governed_form":
+    if template.submission_mode == "official_form_only" or template.source_profile == "official_governed_form":
         return [
             template.title,
             "",
             "Toto je identifikácia oficiálneho formulára, nie vygenerovaný právny návrh.",
             "JurisDigta úmyselne nevytvára náhradné úplné znenie ani podanie z metadát formulára.",
-            "Použite aktuálny formulár z oficiálneho zdroja a pred podaním zabezpečte individuálnu právnu kontrolu.",
+            "Tento dokument nie je pripravený na podanie. Použite aktuálny formulár z oficiálneho zdroja a pred podaním zabezpečte individuálnu právnu kontrolu.",
             "",
             f"Oficiálny zdroj: {template.source_url}",
             f"Formát zdroja: {template.source_format}",
             f"Typ formulára: {template.template_kind}",
+        ]
+
+    if template.template_key.startswith("sk.court."):
+        return [
+            template.title,
+            "",
+            "Toto je iba pracovný právny návrh na ľudskú a právnu kontrolu.",
+            "Tento dokument nie je pripravený na podanie ani nenahrádza aktuálny úradný formulár alebo postup.",
+            "Pred podaním overte príslušnosť súdu, návrh výroku, dôkazy, lehoty a aktuálne procesné požiadavky.",
+            "",
+            f"Právny základ alebo zdroj: {template.source_url}",
         ]
 
     lines = [

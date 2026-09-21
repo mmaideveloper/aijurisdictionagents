@@ -30,6 +30,7 @@ from app.document_templates.models import (
     TemplateSourceCaptureManifest,
     TemplateSourceReference,
 )
+from app.document_templates.release_controls import priority_three_release_control
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class DocumentTemplateStore:
         self._initialize()
         self._seed_defaults_if_empty()
         self._refresh_empty_seeded_document_template_bodies()
+        self._refresh_priority_three_release_controls()
         self._seed_case_types_if_empty()
         self._refresh_seeded_case_type_descriptions()
 
@@ -247,10 +249,10 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, source_profile, source_captured_at, source_review_status,
-                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, body, keywords_json, flow_keys_json,
+                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, risk_tier, required_preflight_facts_json, human_review_required, submission_mode, body, keywords_json, flow_keys_json,
                         placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
                         version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -272,6 +274,10 @@ class DocumentTemplateStore:
                     payload.normalization_notes.strip(),
                     json.dumps(payload.legal_basis_refs, ensure_ascii=False, sort_keys=True),
                     payload.body_completeness_status.strip(),
+                    _release_risk_tier(template_key, payload.risk_tier),
+                    json.dumps(_release_preflight_facts(template_key, payload.required_preflight_facts), ensure_ascii=False, sort_keys=True),
+                    _release_human_review_required(template_key, payload.human_review_required),
+                    _release_submission_mode(template_key, payload.submission_mode),
                     payload.body,
                     json.dumps(payload.keywords, ensure_ascii=False, sort_keys=True),
                     json.dumps(payload.flow_keys, ensure_ascii=False, sort_keys=True),
@@ -329,6 +335,27 @@ class DocumentTemplateStore:
             "normalization_notes": (payload.normalization_notes if payload.normalization_notes is not None else current.normalization_notes).strip(),
             "legal_basis_refs_json": json.dumps(payload.legal_basis_refs if payload.legal_basis_refs is not None else list(current.legal_basis_refs), ensure_ascii=False, sort_keys=True),
             "body_completeness_status": (payload.body_completeness_status if payload.body_completeness_status is not None else current.body_completeness_status).strip(),
+            "risk_tier": _release_risk_tier(template_key, payload.risk_tier if payload.risk_tier is not None else current.risk_tier),
+            "required_preflight_facts_json": json.dumps(
+                _release_preflight_facts(
+                    template_key,
+                    payload.required_preflight_facts
+                    if payload.required_preflight_facts is not None
+                    else list(current.required_preflight_facts),
+                ),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "human_review_required": _release_human_review_required(
+                template_key,
+                payload.human_review_required
+                if payload.human_review_required is not None
+                else current.human_review_required,
+            ),
+            "submission_mode": _release_submission_mode(
+                template_key,
+                payload.submission_mode if payload.submission_mode is not None else current.submission_mode,
+            ),
             "body": payload.body if payload.body is not None else current.body,
             "keywords_json": json.dumps(payload.keywords if payload.keywords is not None else list(current.keywords), ensure_ascii=False, sort_keys=True),
             "flow_keys_json": json.dumps(payload.flow_keys if payload.flow_keys is not None else list(current.flow_keys), ensure_ascii=False, sort_keys=True),
@@ -367,10 +394,10 @@ class DocumentTemplateStore:
                     INSERT INTO document_templates (
                         template_id, template_key, lineage_key, jurisdiction, language, category, title, template_kind,
                         description, source_format, source_url, source_profile, source_captured_at, source_review_status,
-                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, body, keywords_json, flow_keys_json,
+                        reviewed_by, normalization_notes, legal_basis_refs_json, body_completeness_status, risk_tier, required_preflight_facts_json, human_review_required, submission_mode, body, keywords_json, flow_keys_json,
                         placeholders_json, source_refs_json, disclaimer_title, disclaimer_text, disclaimer_footer,
                         version, stored_at, is_enabled, is_deleted, created_at, updated_at, deleted_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
                     """
                 ),
                 self._params(
@@ -398,6 +425,10 @@ class DocumentTemplateStore:
                     updated["normalization_notes"],
                     updated["legal_basis_refs_json"],
                     updated["body_completeness_status"],
+                    updated["risk_tier"],
+                    updated["required_preflight_facts_json"],
+                    updated["human_review_required"],
+                    updated["submission_mode"],
                     updated["body"],
                     updated["keywords_json"],
                     updated["flow_keys_json"],
@@ -871,6 +902,10 @@ class DocumentTemplateStore:
                     normalization_notes=item.normalization_notes,
                     legal_basis_refs=list(item.legal_basis_refs),
                     body_completeness_status=item.body_completeness_status,
+                    risk_tier=item.risk_tier,
+                    required_preflight_facts=list(item.required_preflight_facts),
+                    human_review_required=item.human_review_required,
+                    submission_mode=item.submission_mode,
                     body=item.body,
                     keywords=list(item.keywords),
                     flow_keys=list(item.flow_keys),
@@ -946,6 +981,40 @@ class DocumentTemplateStore:
                     flow_keys=list(canonical.flow_keys),
                     placeholders=list(canonical.placeholders),
                     source_refs=list(canonical.source_refs),
+                    disclaimer_title=canonical.disclaimer_title,
+                    disclaimer_text=canonical.disclaimer_text,
+                    disclaimer_footer=canonical.disclaimer_footer,
+                ),
+            )
+
+    def _refresh_priority_three_release_controls(self) -> None:
+        """Version only legacy seed rows that do not yet carry explicit release controls."""
+        canonical_by_key = {
+            item.template_key: item
+            for item in build_default_document_templates()
+            if priority_three_release_control(item.template_key) is not None
+        }
+        for template_key, canonical in canonical_by_key.items():
+            try:
+                current = self.get(template_key=template_key, jurisdiction=canonical.jurisdiction)
+            except DocumentTemplateNotFoundError:
+                continue
+            if current.human_review_required or current.submission_mode != "draft":
+                continue
+            self.update(
+                template_key=template_key,
+                jurisdiction=canonical.jurisdiction,
+                payload=DocumentTemplateUpdateRequest(
+                    source_url=canonical.source_url,
+                    source_profile=canonical.source_profile,
+                    source_review_status=canonical.source_review_status,
+                    normalization_notes=canonical.normalization_notes,
+                    legal_basis_refs=list(canonical.legal_basis_refs),
+                    source_refs=list(canonical.source_refs),
+                    risk_tier=canonical.risk_tier,
+                    required_preflight_facts=list(canonical.required_preflight_facts),
+                    human_review_required=canonical.human_review_required,
+                    submission_mode=canonical.submission_mode,
                     disclaimer_title=canonical.disclaimer_title,
                     disclaimer_text=canonical.disclaimer_text,
                     disclaimer_footer=canonical.disclaimer_footer,
@@ -1217,6 +1286,10 @@ class DocumentTemplateStore:
             normalization_notes=str(row.get("normalization_notes") or ""),
             legal_basis_refs=tuple(_parse_json_array(row.get("legal_basis_refs_json"))),
             body_completeness_status=str(row.get("body_completeness_status") or "metadata_only"),
+            risk_tier=str(row.get("risk_tier") or "standard"),
+            required_preflight_facts=tuple(_parse_json_array(row.get("required_preflight_facts_json"))),
+            human_review_required=bool(row.get("human_review_required")),
+            submission_mode=str(row.get("submission_mode") or "draft"),
             body=str(row["body"] or ""),
             keywords=tuple(_parse_json_array(row.get("keywords_json"))),
             flow_keys=tuple(_parse_json_array(row.get("flow_keys_json"))),
@@ -1304,6 +1377,10 @@ class DocumentTemplateStore:
             "lineage_key": "TEXT NOT NULL DEFAULT ''",
             "version": "INTEGER NOT NULL DEFAULT 1",
             "stored_at": "TEXT",
+            "risk_tier": "TEXT NOT NULL DEFAULT 'standard'",
+            "required_preflight_facts_json": "TEXT NOT NULL DEFAULT '[]'",
+            "human_review_required": "INTEGER NOT NULL DEFAULT 0",
+            "submission_mode": "TEXT NOT NULL DEFAULT 'draft'",
         }
         for column_name, definition in compatibility_columns.items():
             if column_name in existing_columns:
@@ -1478,6 +1555,25 @@ class DocumentTemplateStore:
                     ),
                 )
             conn.commit()
+
+
+def _release_risk_tier(template_key: str, requested: str) -> str:
+    control = priority_three_release_control(template_key)
+    return control.risk_tier if control is not None else requested.strip() or "standard"
+
+
+def _release_preflight_facts(template_key: str, requested: list[str]) -> list[str]:
+    control = priority_three_release_control(template_key)
+    return list(control.required_preflight_facts) if control is not None else requested
+
+
+def _release_human_review_required(template_key: str, requested: bool) -> bool:
+    return priority_three_release_control(template_key) is not None or requested
+
+
+def _release_submission_mode(template_key: str, requested: str) -> str:
+    control = priority_three_release_control(template_key)
+    return control.submission_mode if control is not None else requested.strip() or "draft"
 
 
 def _utc_now_iso() -> str:
