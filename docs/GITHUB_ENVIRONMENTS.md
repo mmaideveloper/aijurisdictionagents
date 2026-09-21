@@ -589,6 +589,12 @@ curl -fsS https://agent.jurisdigta.eu/health
 curl -I https://agent.jurisdigta.eu/app/assistant
 ```
 
+If the API health check fails, the deploy prints only the API, MCP, and email scheduler's bounded redacted
+container state and recent startup logs. It then attempts to restore `aijuristiction-api:rollback-candidate` and
+confirms its local health endpoint before the workflow still exits as failed. Treat a restored rollback as an
+incident: inspect the redacted traceback, correct the new image or configuration, and redeploy. Do not copy the
+server environment file or unredacted container logs into GitHub Actions.
+
 ## 12. Populate `test` and `prod`
 
 The fastest approach is:

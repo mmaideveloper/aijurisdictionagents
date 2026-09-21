@@ -45,6 +45,19 @@ def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
     assert 'python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start' in script
 
 
+def test_api_health_failure_collects_redacted_diagnostics_and_attempts_rollback() -> None:
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert 'DEPLOY_DIAGNOSTIC_LOG_LINES="${DEPLOY_DIAGNOSTIC_LOG_LINES:-120}"' in script
+    assert "redact_deploy_diagnostics()" in script
+    assert "capture_container_diagnostics()" in script
+    assert 'docker logs --tail "$DEPLOY_DIAGNOSTIC_LOG_LINES"' in script
+    assert "rollback_api_after_health_failure()" in script
+    assert 'candidate="aijuristiction-api:rollback-candidate"' in script
+    assert 'wait_for_http "restored API" "http://127.0.0.1:${API_PORT}/health"' in script
+    assert 'fail "API health validation failed; attempted API rollback before stopping deployment"' in script
+
+
 def test_deploy_applies_court_decision_schema_migrations() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
