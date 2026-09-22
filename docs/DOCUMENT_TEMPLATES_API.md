@@ -21,6 +21,33 @@ Priority 3 templates expose persisted release metadata: `risk_tier`, `required_p
 `human_review_required`, and `submission_mode`. The API enforces `human_review_required=true` for all six
 Priority 3 keys, even if an administrator submits `false` in a create or update payload.
 
+The API represents `human_review_required` as a Boolean, but the shared SQLite/PostgreSQL
+schema stores it as integer `0` or `1`. Both create and versioned-update writes encode
+the flag explicitly. Binding a Python Boolean directly works in SQLite but PostgreSQL
+rejects it, including during the startup refresh of legacy Priority 3 rows (production
+deployment run `35638885207`, issue #828). No schema migration is needed for this fix.
+Mandatory review, version history, and idempotent startup refresh remain enforced.
+This storage correction introduces no personal-data collection or new automated legal decisions.
+
+Minimal runnable regression example from the repository root:
+
+```powershell
+.\conda\python.exe -m pytest api/aijuristiction-api/tests/test_document_templates.py -k integer_flags
+```
+
+For real PostgreSQL validation, set the existing `DB_CLOUD` setting to an isolated loopback
+test database and run:
+
+```powershell
+.\conda\python.exe -m pytest api/aijuristiction-api/tests/test_document_templates_postgres.py
+```
+
+The PostgreSQL tests cover both flag values on create/update, preservation on metadata-only
+updates, legacy startup refresh, reopen idempotence, and mandatory review protection.
+Each test uses a unique synthetic schema and drops it in teardown. Use only local test
+storage under `runs/storage/`; retain sanitized transient test output under ignored `runs/`
+for at most seven days. These are storage integration checks, not user-facing E2E acceptance.
+
 - `sk.contract.commercial_agency`, `sk.company.share_transfer`, and `sk.company.sro_articles` are high-risk
   internal working drafts. They require the configured preflight facts and legal/human review before signature.
 - `sk.court.alimony_petition` and `sk.court.payment_order` are `official_form_only`: previews identify the

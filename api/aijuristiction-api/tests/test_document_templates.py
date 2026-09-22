@@ -39,6 +39,34 @@ def _build_client(store: DocumentTemplateStore) -> TestClient:
     return TestClient(app)
 
 
+@pytest.mark.parametrize("required", [False, True])
+def test_template_integer_flags_do_not_depend_on_sqlite_bool_coercion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, required: bool,
+) -> None:
+    def reject_boolean(value: bool) -> int:
+        raise TypeError("Boolean bound to an integer-backed template flag")
+
+    # SQLite normally hides the PostgreSQL type mismatch by coercing bool to int.
+    monkeypatch.setitem(sqlite3.adapters, (bool, sqlite3.PrepareProtocol), reject_boolean)
+    store = _build_store(tmp_path)
+    created = store.create(DocumentTemplateCreateRequest(
+        template_key="synthetic.review_flag", jurisdiction="SK", category="synthetic",
+        title="Synthetic review flag", template_kind="contract", source_format="TXT",
+        source_url="https://example.invalid/synthetic", human_review_required=required,
+    ))
+    assert created.human_review_required is required
+    updated = store.update(
+        template_key=created.template_key, jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(human_review_required=not required),
+    )
+    assert updated.human_review_required is (not required)
+    protected = store.update(
+        template_key="sk.company.share_transfer", jurisdiction="SK",
+        payload=DocumentTemplateUpdateRequest(human_review_required=False),
+    )
+    assert protected.human_review_required is True
+
+
 def _canonical_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     plain = "".join(char for char in normalized if not unicodedata.combining(char)).lower()
