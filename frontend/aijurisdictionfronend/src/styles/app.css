@@ -4692,7 +4692,12 @@ textarea {
 
 /* Streaming speech draft remains readable at mobile and desktop widths. */
 .speech-dictation { padding: .65rem; border: 1px solid var(--border-color, #64748b); border-radius: .6rem; }
-.speech-dictation button, .speech-dictation select { margin: .25rem; }
+.speech-dictation button, .speech-dictation select { margin: .25rem; min-height: 2.5rem; padding: .5rem .85rem; border: 1px solid #c7d5e8; border-radius: .65rem; background: #fff; color: #123761; font: inherit; }
+.speech-dictation button { cursor: pointer; }
+.speech-dictation button:disabled { opacity: .55; cursor: not-allowed; }
+.speech-dictation button:focus-visible { outline: 3px solid #729de0; outline-offset: 2px; }
+.speech-dictation .speech-dictation__stop { background: #123761; color: white; border-color: #123761; font-weight: 600; }
+.speech-dictation meter { width: 6rem; }
 .speech-dictation__recording { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .speech-dictation__transcript { white-space: pre-wrap; line-height: 1.6; min-height: 3.2em; max-height: 14rem; overflow: auto; padding: .6rem; }
 .speech-dictation__consent { max-width: 60rem; }

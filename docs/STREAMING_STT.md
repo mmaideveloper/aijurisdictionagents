@@ -92,8 +92,10 @@ Real local two-line Slovak speech acceptance:
 .\scripts\import_e2e_model_credentials_from_server.ps1 -VerifyModel
 .\conda\python.exe scripts/prepare_speech_e2e.py --check
 .\conda\python.exe scripts/prepare_speech_e2e.py
-# Start this branch's API, frontend, MCP and relevant workers against the migrated
-# aij_e2e_525_streaming_stt PostgreSQL database, using the approved real chat model.
+# In another terminal: start the migrated/seeded local API + MCP (real chat model).
+.\conda\python.exe scripts/start_speech_e2e_services.py
+# Start the local frontend with VITE_API_BASE_URL=http://127.0.0.1:8080.
+# Then, in the test terminal:
 .\conda\python.exe scripts/run_speech_e2e.py
 ```
 
@@ -135,9 +137,31 @@ nine existing Fast Refresh warnings. Mobile: analysis clean and 129 existing
 tests pass. These mobile regressions are not native microphone acceptance.
 Core model-parameter/runtime-baseline tests and both minimal examples pass.
 
-Real two-line Slovak E2E remains pending: the approved environment profile is
-missing `AIJ_AZURE_SPEECH_KEY` and `AIJ_AZURE_SPEECH_REGION`. No real recognition
-screenshots or latency results have been produced. Run the prepared harness
-after provisioning the resource and starting all required local services.
-Native device lifecycle/permission acceptance, real cancellation/disconnect
-acceptance and multi-run performance budgets remain release gates.
+Real two-line Slovak E2E passed under the owner-approved non-EU synthetic-only
+exception after securely importing the server runtime Speech settings. The final
+run (`speech-525-8355fceba044`) displayed four live lines and 23 partial updates,
+with zero normalized fixture word errors, exact reviewed-text submission and a
+real Azure Foundry `gpt-4o-mini` chat route. First partial: 4,761 ms from consent
+(includes initial fixture silence); Stop-to-final: 356 ms. These are individual
+synthetic-run measurements, not production latency guarantees. The chat stream
+reached its existing manual-reply pause; this validates submission/model routing,
+not completion of a legal document.
+
+Screenshots and sanitized manifests are under ignored `artifacts/speech-525-*`;
+retain for no more than seven days. Production EU-resource acceptance, native
+device lifecycle/permission acceptance, real cancellation/disconnect acceptance,
+container certificate-trust resolution and multi-run performance budgets remain
+release gates.
+
+## Production warning: EU Speech resource required (#525)
+
+The user approved a non-EU exception on 2026-09-23 for synthetic-audio testing
+only. Use `--allow-non-eu-synthetic` with both speech E2E scripts and only the
+isolated loopback E2E database. The exception does not approve production audio
+processing or mark the resource as EU-capable.
+
+**Before production deployment, warn the owner to create a new Azure Speech
+service in the EU.** Configure its encrypted key/region, restore EU-required
+speech policies, validate processor/retention settings, rerun real Slovak speech
+acceptance against that EU service, and obtain the owner's release approval.
+Do not copy the test exception policy or non-EU credential to production.

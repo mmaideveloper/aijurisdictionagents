@@ -28,6 +28,7 @@ def main() -> int:
     parser.add_argument("--api", default="http://127.0.0.1:8080")
     parser.add_argument("--mcp", default="http://127.0.0.1:8070")
     parser.add_argument("--database", default="aij_e2e_525_streaming_stt")
+    parser.add_argument("--allow-non-eu-synthetic", action="store_true")
     args = parser.parse_args()
     for url in (args.frontend, args.api, args.mcp):
         if urlsplit(url).hostname not in {"localhost", "127.0.0.1", "::1"}:
@@ -50,6 +51,9 @@ def main() -> int:
     reference = json.loads(reference_path.read_text(encoding="utf-8"))
     if reference.get("synthetic") is not True:
         raise ValueError("Synthetic fixture declaration required")
+    exception = reference.get("non_eu_synthetic_exception", False)
+    if exception and not args.allow_non_eu_synthetic:
+        raise ValueError("Explicit non-EU synthetic test acknowledgement required")
     for url in (args.frontend, args.api + "/health", args.mcp + "/health"):
         if not httpx.get(url, timeout=10).is_success:
             raise ValueError("Required local service unavailable")
@@ -88,8 +92,12 @@ def main() -> int:
         manifest["chat_routes"] = [{"provider": row.provider, "model": row.model, "status": row.status} for row in routes]
         real_chat = any(row.provider in {"azurefoundry", "azure_foundry"} and row.model and row.status == "ok" and row.audit_metadata.get("model_used") is True for row in routes)
         passed = result.returncode == 0 and real_chat
-        manifest["status"] = "passed" if passed else "failed"
+        manifest["status"] = ("passed_synthetic_non_eu_exception" if exception else "passed") if passed else "failed"
+        manifest["non_eu_synthetic_exception"] = exception
+        manifest["production_acceptance"] = "pending_eu_resource_and_release_gates"
         manifest["retention_days"] = 7
+        manifest["api_database"] = args.database
+        manifest["laws_database"] = "laws_e2e_525_streaming_stt"
         result_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Real speech E2E: {manifest['status']}. Sanitized evidence: {output}")
         return 0 if passed else 1

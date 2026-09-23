@@ -970,3 +970,16 @@ days after review. No production deployment is performed by these setup steps.
 The API image uses Python 3.13 on Debian 12 (bookworm), with ALSA, OpenSSL 3
 and CA certificates for the native Speech SDK. Require Speech SDK >=1.48.2.
 See [Microsoft Speech SDK platform requirements](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/quickstarts/setup-platform).
+
+## Production warning: EU Speech resource required (#525)
+
+The user approved a non-EU exception on 2026-09-23 for synthetic-audio testing
+only. Use `--allow-non-eu-synthetic` with both speech E2E scripts and only the
+isolated loopback E2E database. The exception does not approve production audio
+processing or mark the resource as EU-capable.
+
+**Before production deployment, warn the owner to create a new Azure Speech
+service in the EU.** Configure its encrypted key/region, restore EU-required
+speech policies, validate processor/retention settings, rerun real Slovak speech
+acceptance against that EU service, and obtain the owner's release approval.
+Do not copy the test exception policy or non-EU credential to production.

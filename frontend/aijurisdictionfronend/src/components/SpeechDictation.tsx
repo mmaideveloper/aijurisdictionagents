@@ -107,7 +107,7 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
     {busy && <div className="speech-dictation__recording">
       <span role="status">{t(state === "recording" ? "sttRecording" : state === "stopping" ? "sttFinalizing" : "sttPermission")} {elapsed}s</span>
       <meter aria-label={t("sttActivity")} min={0} max={1} value={level} />
-      <button type="button" disabled={state !== "recording"} onClick={() => void session.current?.stop()}>{t("sttStop")}</button>
+      <button type="button" className="speech-dictation__stop" disabled={state !== "recording"} onClick={() => void session.current?.stop()}>{t("sttStop")}</button>
       <button type="button" onClick={cancel}>{t("sttCancel")}</button>
     </div>}
     {text && busy && <div data-testid="speech-live-transcript" className="speech-dictation__transcript" aria-label={t("sttDraft")} aria-live="polite">{text}</div>}

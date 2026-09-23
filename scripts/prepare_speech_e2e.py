@@ -26,6 +26,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--database", default="aij_e2e_525_streaming_stt")
+    parser.add_argument("--allow-non-eu-synthetic", action="store_true",
+        help="Explicit test-only exception; never enables EU production acceptance")
     args = parser.parse_args()
     load_dotenv(ROOT / ".env", override=False)
     names = ["AIJ_AZURE_SPEECH_KEY", "AIJ_AZURE_SPEECH_REGION", "AI_MODEL_CREDENTIAL_ENCRYPTION_KEY"]
@@ -39,6 +41,11 @@ def main() -> int:
         return 0
     if not args.database.startswith("aij_e2e_") or not args.database.replace("_", "").isalnum():
         raise ValueError("Only an aij_e2e_ task database is allowed")
+    region = os.environ["AIJ_AZURE_SPEECH_REGION"].strip()
+    non_eu_exception = region != "westeurope"
+    if non_eu_exception and not args.allow_non_eu_synthetic:
+        print("Real speech E2E pending: approved EU resource required; use explicit synthetic-only exception if authorized.")
+        return 2
     # Known synthetic local Docker credentials; never use a production database from .env.
     database = f"postgresql://postgres:postgres@127.0.0.1:5432/{args.database}"
     assert urlsplit(database).hostname == "127.0.0.1"
@@ -55,17 +62,14 @@ def main() -> int:
         display_name="Azure Speech", region=region, is_external=True, is_local=False, enabled=True)
     profile = store.upsert_ai_model_profile(provider_id=provider.provider_id, model_code="speech-sk-SK",
         model_parameters={"capability": "speech_to_text", "streaming": True, "locales": "sk-SK,en-US,de-DE"},
-        # This fixture is restricted to the documented approved EU region.
+        # Never mark the exception resource as EU-capable.
         eu_data_zone_capable=region == "westeurope", enabled=True)
-    if region != "westeurope":
-        print("Real speech E2E pending: approved westeurope resource required; no region fallback.")
-        return 2
     store.upsert_ai_model_credential(provider_id=provider.provider_id,
         credential_name="speech-e2e", secret_type="api_key", secret_value=key, enabled=True)
     for plan in ("free", "case"):
         store.upsert_ai_task_route_policy(task_type="speech_transcription", plan_code=plan,
             preferred_external_model_profile_id=profile.model_profile_id, allow_external=True,
-            require_external_ack=True, require_eu_data_zone=True,
+            require_external_ack=True, require_eu_data_zone=not non_eu_exception,
             fallback_local_on_error=False, fallback_local_on_budget=False, enabled=True)
     config = sdk.SpeechConfig(subscription=key, region=region)
     config.speech_synthesis_voice_name = "sk-SK-ViktoriaNeural"
@@ -89,6 +93,7 @@ def main() -> int:
         target.writeframes(pcm + b"\0\0" * (16000 * 15))
     (out / "reference.json").write_text(json.dumps({"synthetic": True, "locale": "sk-SK", "lines": TEXT,
         "provider": "azure_speech", "model": "speech-sk-SK", "region": region,
+        "non_eu_synthetic_exception": non_eu_exception, "production_acceptance": "pending_eu_resource",
         "retention": "Delete fixture and test evidence within 7 days; regenerate from this script."}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("Prepared synthetic two-utterance WAV and real STT routing in the task database. Values redacted.")
     return 0
