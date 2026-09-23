@@ -165,3 +165,25 @@ service in the EU.** Configure its encrypted key/region, restore EU-required
 speech policies, validate processor/retention settings, rerun real Slovak speech
 acceptance against that EU service, and obtain the owner's release approval.
 Do not copy the test exception policy or non-EU credential to production.
+
+## Visible microphone state
+
+The top-right microphone opens the consent flow and has a bordered selected state
+through setup, recording and finalization. The adjacent status explicitly says
+microphone off before consent and after Stop/Cancel, microphone on while recording,
+and waiting/finalizing during transitions. Clicking the active microphone stops
+recording; choosing Chat cancels and discards the unsent speech draft.
+
+The recording composer shows a red status dot, `mm:ss` timer, Stop/Cancel and a
+32-bar history of measured microphone RMS volume. Silence stays flat: bars are
+not a simulated animation. Reduced-motion preferences disable pulsing/transitions.
+The real browser E2E starts from the top-right icon, verifies its selected state,
+checks nonzero audio activity and confirms microphone-off after finalization.
+Run `python scripts/run_speech_e2e.py --allow-non-eu-synthetic` with the documented
+local services/fixture for the currently approved synthetic-only exception.
+
+Visual-state acceptance run `speech-525-73958b02ed47` passed with the real
+synthetic Slovak fixture: selected top-right microphone border, explicit on/off
+status, measured audio activity, four live transcript lines, 22 partial events,
+editable review and exact submitted text. Finalization took 416 ms in this run.
+Evidence is under `artifacts/speech-525-73958b02ed47/` (seven-day retention).

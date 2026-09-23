@@ -596,7 +596,8 @@ const currentCaseDeepLinkId = (): string | undefined => {
 const AssistantThread: React.FC<{
   selectedModelProfileId?: string;
   onCorrelationIdChange: (correlationId: string) => void;
-}> = ({ selectedModelProfileId, onCorrelationIdChange }) => {
+  onSpeechState: (state: string) => void;
+}> = ({ selectedModelProfileId, onCorrelationIdChange, onSpeechState }) => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isAuthLoading, user } = useAuth();
   const { activeCase, loadCaseData, uploadDocumentsToCase } = useCases();
@@ -952,7 +953,7 @@ const AssistantThread: React.FC<{
         <ThreadPrimitive.Viewport className="assistant-thread__viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>
-        <SpeechDictation key={activeCaseId ?? "none"} caseId={activeCaseId ?? null} onBusy={setSpeechBusy} onFinal={(text) => {
+        <SpeechDictation key={activeCaseId ?? "none"} caseId={activeCaseId ?? null} onBusy={setSpeechBusy} onState={onSpeechState} onFinal={(text) => {
           const draft = runtime.thread.composer.getState().text;
           runtime.thread.composer.setText([draft, text].filter(Boolean).join("\n"));
         }} />
@@ -1091,7 +1092,7 @@ const DiagnosticsDialog: React.FC<{ correlationId: string; onClose: () => void }
   );
 };
 
-const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlationId }) => {
+const AssistantConfigurations: React.FC<{ correlationId: string; speechState: string }> = ({ correlationId, speechState }) => {
   const { t } = useLanguage();
   const { activeCase, setCaseRole, setCaseCommunicationMode } = useCases();
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = React.useState(false);
@@ -1175,10 +1176,14 @@ const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlat
         <fieldset className="role-selector" disabled={!activeCase}>
           <legend>{t("commsTitle")}</legend>
           <p className="hint">{t("commsSubtitle")}</p>
+          <p id="speech-microphone-status" className={`speech-mode-status speech-mode-status--${speechState}`} role="status">
+            {t(speechState === "recording" ? "sttMicOn" : speechState === "permission" ? "sttPermission" : speechState === "stopping" ? "sttFinalizing" : "sttMicOff")}
+          </p>
           <div className="segment-control" role="radiogroup">
             {communicationModeOptions.map((option) => {
               const isDisabled = option.disabled || !activeCase;
-              const isActive = !isDisabled && activeCase?.selectedCommunicationMode === option.mode;
+              const voiceSelected = ["loading", "consent", "permission", "recording", "stopping"].includes(speechState);
+              const isActive = !isDisabled && (option.mode === "Voice" ? voiceSelected : option.mode === "Chat" && !voiceSelected);
               return (
                 <button
                   key={option.mode}
@@ -1186,6 +1191,9 @@ const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlat
                   className={`segment-control__option${isActive ? " is-active" : ""}${isDisabled ? " is-disabled" : ""}`}
                   aria-pressed={isActive}
                   aria-label={option.label}
+                  data-testid={option.mode === "Voice" ? "speech-mode-toggle" : undefined}
+                  data-speech-state={option.mode === "Voice" ? speechState : undefined}
+                  aria-describedby={option.mode === "Voice" ? "speech-microphone-status" : undefined}
                   aria-disabled={isDisabled}
                   tabIndex={isDisabled ? -1 : undefined}
                   title={option.disabled ? t("roleUnavailable") : option.label}
@@ -1193,7 +1201,7 @@ const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlat
                   onClick={() => {
                     if (activeCase && !isDisabled) {
                       if (option.mode === "Voice") window.dispatchEvent(new Event("jurisdigta-speech-open"));
-                      else setCaseCommunicationMode(activeCase.id, option.mode);
+                      else { window.dispatchEvent(new Event("jurisdigta-speech-cancel")); setCaseCommunicationMode(activeCase.id, option.mode); }
                     }
                   }}
                 >
@@ -1272,6 +1280,7 @@ const AssistantWorkspace: React.FC = () => {
   );
   const [selectedModelProfileId, setSelectedModelProfileId] = React.useState("");
   const [correlationId, setCorrelationId] = React.useState("");
+  const [speechState, setSpeechState] = React.useState("idle");
   const handleCorrelationIdChange = React.useCallback((nextCorrelationId: string) => {
     setCorrelationId(nextCorrelationId);
   }, []);
@@ -1383,11 +1392,12 @@ const AssistantWorkspace: React.FC = () => {
             key={threadKey}
             selectedModelProfileId={selectedModelProfileId || undefined}
             onCorrelationIdChange={handleCorrelationIdChange}
+            onSpeechState={setSpeechState}
           />
         </main>
 
         <aside className="assistant-tool-panel" aria-label={t("workspaceConfigurations")}>
-          <AssistantConfigurations correlationId={correlationId} />
+          <AssistantConfigurations correlationId={correlationId} speechState={speechState} />
         </aside>
       </section>
     </div>

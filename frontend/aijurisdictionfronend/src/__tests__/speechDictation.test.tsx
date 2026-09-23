@@ -21,7 +21,8 @@ describe("speech review", () => {
     const cancel = vi.fn();
     vi.mocked(startStreamingSpeech).mockImplementation((options) => { emit = options.onEvent; return { stop: vi.fn(), cancel }; });
     const onFinal = vi.fn();
-    const { unmount } = render(<SpeechDictation caseId="case" onFinal={onFinal} onBusy={vi.fn()} />);
+    const onState = vi.fn();
+    const { unmount } = render(<SpeechDictation caseId="case" onState={onState} onFinal={onFinal} onBusy={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "sttDictate" }));
     await screen.findByRole("button", { name: "sttConsentStart" });
     expect(startStreamingSpeech).not.toHaveBeenCalled();
@@ -33,9 +34,16 @@ describe("speech review", () => {
     });
     expect(screen.getByTestId("speech-live-transcript").textContent).toBe("Potrebujem kúpnu zmluvu.\nCena je sto eur.");
     expect(onFinal).not.toHaveBeenCalled();
+    expect(onState).toHaveBeenLastCalledWith("recording");
+    act(() => vi.mocked(startStreamingSpeech).mock.calls[0]![0].onLevel(0.6));
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("60");
+    act(() => window.dispatchEvent(new Event("jurisdigta-speech-open")));
+    expect(vi.mocked(startStreamingSpeech).mock.results[0]!.value.stop).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("meter").getAttribute("aria-label")).toBe("sttActivity");
     act(() => { emit({ type: "final", segment: 1, text: "Cena je sto eur." }); emit({ type: "done" }); });
     expect(onFinal).toHaveBeenCalledWith("Potrebujem kúpnu zmluvu.\nCena je sto eur.");
     expect(onFinal).toHaveBeenCalledTimes(1);
+    expect(onState).toHaveBeenLastCalledWith("ready");
     unmount();
     act(() => emit({ type: "done" }));
     expect(onFinal).toHaveBeenCalledTimes(1);

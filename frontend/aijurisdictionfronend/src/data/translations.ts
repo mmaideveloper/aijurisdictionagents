@@ -6,6 +6,8 @@ export type TranslationValues = Record<string, string | number>;
 
 export const translations = {
   en: {
+    sttMicOn: "Microphone on · Listening",
+    sttMicOff: "Microphone off",
     sttConfigureProfile: "Configure streaming STT (SK/EN/DE)",
     sttDictate: "Dictate",
     sttLoading: "Checking speech service…",
@@ -932,6 +934,8 @@ export const translations = {
     footerCopy: `Design concept for ${PRODUCT_NAMES.en}.`
   },
   sk: {
+    sttMicOn: "Mikrofón zapnutý · Počúvam",
+    sttMicOff: "Mikrofón vypnutý",
     sttConfigureProfile: "Nastaviť priebežný prepis (SK/EN/DE)",
     sttDictate: "Diktovať",
     sttLoading: "Overuje sa hlasová služba…",
@@ -1858,6 +1862,8 @@ export const translations = {
     footerCopy: `Dizajnový koncept pre ${PRODUCT_NAMES.sk}.`
   },
   de: {
+    sttMicOn: "Mikrofon an · Aufnahme läuft",
+    sttMicOff: "Mikrofon aus",
     sttConfigureProfile: "Streaming-Transkription konfigurieren (SK/EN/DE)",
     sttDictate: "Diktieren",
     sttLoading: "Sprachdienst wird geprüft…",

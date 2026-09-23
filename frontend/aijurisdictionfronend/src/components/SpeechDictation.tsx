@@ -5,8 +5,8 @@ import { useLanguage } from "./LanguageProvider";
 import { fetchSpeechRoute, setSpeechOverride, startStreamingSpeech, TranscriptSegments, type SpeechRoute } from "../audio/streamingSpeech";
 import { languageToSpeechLocale } from "../audio/speechToText";
 
-export function SpeechDictation({ caseId, onFinal, onBusy }: {
-  caseId: string | null; onFinal: (text: string) => void; onBusy: (busy: boolean) => void;
+export function SpeechDictation({ caseId, onFinal, onBusy, onState }: {
+  caseId: string | null; onFinal: (text: string) => void; onBusy: (busy: boolean) => void; onState?: (state: string) => void;
 }) {
   const { user } = useAuth();
   const { t, language } = useLanguage();
@@ -16,18 +16,20 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
   const [error, setError] = React.useState("");
   const [elapsed, setElapsed] = React.useState(0);
   const [level, setLevel] = React.useState(0);
+  const [levels, setLevels] = React.useState<number[]>(Array(32).fill(0));
   const generation = React.useRef(0);
   const session = React.useRef<ReturnType<typeof startStreamingSpeech> | null>(null);
   const request = React.useRef<AbortController | null>(null);
-  const callbacks = React.useRef({ onFinal, onBusy });
-  callbacks.current = { onFinal, onBusy };
+  const callbacks = React.useRef({ onFinal, onBusy, onState });
+  callbacks.current = { onFinal, onBusy, onState };
+  React.useEffect(() => { callbacks.current.onState?.(state); }, [state]);
   const busy = ["permission", "recording", "stopping"].includes(state);
   React.useEffect(() => { callbacks.current.onBusy(busy); }, [busy]);
   React.useEffect(() => {
     setState("idle"); setText(""); session.current = null;
     const attempt = generation;
     return () => {
-      attempt.current++; request.current?.abort(); session.current?.cancel(); callbacks.current.onBusy(false);
+      attempt.current++; request.current?.abort(); session.current?.cancel(); callbacks.current.onBusy(false); callbacks.current.onState?.("idle");
     };
   }, [caseId, user?.userId, user?.deviceAuthToken, language]);
   React.useEffect(() => {
@@ -51,10 +53,15 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
     }
   }, [user, caseId, t]);
   React.useEffect(() => {
-    const listener = () => { void open(); };
+    const listener = () => { if (state === "recording") void session.current?.stop(); else if (!session.current) void open(); };
+    const cancelListener = () => {
+      generation.current++; request.current?.abort(); session.current?.cancel(); session.current = null;
+      setText(""); setState("idle"); callbacks.current.onBusy(false);
+    };
+    window.addEventListener("jurisdigta-speech-cancel", cancelListener);
     window.addEventListener("jurisdigta-speech-open", listener);
-    return () => window.removeEventListener("jurisdigta-speech-open", listener);
-  }, [open]);
+    return () => { window.removeEventListener("jurisdigta-speech-open", listener); window.removeEventListener("jurisdigta-speech-cancel", cancelListener); };
+  }, [open, state]);
   const cancel = () => {
     generation.current++; request.current?.abort(); session.current?.cancel(); session.current = null;
     setText(""); setState("idle"); callbacks.current.onBusy(false);
@@ -71,9 +78,9 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
     if (!user || !caseId || !route) return;
     const attempt = ++generation.current;
     const transcript = new TranscriptSegments();
-    setText(""); setElapsed(0); setState("permission"); callbacks.current.onBusy(true);
+    setText(""); setElapsed(0); setLevel(0); setLevels(Array(32).fill(0)); setState("permission"); callbacks.current.onBusy(true);
     session.current = startStreamingSpeech({ user, caseId, route, locale: languageToSpeechLocale(language),
-      onLevel: (value) => { if (generation.current === attempt) setLevel(value); },
+      onLevel: (value) => { if (generation.current === attempt) { setLevel(value); setLevels((history) => [...history.slice(1), value]); } },
       onEvent: (event) => {
         if (generation.current !== attempt) return;
         if (event.type === "ready") setState("recording");
@@ -90,8 +97,8 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
       }
     });
   };
-  return <div className="speech-dictation">
-    <button type="button" aria-label={t("sttDictate")} disabled={!caseId || !user || busy || state === "loading"} onClick={() => void open()}><FiMic aria-hidden="true" /> {t("sttDictate")}</button>
+  return <div className={`speech-dictation speech-dictation--${state}`} data-speech-state={state}>
+    {!busy && <button type="button" aria-label={t("sttDictate")} disabled={!caseId || !user || busy || state === "loading"} onClick={() => void open()}><FiMic aria-hidden="true" /> {t("sttDictate")}</button>}
     {state === "loading" && <span role="status">{t("sttLoading")}</span>}
     {state === "consent" && route && <div className="speech-dictation__consent">
       <p>{t("sttDisclosure", { provider: route.provider, region: route.region })}</p>
@@ -105,8 +112,13 @@ export function SpeechDictation({ caseId, onFinal, onBusy }: {
       <button type="button" onClick={cancel}>{t("sttCancel")}</button>
     </div>}
     {busy && <div className="speech-dictation__recording">
-      <span role="status">{t(state === "recording" ? "sttRecording" : state === "stopping" ? "sttFinalizing" : "sttPermission")} {elapsed}s</span>
-      <meter aria-label={t("sttActivity")} min={0} max={1} value={level} />
+      <div className="speech-dictation__status" role="status"><span className="speech-dictation__dot" aria-hidden="true" />
+        <strong>{t(state === "recording" ? "sttMicOn" : state === "stopping" ? "sttFinalizing" : "sttPermission")}</strong>
+        <time className="speech-dictation__timer">{String(Math.floor(elapsed / 60)).padStart(2, "0")}:{String(elapsed % 60).padStart(2, "0")}</time>
+      </div>
+      {state === "recording" && <div className="speech-dictation__waveform" role="meter" aria-label={t("sttActivity")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
+        {levels.map((value, index) => <span key={index} style={{ height: `${3 + value * 29}px` }} />)}
+      </div>}
       <button type="button" className="speech-dictation__stop" disabled={state !== "recording"} onClick={() => void session.current?.stop()}>{t("sttStop")}</button>
       <button type="button" onClick={cancel}>{t("sttCancel")}</button>
     </div>}

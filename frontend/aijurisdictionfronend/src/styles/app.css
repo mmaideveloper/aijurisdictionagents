@@ -4701,3 +4701,18 @@ textarea {
 .speech-dictation__recording { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
 .speech-dictation__transcript { white-space: pre-wrap; line-height: 1.6; min-height: 3.2em; max-height: 14rem; overflow: auto; padding: .6rem; }
 .speech-dictation__consent { max-width: 60rem; }
+
+/* Dictation status is shared with the mode selector, never inferred from chat mode. */
+.speech-mode-status { font-size: .85rem; color: #64748b; margin: .5rem 0; }
+.speech-mode-status--recording { color: #b42318; font-weight: 600; }
+.segment-control__option[data-speech-state="recording"] { border: 2px solid #b42318; background: #fff1f0; color: #b42318; box-shadow: 0 0 0 3px #b4231814; }
+.segment-control__option[data-speech-state="consent"], .segment-control__option[data-speech-state="loading"], .segment-control__option[data-speech-state="permission"], .segment-control__option[data-speech-state="stopping"] { border: 2px solid #123761; }
+.speech-dictation--recording { border-color: #b42318; background: #fffafa; }
+.speech-dictation__status { display: flex; align-items: center; gap: .6rem; flex: 1 1 100%; }
+.speech-dictation__dot { width: .65rem; height: .65rem; border-radius: 50%; background: #64748b; flex-shrink: 0; }
+.speech-dictation--recording .speech-dictation__dot { background: #d92d20; animation: speech-pulse 1.5s ease-in-out infinite; }
+.speech-dictation__timer { margin-left: auto; font-variant-numeric: tabular-nums; color: #123761; }
+.speech-dictation__waveform { display: flex; align-items: center; justify-content: center; gap: 3px; height: 36px; flex: 1; min-width: 110px; color: #b42318; }
+.speech-dictation__waveform span { width: 3px; border-radius: 2px; background: currentColor; transition: height .1s linear; }
+@keyframes speech-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .speech-dictation--recording .speech-dictation__dot { animation: none; } .speech-dictation__waveform span { transition: none; } }
