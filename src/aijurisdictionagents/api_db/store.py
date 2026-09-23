@@ -572,6 +572,10 @@ class ApiDatabaseStore:
             self._execute_script(
                 conn,
                 """
+                CREATE TABLE IF NOT EXISTS case_speech_overrides (
+                    case_id TEXT PRIMARY KEY,
+                    model_profile_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS users (
                     user_id TEXT PRIMARY KEY,
                     phone_number TEXT UNIQUE,
@@ -2254,6 +2258,50 @@ class ApiDatabaseStore:
                 (bounded_limit,),
             ).fetchall()
         return [_row_to_ai_model_admin_audit_event(row) for row in rows]
+
+    def resolve_speech_route(self, *, user_id: str, case_id: str, candidate_profile_id: str | None = None) -> AIModelRouteSelection:
+        """Speech has its own exact task policy; chat/user overrides never apply."""
+        case = self.get_case(case_id=case_id)
+        if case.user_id != user_id or case.status == "deleted":
+            raise KeyError("case_not_found")
+        plan = self.get_effective_subscription_plan(user_id=user_id).plan_code
+        with self._connect() as conn:
+            policy = self._select_ai_task_route_policy(
+                conn, user_id=user_id, plan_code=plan, task_type="speech_transcription"
+            )
+            if policy is None or policy.task_type != "speech_transcription":
+                raise ValueError("route_unavailable")
+            override = self._fetchone(conn, "SELECT model_profile_id FROM case_speech_overrides WHERE case_id = ?", (case_id,))
+            if candidate_profile_id:
+                override = (candidate_profile_id,)
+            profile_id = (str(override[0]) if override else
+                          policy.preferred_external_model_profile_id if policy.allow_external else
+                          policy.preferred_local_model_profile_id)
+            target = self._get_ai_model_route_target(conn, profile_id)
+        if target is None:
+            raise ValueError("route_unavailable")
+        provider, profile = target
+        if (profile.model_parameters.get("capability") != "speech_to_text"
+                or profile.model_parameters.get("streaming") is not True):
+            raise ValueError("incompatible_profile")
+        if provider.is_external and (not policy.allow_external or
+                (policy.require_eu_data_zone and not profile.eu_data_zone_capable)):
+            raise ValueError("route_blocked")
+        # Existing token budgets cannot safely represent speech-duration billing.
+        if policy.max_cost_eur > 0:
+            raise ValueError("speech_budget_not_supported")
+        return _route_selection(policy=policy, target=target,
+                                route_type="case_speech_override" if override else "speech_policy",
+                                task_type="speech_transcription", plan_code=plan,
+                                reason="Explicit speech route; no implicit fallback.")
+
+    def set_case_speech_override(self, *, case_id: str, model_profile_id: str | None) -> None:
+        with self._connect() as conn:
+            if model_profile_id:
+                self._execute(conn, "INSERT INTO case_speech_overrides(case_id, model_profile_id) VALUES (?, ?) ON CONFLICT(case_id) DO UPDATE SET model_profile_id = excluded.model_profile_id", (case_id, model_profile_id))
+            else:
+                self._execute(conn, "DELETE FROM case_speech_overrides WHERE case_id = ?", (case_id,))
+            conn.commit()
 
     def resolve_ai_model_route(
         self,

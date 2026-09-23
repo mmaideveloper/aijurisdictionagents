@@ -389,7 +389,7 @@ describe("AssistantWorkspace", () => {
     expect(caseActions.selectCase).not.toHaveBeenCalled();
   });
 
-  it("keeps chat selected and voice/video communication modes unavailable", async () => {
+  it("keeps typed chat selected while voice opens dictation and video remains unavailable", async () => {
     render(<AssistantWorkspace />);
 
     const chatMode = screen.getByRole("button", { name: "Chat" });
@@ -397,9 +397,9 @@ describe("AssistantWorkspace", () => {
     const videoMode = screen.getByRole("button", { name: "Video" });
 
     expect(chatMode.className).toContain("is-active");
-    expect(voiceMode.getAttribute("aria-disabled")).toBe("true");
+    expect(voiceMode.getAttribute("aria-disabled")).toBe("false");
     expect(videoMode.getAttribute("aria-disabled")).toBe("true");
-    expect(voiceMode.getAttribute("title")).toBe("Coming later");
+    expect(voiceMode.getAttribute("title")).toBe("Voice");
     expect(videoMode.getAttribute("title")).toBe("Coming later");
 
     fireEvent.click(voiceMode);

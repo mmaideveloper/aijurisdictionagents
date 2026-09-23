@@ -4689,3 +4689,10 @@ textarea {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Streaming speech draft remains readable at mobile and desktop widths. */
+.speech-dictation { padding: .65rem; border: 1px solid var(--border-color, #64748b); border-radius: .6rem; }
+.speech-dictation button, .speech-dictation select { margin: .25rem; }
+.speech-dictation__recording { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.speech-dictation__transcript { white-space: pre-wrap; line-height: 1.6; min-height: 3.2em; max-height: 14rem; overflow: auto; padding: .6rem; }
+.speech-dictation__consent { max-width: 60rem; }

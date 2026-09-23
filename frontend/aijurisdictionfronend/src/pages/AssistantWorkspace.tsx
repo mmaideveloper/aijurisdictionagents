@@ -26,6 +26,7 @@ import { createSessionCorrelationId, setActiveSessionCorrelationId } from "../ap
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
+import { SpeechDictation } from "../components/SpeechDictation";
 import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
 import { AssistantMarkdown } from "../components/AssistantMarkdown";
@@ -840,6 +841,7 @@ const AssistantThread: React.FC<{
     ]
   );
 
+  const [speechBusy, setSpeechBusy] = React.useState(false);
   const runtime = useLocalRuntime(assistantAdapter, {
     initialMessages: assistantMessages
   });
@@ -950,17 +952,21 @@ const AssistantThread: React.FC<{
         <ThreadPrimitive.Viewport className="assistant-thread__viewport">
           <ThreadPrimitive.Messages components={{ Message }} />
         </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root className="assistant-composer">
+        <SpeechDictation key={activeCaseId ?? "none"} caseId={activeCaseId ?? null} onBusy={setSpeechBusy} onFinal={(text) => {
+          const draft = runtime.thread.composer.getState().text;
+          runtime.thread.composer.setText([draft, text].filter(Boolean).join("\n"));
+        }} />
+        <ComposerPrimitive.Root className="assistant-composer" onSubmitCapture={(event) => { if (speechBusy) { event.preventDefault(); event.stopPropagation(); } }}>
           <input ref={documentInputRef} type="file" multiple hidden accept=".pdf,.docx,.jpg,.jpeg,.png,.txt,.md,.json,.csv,.html,.xml" onChange={(event) => void handleDocumentUpload(event)} />
           <button type="button" className="assistant-composer__upload" aria-label={t("assistantUploadDocuments")} onClick={() => documentInputRef.current?.click()}>
             <FiPaperclip aria-hidden="true" />
           </button>
           <ComposerPrimitive.Input
-            className="assistant-composer__input"
+            className="assistant-composer__input" readOnly={speechBusy}
             placeholder={t("assistantComposerPlaceholder")}
             aria-label={t("assistantComposerLabel")}
           />
-          <ComposerPrimitive.Send className="assistant-composer__send" aria-label={t("assistantSend")}>
+          <ComposerPrimitive.Send disabled={speechBusy} className="assistant-composer__send" aria-label={t("assistantSend")}>
             <BsArrowUpCircle aria-hidden="true" />
           </ComposerPrimitive.Send>
           {documentStatusText && <div className={`assistant-composer__status assistant-composer__status--${documentImport?.state}`} role={documentImport?.state === "failed" ? "alert" : "status"}>{documentStatusText}</div>}
@@ -1107,7 +1113,7 @@ const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlat
         mode: "Voice" as CaseCommunicationMode,
         label: t("commsVoice"),
         icon: <FiMic aria-hidden="true" />,
-        disabled: true
+        disabled: false
       },
       {
         mode: "Video" as CaseCommunicationMode,
@@ -1186,7 +1192,8 @@ const AssistantConfigurations: React.FC<{ correlationId: string }> = ({ correlat
                   data-tooltip={option.disabled ? t("roleUnavailable") : undefined}
                   onClick={() => {
                     if (activeCase && !isDisabled) {
-                      setCaseCommunicationMode(activeCase.id, option.mode);
+                      if (option.mode === "Voice") window.dispatchEvent(new Event("jurisdigta-speech-open"));
+                      else setCaseCommunicationMode(activeCase.id, option.mode);
                     }
                   }}
                 >

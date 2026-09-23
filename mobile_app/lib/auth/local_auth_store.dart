@@ -675,6 +675,11 @@ class LocalAuthStore {
     await prefs.setString(_lastPhoneKey, phoneNumber);
   }
 
+  Future<Map<String, String>> deviceAuthorizationHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {'x-jurisdigta-device-id': await getOrCreateDeviceBindingId(), 'x-jurisdigta-device-token': prefs.getString(_deviceTokenKey) ?? ''};
+  }
+
   Future<void> _cacheDeviceToken(String? token) async {
     final prefs = await SharedPreferences.getInstance();
     if (token == null || token.trim().isEmpty) {

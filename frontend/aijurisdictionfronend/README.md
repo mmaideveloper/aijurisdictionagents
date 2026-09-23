@@ -535,3 +535,10 @@ python examples/frontend_case_create_layout_issue_369_minimal_demo.py
 
 The demo defaults to the shared Azure dev API endpoint. Override it for local API testing with
 `AIJ_API_BASE_URL=http://127.0.0.1:8080`.
+
+
+## Streaming STT (#525)
+
+The assistant dictation path uses authenticated backend streaming, partial transcripts,
+explicit Stop, editable review and manual Send. TTS is disabled in this flow.
+See [streaming STT setup, protocol and real two-line speech E2E](../../docs/STREAMING_STT.md).

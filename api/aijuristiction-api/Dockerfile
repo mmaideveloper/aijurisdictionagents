@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS runtime
+FROM python:3.13-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /workspace
 
 RUN apt-get update && \
-    apt-get install --yes --no-install-recommends fonts-dejavu-core poppler-utils && \
+    apt-get install --yes --no-install-recommends fonts-dejavu-core poppler-utils ca-certificates libssl3 libasound2 && \
     rm -rf /var/lib/apt/lists/* && \
     addgroup --system app && adduser --system --ingroup app app
 

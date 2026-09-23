@@ -788,3 +788,19 @@ After setup, verify:
 - `workflow_dispatch` works with `github_environment=prod`
 - `Self-Managed Prod Deploy` works against `prod` and the server-local health checks for API, MCP, web, email scheduler, and document processor pass
 - `Self-Managed Prod Deploy` leaves the synthetic MCP OAuth MFA bypass disabled after its required post-deployment E2E, including when the E2E fails
+
+
+## Streaming STT (#525): test and prod
+
+No additional workflow input or frontend build secret is required. For both `test`
+and `prod`, the service administrator must configure the Azure Speech provider,
+actual approved region, encrypted credential and separate speech task policies
+in that environment's database. Install the Speech SDK and migration 830 and
+validate TLS/WebSocket ingress and explicit browser origins. Follow
+`docs/manual_infrastucture_setup.md` and `docs/STREAMING_STT.md`. Never expose the
+Speech key as VITE_ or Flutter dart-define configuration. Validate test before
+prod; all exact-commit build gates and real speech acceptance remain required.
+
+The API image uses Python 3.13 on Debian 12 (bookworm), with ALSA, OpenSSL 3
+and CA certificates for the native Speech SDK. Require Speech SDK >=1.48.2.
+See [Microsoft Speech SDK platform requirements](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/quickstarts/setup-platform).

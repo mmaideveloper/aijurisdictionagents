@@ -100,6 +100,8 @@ def deserialize_model_parameters(value: object) -> ModelParameters:
 
 
 def _allowed_parameter_names(provider_type: str) -> set[str]:
+    if provider_type == "azure_speech":
+        return {"capability", "streaming", "locales"}
     if provider_type in _OPENAI_COMPATIBLE_PROVIDER_TYPES:
         return {
             "frequency_penalty",
@@ -121,7 +123,15 @@ def _allowed_parameter_names(provider_type: str) -> set[str]:
 
 
 def _validate_value(name: str, value: object) -> ModelParameterValue:
-    if name in {"parallel_tool_calls", "store"}:
+    if name == "capability":
+        if value != "speech_to_text":
+            raise ValueError("Azure Speech capability must be speech_to_text")
+        return "speech_to_text"
+    if name == "locales":
+        if not isinstance(value, str) or not value or any(x not in {"sk-SK", "en-US", "de-DE"} for x in value.split(",")):
+            raise ValueError("Unsupported speech locales")
+        return value
+    if name in {"parallel_tool_calls", "store", "streaming"}:
         if not isinstance(value, bool):
             raise ValueError(f'model parameter "{name}" must be a boolean')
         return value

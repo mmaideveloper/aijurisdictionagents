@@ -1,10 +1,11 @@
 [project]
 name = "aijuristiction-api"
-version = "1.0.260592"
+version = "1.0.260593"
 description = "Dedicated API service for aijurisdictionagents"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+  "azure-cognitiveservices-speech>=1.48.2,<2",
   "azure-identity>=1.23.0",
   "azure-monitor-opentelemetry>=1.8.6",
   "azure-monitor-query>=1.4.0",
