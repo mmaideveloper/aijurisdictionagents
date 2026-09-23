@@ -187,3 +187,7 @@ synthetic Slovak fixture: selected top-right microphone border, explicit on/off
 status, measured audio activity, four live transcript lines, 22 partial events,
 editable review and exact submitted text. Finalization took 416 ms in this run.
 Evidence is under `artifacts/speech-525-73958b02ed47/` (seven-day retention).
+
+The real E2E also captures `start-consent.png`, `started-recording.png` and
+`stopped-transcript.png`, showing the start/record/stop sequence before any
+review edit or Send. These follow the same synthetic-only and retention rules.

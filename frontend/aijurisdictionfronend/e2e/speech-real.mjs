@@ -76,11 +76,14 @@ try {
   manifest.stage = 'consent';
   await expect(dictate).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#speech-microphone-status')).toHaveText('Mikrofón vypnutý');
+  await page.getByRole('button', { name: 'Súhlasím — zapnúť mikrofón', exact: true }).waitFor();
+  await page.screenshot({ path: path.join(config.output, 'start-consent.png'), fullPage: true });
   begun = Date.now();
   await page.getByRole('button', { name: 'Súhlasím — zapnúť mikrofón', exact: true }).click();
   manifest.stage = 'live_recognition';
   await expect(dictate).toHaveAttribute('data-speech-state', 'recording', { timeout: 20000 });
   await expect(page.locator('#speech-microphone-status')).toHaveText('Mikrofón zapnutý · Počúvam');
+  await page.screenshot({ path: path.join(config.output, 'started-recording.png'), fullPage: true });
   await expect.poll(async () => Number(await page.getByRole('meter').getAttribute('aria-valuenow')), { timeout: 20000 }).toBeGreaterThan(0);
   const live = page.getByTestId('speech-live-transcript');
   await expect(live).toContainText('bicykel', { timeout: 60000 });
@@ -108,6 +111,7 @@ try {
   manifest.word_error_rate = errorRate(words(config.lines.join(' ')), words(recognized));
   if (manifest.word_error_rate > 0.2 || !words(recognized).join(' ').includes('100 eur')) throw new Error('synthetic_slovak_accuracy');
   if (sentText !== null || ttsCalls) throw new Error('automatic_send_or_tts');
+  await page.screenshot({ path: path.join(config.output, 'stopped-transcript.png'), fullPage: true });
   // Deliberate human-review edit proves the exact approved text is submitted.
   const reviewed = `${recognized}\nToto je syntetický test.`;
   await composer.fill(reviewed);
