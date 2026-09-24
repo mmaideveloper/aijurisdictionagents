@@ -72,3 +72,26 @@ a legal completeness or correctness assessment. Real drafts still require human
 review. Regression fixtures are synthetic and contain no supplied PDF files or
 account details. The positive regression parses the exported PDF and verifies
 employment terms, not just the PDF header. Historical HTTP outcomes remain unknown.
+
+## Placeholder links after the first rollout
+
+The retest reported a download action pointing to `/app/assistant#`, while case
+history showed zero legal documents. Ordinary Markdown links bypassed the earlier
+viewer-link extraction. The shared Markdown renderer now applies case document
+verification to document actions, including reference-style links and formatted
+labels. Placeholder navigation targets show a localized unavailable notice and
+retry action instead of opening a new tab. Verified viewer links and ordinary
+source citations remain available. This does not weaken login/access protection,
+change authentication storage, or claim that a draft has been persisted.
+
+Minimal runnable reproduction (synthetic data only):
+
+```powershell
+cd frontend/aijurisdictionfronend
+npm test -- --run src/__tests__/assistantMarkdown.test.tsx -t "placeholder download"
+npx playwright test e2e/generated-document-download.spec.ts -g "placeholder download"
+```
+
+The original exported PDF and user account data are not committed. End-to-end
+regeneration remains a separate acceptance check: no link repair can create the
+missing saved contract or establish why generation did not persist its body.

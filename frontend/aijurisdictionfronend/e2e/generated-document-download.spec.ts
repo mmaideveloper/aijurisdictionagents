@@ -222,3 +222,22 @@ test("saved placeholder in history is not offered as a ready document", async ({
   await expect(page.getByLabel("Generated documents")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
 });
+
+
+for (const href of ["#", "/", "https://agent.jurisdigta.eu/app/assistant#", "/app/documents/view?caseId=case-generated-doc&docId=missing"]) {
+  test(`placeholder download link ${href} shows retry instead of opening login`, async ({ page, context }) => {
+    await page.route("**/v1/cases/case-generated-doc/history?**", route => route.fulfill({ json: {
+      has_more: false, documents: [], messages: [{
+        communication_id: "placeholder-link", role: "assistant", agent_name: "Assistant",
+        content: `[Stiahnuť pracovnú zmluvu](${href})`, created_at: "2026-06-26T10:05:00Z"
+      }]
+    } }));
+    await page.goto("/app/assistant");
+    await page.locator(".case-item").filter({ hasText: apiCase.title }).click();
+    await expect(page.getByText("The document is not ready for download.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Stiahnuť pracovnú zmluvu" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/assistant$/);
+    expect(context.pages()).toHaveLength(1);
+  });
+}
