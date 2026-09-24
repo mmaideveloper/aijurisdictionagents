@@ -42,6 +42,7 @@ class Message(BaseModel):
     attachments: List[Attachment] = Field(default_factory=list)
     citations: List[dict[str, Any]] = Field(default_factory=list)
     presentation: dict[str, Any] = Field(default_factory=dict)
+    generated_document_ids: list[str] = Field(default_factory=list)
 
 
 class GenerationJob(BaseModel):

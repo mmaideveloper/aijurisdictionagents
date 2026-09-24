@@ -4906,7 +4906,7 @@ def test_prepare_slovakia_vehicle_authorization_issue_428_uses_direct_document_r
     assert "1.7.2026" in preparation.direct_reply
     assert "Splnomocnenie (slovenska verzia)" in preparation.direct_reply
     assert "Power of Attorney (English version)" in preparation.direct_reply
-    assert any(event.get("stage") == "document_ready" for event in events)
+    assert any(event.get("stage") == "document_draft_prepared" for event in events)
     slovakia_service._ORSR_CACHE.clear()
 
 
@@ -5245,7 +5245,7 @@ def test_document_export_uses_latest_legal_document_body_without_assistant_notes
     assert "CASE_UPDATE_JSON" not in exported_text
 
 
-def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
+def test_first_turn_final_pdf_requires_saved_artifact() -> None:
     from app.chat.api import _document_export_ready, _document_generation_confirmed
     from app.chat.models import Message, MessageRole, Session
 
@@ -5267,7 +5267,7 @@ def test_first_turn_final_pdf_payment_request_counts_as_export_ready() -> None:
     ]
 
     assert _document_generation_confirmed(messages)
-    assert _document_export_ready(messages)
+    assert not _document_export_ready(messages)
 
 
 def test_run_direct_lawyer_turn_routes_tool_capability_question_through_langgraph(monkeypatch) -> None:
@@ -5958,13 +5958,15 @@ def test_reply_endpoint_share_transfer_orsr_confirmation_persists_for_document_g
     )
     assert third_reply.status_code == 200
     content = _canonical_text(third_reply.json()["content"])
-    assert "navrh dokument" in content
+    # The registry confirmation persists, but this spy returns no document body.
+    assert "nepodarilo ulozit" in content
+    assert third_reply.json()["generated_document_ids"] == []
     assert "prevodca je spravny" not in content
     assert captured_prompts
     assert "ask the user to confirm the authoritative transferor identity" not in captured_prompts[-1].lower()
 
 
-def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkeypatch) -> None:
+def test_reply_endpoint_share_transfer_rejects_empty_confirmed_draft(monkeypatch) -> None:
     from app.chat.models import Message, MessageRole
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
@@ -6064,7 +6066,7 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     assert reply_response.status_code == 200
     content = reply_response.json()["content"]
     lowered = _canonical_text(content)
-    assert "navrh dokument" in lowered
+    assert "nepodarilo ulozit" in lowered
     assert "case_update_json" not in lowered
     list_response = client.get(
         f"/v1/chat/sessions/{session_id}/messages",
@@ -6075,11 +6077,7 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     assistant_listed = [item for item in listed_messages if item["role"] == "assistant"]
     assert assistant_listed
     assert all("case_update_json" not in item["content"].lower() for item in assistant_listed)
-    persisted_messages = repository.list_messages(session_id)
-    assert any(
-        message.role == MessageRole.ASSISTANT and "case_update_json" in message.content.lower()
-        for message in persisted_messages
-    )
+    assert reply_response.json()["generated_document_ids"] == []
     assert captured_context
     prompt = captured_context[-1]
     assert "SLOVAK SHARE-TRANSFER TOOL ORCHESTRATION MODE" in prompt
@@ -6095,7 +6093,7 @@ def test_reply_endpoint_share_transfer_confirmation_returns_working_draft(monkey
     metadata = result_response.json()["metadata"]
     assert metadata["document_requested"] is True
     assert metadata["document_confirmed"] is True
-    assert metadata["document_ready"] is True
+    assert metadata["document_ready"] is False
 
 
 def test_build_simple_pdf_preserves_slovak_and_german_characters() -> None:
@@ -6334,7 +6332,7 @@ def test_stream_waiting_reply_persists_mcp_citations_before_pause(monkeypatch) -
     assert result.metadata["legal_source_citations"][0]["source_id"] == "law-192-2026"
 
 
-def test_stream_read_user_emits_document_name_progress_before_final_message(monkeypatch) -> None:
+def test_stream_does_not_emit_ready_progress_without_persistence(monkeypatch) -> None:
     from app.chat import api as chat_api
     from app.chat.models import Message, MessageRole, SessionResult
 
@@ -6401,9 +6399,9 @@ def test_stream_read_user_emits_document_name_progress_before_final_message(monk
     assert first_doc in events
     assert second_doc in events
     assert third_doc in events
-    assert events.index(first_doc) < events.index('"role": "assistant"')
-    assert events.index(second_doc) < events.index('"role": "assistant"')
-    assert events.index(third_doc) < events.index('"role": "assistant"')
+    assert '"stage": "document_ready"' not in events
+    assert '"stage": "document_package_ready"' not in events
+
 
 
 def test_stream_read_user_keeps_connection_alive_during_slow_direct_turn(monkeypatch) -> None:
@@ -7257,7 +7255,7 @@ def test_reply_endpoint_respects_session_language_sk() -> None:
     assert "pravne posudenie" in lawyer_message or "aby som mohol pripravit presny navrh" in lawyer_message
 
 
-def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> None:
+def test_reply_endpoint_confirmation_without_artifact_is_not_ready() -> None:
     session_response = client.post(
         "/v1/chat/sessions",
         json={"country": "SK", "discussion_type": "court", "language": "SK"},
@@ -7300,7 +7298,7 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     )
     assert second_reply.status_code == 200
     second_content = second_reply.json()["content"].lower()
-    assert "pripravil som" in second_content or "export do pdf" in second_content
+    assert "nepodarilo uložiť" in second_content
 
     second_result = client.get(
         f"/v1/chat/sessions/{session_id}/result",
@@ -7310,7 +7308,8 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     second_metadata = second_result.json()["metadata"]
     assert second_metadata["document_requested"] is True
     assert second_metadata["document_confirmed"] is True
-    assert second_metadata["document_ready"] is True
+    assert second_metadata["document_ready"] is False
+    assert second_reply.json()["generated_document_ids"] == []
     assert "validation_accuracy" in second_metadata
     assert "validation_summary" in second_metadata
     assert "core_version" in second_metadata
@@ -7323,7 +7322,7 @@ def test_reply_endpoint_requires_confirmation_before_document_pdf_ready() -> Non
     assert export_doc_pdf.content.startswith(b"%PDF")
 
 
-def test_processing_placeholder_reply_is_replaced_with_document_ready_message() -> None:
+def test_processing_placeholder_reply_reports_incomplete_export() -> None:
     from app.chat.api import _finalize_document_ready_reply_if_needed
     from app.chat.models import Message, MessageRole, Session
 
@@ -7351,9 +7350,9 @@ def test_processing_placeholder_reply_is_replaced_with_document_ready_message() 
         ),
     )
 
-    assert "pripraveny na export" in finalized.lower()
-    assert "Zmluva o prevode obchodneho podielu" in finalized
-    assert "Zapisnica z rozhodnutia spolocnika" in finalized
+    assert "nepodarilo uložiť" in finalized
+    assert "Export nie je hotový" in finalized
+    assert "pripraveny na export" not in finalized.lower()
 
 
 def test_explicit_slovak_document_update_request_is_recognized() -> None:
@@ -7419,6 +7418,15 @@ def test_standalone_affirmative_after_ready_document_returns_status_without_llm(
     session = repository.create_session(
         Session(id=session_id, country="SK", language="SK", discussion_type="court")
     )
+    store = chat_api._get_store()
+    user = store.create_user(email="ready-status@example.test", password="test-only",
+                             full_name="Synthetic User", address="Synthetic address")
+    case = store.create_case(user_id=user.user_id, company_id=None, title="Synthetic readiness")
+    session.user_id = UUID(user.user_id)
+    session.case_id = case.case_id
+    doc_id = store.add_case_document(case_id=case.case_id, kind="generated_document", version=1,
+                                    original_filename="synthetic.pdf", payload=b"Synthetic legal draft",
+                                    uploaded_by_user_id=user.user_id)
     repository.add_message(
         Message(
             session_id=session_id,
@@ -7444,7 +7452,8 @@ def test_standalone_affirmative_after_ready_document_returns_status_without_llm(
                 "Tu je konecna verzia dokumentu:\n\n"
                 "---\n\n"
                 "**Potvrdenie o zaplateni**\n\n"
-                "Dokument je pripraveny na stiahnutie vo formate PDF."
+                "Dokument je pripraveny na stiahnutie vo formate PDF.\n\n"
+                f"Generated case document: /v1/cases/{case.case_id}/documents/{doc_id}"
             ),
         )
     )
@@ -7466,7 +7475,7 @@ def test_standalone_affirmative_after_ready_document_returns_status_without_llm(
     assert "pripraveny na export" in visible.lower()
 
 
-def test_document_export_ready_after_confirmation_with_prior_case_update() -> None:
+def test_case_update_without_saved_artifact_is_not_ready() -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session
 
@@ -7521,7 +7530,7 @@ def test_document_export_ready_after_confirmation_with_prior_case_update() -> No
 
     assert result.metadata["document_requested"] is True
     assert result.metadata["document_confirmed"] is True
-    assert result.metadata["document_ready"] is True
+    assert result.metadata["document_ready"] is False
 
 
 def test_stale_result_refreshes_when_later_messages_make_document_ready() -> None:
@@ -8064,7 +8073,7 @@ def test_pending_payment_confirmation_reply_is_synthesized_for_storage() -> None
     assert "Chvilu prosim" not in body
 
 
-def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None:
+def test_technical_payload_is_not_a_saved_generated_document() -> None:
     from app.chat.api import _build_direct_reply_result
     from app.chat.models import Message, MessageRole, Session
 
@@ -8107,7 +8116,7 @@ def test_technical_document_notice_does_not_block_pdf_export_readiness() -> None
         route=SimpleNamespace(model="gpt-4o-mini"),
     )
 
-    assert result.metadata["document_ready"] is True
+    assert result.metadata["document_ready"] is False
     assert "/v1/cases/" not in result.final_recommendation
 
 
@@ -8485,6 +8494,8 @@ def test_persisted_assistant_message_exposes_generated_document_without_refresh(
         lambda **_kwargs: ["doc-new"],
     )
 
+    monkeypatch.setattr(chat_api, "_verified_document_references", lambda **_kwargs: ["doc-new"])
+
     persisted = chat_api._persist_direct_assistant_message(
         session_id=session.id,
         session=session,
@@ -8507,7 +8518,7 @@ def test_persisted_assistant_message_exposes_generated_document_without_refresh(
     ]
 
 
-def test_completed_read_user_session_returns_document_status_followup() -> None:
+def test_completed_session_without_saved_document_reports_incomplete_export() -> None:
     from app.chat import api as chat_api
     from app.chat.models import Message, MessageRole, SessionResult
 
@@ -8576,7 +8587,8 @@ def test_completed_read_user_session_returns_document_status_followup() -> None:
     assert "event: processing" in events
     assert '"stage": "document_status"' in events
     assert "stav dokumentov" in events.lower()
-    assert "pripraveny na export a stiahnutie" in events.lower()
+    assert "export zatial nie je hotovy" in events.lower()
+    assert "pripraveny na export a stiahnutie" not in events.lower()
     assert "event: done" in events
 
     result_response = client.get(
@@ -8584,7 +8596,7 @@ def test_completed_read_user_session_returns_document_status_followup() -> None:
         headers=AUTH_HEADERS,
     )
     assert result_response.status_code == 200
-    assert result_response.json()["metadata"]["document_ready"] is True
+    assert result_response.json()["metadata"]["document_ready"] is False
 
 
 def test_direct_reply_result_uses_latest_law_store_timestamp(monkeypatch, tmp_path) -> None:

@@ -229,7 +229,7 @@ def prepare_slovakia_direct_reply(
         emit_processing_event(
             events=processing_events,
             event=build_processing_event(
-                stage="document_ready",
+                stage="document_draft_prepared",
                 message="Pripravil som slovensku a anglicku verziu splnomocnenia na vedenie firemneho vozidla.",
                 details={"document_names": ["Splnomocnenie", "Power of Attorney"]},
             ),
@@ -1828,7 +1828,7 @@ def _build_slovak_share_transfer_model_prompt_note(
         "- Use verified company data first and do not ask again for company name, IČO, seat, status when available.",
         "- Continue with share-transfer workflow and ask only for missing drafting inputs.",
         "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.",
-        "- If the drafting package is complete, say it is ready for export or download.",
+        "- If the drafting package is complete, describe it as prepared for review; download readiness requires backend persistence.",
         "- Treat every item listed under 'Already captured inputs' as already answered unless the user later contradicts it.",
         "- Be proactive: recommend the full set of likely Slovak corporate steps, related document changes, filing updates, and attachments even if the user asked only about one document.",
         "- If conflicts are detected between user-provided transferor and ORSR owners, do not finalize drafts yet.",

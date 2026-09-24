@@ -174,7 +174,7 @@ const DocumentViewer: React.FC = () => {
             {caseTitle ? <small>{caseTitle}</small> : null}
           </div>
           <div className="document-viewer-actions">
-            <button type="button" className="button ghost" onClick={handleSave} disabled={!canLoadDocument || isDownloading}>
+            <button type="button" className="button ghost" onClick={handleSave} disabled={!previewUrl || isLoadingDocument || isDownloading}>
               {isDownloading ? t("documentViewerDownloading") : t("documentViewerSave")}
             </button>
             <button type="button" className="button ghost" onClick={handlePrint} disabled={!previewUrl}>

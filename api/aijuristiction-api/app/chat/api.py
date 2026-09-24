@@ -20,7 +20,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
 from typing import Any, List, Literal, Optional, cast
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -130,6 +130,10 @@ class _DocumentExportAsset:
 class _GeneratedCaseDocumentDraft:
     filename: str
     body: str
+
+
+class _DocumentPersistenceError(HTTPException):
+    """A safe, retryable document-storage failure for HTTP and SSE clients."""
 
 
 @dataclass(frozen=True)
@@ -932,18 +936,16 @@ def _message_payload(message: Message) -> dict[str, object]:
         "content": visible_message.content,
         "created_at": visible_message.created_at.isoformat(),
         "presentation": visible_message.presentation,
+        "generated_document_ids": visible_message.generated_document_ids,
     }
-    generated_document_urls = list(
-        dict.fromkeys(
-            match.group(0).rstrip(".,;)")
-            for match in re.finditer(
-                r"/v1/cases/[^/\s?]+/documents/[^/\s?]+(?:\?[^\s]+)?",
-                message.content,
-            )
-        )
-    )
-    if generated_document_urls:
-        payload["generated_document_urls"] = generated_document_urls
+    session = _repository.get_session(message.session_id)
+    if session is not None:
+        ids = visible_message.generated_document_ids
+        payload["generated_document_ids"] = ids
+        if ids:
+            payload["generated_document_urls"] = [
+                _case_document_download_url(session=session, doc_id=doc_id) for doc_id in ids
+            ]
     return payload
 
 
@@ -1345,10 +1347,16 @@ def _persist_direct_assistant_message(
         if allow_document_generation
         else []
     )
+    if agent_name == "LawyerStatus":
+        previous = _repository.list_messages(session_id)
+        last_assistant = next((m for m in reversed(previous) if m.role == MessageRole.ASSISTANT), None)
+        if last_assistant is not None:
+            generated_doc_ids = _verified_document_references(session=session, content=last_assistant.content)
     content = _attach_generated_case_document_references(
         session=session,
         content=content,
         doc_ids=generated_doc_ids,
+        generation_attempted=allow_document_generation,
     )
     persisted_lawyer = _repository.add_message(
         Message(
@@ -1357,6 +1365,7 @@ def _persist_direct_assistant_message(
             content=content,
             agent_name=agent_name,
             presentation=presentation or {},
+            generated_document_ids=generated_doc_ids,
         )
     )
     _persist_case_message_if_needed(
@@ -2018,7 +2027,7 @@ def _run_direct_lawyer_turn_impl(
                 "- Do not ask for PDF confirmation again.\n"
                 "- Produce the finalized draft-oriented response for PDF export in this turn.\n"
                 "- Do not claim that PDF or ZIP files are already created, saved, attached, or uploaded.\n"
-                "- Say that the draft package is ready for download/export instead.\n"
+                "- Describe the draft as prepared for review; only the backend can confirm saved download readiness.\n"
                 "- Do not mention JSON, CASE_UPDATE_JSON, machine payload, or technical persistence details in the user-facing content.\n"
                 "- Do not include direct file paths, markdown download links, or relative links such as documents/... in the user-facing content.\n"
                 "- Include CASE_UPDATE_JSON after the user-facing content.\n"
@@ -2682,9 +2691,11 @@ def stream_session(
                 session=session,
                 content=content,
                 doc_ids=generated_doc_ids,
+                generation_attempted=True,
             )
         else:
             content = core_message.content
+            generated_doc_ids = []
         core_conversation.append(core_message)
         persisted = _repository.add_message(
             Message(
@@ -2692,6 +2703,7 @@ def stream_session(
                 role=MessageRole(normalized_role),
                 content=content,
                 agent_name=core_message.agent_name,
+                generated_document_ids=generated_doc_ids,
             )
         )
         _persist_case_message_if_needed(
@@ -2772,15 +2784,22 @@ def stream_session(
             if cancellation_event.is_set():
                 return
             persisted_messages = _repository.list_messages(session_id)
+            document_ready = _document_export_ready(persisted_messages)
+            final_recommendation = result.final_recommendation
+            if not document_ready and _claims_document_download_ready(final_recommendation):
+                final_recommendation = _document_generation_failed_message(session)
             metadata = build_session_result_metadata(
                 session=session,
                 messages=persisted_messages,
-                final_recommendation=result.final_recommendation,
-                base_metadata={"message_count": len(result.messages), "mode": "discussion_stream"},
+                final_recommendation=final_recommendation,
+                base_metadata={
+                    "message_count": len(persisted_messages), "mode": "discussion_stream",
+                    "document_ready": document_ready,
+                },
                 routed_model_name=stream_route.model if stream_route is not None else None,
             )
             session_result = SessionResult(
-                final_recommendation=result.final_recommendation,
+                final_recommendation=final_recommendation,
                 judge_rationale=result.judge_rationale,
                 citations=_merge_session_citations(
                     generic_citations=[{"filename": c.filename, "snippet": c.snippet} for c in result.citations],
@@ -3065,6 +3084,8 @@ def _correlated_error_payload(
     payload: dict[str, object] | None, exc: Exception
 ) -> dict[str, object]:
     context = current_correlation_context()
+    if isinstance(exc, _DocumentPersistenceError):
+        payload = {"code": "document_generation_failed", "message": str(exc.detail)}
     result = dict(
         payload
         or {
@@ -3369,11 +3390,7 @@ def _document_generation_progress_events(
     )
     if len(document_names) < 2:
         return []
-    lowered_visible = visible_text.lower()
-    if not _document_export_ready(messages) and not any(
-        marker in lowered_visible
-        for marker in ("pripravil som", "pripravila som", "prepared", "ready", "hotove", "hotový")
-    ):
+    if not _document_export_ready(messages):
         return []
     return [
         {
@@ -3748,17 +3765,8 @@ def _finalize_document_ready_reply_if_needed(
         return lawyer_content.strip()
     if not _looks_like_processing_placeholder_reply(visible_text):
         return lawyer_content.strip()
-    document_names = _document_progress_names(
-        messages=messages,
-        lawyer_message=lawyer_content,
-        country=session.country,
-        language=session.language,
-    )
-    return _document_package_ready_message(
-        country=session.country,
-        language=session.language,
-        document_names=document_names,
-    ).strip()
+    # A placeholder is not a generated artifact, even after user confirmation.
+    return _document_generation_failed_message(session)
 
 
 def _current_turn_confirms_document_generation(
@@ -3784,6 +3792,8 @@ def _build_direct_reply_result(
     document_requested = _document_generation_requested(messages)
     document_confirmed = _document_generation_confirmed(messages)
     document_ready = _document_export_ready(messages)
+    if not document_ready and _claims_document_download_ready(visible_text):
+        visible_text = _document_generation_failed_message(session)
     rationale = (
         "Direct lawyer reply prepared for session export."
         if visible_text
@@ -3822,7 +3832,7 @@ def _build_document_status_reply(
     metadata = result.metadata if result is not None else {}
     document_requested = bool(metadata.get("document_requested"))
     document_confirmed = bool(metadata.get("document_confirmed"))
-    document_ready = bool(metadata.get("document_ready"))
+    document_ready = _document_export_ready(messages)
     lawyer_message = result.final_recommendation if result is not None else ""
     document_names = _document_progress_names(
         messages=messages,
@@ -3868,7 +3878,7 @@ def _document_completion_processing_events(
     messages: list[Message],
     result: SessionResult,
 ) -> list[dict[str, object]]:
-    if not bool(result.metadata.get("document_ready")):
+    if not _document_export_ready(messages):
         return []
     document_names = _document_progress_names(
         messages=messages,
@@ -3959,40 +3969,57 @@ def _is_final_document_generation_command(normalized: str) -> bool:
     )
 
 
+def _document_generation_failed_message(session: Session) -> str:
+    if session.country == "SK" or (session.language or "").startswith("sk"):
+        return "Dokument sa nepodarilo uložiť. Export nie je hotový. Skúste vytvorenie dokumentu znova."
+    if session.country == "CZ" or (session.language or "").startswith("cs"):
+        return "Dokument se nepodařilo uložit. Export není hotový. Zkuste vytvoření dokumentu znovu."
+    if session.country in {"AT", "DE", "CH"} or (session.language or "").startswith("de"):
+        return "Das Dokument konnte nicht gespeichert werden. Bitte erstellen Sie es erneut."
+    return "The document could not be saved. Export is not ready. Please retry document generation."
+
+
+def _verified_document_references(*, session: Session, content: str) -> list[str]:
+    """Validate references against this case and storage, never assistant prose."""
+    case_id = (session.case_id or "").strip()
+    if not case_id:
+        return []
+    pattern = rf"Generated case document: /v1/cases/{re.escape(quote(case_id, safe=''))}/documents/([^?\s]+)"
+    ids = list(dict.fromkeys(unquote(value) for value in re.findall(pattern, content)))
+    if not ids:
+        return []
+    try:
+        store = _get_store()
+        for doc_id in ids:
+            document = store.get_case_document(case_id=case_id, doc_id=doc_id)
+            if document.kind != "generated_document" or not store.read_storage_bytes(
+                storage_uri=document.storage_uri
+            ).strip():
+                return []
+    except Exception:
+        _LOGGER.warning("Generated document reference could not be verified",
+                        extra={"correlation_id": session.correlation_id})
+        return []
+    return ids
+
+
 def _document_export_ready(messages: list[Message]) -> bool:
-    if not _document_generation_confirmed(messages):
+    assistant = next((m for m in reversed(messages) if m.role == MessageRole.ASSISTANT), None)
+    if assistant is None:
         return False
-    assistant_messages = [m for m in messages if m.role == MessageRole.ASSISTANT]
-    if not assistant_messages:
+    assistant_index = messages.index(assistant)
+    if any(
+        message.role == MessageRole.USER and _user_requested_document_generation(
+            content=message.content, previous_messages=messages[:index]
+        )
+        for index, message in enumerate(messages)
+        if index > assistant_index
+    ):
         return False
-    last_assistant = assistant_messages[-1]
-    if _assistant_requests_document_confirmation(last_assistant.content):
-        return False
-    if _looks_like_processing_placeholder_reply(last_assistant.content):
-        return False
-    if any(_extract_case_update(message.content) is not None for message in assistant_messages):
-        return True
-    visible_text = _user_visible_text(last_assistant.content).lower()
-    ready_markers = (
-        "pripravil som",
-        "pripravila som",
-        "pripraven",
-        "pripraveny",
-        "pripravene",
-        "stiahnutie",
-        "prepared the final",
-        "prepared the draft",
-        "draft is ready",
-        "ready for download",
-        "navrh zmluvy",
-        "predzalobna vyzva",
-        "predžalobná výzva",
-        "legal summary",
-        "pravne zhrnutie",
+    session = _repository.get_session(assistant.session_id)
+    return session is not None and bool(
+        _verified_document_references(session=session, content=assistant.content)
     )
-    if any(marker in visible_text for marker in ready_markers):
-        return True
-    return "?" not in visible_text and bool(visible_text.strip())
 
 
 def _contains_case_update_json(content: str) -> bool:
@@ -4102,11 +4129,26 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
     return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
 
 
+def _claims_document_download_ready(content: str) -> bool:
+    normalized = _canonicalize_document_text(_user_visible_text(content))
+    if normalized.startswith((
+        "dokument sa nepodarilo ulozit", "dokument se nepodarilo ulozit",
+        "the document could not be saved", "das dokument konnte nicht gespeichert werden",
+    )):
+        return False
+    return bool(re.search(
+        r"(?:pripraven\w*|hotov\w*|ready|prepared|complete|bereit).{0,100}"
+        r"(?:stiahn|stazen|export|download|herunterlad)|"
+        r"(?:export|pdf).{0,35}(?:hotov\w*|complete|ready)", normalized
+    )) or bool(re.search(r"(?:\]\(|^|\s)documents/", content, re.IGNORECASE))
+
+
 def _attach_generated_case_document_references(
     *,
     session: Session,
     content: str,
     doc_ids: list[str],
+    generation_attempted: bool = False,
 ) -> str:
     references = [
         _case_document_download_url(session=session, doc_id=doc_id)
@@ -4114,6 +4156,37 @@ def _attach_generated_case_document_references(
         if doc_id.strip()
     ]
     if not references:
+        messages = _repository.list_messages(session.id)
+        latest_user_index = next(
+            (index for index in range(len(messages) - 1, -1, -1)
+             if messages[index].role == MessageRole.USER), None
+        )
+        generation_requested = latest_user_index is not None and _user_requested_document_generation(
+            content=messages[latest_user_index].content,
+            previous_messages=messages[:latest_user_index],
+        )
+        missing_output = (
+            generation_attempted and generation_requested
+            and not _assistant_requests_user_reply(content)
+            and (
+                _canonicalize_document_text(content).strip(". ") in {"", "done", "finished", "hotovo"}
+                or (latest_user_index is not None and _current_turn_confirms_document_generation(
+                    messages[latest_user_index].content, messages[:latest_user_index]
+                ))
+            )
+        )
+        claimed_ready = _claims_document_download_ready(content)
+        if (missing_output or claimed_ready) and not _verified_document_references(
+            session=session, content=content
+        ):
+            _LOGGER.warning(
+                "Document generation has no saved artifact",
+                extra={"correlation_id": session.correlation_id, "reason_code": "no_saved_document"},
+            )
+            failure = _document_generation_failed_message(session)
+            # Keep useful draft/review text when it makes no false success claim.
+            # The leading failure still makes the missing artifact explicit.
+            return failure if claimed_ready or not content.strip() else f"{failure}\n\n{content}"
         return content
     reference_lines = "\n".join(
         f"Generated case document: {reference}" for reference in references
@@ -4133,24 +4206,39 @@ def _persist_generated_case_document_drafts(
         doc_ids: list[str] = []
         from app.legal_basis import annotate_document
         for offset, draft in enumerate(drafts):
+            if not draft.body.strip():
+                raise ValueError("Empty generated document")
+            payload = annotate_document(draft.body, country=session.country).encode("utf-8")
+            # Reuse successful writes on a retry after partial package persistence.
+            list_documents = getattr(store, "list_case_documents", None)
+            existing = list_documents(case_id=case_id) if callable(list_documents) else []
+            duplicate = next((document.doc_id for document in existing
+                              if document.kind == "generated_document"
+                              and store.read_storage_bytes(storage_uri=document.storage_uri) == payload), None)
+            if duplicate:
+                doc_ids.append(duplicate)
+                continue
             doc_id = store.add_case_document(
                 case_id=case_id,
                 kind="generated_document",
                 version=version + offset,
                 original_filename=draft.filename,
-                payload=annotate_document(draft.body, country=session.country).encode("utf-8"),
+                payload=payload,
                 uploaded_by_user_id=str(session.user_id) if session.user_id else None,
             )
-            if isinstance(doc_id, str):
-                doc_ids.append(doc_id)
+            if not isinstance(doc_id, str) or not doc_id.strip():
+                raise ValueError("Persistence did not return a document ID")
+            doc_ids.append(doc_id)
+        _LOGGER.info("Generated documents saved", extra={
+            "correlation_id": session.correlation_id, "document_count": len(doc_ids),
+        })
         return doc_ids
-    except Exception:
+    except Exception as exc:
         _LOGGER.warning(
             "Failed to persist assistant final answer as a generated case document",
-            extra={"case_id": case_id},
-            exc_info=True,
+            extra={"correlation_id": session.correlation_id, "error_type": type(exc).__name__},
         )
-        return []
+        raise _DocumentPersistenceError(status_code=503, detail=_document_generation_failed_message(session)) from None
 
 
 def _generated_case_document_drafts_from_case_update(
@@ -4835,9 +4923,16 @@ def _message_for_user(message: Message) -> Message:
     if message.role != MessageRole.ASSISTANT:
         return message
     visible_content = _user_visible_text(message.content)
-    if visible_content == message.content:
+    session = _repository.get_session(message.session_id)
+    ids = _verified_document_references(session=session, content=message.content) if session else []
+    if session is not None and _claims_document_download_ready(visible_content) and not ids:
+        return message.model_copy(update={
+            "content": _document_generation_failed_message(session),
+            "presentation": {}, "generated_document_ids": [],
+        })
+    if visible_content == message.content and ids == message.generated_document_ids:
         return message
-    return message.model_copy(update={"content": visible_content})
+    return message.model_copy(update={"content": visible_content, "generated_document_ids": ids})
 
 
 def _persist_case_citations_for_answer(
@@ -5800,7 +5895,10 @@ def _session_result_is_stale(*, result: SessionResult, messages: list[Message]) 
     message_count = metadata.get("message_count")
     if isinstance(message_count, int) and message_count < len(messages):
         return True
-    if _document_export_ready(messages) and metadata.get("document_ready") is not True:
+    ready = _document_export_ready(messages)
+    if bool(metadata.get("document_ready")) != ready:
+        return True
+    if not ready and _claims_document_download_ready(result.final_recommendation):
         return True
     return False
 
