@@ -191,3 +191,9 @@ Evidence is under `artifacts/speech-525-73958b02ed47/` (seven-day retention).
 The real E2E also captures `start-consent.png`, `started-recording.png` and
 `stopped-transcript.png`, showing the start/record/stop sequence before any
 review edit or Send. These follow the same synthetic-only and retention rules.
+
+Browser regression assertions for case export/deletion scope their status lookup
+to the sidebar because the microphone also exposes an accessible status region.
+Runnable regression check (from `frontend/aijurisdictionfronend`):
+`npm run test:e2e -- e2e/active-case-export.spec.ts e2e/case-document-delete-controls.spec.ts`.
+These mocked browser checks supplement the real Speech acceptance above.

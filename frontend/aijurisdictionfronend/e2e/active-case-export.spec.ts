@@ -78,7 +78,7 @@ test("shows and downloads export only from the active case card", async ({ page 
   await exportButton.click();
   await exportResponse;
   expect((await exportDownload).suggestedFilename()).toBe("active-case-export.zip");
-  await expect(page.getByRole("status")).toHaveText("Sťahovanie exportu prípadu sa začalo.");
+  await expect(page.locator(".sidebar").getByRole("status")).toHaveText("Sťahovanie exportu prípadu sa začalo.");
 
   await secondCase.locator(".case-item").click();
   await expect(secondCase.locator(".case-item")).toHaveClass(/active/);

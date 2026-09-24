@@ -137,7 +137,7 @@ test("deletes documents with a visible audit event and soft-deletes the active c
   await page.getByRole("button", { name: "Delete document client-evidence.pdf" }).click();
   await expect(page.getByText("client-evidence.pdf")).toHaveCount(0);
   await expect(page.getByText("Document deleted at 2026-08-05T13:00:00Z.")).toBeVisible();
-  await expect(page.getByRole("status")).toContainText("Document deleted");
+  await expect(page.locator(".sidebar").getByRole("status")).toContainText("Document deleted");
 
   const screenshotDirectory = path.resolve("..", "..", "output", "playwright");
   await mkdir(screenshotDirectory, { recursive: true });
@@ -152,5 +152,5 @@ test("deletes documents with a visible audit event and soft-deletes the active c
   await page.getByRole("button", { name: "Delete case" }).click();
   await expect(page.getByText(apiCase.title)).toHaveCount(0);
   await expect(page.getByText("No cases found in the database yet.")).toBeVisible();
-  await expect(page.getByRole("status")).toHaveText("Case deleted.");
+  await expect(page.locator(".sidebar").getByRole("status")).toHaveText("Case deleted.");
 });
