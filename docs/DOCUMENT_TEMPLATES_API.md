@@ -119,6 +119,29 @@ or immediately after a rights-holder request, delete the runtime artifact and an
 capture with status `capture_missing` or `failed` as appropriate, and retain only the metadata manifest for audit.
 If a source hash changes, treat it as a drift warning requiring legal review; it must never overwrite the internal
 canonical body automatically.
+
+## Source Ingestion
+
+Use the explicit operator command below only after recording the source licence/permission and approved review window.
+It accepts only HTTP(S) URLs already selected in the template catalogue, stores raw and normalized review artifacts under
+`runs/storage/api/template_sources/`, and writes a metadata-only `manifest.json`. The manifest contains identifiers,
+URLs, timestamps, hashes, runtime artifact references, status, and bounded failure codes; it never contains source text,
+user facts, prompts, or credentials. The ingestor never changes a canonical body or its review status.
+
+```powershell
+.\conda\python.exe scripts\ingest_document_template_sources.py --allow-network --template-key sk.employment.employment_contract
+```
+
+Review artifacts are temporary. Remove expired raw and normalized artifacts while retaining only the database audit
+metadata by running:
+
+```powershell
+.\conda\python.exe scripts\ingest_document_template_sources.py --cleanup-only --retention-days 30
+```
+
+Profile normalization is deterministic and review-only: law-firm pages preserve readable article/paragraph order,
+interactive forms collapse duplicate field text, and official forms retain their visible labels. Operators must inspect
+the source and normalized artifact before a qualified reviewer changes any managed canonical template.
 - `sk.employment.employment_contract` now ships with a managed canonical body instead of metadata-only seed content
 - Sprint C also supplies reviewed canonical bodies for the work-performance agreement, employee-initiated employment termination notice, and general and special powers of attorney; each records an exact reviewed source URL and retains a human-review requirement for legal-risk use
 - Sprint C normalizes structured case, chat, and profile facts through template-specific aliases for those four templates. Their legally material fields are required before the template-first path can draft a final document; missing data is returned as a precise Slovak follow-up question rather than silently leaving an unresolved placeholder. The mapping is deterministic, does not infer facts, and preserves the template's visible source and human-review disclosure.
