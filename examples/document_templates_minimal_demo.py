@@ -15,7 +15,7 @@ if str(src_root) not in sys.path:
 demo_db = repo_root / "runs" / "storage" / "api" / "sqlite" / "document_templates_demo.sqlite3"
 os.environ.setdefault("API_DOCUMENT_TEMPLATES_SQLITE_PATH", str(demo_db))
 
-from app.document_templates.catalog import download_template_sources  # noqa: E402
+from app.document_templates.source_ingestion import TemplateSourceIngestor  # noqa: E402
 from app.document_templates.store import DocumentTemplateStore  # noqa: E402
 
 
@@ -45,9 +45,10 @@ def main() -> None:
 
     if os.getenv("DOWNLOAD_TEMPLATE_SOURCES", "").strip() == "1":
         download_dir = repo_root / "runs" / "storage" / "api" / "template_sources"
-        downloaded = download_template_sources(templates=items, download_dir=download_dir)
-        print(f"Downloaded source artifacts: {len(downloaded)}")
-        print("Sample artifact:", downloaded[0].downloaded_to if downloaded else "n/a")
+        ingestor = TemplateSourceIngestor(store=store, storage_root=download_dir)
+        captured = ingestor.capture(items)
+        print(f"Captured source artifacts: {len(captured)}")
+        print("Sample artifact:", captured[0].artifact_reference if captured else "n/a")
 
 
 if __name__ == "__main__":
