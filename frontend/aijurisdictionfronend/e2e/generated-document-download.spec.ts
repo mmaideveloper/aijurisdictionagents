@@ -130,7 +130,7 @@ test("confirmed draft without storage does not claim export success or expose PD
   });
   await page.goto("/app/assistant");
   await page.locator(".case-item").filter({ hasText: "test generated document" }).click();
-  await expect(page.getByText("The document has not been saved.", { exact: false })).toBeVisible();
+  await expect(page.getByText("The document is not ready for download.", { exact: false })).toBeVisible();
   await expect(page.locator(".assistant-thread__viewport")).not.toContainText("pripravený na stiahnutie");
   await expect(page.getByLabel("Generated documents")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
@@ -164,7 +164,7 @@ test("saved document opens in viewer and downloads a nonempty PDF", async ({ pag
   expect(bytes.subarray(0, 5).toString()).toBe("%PDF-");
 });
 
-for (const status of [403, 404]) {
+for (const status of [403, 404, 409]) {
   test(`viewer failure ${status} cannot offer a PDF download`, async ({ page }) => {
     await page.route("**/v1/cases/case-generated-doc/documents/missing**", (route) =>
       route.fulfill({ status, json: { detail: `Document unavailable (${status})` } })
@@ -206,4 +206,19 @@ test("storage error is actionable and retry exposes only the subsequently saved 
   await page.getByRole("button", { name: "Retry document generation", exact: true }).click();
   await expect(page.getByLabel("Generated documents").getByRole("link")).toBeVisible();
   expect(attempts).toBe(2);
+});
+
+
+test("saved placeholder in history is not offered as a ready document", async ({ page }) => {
+  await page.route("**/v1/cases/case-generated-doc/history?**", route => route.fulfill({ json: {
+    has_more: false,
+    documents: [{ ...generatedDocument, download_available: false }],
+    messages: [{ communication_id: "legacy-placeholder", role: "assistant", agent_name: "Assistant",
+      content: "Document is ready for download.", created_at: "2026-06-26T10:05:00Z" }]
+  } }));
+  await page.goto("/app/assistant");
+  await page.locator(".case-item").filter({ hasText: apiCase.title }).click();
+  await expect(page.getByText("The document is not ready for download.", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Generated documents")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
 });

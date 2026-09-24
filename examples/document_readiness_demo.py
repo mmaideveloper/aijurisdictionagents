@@ -20,6 +20,9 @@ def main() -> None:
             "DB_LOCAL": str(Path(directory) / "api.sqlite3"),
             "STORE_LOCAL": str(Path(directory) / "storage"), "LLM_PROVIDER": "mock",
         })
+        from app.document_content import is_status_only_document
+        assert is_status_only_document("Document is ready for download.")
+        print("Download announcement without document body: rejected")
         from app.chat import api
         from app.chat.models import Message, MessageRole, Session
 

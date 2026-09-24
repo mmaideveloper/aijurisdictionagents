@@ -36,6 +36,7 @@ from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas  # type: ignore[import-untyped]
 from pypdf import PdfReader, PdfWriter
 
+from app.document_content import is_status_only_document
 from app.chat.metadata_validation import correction_message, validated_country, validated_language
 from app.chat.explanation_policy import explanation_prompt, is_general_explanation_request
 from aijurisdictionagents.llm.prompt_guard import suspicious_instruction, warning_message
@@ -3992,9 +3993,9 @@ def _verified_document_references(*, session: Session, content: str) -> list[str
         store = _get_store()
         for doc_id in ids:
             document = store.get_case_document(case_id=case_id, doc_id=doc_id)
-            if document.kind != "generated_document" or not store.read_storage_bytes(
-                storage_uri=document.storage_uri
-            ).strip():
+            payload = store.read_storage_bytes(storage_uri=document.storage_uri)
+            if (document.kind != "generated_document" or not payload.strip()
+                    or is_status_only_document(payload.decode("utf-8", errors="replace"))):
                 return []
     except Exception:
         _LOGGER.warning("Generated document reference could not be verified",
@@ -4206,8 +4207,8 @@ def _persist_generated_case_document_drafts(
         doc_ids: list[str] = []
         from app.legal_basis import annotate_document
         for offset, draft in enumerate(drafts):
-            if not draft.body.strip():
-                raise ValueError("Empty generated document")
+            if not draft.body.strip() or is_status_only_document(draft.body):
+                raise ValueError("Missing substantive generated document content")
             payload = annotate_document(draft.body, country=session.country).encode("utf-8")
             # Reuse successful writes on a retry after partial package persistence.
             list_documents = getattr(store, "list_case_documents", None)
@@ -4364,6 +4365,8 @@ def _document_entry_content(entry: dict[str, Any]) -> str:
 
 def _sanitize_generated_legal_document_body(content: str) -> str:
     visible = _user_visible_text(content)
+    if is_status_only_document(visible):
+        return ""
     cleaned_lines: list[str] = []
     skip_markers = (
         "case_update_json",
@@ -6111,6 +6114,8 @@ def _build_professional_document_pdf(
     disclaimer: tuple[str, str, str] | None = None,
 ) -> bytes:
     from app.legal_basis import WARNING, annotate_document
+    if is_status_only_document("\n".join(lines)):
+        raise HTTPException(status_code=409, detail="Document content is not ready. Please regenerate the document.")
     annotated = annotate_document("\n".join(lines), country=country)
     lines = annotated.splitlines()
     if WARNING in annotated and _document_verification_score_value(verification_score) is not None:
@@ -8242,6 +8247,8 @@ def _classify_share_transfer_document_asset(
 
 
 def _pick_document_message(candidates: List[str]) -> str:
+    candidates = [content for content in candidates
+                  if not is_status_only_document(_user_visible_text(content))]
     if not candidates:
         return ""
 

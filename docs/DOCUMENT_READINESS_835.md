@@ -53,3 +53,22 @@ original facts, check the saved IDs, viewer, and PDF downloads, and record only
 sanitized outcomes in issue #835. Do not invent historical links or mark the old
 executions successful. Production regeneration is a remaining rollout check,
 not evidence supplied by synthetic local tests.
+
+## Case-09 content regression
+
+The four supplied PDFs contain the same processing/download announcement, not
+an employment contract. A nonempty stored payload is therefore insufficient.
+The shared content guard rejects recognized status/boilerplate-only text before
+persistence and when checking readiness. Legacy source/preview/PDF requests return
+409 with a regeneration instruction for such content. Case history returns
+`download_available=false` for invalid/missing generated content; the frontend
+excludes these records from ready-document links. Missing stored generated
+content returns 404; the renderer no longer borrows a different chat message under
+an existing document ID. Export selection ignores status-only candidates while
+preserving a substantive draft with an introductory status message.
+
+This deterministic check recognizes known conversational placeholders; it is not
+a legal completeness or correctness assessment. Real drafts still require human
+review. Regression fixtures are synthetic and contain no supplied PDF files or
+account details. The positive regression parses the exported PDF and verifies
+employment terms, not just the PDF header. Historical HTTP outcomes remain unknown.
