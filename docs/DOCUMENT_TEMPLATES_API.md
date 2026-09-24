@@ -275,6 +275,9 @@ If a chat run only asks for a single rental contract, the endpoint still returns
 For generated court-facing or client/third-party output documents, including requests such as
 `potvrdenie o zaplateni`, the API applies the JurisDicta professional PDF document template:
 
+Download readiness requires a persisted document ID and nonempty storage, not just
+a confirmed draft. See [saved-document readiness and retries](DOCUMENT_READINESS_835.md).
+
 - branded JurisDicta header/contact/sidebar layout
 - formal centered document title and body typography; single-document exports use the legal document type inferred from the lawyer recommendation, not the session ID
 - `potvrdenie o zaplateni` / `potvrdenie o platbe` requests are classified as payment confirmations before older

@@ -497,21 +497,8 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
         f"/v1/cases/{case_id}/documents/{generated_doc_id}/pdf?user_id={user_id}",
         headers=_headers(),
     )
-    assert generated_pdf.status_code == 200
-    assert generated_pdf.headers["content-type"].startswith("application/pdf")
-    assert generated_pdf.content.startswith(b"%PDF")
-    assert generated_pdf.headers["content-disposition"].endswith(
-        f'filename="history-case_{generated_doc_id}_dokument.pdf"'
-    )
-    generated_pdf_text = "\n".join(
-        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
-    )
-    assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Dokument"
-    assert "JurisDigta" in generated_pdf_text
-    assert "Skore overenia dokumentu: -" in generated_pdf_text
-    assert "Dokument je" in generated_pdf_text
-    assert "kontrolu" in generated_pdf_text
-    assert "Poprad, Slovakia, 05801" in generated_pdf_text
+    # Technical JSON plus a readiness announcement is not a generated document.
+    assert generated_pdf.status_code == 404
 
     generated_document_id = store.add_case_document(
         case_id=case_id,
@@ -624,7 +611,7 @@ def test_case_history_and_citations_endpoint_return_persisted_answer_citations(
     assert forbidden.status_code == 404
 
 
-def test_generated_case_document_pdf_falls_back_to_latest_document_message(
+def test_generated_case_document_pdf_does_not_borrow_latest_document_message(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setenv("DB_OPTION", "local")
@@ -671,19 +658,9 @@ def test_generated_case_document_pdf_falls_back_to_latest_document_message(
         f"/v1/cases/{case_id}/documents/{old_doc_id}/pdf?user_id={user_id}",
         headers=_headers(),
     )
-    assert generated_pdf.status_code == 200
-    assert generated_pdf.headers["content-disposition"].endswith(
-        f'filename="payment-confirmation_{old_doc_id}_potvrdenie.pdf"'
-    )
-    generated_pdf_text = "\n".join(
-        page.extract_text() or "" for page in PdfReader(BytesIO(generated_pdf.content)).pages
-    )
-    assert PdfReader(BytesIO(generated_pdf.content)).metadata.title == "Potvrdenie"
-    assert "Potvrdenie\n" in generated_pdf_text
-    assert "Potvrdenie o zaplaten" in generated_pdf_text
-    assert "Marek Novak" in generated_pdf_text
-    assert "5000 eur" in generated_pdf_text
-    assert "Dokument je pripravenÃ½ na stiahnutie" not in generated_pdf_text
+    # An unrelated technical document ID must never borrow a later chat draft.
+    assert generated_pdf.status_code == 404
+    assert "unavailable" in generated_pdf.json()["detail"]
 
 
 def test_generated_case_document_pdf_reads_generated_document_storage(
@@ -1026,10 +1003,18 @@ def test_generated_case_document_pdf_uses_first_selected_document_block(
 
     store = ApiDatabaseStore.from_env()
     store.initialize()
-    doc_id = store.add_case_text_document(
-        case_id=case_id,
-        original_filename="assistant-technical.json",
-        content='{"case":{"status":"document_ready"}}',
+    doc_id = store.add_case_document(
+        case_id=case_id, kind="generated_document", version=1,
+        original_filename="splnomocnenie.txt",
+        payload=(
+            "Rozumiem, pripravim dokument.\n\nZhrnutie:\n- dokument bude slovensky\n\n---\n\n"
+            "**Splnomocnenie (Slovenska verzia)**\n\n"
+            "Ja, Jan Novak, tymto splnomocnujem Mariu Mrkvickovu na zastupovanie.\n\n"
+            "Datum: 25. juna 2026\nPodpis: ________________________\n\n---\n\n"
+            "**Splnomocnenie (English version)**\n\n"
+            "I, Jan Novak, hereby authorize Maria Mrkvickova to represent me.\n"
+            "Datum: June 25, 2026\nPodpis: ________________________"
+        ).encode("utf-8"),
         uploaded_by_user_id=user_id,
     )
     store.add_case_message(

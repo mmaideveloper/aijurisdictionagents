@@ -247,6 +247,9 @@ export const translations = {
     assistantDocumentPreviewPage: "A4 preview {number}",
     assistantPresentationNoticesLabel: "Important notices",
     assistantGeneratedPdf: "Generated PDF",
+    assistantDocumentNotSaved: "The document is not ready for download. Please retry document generation.",
+    assistantDocumentRetry: "Retry document generation",
+    assistantDocumentRetryRequest: "Please retry generating and saving the PDF document using the already confirmed facts.",
     assistantRole: "Assistant",
     assistantUserRole: "You",
     assistantInitialMessage:
@@ -1153,6 +1156,9 @@ export const translations = {
     assistantDocumentPreviewPage: "Náhľad A4 – strana {number}",
     assistantPresentationNoticesLabel: "Dôležité upozornenia",
     assistantGeneratedPdf: "Vygenerované PDF",
+    assistantDocumentNotSaved: "Dokument nie je pripravený na stiahnutie. Skúste vytvorenie dokumentu znova.",
+    assistantDocumentRetry: "Skúsiť vytvoriť dokument znova",
+    assistantDocumentRetryRequest: "Skús znova vygenerovať a uložiť PDF dokument z už potvrdených údajov.",
     assistantRole: "Asistent",
     assistantUserRole: "Vy",
     assistantInitialMessage:
@@ -2059,6 +2065,9 @@ export const translations = {
     assistantDocumentPreviewPage: "A4-Vorschau – Seite {number}",
     assistantPresentationNoticesLabel: "Wichtige Hinweise",
     assistantGeneratedPdf: "Erstelltes PDF",
+    assistantDocumentNotSaved: "Das Dokument ist nicht zum Herunterladen bereit. Bitte versuchen Sie es erneut.",
+    assistantDocumentRetry: "Dokument erneut erstellen",
+    assistantDocumentRetryRequest: "Bitte erstelle und speichere das PDF-Dokument erneut anhand der bereits bestätigten Angaben.",
     assistantRole: "Assistent",
     assistantUserRole: "Sie",
     assistantInitialMessage:
