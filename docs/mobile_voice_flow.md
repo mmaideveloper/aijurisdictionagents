@@ -50,3 +50,10 @@ The previous mobile voice orchestrator is preserved when
 - transparency: klient dostane eventy `listening_started`, `silence_threshold_reached`
 - human oversight: pri nejednoznacnom tichu sa pyta na explicitne potvrdenie pred akciou
 - traceability: transcript id je stabilny kluc pre audit bez full raw audio obsahu
+
+
+## Streaming STT (#525)
+
+The assistant dictation path uses authenticated backend streaming, partial transcripts,
+explicit Stop, editable review and manual Send. TTS is disabled in this flow.
+See [streaming STT setup, protocol and real two-line speech E2E](STREAMING_STT.md).

@@ -54,6 +54,7 @@ from app.versioning import (
     get_web_app_version,
 )
 from app.voice_intent_api import router as voice_intent_router
+from app.speech_api import router as speech_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.db_migrations import apply_sql_migrations
@@ -290,6 +291,7 @@ app.include_router(case_workflows_router)
 app.include_router(decision_trace_router)
 app.include_router(debug_router)
 app.include_router(voice_intent_router)
+app.include_router(speech_router)
 app.include_router(observability_router)
 app.include_router(monitoring_daily_stats_router)
 app.include_router(provider_credentials_router)

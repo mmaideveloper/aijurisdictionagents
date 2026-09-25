@@ -44,3 +44,10 @@
 - **Mobile recommendation:** on-device Whisper-family runtime (`whisper.cpp` integration) with Slovak-capable multilingual checkpoints (`small` or `base` depending on latency/device profile).
 - **Web recommendation:** browser-native STT with locale preference `sk-SK`; keep typed-input fallback and add WASM offline recognizer in later phase for unsupported browsers.
 - **Privacy baseline:** no raw audio persistence by default; only user-reviewed transcript text is submitted.
+
+
+## Streaming STT (#525)
+
+The assistant dictation path uses authenticated backend streaming, partial transcripts,
+explicit Stop, editable review and manual Send. TTS is disabled in this flow.
+See [streaming STT setup, protocol and real two-line speech E2E](STREAMING_STT.md).

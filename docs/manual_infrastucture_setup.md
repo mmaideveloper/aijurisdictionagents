@@ -935,3 +935,62 @@ The self-managed production deployment script performs the Ollama install, priva
 - Revoke a departing developer's SSH key, delete their local `.env`/`.env.dev` and protected backups, and retain only the approved server audit event containing actor, profile, key names, version/checksum, and result.
 - Rollback uses the encrypted/versioned USB backup repository from issue #395. Restore into an isolated location, audit names/checksums without values, then materialize atomically.
 - If the USB is missing, has the wrong UUID, is read-only/full, or fails integrity validation, fail closed and alert through privacy-safe monitoring. Never fall back to a plaintext laptop push.
+
+
+## #525 Azure Speech streaming STT
+
+Owner: repository service administrator using the approved Azure service principal
+and the existing subscription; do not use the signed-in personal Azure account.
+Provision/reuse an approved Azure Speech resource in `westeurope` for the initial
+Slovak benchmark. Validate its processor terms, retention, network access, region
+and Slovak continuous-recognition capability. Configure test first, then prod only
+after exact-commit build gates and real speech acceptance pass.
+
+Install the API Speech SDK and apply migration 830. In each environment's model
+administration add the actual `azure_speech` provider, region, encrypted `api_key`
+credential, streaming speech profile and explicit free/paid speech policies as
+specified in `docs/STREAMING_STT.md`. Credentials never go into browser/mobile
+builds. Configure ingress WebSocket upgrade support and at least a 150-second
+session timeout, TLS, explicit CORS origins, upstream frame limits and global
+concurrency/rate limits. The API's per-process limits are not a cluster quota.
+
+For local synthetic E2E, arrange the existing AIJ_AZURE_SPEECH_KEY and
+AIJ_AZURE_SPEECH_REGION entries through the authoritative encrypted environment
+profile; run approved Pull, never push laptop secrets. `prepare_speech_e2e.py`
+imports the Speech credential only into the loopback task database and generates
+synthetic audio. Verify real partial transcription, two-line screenshots, exact
+reviewed submission, privacy-safe route audit and cleanup using the documented
+runner. Missing credentials leave acceptance pending.
+
+Rollback: disable speech task policies/profiles, keeping typed chat operational;
+stop active speech sessions and revoke/rotate the Speech credential if necessary.
+Do not delete user case data. Purge synthetic task databases/evidence within seven
+days after review. No production deployment is performed by these setup steps.
+
+The API image uses Python 3.13 on Debian 12 (bookworm), with ALSA, OpenSSL 3
+and CA certificates for the native Speech SDK. Require Speech SDK >=1.48.2.
+See [Microsoft Speech SDK platform requirements](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/quickstarts/setup-platform).
+
+## Production warning: EU Speech resource required (#525)
+
+The user approved a non-EU exception on 2026-09-23 for synthetic-audio testing
+only. Use `--allow-non-eu-synthetic` with both speech E2E scripts and only the
+isolated loopback E2E database. The exception does not approve production audio
+processing or mark the resource as EU-capable.
+
+**Before production deployment, warn the owner to create a new Azure Speech
+service in the EU.** Configure its encrypted key/region, restore EU-required
+speech policies, validate processor/retention settings, rerun real Slovak speech
+acceptance against that EU service, and obtain the owner's release approval.
+Do not copy the test exception policy or non-EU credential to production.
+
+## Owner region decision (2026-09-24)
+
+The owner has authorized temporary use of the existing Azure Speech resource and
+requested a dedicated production-only EU resource in issue #831. This supersedes
+the earlier requirement to provision the EU resource before proceeding. Keep the
+actual non-EU region visible and do not mark that resource as EU-capable. The
+synthetic E2E exception flag remains restricted to loopback test databases; it is
+not a production configuration tool. All other release checks and provider/
+retention review remain applicable. The API Docker build passed in GitHub CI for
+45c56c0, resolving the earlier local certificate-trust build blocker there.

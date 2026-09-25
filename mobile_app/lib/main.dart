@@ -27,6 +27,7 @@ import 'chat/generated_document_message.dart';
 import 'chat/profile_service.dart';
 import 'chat/rule_engine.dart';
 import 'chat/speech_flow.dart';
+import 'chat/streaming_dictation.dart';
 import 'chat/voice_session_orchestrator.dart';
 import 'chat/voice_conversation_settings.dart';
 import 'logging/app_logger.dart';
@@ -4338,6 +4339,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
   }
 
   Future<void> _testSpeakerVoice() async {
+    if (!_speakerOutputEnabled) return;
     final spoke = await widget.speaker.speak(
       text: _strings.t('speaker_test_sample'),
       languageCode: _selectedLocale.languageCode,
@@ -4595,14 +4597,14 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            value: _speakerOutputEnabled,
-            onChanged: (value) => unawaited(_setSpeakerOutputEnabled(value)),
+            value: false,
+            onChanged: _speakerOutputEnabled ? (value) => unawaited(_setSpeakerOutputEnabled(false)) : null,
             title: Text(strings.t('speaker_output')),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            value: _recordChatEnabled,
-            onChanged: (value) => unawaited(_setRecordChatEnabled(value)),
+            value: false,
+            onChanged: _recordChatEnabled ? (value) => unawaited(_setRecordChatEnabled(false)) : null,
             title: Text(strings.t('record_chat_label')),
             subtitle: Text(strings.t('record_chat_description')),
           ),
@@ -4632,9 +4634,7 @@ class _AccountSettingsPageState extends State<AccountSettingsPage> {
                 ),
                 const SizedBox(width: 8),
                 IconButton(
-                  onPressed: _speakerVoices.isEmpty
-                      ? null
-                      : () => unawaited(_testSpeakerVoice()),
+                  onPressed: _speakerOutputEnabled ? () => unawaited(_testSpeakerVoice()) : null,
                   icon: const Icon(Icons.play_arrow),
                   tooltip: strings.t('test_speaker_voice'),
                 ),
@@ -4735,6 +4735,9 @@ class ChatHomePage extends StatefulWidget {
 
 class _ChatHomePageState extends State<ChatHomePage>
     with WidgetsBindingObserver {
+  final _dictationKey = GlobalKey<StreamingDictationState>();
+  bool _streamingSpeechBusy = false;
+  bool get _backendSpeechOnly => true;
   static const String _selectedCaseKeyPrefix = 'mobile_selected_case_v1';
   static const double _questionTimeoutSeconds = 3600;
   static const double _maxDiscussionMinutes = 60;
@@ -4862,6 +4865,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _loadVoiceConversationSettings() async {
+    if (_backendSpeechOnly) return;
     final prefs = await SharedPreferences.getInstance();
     final settings = decodeVoiceConversationSettings(
       prefs.getString(defaultVoiceConversationSettingsStorageKey),
@@ -4893,6 +4897,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _setRecordChatEnabled(bool enabled) async {
+    if (_backendSpeechOnly) return;
     final nextSettings = _voiceConversationSettings.copyWith(
       recordChatEnabled: enabled,
     );
@@ -6134,6 +6139,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _initializeSpeechRecognition() async {
+    if (_backendSpeechOnly) return;
     final enabled = await _speechRecognizer.initialize(
       onError: _onSpeechError,
       onStatus: _onSpeechStatus,
@@ -6188,6 +6194,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _initializeAssistantSpeech() async {
+    if (_backendSpeechOnly) return;
     final enabled = await _speaker.initialize();
     if (!enabled) {
       await widget.logger.info('Assistant speech output unavailable');
@@ -6240,7 +6247,7 @@ class _ChatHomePageState extends State<ChatHomePage>
     String content, {
     bool resumeSpeechInputOnCompletion = false,
   }) async {
-    if (!_speakerOutputEnabled) {
+    if (_backendSpeechOnly || !_speakerOutputEnabled) {
       return;
     }
     final visibleContent = _sanitizeVisibleMessageContent(content);
@@ -6435,6 +6442,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _setSpeakerOutputEnabled(bool enabled) async {
+    if (_backendSpeechOnly) { await _speaker.stop(); return; }
     if (!mounted) {
       return;
     }
@@ -7380,6 +7388,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   }
 
   Future<void> _toggleSpeechInput() async {
+    if (_backendSpeechOnly) { await _dictationKey.currentState?.open(); return; }
     final wasAssistantSpeaking = _assistantSpeechInProgress;
     if (_usesMessageSpeechType) {
       _setInputComposerExpanded(true);
@@ -7730,6 +7739,7 @@ class _ChatHomePageState extends State<ChatHomePage>
   Future<void> _toggleSpeechInputEnabled({
     bool speakReadyMessage = true,
   }) async {
+    if (_backendSpeechOnly) { await _dictationKey.currentState?.open(); return; }
     if (!await _ensureSpeechRecognitionAvailable()) {
       return;
     }
@@ -8169,6 +8179,7 @@ class _ChatHomePageState extends State<ChatHomePage>
       _setInputComposerExpanded(false, unfocus: true);
       return;
     }
+    if (_streamingSpeechBusy) return;
     final text = _inputController.text.trim();
     if (text.isEmpty || _isSending) {
       return;
@@ -9818,6 +9829,17 @@ class _ChatHomePageState extends State<ChatHomePage>
                     ],
                   ),
                 ),
+                if (_selectedCase != null)
+                  StreamingDictation(
+                    key: _dictationKey,
+                    baseUrl: widget.apiBaseUrl, apiKey: _apiKey,
+                    userId: _signedInUser.userId, caseId: _selectedCase!.caseId,
+                    language: _selectedLocale.languageCode, authStore: widget.authStore,
+                    onBusy: (busy) { if (mounted) setState(() => _streamingSpeechBusy = busy); },
+                    onFinal: (text) {
+                      _inputController.text = [_inputController.text, text].where((value) => value.isNotEmpty).join('\n');
+                    },
+                  ),
                 if (lawCitations.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -9875,7 +9897,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              onPressed: _isSending ? null : _sendMessage,
+                              onPressed: (_isSending || _streamingSpeechBusy) ? null : _sendMessage,
                               icon: _isSending
                                   ? const SizedBox(
                                       width: 16,
@@ -9927,7 +9949,7 @@ class _ChatHomePageState extends State<ChatHomePage>
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              onPressed: _isSending ? null : _sendMessage,
+                              onPressed: (_isSending || _streamingSpeechBusy) ? null : _sendMessage,
                               icon: _isSending
                                   ? const SizedBox(
                                       width: 16,

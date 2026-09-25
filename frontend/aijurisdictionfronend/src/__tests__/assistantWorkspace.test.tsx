@@ -347,7 +347,7 @@ describe("AssistantWorkspace", () => {
 
     await waitFor(() => {
       expect(caseActions.uploadDocumentsToCase).toHaveBeenCalledWith("case-1", [uploadedFile]);
-      expect(screen.getByRole("status").textContent).toBe("contract.txt are ready for semantic search.");
+      expect(document.querySelector(".assistant-composer__status")?.textContent).toBe("contract.txt are ready for semantic search.");
     });
   });
 
@@ -359,7 +359,7 @@ describe("AssistantWorkspace", () => {
       render(<AssistantWorkspace />);
       fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["synthetic"], "slow.txt")] } });
       await act(async () => { await vi.advanceTimersByTimeAsync(36_000); });
-      expect(screen.getByRole("status").textContent).toContain("being imported");
+      expect(document.querySelector(".assistant-composer__status")?.textContent).toContain("being imported");
       expect((screen.getByLabelText("Assistant message") as HTMLTextAreaElement).disabled).toBe(false);
       expect(screen.queryByRole("alert")).toBeNull();
     } finally {
@@ -389,7 +389,7 @@ describe("AssistantWorkspace", () => {
     expect(caseActions.selectCase).not.toHaveBeenCalled();
   });
 
-  it("keeps chat selected and voice/video communication modes unavailable", async () => {
+  it("keeps typed chat selected while voice opens dictation and video remains unavailable", async () => {
     render(<AssistantWorkspace />);
 
     const chatMode = screen.getByRole("button", { name: "Chat" });
@@ -397,9 +397,9 @@ describe("AssistantWorkspace", () => {
     const videoMode = screen.getByRole("button", { name: "Video" });
 
     expect(chatMode.className).toContain("is-active");
-    expect(voiceMode.getAttribute("aria-disabled")).toBe("true");
+    expect(voiceMode.getAttribute("aria-disabled")).toBe("false");
     expect(videoMode.getAttribute("aria-disabled")).toBe("true");
-    expect(voiceMode.getAttribute("title")).toBe("Coming later");
+    expect(voiceMode.getAttribute("title")).toBe("Voice");
     expect(videoMode.getAttribute("title")).toBe("Coming later");
 
     fireEvent.click(voiceMode);
@@ -719,11 +719,11 @@ describe("AssistantWorkspace", () => {
     expect(screen.getByRole("dialog", { name: "Diagnostics" }).textContent).toContain("corr-visible-303");
     fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));
     await waitFor(() => expect(clipboardWriteText).toHaveBeenCalledWith("corr-visible-303"));
-    expect(screen.getByRole("status").textContent).toBe("Correlation ID copied to the clipboard.");
+    expect(document.querySelector(".diagnostics-dialog__copy-status")?.textContent).toBe("Correlation ID copied to the clipboard.");
     clipboardWriteText.mockRejectedValueOnce(new Error("clipboard unavailable"));
     fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toBe(
+      expect(document.querySelector(".diagnostics-dialog__copy-status")?.textContent).toBe(
         "The ID could not be copied. Select it above and copy it manually."
       );
     });

@@ -63,6 +63,11 @@ GitHub workflow / infra environment rule:
 - Keep `docs/GITHUB_ENVIRONMENTS.md` aligned with workflow inputs, required GitHub Environment variables, required secrets, and any new manual setup steps.
 - Whenever a task requires manual infrastructure setup outside the repository, update `docs/manual_infrastucture_setup.md` in the same change with the exact future installation/configuration steps, required owners/accounts, secrets, environments, validation steps, and rollback notes.
 
+Streaming STT production warning (#525):
+
+- The non-EU Azure Speech resource is authorized only for synthetic-audio testing. This exception does not authorize production audio processing.
+- Before deploying/enabling streaming STT in production, explicitly warn the user to create a new Azure Speech service in the EU. Configure its encrypted credentials and EU-required routing policy, rerun real Slovak acceptance, and obtain the release approval. Never copy the synthetic non-EU test policy to production.
+
 Production deployment build-gate rule:
 
 - Never deploy to the `prod` or `Prod` GitHub Environment while any build, lint, type-check, unit/integration test, E2E gate, image build, or other required check applicable to the exact deployment commit has failed, been cancelled, is still pending, or is missing.

@@ -47,3 +47,5 @@ api/aijuristiction-api/storage/**
 output/playwright/
 aimodels/*
 !aimodels/README.md
+
+/artifacts/

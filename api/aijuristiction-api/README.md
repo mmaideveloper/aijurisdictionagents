@@ -1120,3 +1120,10 @@ The warning itself uses deterministic server logic; it is not evidence of a real
 call. Source warnings accompany answers but cannot authorize actions or disclosure.
 
 Offline example: `python examples/prompt_boundary_demo.py` from the repository root.
+
+
+## Streaming STT (#525)
+
+The assistant dictation path uses authenticated backend streaming, partial transcripts,
+explicit Stop, editable review and manual Send. TTS is disabled in this flow.
+See [streaming STT setup, protocol and real two-line speech E2E](../../docs/STREAMING_STT.md).

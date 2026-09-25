@@ -102,6 +102,8 @@ def get_selectable_model_profiles(
     providers = {item.provider_id: item for item in store.list_ai_model_providers()}
     profiles: list[SelectableModelProfileResponse] = []
     for profile in store.list_ai_model_profiles():
+        if profile.model_parameters.get("capability") == "speech_to_text":
+            continue
         provider = providers.get(profile.provider_id)
         if provider is None or not profile.enabled or not provider.enabled:
             continue
