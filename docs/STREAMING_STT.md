@@ -197,3 +197,14 @@ to the sidebar because the microphone also exposes an accessible status region.
 Runnable regression check (from `frontend/aijurisdictionfronend`):
 `npm run test:e2e -- e2e/active-case-export.spec.ts e2e/case-document-delete-controls.spec.ts`.
 These mocked browser checks supplement the real Speech acceptance above.
+
+## Owner region decision (2026-09-24)
+
+The owner has authorized temporary use of the existing Azure Speech resource and
+requested a dedicated production-only EU resource in issue #831. This supersedes
+the earlier requirement to provision the EU resource before proceeding. Keep the
+actual non-EU region visible and do not mark that resource as EU-capable. The
+synthetic E2E exception flag remains restricted to loopback test databases; it is
+not a production configuration tool. All other release checks and provider/
+retention review remain applicable. The API Docker build passed in GitHub CI for
+45c56c0, resolving the earlier local certificate-trust build blocker there.

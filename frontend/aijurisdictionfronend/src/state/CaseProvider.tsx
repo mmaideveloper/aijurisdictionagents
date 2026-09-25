@@ -81,6 +81,7 @@ export type CaseWorkspace = {
 };
 
 export type CaseDocumentRecord = {
+  downloadAvailable?: boolean | null;
   id: string;
   caseId: string;
   kind: string;
@@ -175,8 +176,8 @@ type CaseSessionCacheRecord = {
 
 const USER_VISIBLE_GENERATED_DOCUMENT_KINDS = new Set(["generated_document"]);
 
-export const isUserVisibleGeneratedDocument = (document: Pick<CaseDocumentRecord, "kind" | "originalFilename">): boolean => {
-  if (!USER_VISIBLE_GENERATED_DOCUMENT_KINDS.has(document.kind)) {
+export const isUserVisibleGeneratedDocument = (document: Pick<CaseDocumentRecord, "kind" | "originalFilename" | "downloadAvailable">): boolean => {
+  if (document.downloadAvailable === false || !USER_VISIBLE_GENERATED_DOCUMENT_KINDS.has(document.kind)) {
     return false;
   }
   const normalizedName = document.originalFilename.trim().toLowerCase();
@@ -769,6 +770,7 @@ const mapApiDocument = (caseId: string, document: ApiCaseDocument): CaseDocument
   caseId,
   kind: document.kind,
   originalFilename: document.original_filename,
+  downloadAvailable: document.download_available,
   mimeType: "application/octet-stream",
   size: 0,
   sizeLabel: document.processing_status,

@@ -29,6 +29,7 @@ from app.chat.api import (
     _sanitize_generated_legal_document_body,
     _user_visible_text,
 )
+from app.document_content import is_status_only_document
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -117,6 +118,7 @@ class CaseCitationResponse(BaseModel):
 
 
 class CaseDocumentResponse(BaseModel):
+    download_available: bool | None = None
     doc_id: str
     kind: str
     version: int
@@ -353,7 +355,7 @@ def get_case_history(
         for item in reversed(visible)
     ]
     documents = [
-        _to_case_document_response(item)
+        _to_case_document_response(item, store=store)
         for item in store.list_case_documents(case_id=case_id)
     ]
     return CaseHistoryResponse(
@@ -598,6 +600,8 @@ def download_case_document(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Case storage backend is not reachable for this document",
         ) from exc
+    if document.kind == "generated_document" and is_status_only_document(payload.decode("utf-8", errors="replace")):
+        raise HTTPException(status_code=409, detail="Document content is not ready. Please regenerate the document.")
     media_type = guess_type(document.original_filename)[0] or 'application/octet-stream'
     return Response(
         content=payload,
@@ -685,9 +689,7 @@ def download_generated_case_document_pdf(
         document = store.get_case_document(case_id=case_id, doc_id=doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    visible_content = _generated_case_document_storage_content(document=document, store=store) or (
-        _generated_case_document_visible_content(case_id=case_id, doc_id=document.doc_id, store=store)
-    )
+    visible_content = _generated_case_document_storage_content(document=document, store=store)
     document_type = _generated_case_document_type(visible_content)
     filename = _generated_case_document_filename(
         case_title=case.title,
@@ -1020,16 +1022,12 @@ def _render_generated_case_document_pdf_bytes(
 ) -> bytes:
     visible_content = _generated_case_document_storage_content(document=document, store=store)
     if not visible_content:
-        visible_content = _generated_case_document_visible_content(
-            case_id=case.case_id,
-            doc_id=document.doc_id,
-            store=store,
-        )
-    if not visible_content:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Rendered PDF content is unavailable for document {document.doc_id}",
         )
+    if is_status_only_document(visible_content):
+        raise HTTPException(status_code=409, detail="Document content is not ready. Please regenerate the document.")
     visible_content = _clean_generated_case_document_pdf_content(visible_content)
     return _build_professional_document_pdf(
         title=_generated_case_document_title(visible_content),
@@ -1366,8 +1364,15 @@ def _to_case_citation_response(citation: CaseCitation) -> CaseCitationResponse:
     )
 
 
-def _to_case_document_response(document: CaseDocument) -> CaseDocumentResponse:
+def _to_case_document_response(
+    document: CaseDocument, *, store: ApiDatabaseStore | None = None,
+) -> CaseDocumentResponse:
+    available = None
+    if document.kind == "generated_document" and store is not None:
+        content = _generated_case_document_storage_content(document=document, store=store)
+        available = bool(content) and not is_status_only_document(content)
     return CaseDocumentResponse(
+        download_available=available,
         doc_id=document.doc_id,
         kind=document.kind,
         version=document.version,
@@ -1439,12 +1444,12 @@ def _generated_case_document_storage_content(*, document: CaseDocument, store: A
         return str(store.read_storage_text(storage_uri=document.storage_uri)).strip()
     except FileNotFoundError:
         _LOGGER.info(
-            "Generated case document payload not found; falling back to communication content",
+            "Generated case document payload not found; export unavailable",
             extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
         )
     except Exception:
         _LOGGER.warning(
-            "Generated case document payload could not be read; falling back to communication content",
+            "Generated case document payload could not be read; export unavailable",
             extra={"doc_id": document.doc_id, "storage_uri": document.storage_uri},
             exc_info=True,
         )

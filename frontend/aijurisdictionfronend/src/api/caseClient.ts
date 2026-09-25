@@ -47,6 +47,7 @@ export type ApiCaseCitation = {
 };
 
 export type ApiCaseDocument = {
+  download_available?: boolean | null;
   doc_id: string;
   kind: string;
   version: number;

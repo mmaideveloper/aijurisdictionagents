@@ -983,3 +983,14 @@ service in the EU.** Configure its encrypted key/region, restore EU-required
 speech policies, validate processor/retention settings, rerun real Slovak speech
 acceptance against that EU service, and obtain the owner's release approval.
 Do not copy the test exception policy or non-EU credential to production.
+
+## Owner region decision (2026-09-24)
+
+The owner has authorized temporary use of the existing Azure Speech resource and
+requested a dedicated production-only EU resource in issue #831. This supersedes
+the earlier requirement to provision the EU resource before proceeding. Keep the
+actual non-EU region visible and do not mark that resource as EU-capable. The
+synthetic E2E exception flag remains restricted to loopback test databases; it is
+not a production configuration tool. All other release checks and provider/
+retention review remain applicable. The API Docker build passed in GitHub CI for
+45c56c0, resolving the earlier local certificate-trust build blocker there.

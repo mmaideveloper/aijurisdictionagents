@@ -7,6 +7,7 @@ import {
   useAuiState,
   useLocalRuntime,
   useMessagePartText,
+  useThreadRuntime,
   type ChatModelAdapter,
   type ThreadMessageLike
 } from "@assistant-ui/react";
@@ -504,8 +505,21 @@ const AssistantDocumentLinks: React.FC<{ links: AssistantDocumentLink[] }> = ({ 
   );
 };
 
+export const claimsDocumentReady = (text: string): boolean => {
+  if (documentGenerationFailed(text)) return false;
+  const normalized = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /(?:pripraven\w*|hotov\w*|ready|prepared|complete|bereit).{0,100}(?:stiahn|stazen|export|download|herunterlad)|(?:export|pdf).{0,35}(?:hotov\w*|complete|ready)/s.test(normalized);
+};
+
+const documentGenerationFailed = (text: string): boolean =>
+  /dokument sa nepodarilo uložiť|dokument se nepodařilo uložit|document could not be saved|dokument konnte nicht gespeichert werden/i.test(text);
+
 const AssistantTextPart: React.FC = () => {
   const { text } = useMessagePartText();
+  const { t } = useLanguage();
+  const { activeCase } = useCases();
+  const runtime = useThreadRuntime();
+  const running = useAuiState((state) => state.thread.isRunning);
   const rawPresentation = useAuiState((state) => {
     const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
     return custom?.presentation;
@@ -515,11 +529,21 @@ const AssistantTextPart: React.FC = () => {
     [rawPresentation]
   );
   const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
-  const conversationalText = presentation.conversationalText;
+  const documentLinks = presentation.documentLinks.filter((link) => {
+    const url = new URL(link.href, window.location.origin);
+    return url.origin === window.location.origin && url.pathname === "/app/documents/view" &&
+      url.searchParams.get("caseId") === activeCase?.id &&
+      activeCase.documents.some((document) =>
+        isUserVisibleGeneratedDocument(document) && document.id === url.searchParams.get("docId")
+      );
+  });
+  const unverifiedReady = documentLinks.length === 0 && claimsDocumentReady(text);
+  const failed = unverifiedReady || documentGenerationFailed(text);
+  const conversationalText = unverifiedReady ? t("assistantDocumentNotSaved") : presentation.conversationalText;
 
   return (
     <>
-      {typedPresentation ? (
+      {typedPresentation && !failed ? (
         <AssistantPresentationBlock block={typedPresentation} />
       ) : conversationalText ? (
         <AssistantMarkdown text={conversationalText} />
@@ -529,7 +553,14 @@ const AssistantTextPart: React.FC = () => {
             <AssistantDocumentPreviewCard key={`${preview.title}-${index}`} preview={preview} index={index} />
           ))
         : null}
-      <AssistantDocumentLinks links={presentation.documentLinks} />
+      <AssistantDocumentLinks links={documentLinks} />
+      {failed ? (
+        <button type="button" className="button ghost" disabled={running} onClick={() => runtime.append({
+          role: "user", content: [{ type: "text", text: t("assistantDocumentRetryRequest") }]
+        })}>
+          {t("assistantDocumentRetry")}
+        </button>
+      ) : null}
     </>
   );
 };
