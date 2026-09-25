@@ -32,7 +32,12 @@ test('case generated PDF renders selected Slovak document without assistant or E
   const runId = Date.now();
   const user = await createUser(request, baseURL, runId);
   const createdCase = await createCase(request, baseURL, user.user_id, `E2E splnomocnenie ${runId}`);
-  const docId = await seedContaminatedLinkedDocument(createdCase.case_id, user.user_id);
+  const { docId, uploadedDocId } = await seedContaminatedLinkedDocument(createdCase.case_id, user.user_id);
+  const uploadedPdf = await request.get(
+    `${baseURL}/v1/cases/${createdCase.case_id}/documents/${uploadedDocId}/pdf?user_id=${user.user_id}`,
+    { headers: { 'x-api-key': apiKey } }
+  );
+  expect(uploadedPdf.status()).toBe(404);
 
   const pdf = await request.get(
     `${baseURL}/v1/cases/${createdCase.case_id}/documents/${docId}/pdf?user_id=${user.user_id}`,
@@ -144,8 +149,9 @@ async function createCase(
   return (await response.json()) as CreatedCase;
 }
 
-async function seedContaminatedLinkedDocument(caseId: string, userId: string): Promise<string> {
+async function seedContaminatedLinkedDocument(caseId: string, userId: string): Promise<{ docId: string; uploadedDocId: string }> {
   const script = String.raw`
+import json
 import os
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
@@ -185,9 +191,17 @@ store.add_case_message(
     content=content,
     agent_name="LawyerSlovakia",
 )
-print(doc_id)
+generated_doc_id = store.add_case_document(
+    case_id=case_id,
+    kind="generated_document",
+    version=1,
+    original_filename="synthetic-splnomocnenie.md",
+    payload=content.encode("utf-8"),
+    uploaded_by_user_id=user_id,
+)
+print(json.dumps({"docId": generated_doc_id, "uploadedDocId": doc_id}))
 `;
-  return (await runPython(script, { E2E_CASE_ID: caseId, E2E_USER_ID: userId })).trim();
+  return JSON.parse(await runPython(script, { E2E_CASE_ID: caseId, E2E_USER_ID: userId })) as { docId: string; uploadedDocId: string };
 }
 
 async function seedCleanBilingualGeneratedDocuments(

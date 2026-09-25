@@ -72,3 +72,10 @@ a legal completeness or correctness assessment. Real drafts still require human
 review. Regression fixtures are synthetic and contain no supplied PDF files or
 account details. The positive regression parses the exported PDF and verifies
 employment terms, not just the PDF header. Historical HTTP outcomes remain unknown.
+
+Scheduled PDF regression coverage now asserts that an uploaded technical JSON
+file linked from assistant text returns 404 from the generated-PDF endpoint.
+Positive content/language-isolation checks use a persisted generated document.
+Run from `api/aijuristiction-api/e2e-playwright`:
+`npx playwright test tests/case-generated-document-pdf.spec.ts`.
+This deterministic regression is not real-provider E2E release acceptance.
