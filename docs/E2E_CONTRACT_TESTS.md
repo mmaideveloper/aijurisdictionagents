@@ -75,6 +75,32 @@ model, sends no customer/case data, and rejects network/internal-error text in t
 
 ## Run locally
 
+### Scheduled PDF regression
+
+The scheduled PDF isolation check seeds a synthetic `generated_document` with
+contaminated bilingual text and verifies that its PDF contains only the Slovak
+legal document. It also requires HTTP 404 for a linked technical JSON record,
+even when assistant history contains a draft. This preserves the stored-content
+export contract documented in `DOCUMENT_READINESS_835.md`; chat history must not
+substitute content under another document ID.
+
+Minimal reproduction (with the same isolated API configuration as
+`.github/workflows/scheduled_e2e_status.yml`):
+
+```bash
+cd api/aijuristiction-api/e2e-playwright
+npm ci
+npx playwright test tests/case-generated-document-pdf.spec.ts
+```
+
+The scheduled workflow uses a mock model and disposable SQLite storage. Its
+result is deterministic API regression evidence, not real-model, PostgreSQL,
+frontend E2E acceptance. Synthetic fixtures preserve privacy and existing
+access, retention, and human-review safeguards; this test changes no runtime
+behavior or legal decision-making. CI evidence must contain no customer data.
+
+### Contract simulations
+
 ```bash
 pytest e2etests/test_contract_end_to_end.py root_contract_end_to_end_test.py
 ```
