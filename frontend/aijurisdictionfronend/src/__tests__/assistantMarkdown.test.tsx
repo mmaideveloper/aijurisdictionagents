@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import React from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import { AssistantMarkdown } from "../components/AssistantMarkdown";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AssistantDocumentLinkContext, AssistantMarkdown } from "../components/AssistantMarkdown";
 import { isUserDocument } from "../utils/assistantPresentation";
 
 afterEach(cleanup);
@@ -28,5 +28,45 @@ describe("legal explanation presentation", () => {
     expect(isUserDocument({ kind: "technical_payload" })).toBe(false);
     expect(isUserDocument({ kind: "uploaded_document" })).toBe(true);
     expect(isUserDocument({ kind: "generated_document" })).toBe(true);
+  });
+});
+
+
+describe("generated document links", () => {
+  const renderWithPolicy = (text: string, allowed: boolean = false) => {
+    const retry = vi.fn();
+    render(<AssistantDocumentLinkContext.Provider value={{
+      isAllowed: () => allowed, unavailableLabel: "Document not ready", retryLabel: "Retry generation",
+      retryDisabled: false, onRetry: retry
+    }}><AssistantMarkdown text={text} /></AssistantDocumentLinkContext.Provider>);
+    return retry;
+  };
+
+  it.each(["#", "/", "/app/assistant#", "https://agent.jurisdigta.eu/app/assistant#"])(
+    "blocks a placeholder download target %s without navigating", (href) => {
+      const retry = renderWithPolicy(`[Stiahnuť pracovnú zmluvu](${href})`);
+      expect(screen.queryAllByRole("link")).toHaveLength(0);
+      expect(screen.getByRole("status").textContent).toContain("Document not ready");
+      screen.getByRole("button", { name: "Retry generation" }).click();
+      expect(retry).toHaveBeenCalledOnce();
+    }
+  );
+
+  it("checks reference-style links and formatted labels after Markdown parsing", () => {
+    renderWithPolicy("[**Stiahnuť pracovnú zmluvu**][pdf]\n\n[pdf]: #");
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
+    expect(screen.getByRole("status")).toBeTruthy();
+  });
+
+  it("keeps verified viewer links and source citations working", () => {
+    renderWithPolicy("[Download contract](/app/documents/view?caseId=case&docId=saved)\n\n[Source](https://example.org/law.pdf)\n\n[Section](#section)", true);
+    expect(screen.getByRole("link", { name: "Download contract" }).getAttribute("href")).toContain("docId=saved");
+    expect(screen.getByRole("link", { name: "Source" }).getAttribute("href")).toBe("https://example.org/law.pdf");
+    expect(screen.getByRole("link", { name: "Section" }).getAttribute("href")).toBe("#section");
+  });
+
+  it("fails closed for document actions outside a case context", () => {
+    render(<AssistantMarkdown text="[Download contract](/app/documents/view?caseId=case&docId=invented)" />);
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
 });

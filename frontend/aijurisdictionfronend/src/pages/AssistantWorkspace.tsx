@@ -30,7 +30,7 @@ import { AssistantPresentationBlock } from "../components/AssistantPresentationB
 import { SpeechDictation } from "../components/SpeechDictation";
 import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
-import { AssistantMarkdown } from "../components/AssistantMarkdown";
+import { AssistantDocumentLinkContext, AssistantMarkdown } from "../components/AssistantMarkdown";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
@@ -529,20 +529,28 @@ const AssistantTextPart: React.FC = () => {
     [rawPresentation]
   );
   const presentation = parseAssistantMessagePresentation(normalizeAssistantPresentationText(text));
-  const documentLinks = presentation.documentLinks.filter((link) => {
-    const url = new URL(link.href, window.location.origin);
+  const isAllowedDocumentLink = (href: string): boolean => {
+    let url: URL;
+    try { url = new URL(href, window.location.origin); } catch { return false; }
     return url.origin === window.location.origin && url.pathname === "/app/documents/view" &&
       url.searchParams.get("caseId") === activeCase?.id &&
       activeCase.documents.some((document) =>
         isUserVisibleGeneratedDocument(document) && document.id === url.searchParams.get("docId")
       );
+  };
+  const documentLinks = presentation.documentLinks.filter((link) => isAllowedDocumentLink(link.href));
+  const retryGeneration = () => runtime.append({
+    role: "user", content: [{ type: "text", text: t("assistantDocumentRetryRequest") }]
   });
-  const unverifiedReady = documentLinks.length === 0 && claimsDocumentReady(text);
+  const unverifiedReady = documentLinks.length === 0 && (claimsDocumentReady(text) || presentation.documentLinks.length > 0);
   const failed = unverifiedReady || documentGenerationFailed(text);
   const conversationalText = unverifiedReady ? t("assistantDocumentNotSaved") : presentation.conversationalText;
 
   return (
-    <>
+    <AssistantDocumentLinkContext.Provider value={{
+      isAllowed: isAllowedDocumentLink, unavailableLabel: t("assistantDocumentNotSaved"),
+      retryLabel: t("assistantDocumentRetry"), retryDisabled: running, onRetry: retryGeneration
+    }}>
       {typedPresentation && !failed ? (
         <AssistantPresentationBlock block={typedPresentation} />
       ) : conversationalText ? (
@@ -555,13 +563,11 @@ const AssistantTextPart: React.FC = () => {
         : null}
       <AssistantDocumentLinks links={documentLinks} />
       {failed ? (
-        <button type="button" className="button ghost" disabled={running} onClick={() => runtime.append({
-          role: "user", content: [{ type: "text", text: t("assistantDocumentRetryRequest") }]
-        })}>
+        <button type="button" className="button ghost" disabled={running} onClick={retryGeneration}>
           {t("assistantDocumentRetry")}
         </button>
       ) : null}
-    </>
+    </AssistantDocumentLinkContext.Provider>
   );
 };
 
