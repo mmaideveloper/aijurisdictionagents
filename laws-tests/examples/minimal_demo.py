@@ -1,7 +1,8 @@
 """Run after starting the local tests API: python laws-tests/examples/minimal_demo.py."""
 
-import httpx
 import sys
+
+import httpx
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")

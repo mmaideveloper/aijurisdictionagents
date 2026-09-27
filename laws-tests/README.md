@@ -36,6 +36,12 @@ only its isolated container password, and refuses containers owned by another wo
 
 ## Verify
 
+`laws-tests/ruff.toml` explicitly enables the CI import, UTC, exception and subprocess
+checks for local validation too; the API configuration inherits it. Run the same command
+below before pushing. Subprocess failures retain explicit return-code handling so captured
+credentials are never emitted in exceptions. Expected provider/transport/validation errors
+mark the attempt as failed; unexpected programming errors propagate rather than being hidden.
+
 ```powershell
 .\conda\python.exe -m pytest laws-tests/tests -q
 .\conda\python.exe -m ruff check laws-tests

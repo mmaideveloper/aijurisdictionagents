@@ -1,10 +1,11 @@
 """Minimal central identity adapter; never reads names, email or password hashes."""
 
-from datetime import datetime, timezone
 import hmac
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from aijurisdictionagents.api_db.store import _hash_one_time_code, _is_future_iso_datetime
+
 from .db import connect
 
 
@@ -32,6 +33,6 @@ class Identity:
                 return None
             conn.execute(
                 "UPDATE device_auth_tokens SET last_used_at=%s WHERE user_id=%s AND device_id=%s",
-                (datetime.now(timezone.utc).isoformat(), user.user_id, device_id.strip()),
+                (datetime.now(UTC).isoformat(), user.user_id, device_id.strip()),
             )
         return user

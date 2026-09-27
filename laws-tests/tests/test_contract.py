@@ -83,8 +83,9 @@ def test_score_validation():
 
 def test_expiry_csrf_isolation_and_retention(cfg, monkeypatch):
     # Real PostgreSQL; stub identity only for narrowly scoped unit authorization checks.
-    import laws_tests.app as module
     from types import SimpleNamespace
+
+    import laws_tests.app as module
 
     monkeypatch.setattr(
         module.Identity,

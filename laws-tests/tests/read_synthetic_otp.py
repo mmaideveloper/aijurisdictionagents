@@ -1,9 +1,10 @@
 """Used only as a captured child process by E2E; never log the returned synthetic OTP."""
 
-from pathlib import Path
 import re
-from dotenv import dotenv_values
+from pathlib import Path
+
 import psycopg
+from dotenv import dotenv_values
 
 cfg = dotenv_values(Path(__file__).resolve().parents[2] / ".env-laws-test")
 if cfg.get("LAWS_TEST_ENVIRONMENT") != "development":

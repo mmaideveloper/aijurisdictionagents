@@ -1,9 +1,9 @@
-from dataclasses import replace
-from types import SimpleNamespace
-from uuid import uuid4
-from urllib.parse import parse_qs, urlsplit
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient

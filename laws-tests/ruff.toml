@@ -1,0 +1,7 @@
+extend = "../pyproject.toml"
+
+[lint]
+extend-select = ["I", "UP017", "BLE001", "FURB167", "PLW1510"]
+
+[lint.isort]
+known-first-party = ["laws_tests"]

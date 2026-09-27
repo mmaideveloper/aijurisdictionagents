@@ -1,14 +1,14 @@
-from dataclasses import replace
 import json
+from dataclasses import replace
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
+from reader_fixture import MANIFEST, cleanup, prepare
 
 from laws_tests.app import create_app
 from laws_tests.config import Settings
 from laws_tests.db import connect
 from laws_tests.legal import anchor_matches, linked_text
-from reader_fixture import prepare, cleanup, MANIFEST
 
 
 def test_linking_preserves_text_and_requires_explicit_attribution():

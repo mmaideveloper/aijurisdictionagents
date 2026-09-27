@@ -1,9 +1,9 @@
 import json
 
-from pydantic import BaseModel, ConfigDict, Field
 from aijurisdictionagents.llm.azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
-from aijurisdictionagents.schemas import Message
 from aijurisdictionagents.llm.base import private_model_io
+from aijurisdictionagents.schemas import Message
+from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
 

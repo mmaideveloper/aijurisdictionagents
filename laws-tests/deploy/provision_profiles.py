@@ -1,12 +1,12 @@
 """Run on jurisdigta-server: provision encrypted-USB profiles without exporting secrets."""
 
-from pathlib import Path
 import json
 import os
+import pwd
 import secrets
 import subprocess
-import pwd
-from urllib.parse import urlsplit, urlunsplit, quote
+from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 
 def write_new(path: Path, values: dict):
@@ -42,6 +42,7 @@ print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'en
         input=script,
         text=True,
         capture_output=True,
+        check=False,  # Handle return codes below without exposing captured secrets.
     )
     if result.returncode:
         raise SystemExit("Approved server credential lookup failed (details redacted)")

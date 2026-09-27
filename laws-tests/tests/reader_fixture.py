@@ -1,11 +1,11 @@
 """Isolated real PostgreSQL fixtures for the public reader; no model or route mocks."""
 
-from pathlib import Path
-from urllib.parse import urlsplit
-from uuid import uuid4
 import hashlib
 import json
 import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 from dotenv import set_key
 from psycopg import ClientCursor

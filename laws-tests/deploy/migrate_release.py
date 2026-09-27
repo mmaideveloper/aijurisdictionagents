@@ -1,14 +1,15 @@
 """Release migration with a database backup; secret values never enter process arguments."""
 
-from pathlib import Path
 import os
 import subprocess
 import sys
-from urllib.parse import urlsplit, unquote
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
-from dotenv import dotenv_values
-from laws_tests.db import migrate
 import psycopg
+from dotenv import dotenv_values
+
+from laws_tests.db import migrate
 
 sha = sys.argv[1]
 if len(sha) != 40 or not all(c in "0123456789abcdef" for c in sha):
@@ -77,6 +78,7 @@ if not backup.exists():
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
+        check=False,  # Handle return codes below without exposing captured secrets.
     )
     if result.returncode:
         pending_backup.unlink(missing_ok=True)

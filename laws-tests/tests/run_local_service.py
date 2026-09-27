@@ -2,11 +2,11 @@
 
 import argparse
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from dotenv import dotenv_values
 import uvicorn
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "laws-tests/api"))

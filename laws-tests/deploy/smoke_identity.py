@@ -1,14 +1,15 @@
 """Restricted deployment-only synthetic identity. JSON stdout must be captured, never logged."""
 
 import json
-from pathlib import Path
 import secrets
 import sys
+from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from dotenv import dotenv_values
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from dotenv import dotenv_values
+
 from laws_tests.config import Settings
 from laws_tests.db import connect
 

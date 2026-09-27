@@ -3,13 +3,13 @@
 import re
 from urllib.parse import urlencode, urlsplit
 
-from fastapi import HTTPException
 import psycopg
+from fastapi import HTTPException
 from psycopg.rows import dict_row
 
 LAW = re.compile(
     r"(?<![\w/])(?P<prefix>č\.\s*)?(?P<number>\d{1,4})\s*/\s*(?P<year>(?:18|19|20)\d{2})(?!\d)(?P<suffix>\s*Z\.\s*z\.)?",
-    re.I,
+    re.IGNORECASE,
 )
 
 

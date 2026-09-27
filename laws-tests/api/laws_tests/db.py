@@ -1,5 +1,5 @@
-from pathlib import Path
 import hashlib
+from pathlib import Path
 
 import psycopg
 from psycopg.rows import dict_row

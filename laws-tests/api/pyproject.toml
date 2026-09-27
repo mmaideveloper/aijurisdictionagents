@@ -12,4 +12,5 @@ build-backend = "hatchling.build"
 packages = ["laws_tests"]
 
 [tool.ruff]
+extend = "../ruff.toml"
 line-length = 110

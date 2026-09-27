@@ -1,14 +1,14 @@
 """Create isolated synthetic local acceptance storage. Never prints credentials."""
 
-from pathlib import Path
+import json
 import secrets
 import subprocess
 import time
-import json
+from pathlib import Path
 from urllib.parse import quote
 
-from dotenv import dotenv_values, set_key
 import psycopg
+from dotenv import dotenv_values, set_key
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,6 +73,7 @@ def main():
         ready = subprocess.run(
             ["docker", "exec", "laws-tests-840-postgres", "pg_isready", "-U", "postgres"],
             capture_output=True,
+            check=False,  # Handle return codes below without exposing captured secrets.
         )
         if ready.returncode == 0:
             break
@@ -97,6 +98,7 @@ def main():
         input=sql,
         text=True,
         capture_output=True,
+        check=False,  # Handle return codes below without exposing captured secrets.
     )
     if changed.returncode:
         raise SystemExit("Local profile reconciliation failed (details redacted)")
@@ -158,6 +160,7 @@ def main():
             "-VerifyModel",
         ],
         cwd=ROOT,
+        check=False,  # Handle return codes below without exposing captured secrets.
     )
     if imported.returncode:
         raise SystemExit(

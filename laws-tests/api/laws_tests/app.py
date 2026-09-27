@@ -1,15 +1,17 @@
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from hashlib import sha256
 import secrets
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from hashlib import sha256
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Request, Query
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, JSONResponse
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse, RedirectResponse
+from openai import APIError
 from psycopg.types.json import Jsonb
+from pydantic import BaseModel, Field
 
 from .config import Settings
 from .db import connect, purge
@@ -78,7 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return row
 
     def active(row):
-        if row["expires_at"] and row["expires_at"] <= datetime.now(timezone.utc):
+        if row["expires_at"] and row["expires_at"] <= datetime.now(UTC):
             raise HTTPException(409, "Platnosť testu skončila. Obsah a história sú dostupné iba na čítanie.")
 
     def session_user(request, conn, mutation=False):
@@ -376,7 +378,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(409, "Odpoveď sa už spracúva.")
         try:
             result = evaluate(cfg, snapshot, payload.answer)
-        except Exception:
+        except (APIError, httpx.HTTPError, ValueError, RuntimeError, TimeoutError):
             with connect(cfg.database_url) as conn:
                 conn.execute("UPDATE attempts SET status='error' WHERE id=%s", (aid,))
             raise HTTPException(
