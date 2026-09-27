@@ -994,3 +994,42 @@ synthetic E2E exception flag remains restricted to loopback test databases; it i
 not a production configuration tool. All other release checks and provider/
 retention review remain applicable. The API Docker build passed in GitHub CI for
 45c56c0, resolving the earlier local certificate-trust build blocker there.
+
+## Laws tests production (#840)
+
+Owners: domain operator controls **jurisigta.eu** (tests), account operator controls
+**jurisdigta.eu**, infrastructure operator owns jurisdigta-server/encrypted USB, GitHub
+administrator owns protected `test`/`prod` environments, content reviewer owns #841.
+
+1. Verify authoritative DNS ownership, create `tests.jurisigta.eu` pointing to the existing
+   ingress, issue TLS for that exact hostname, and proxy it to `127.0.0.1:8410` on the server.
+   Do not substitute the account-domain spelling. Confirm HTTPS and SPA deep links.
+2. On the server verify `/mnt/jurisdigta-backup` is an actual encrypted mounted volume.
+   Run `sudo python3 laws-tests/deploy/provision_profiles.py` from the reviewed release.
+   This provisions USB dev/prod `.env-laws-test` and the restricted server runtime/migration
+   copies without revealing credentials. Re-running preserves keys and upgrades only the
+   dedicated identity profile. No developer push is permitted.
+3. Follow `laws-tests/docs/deployment.md` for release directories, Docker network, nonsecret
+   `deployment.env`, central `/tests-authorize` frontend route, privileged migration execution
+   and retention systemd installation. Runtime identity role reads only `users.user_id`,
+   `users.is_enabled`, device-token validation fields and updates `last_used_at`.
+4. Configure `test`/`prod` exactly as `docs/GITHUB_ENVIRONMENTS.md`; prepare the isolated real
+   E2E runner and run the exact release SHA before production deployment. Review the
+   three built images and successful check links. Import only rights-confirmed, human-reviewed
+   published data from #841; never publish the development photograph transcripts.
+5. Set recovery and deletion-reconciliation ownership before release. Restrict backups
+   and evidence directories to operators. Purge screenshots/manifests after 14 days,
+   backups no later than 12 months; apply retained user deletion requests and retention purge
+   before exposing any restored database. Test this procedure with synthetic records.
+6. Dispatch `LawsTest-Self-Managed-Prod-deploy`. It applies migrations before replacing
+   API/web and runs its bundled public/authenticated synthetic smoke with real Azure Foundry.
+   Confirm synthetic records are deleted, SHA/check links retained, health reports
+   `{"status":"ok","service":"laws-tests"}`, and hourly monitoring is enabled.
+
+Rollback: use the previous verified release SHA/images, preserve user writes, and follow
+`laws-tests/docs/deployment.md`. Never downgrade destructively or restore old deleted histories.
+Secret recovery: verify encrypted mount, restore only the selected prod profile to the
+restricted server path, validate key readiness without values, restart only the tests service.
+Rotation: operator updates USB authority first, applies corresponding DB role/provider changes,
+then refreshes server copy and validates. Provisioning intentionally does not guess missing
+external credentials or rotate existing DB role passwords automatically.

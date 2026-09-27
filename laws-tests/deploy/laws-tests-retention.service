@@ -1,0 +1,7 @@
+[Unit]
+Description=JurisDigta laws-tests retention and deleted-account cleanup
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/jurisdigta/laws-tests
+ExecStart=/srv/jurisdigta/laws-tests/retention.sh

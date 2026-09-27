@@ -1,0 +1,20 @@
+services:
+  api:
+    image: laws-tests-api:${RELEASE_SHA:?RELEASE_SHA required}
+    restart: unless-stopped
+    environment:
+      LAWS_TEST_ENV_FILE: /run/secrets/.env-laws-test
+    volumes:
+      - /srv/jurisdigta/secrets/.env-laws-test:/run/secrets/.env-laws-test:ro
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks: [default, identity]
+  web:
+    image: laws-tests-web:${RELEASE_SHA:?RELEASE_SHA required}
+    restart: unless-stopped
+    ports: ['127.0.0.1:8410:80']
+    depends_on: [api]
+networks:
+  identity:
+    external: true
+    name: ${LAWS_TEST_IDENTITY_NETWORK:?Set identity Docker network}

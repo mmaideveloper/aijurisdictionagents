@@ -10,6 +10,7 @@ Run one production health check pass for these public targets:
 - https://api.jurisdigta.eu/version
 - https://web.jurisdigta.eu/health
 - https://web.jurisdigta.eu/
+- https://tests.jurisigta.eu/api/health
 - https://agent.jurisdigta.eu/
 - https://mcp.jurisdigta.eu/
 - https://mcp.jurisdigta.eu/MCP
@@ -19,6 +20,7 @@ Run one production health check pass for these public targets:
 - https://admin.jurisdigta.eu/grafana/login
 
 Healthy rules:
+- Laws-tests `/api/health` must return HTTP 200 and JSON `status=ok`, `service=laws-tests`; this verifies connectivity to the dedicated tests database. Enable this target with the first laws-tests production release; before that, record it as awaiting deployment rather than healthy.
 - API `/health` must return HTTP 200 and JSON `status=ok`.
 - API `/health` must include `llm.status=ok`.
 - API `/health` must include `database.status=ok`.

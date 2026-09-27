@@ -817,3 +817,35 @@ service in the EU.** Configure its encrypted key/region, restore EU-required
 speech policies, validate processor/retention settings, rerun real Slovak speech
 acceptance against that EU service, and obtain the owner's release approval.
 Do not copy the test exception policy or non-EU credential to production.
+
+## Laws tests (#840): test and prod
+
+Workflow `LawsTest-Self-Managed-Prod-deploy` accepts only `release_sha` (40 lowercase
+hex characters, already on main). Both its pre-approval gate and deploy job require
+successful exact-SHA `laws-tests-validation`, `laws-tests-real-e2e`, and every additional
+applicable check named by repository variable `LAWS_TEST_REQUIRED_CHECKS` (JSON string array).
+Set the same array in protected `prod`; missing/invalid configuration fails closed.
+Keep this list aligned with branch protection and all checks applicable to the release.
+
+- `test`: protect the environment; use a trusted isolated self-hosted Windows/X64 runner
+  labelled `laws-tests-e2e`. Install Node 24, Edge, Docker Desktop, PowerShell 7, Git,
+  approved SSH host/key and branch-local `conda/python.exe` using the worktree helper.
+  Permit read-only `codex-agent` and `laws-tests-dev` USB profile pulls. No production DB
+  credentials are installed on this runner. Dispatch `Laws Tests Validate` with
+  `run_real_e2e=true` against the exact commit. Never run untrusted fork code with credentials.
+- `prod`: protect deployment with required reviewers and main-only deployment branches.
+  Runner labels: `self-hosted, Linux, X64, jurisdigta-prod`; install Python 3, SSH/SCP.
+  Variables: `JURISDIGTA_SSH_HOST`, `JURISDIGTA_SSH_USER`, `JURISDIGTA_SSH_PORT` (default 22),
+  `LAWS_TEST_REQUIRED_CHECKS`. Secrets: `JURISDIGTA_SSH_PRIVATE_KEY`,
+  `JURISDIGTA_SSH_KNOWN_HOSTS` (verified out-of-band; strict host verification).
+  Deploy identity must read the restricted migration file and access Docker, or run the
+  reviewed deployment entry point with an equivalent restricted privileged service.
+- Server-only settings and `.env-laws-test` locations are in `laws-tests/docs/deployment.md`.
+  Never upload the secret file into GitHub artifacts. The account frontend build needs
+  public `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisigta.eu` and `/tests-authorize` routing.
+
+Acceptance before dispatch: reviewed #841 content, DNS/TLS, account callback, installed
+retention timer and restore/deletion procedure. The release builds API/web/smoke images,
+backs up and migrates the dedicated DB, then runs public and synthetic real-model checks.
+Retain successful check links plus SHA for 14 days; production smoke evidence is restricted
+under `/srv/jurisdigta/laws-tests/evidence/<sha>`. A failed smoke means failed deployment.

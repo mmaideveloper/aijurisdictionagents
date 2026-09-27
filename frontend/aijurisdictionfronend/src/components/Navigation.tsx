@@ -72,6 +72,7 @@ export const Navigation: React.FC<NavigationProps> = ({ isSidebarCollapsed = fal
           <NavLink to="/">{t("navHome")}</NavLink>
           <NavLink to="/aktuality">{t("navNews")}</NavLink>
           <NavLink to="/pricing">{t("navPricing")}</NavLink>
+          <a href={`${import.meta.env.VITE_LAWS_TEST_PUBLIC_URL || "https://tests.jurisigta.eu"}/?caseType=FIREARMS_LICENSE_TEST&mode=KNOWLEDGE_TEST`}>Zbrojný preukaz – testy</a>
         </div>
         <div className="nav-actions">
           <LanguageSwitcher />

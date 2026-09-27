@@ -1,0 +1,95 @@
+"""Release migration with a database backup; secret values never enter process arguments."""
+
+from pathlib import Path
+import os
+import subprocess
+import sys
+from urllib.parse import urlsplit, unquote
+
+from dotenv import dotenv_values
+from laws_tests.db import migrate
+import psycopg
+
+sha = sys.argv[1]
+if len(sha) != 40 or not all(c in "0123456789abcdef" for c in sha):
+    raise SystemExit("Invalid SHA")
+profile = dotenv_values("/run/secrets/migration.env")
+url = profile.get("LAWS_TEST_MIGRATION_DATABASE_URL")
+if not url or url == "unknown-variable":
+    raise SystemExit("Missing LAWS_TEST_MIGRATION_DATABASE_URL")
+uri = urlsplit(url)
+if uri.path != "/laws-tests":
+    raise SystemExit("Unexpected migration database")
+runtime = dotenv_values("/run/secrets/.env-laws-test")
+app_uri = urlsplit(runtime["LAWS_TEST_DATABASE_URL"])
+identity_uri = urlsplit(runtime["LAWS_TEST_IDENTITY_DATABASE_URL"])
+if app_uri.username != "laws_tests_app":
+    raise SystemExit("Unexpected application role")
+if identity_uri.username != "laws_tests_identity" or identity_uri.hostname != uri.hostname:
+    raise SystemExit("Dedicated same-server identity role required")
+admin_url = uri._replace(path="/postgres").geturl()
+with psycopg.connect(admin_url, autocommit=True) as conn:
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='laws_tests_identity'").fetchone():
+        conn.execute(
+            psycopg.sql.SQL("CREATE ROLE laws_tests_identity LOGIN PASSWORD {}").format(
+                psycopg.sql.Literal(unquote(identity_uri.password or ""))
+            )
+        )
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='laws_tests_app'").fetchone():
+        conn.execute(
+            psycopg.sql.SQL("CREATE ROLE laws_tests_app LOGIN PASSWORD {}").format(
+                psycopg.sql.Literal(unquote(app_uri.password or ""))
+            )
+        )
+    if not conn.execute("SELECT 1 FROM pg_database WHERE datname='laws-tests'").fetchone():
+        conn.execute('CREATE DATABASE "laws-tests"')
+env = {**os.environ, "PGPASSWORD": unquote(uri.password or "")}
+backup = Path("/backups") / (sha + ".dump")
+if not backup.exists():
+    pending_backup = backup.with_suffix(".partial")
+    result = subprocess.run(
+        [
+            "pg_dump",
+            "-h",
+            uri.hostname or "",
+            "-p",
+            str(uri.port or 5432),
+            "-U",
+            unquote(uri.username or ""),
+            "-d",
+            "laws-tests",
+            "-Fc",
+            "-f",
+            str(pending_backup),
+        ],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode:
+        pending_backup.unlink(missing_ok=True)
+        raise SystemExit("Database backup failed; details withheld to protect configuration")
+    pending_backup.replace(backup)
+    backup.chmod(0o600)
+migrate(url, Path("/app"))
+with psycopg.connect(url) as conn:
+    conn.execute('GRANT CONNECT ON DATABASE "laws-tests" TO laws_tests_app')
+    conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_app")
+    conn.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM laws_tests_app")
+    conn.execute("GRANT SELECT ON test_definitions,questions,subquestions TO laws_tests_app")
+    conn.execute(
+        "GRANT SELECT,INSERT,UPDATE,DELETE ON login_requests,web_sessions,test_sessions,attempts TO laws_tests_app"
+    )
+identity_admin = uri._replace(path=identity_uri.path).geturl()
+with psycopg.connect(identity_admin) as conn:
+    conn.execute(
+        psycopg.sql.SQL("GRANT CONNECT ON DATABASE {} TO laws_tests_identity").format(
+            psycopg.sql.Identifier(unquote(identity_uri.path.lstrip("/")))
+        )
+    )
+    conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_identity")
+    conn.execute("GRANT SELECT(user_id,is_enabled) ON users TO laws_tests_identity")
+    conn.execute(
+        "GRANT SELECT(user_id,device_id,token_hash,expires_at), UPDATE(last_used_at) ON device_auth_tokens TO laws_tests_identity"
+    )
+print("Recovery point created; laws-tests migrations verified.")
