@@ -1,3 +1,12 @@
+# Public law reader prerequisite
+
+The dedicated profile now includes `LAWS_TEST_LAWS_DATABASE_URL`. Run the updated server
+profile provisioner to prepare its independent reader credential on encrypted USB and in
+the server runtime file. The deployment migration requires the dedicated `laws_tests_reader`
+role on the approved PostgreSQL server, creates it if missing and grants SELECT-only source
+access. Existing collector migrations and the reviewed bank's concrete legal date/source
+versions must be ready before publication. See [law-reader.md](law-reader.md).
+
 # Production deployment
 
 The workflow display name is **LawsTest-Self-Managed-Prod-deploy**. It accepts one

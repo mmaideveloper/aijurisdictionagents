@@ -36,7 +36,7 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
   };
   fs.writeFileSync(path.join(out,'result-manifest.json'),JSON.stringify(manifest,null,2));
   await page.setViewportSize({ width: 1440, height: 1050 });
-  await page.goto("/?question=A-20");
+  await page.goto("/?test=firearms-sk-2026&question=A-20");
   await expect(
     page.getByRole("heading", {
       name: "Vyhláška, preprava a správca strelnice",
@@ -58,7 +58,7 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
     hasTouch: true,
   });
   const mobilePage = await mobile.newPage();
-  await mobilePage.goto("/?question=A-20");
+  await mobilePage.goto("/?test=firearms-sk-2026&question=A-20");
   await expect(
     mobilePage.getByRole("button", { name: "Prihlásiť sa", exact: true }),
   ).toBeVisible();
@@ -79,7 +79,7 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
     path: path.join(out, "02-mobile-public-a20-viewport.png"),
   });
   await mobile.close();
-  await page.goto("/?question=E-1");
+  await page.goto("/?test=firearms-sk-2026&question=E-1");
   await expect(
     page.getByRole("heading", { name: "Bezpečná manipulácia na strelnici" }),
   ).toBeVisible();

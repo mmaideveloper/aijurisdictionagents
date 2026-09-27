@@ -35,7 +35,7 @@ s=ApiDatabaseStore.from_env()
 p=next(p for p in s.list_ai_model_providers() if p.provider_id=='azurefoundryeu' and p.enabled)
 m=next(m for m in s.list_ai_model_profiles(provider_id=p.provider_id) if m.model_code=='gpt-5-mini' and m.enabled)
 c=next(c for c in s.list_ai_model_credentials(provider_id=p.provider_id,reveal=True) if c.enabled and c.secret_type=='api_key')
-print(json.dumps({'identity':s.db_cloud,'endpoint':p.base_url,'version':_resolve_azure_openai_api_version(model=m.model_code,provider_api_version=p.api_version),'model':m.deployment_name,'key':c.secret_value}))
+print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'endpoint':p.base_url,'version':_resolve_azure_openai_api_version(model=m.model_code,provider_api_version=p.api_version),'model':m.deployment_name,'key':c.secret_value}))
 """
     result = subprocess.run(
         ["docker", "exec", "-i", "jurisdigta-api", "python", "-"],
@@ -51,6 +51,14 @@ print(json.dumps({'identity':s.db_cloud,'endpoint':p.base_url,'version':_resolve
     uri = urlsplit(approved["identity"])
     if uri.scheme not in {"postgres", "postgresql"}:
         raise SystemExit("Production identity must use PostgreSQL")
+    laws_uri = urlsplit(approved["laws"])
+    if laws_uri.scheme not in {"postgres", "postgresql"} or (
+        laws_uri.hostname,
+        laws_uri.port or 5432,
+    ) != (uri.hostname, uri.port or 5432):
+        raise SystemExit(
+            "Collector on the approved database server required; configure separate migration access otherwise"
+        )
     password = secrets.token_urlsafe(40)
     host = uri.hostname or ""
     netloc = f"laws_tests_app:{quote(password)}@{host}:{uri.port or 5432}"
@@ -111,6 +119,40 @@ print(json.dumps({'identity':s.db_cloud,'endpoint':p.base_url,'version':_resolve
         write_new(temporary, stored)
         temporary.replace(prod_path)
         print("Dedicated identity reader profile: prepared (role applied only at gated deployment)")
+    if (
+        not stored.get("LAWS_TEST_LAWS_DATABASE_URL")
+        or stored.get("LAWS_TEST_LAWS_DATABASE_URL") == "unknown-variable"
+    ):
+        stored["LAWS_TEST_LAWS_DATABASE_URL"] = urlunsplit(
+            (
+                "postgresql",
+                f"laws_tests_reader:{quote(secrets.token_urlsafe(40))}@{laws_uri.hostname}:{laws_uri.port or 5432}",
+                laws_uri.path,
+                laws_uri.query,
+                "",
+            )
+        )
+        temporary = prod_path.with_name(".env-laws-test.reader-new")
+        write_new(temporary, stored)
+        temporary.replace(prod_path)
+        print(
+            "Dedicated public law reader profile: prepared (role applied only at gated deployment)"
+        )
+    dev_path = usb / "dev/.env-laws-test"
+    dev_stored = dict(
+        line.split("=", 1)
+        for line in dev_path.read_text().splitlines()
+        if "=" in line and not line.startswith("#")
+    )
+    if not dev_stored.get("LAWS_TEST_LAWS_DATABASE_URL"):
+        dev_stored["LAWS_TEST_LAWS_DATABASE_URL"] = (
+            urlsplit(dev_stored["LAWS_TEST_DATABASE_URL"])
+            ._replace(path="/laws_tests_sources_840")
+            .geturl()
+        )
+        temporary = dev_path.with_name(".env-laws-test.reader-new")
+        write_new(temporary, dev_stored)
+        temporary.replace(dev_path)
     operator = pwd.getpwnam("jurisdigta-admin")
     os.chown(usb / "dev", operator.pw_uid, operator.pw_gid)
     os.chmod(usb, 0o711)

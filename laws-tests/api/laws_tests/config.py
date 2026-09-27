@@ -17,6 +17,7 @@ class Settings:
     deployment: str
     api_version: str
     api_key: str
+    laws_database_url: str = ""
 
     @classmethod
     def load(cls) -> "Settings":
@@ -29,6 +30,7 @@ class Settings:
                 raise ValueError(f"Missing setting: {key}")
             return value
 
+        laws_url = str(values.get("LAWS_TEST_LAWS_DATABASE_URL") or "").strip()
         settings = cls(
             *(
                 required(key)
@@ -43,11 +45,14 @@ class Settings:
                     "AZURE_OPENAI_API_VERSION",
                     "AZURE_OPENAI_API_KEY",
                 )
-            )
+            ),
+            laws_database_url=laws_url if laws_url != "unknown-variable" else "",
         )
         if settings.environment not in {"development", "test", "production"}:
             raise ValueError("Invalid LAWS_TEST_ENVIRONMENT")
-        for connection in (settings.database_url, settings.identity_database_url):
+        for connection in filter(
+            None, (settings.database_url, settings.identity_database_url, settings.laws_database_url)
+        ):
             uri = urlparse(connection)
             if uri.scheme != "postgresql":
                 raise ValueError("PostgreSQL is required")

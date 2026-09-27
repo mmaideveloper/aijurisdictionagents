@@ -25,3 +25,18 @@ UPDATE test_definitions SET
  legal_summary='Zákon č. 190/2003 Z. z. · Vyhláška č. 555/2003 Z. z.',
  case_type='FIREARMS_LICENSE_TEST'
 WHERE id='firearms-sk-2026' AND status='development';
+
+-- Draft citation attribution for the photographed examples; publication still requires #841 review.
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 1 vyhlášky","law_number":555,"law_year":2003,"section":"1"}
+]'
+WHERE id='A-20-1' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 28 ods. 2","law_number":190,"law_year":2003,"section":"28","paragraph":"2"},
+ {"field":"answer","quote":"§ 27 ods. 2, 3 alebo ods. 4","law_number":190,"law_year":2003,"section":"27"}
+]'
+WHERE id='A-20-2' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 50","law_number":190,"law_year":2003,"section":"50"}
+]'
+WHERE id='A-20-3' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');

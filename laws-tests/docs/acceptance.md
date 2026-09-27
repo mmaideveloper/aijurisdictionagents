@@ -26,3 +26,23 @@ Earlier PostgreSQL unit/integration checks cover public/private boundaries, sche
 repeat migration, expiry and CSRF. These use stubs only at specified unit boundaries and do
 not replace the real-model acceptance above. A future model/run can score differently; any
 failed asserted outcome must remain a failure rather than editing UI evidence.
+
+## Public law reader follow-up
+
+The reader-specific local browser run passed on desktop (1440px) and mobile (390px),
+using the real tests frontend/API and a separately migrated local collector PostgreSQL
+database. It opened a question link and an original-answer link in new tabs without any
+login cookie, selected the 2026 source version rather than the seeded future version,
+and highlighted only § 4 ods. 2 písm. j). Missing date and missing exact-anchor states
+were also asserted. Source and version IDs match the direct public API result.
+
+Evidence: `08-{desktop,mobile}-law-links.png`, `09-{desktop,mobile}-law-provision.png`
+and `law-reader-manifest.json`, beside the earlier evidence. All law text in these four
+images is explicitly synthetic; fixture records were deleted after capture. Retention is
+14 days. The deterministic reader invokes no model. Fourteen PostgreSQL/unit checks,
+Ruff, the frontend TypeScript/build gate and the extended minimal demo also passed.
+
+This follow-up is not a rerun of the full account/real-model suite or the broader MCP
+case-answer grounding acceptance. Those and the exact-commit CI/deployment gates remain
+required before production release. The development firearms course still has no reviewed
+legal date; its law links display that prerequisite instead of guessing a law version.

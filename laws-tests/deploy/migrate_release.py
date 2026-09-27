@@ -23,12 +23,24 @@ if uri.path != "/laws-tests":
 runtime = dotenv_values("/run/secrets/.env-laws-test")
 app_uri = urlsplit(runtime["LAWS_TEST_DATABASE_URL"])
 identity_uri = urlsplit(runtime["LAWS_TEST_IDENTITY_DATABASE_URL"])
+laws_uri = urlsplit(runtime.get("LAWS_TEST_LAWS_DATABASE_URL") or "")
+if laws_uri.username != "laws_tests_reader" or (laws_uri.hostname, laws_uri.port or 5432) != (
+    uri.hostname,
+    uri.port or 5432,
+):
+    raise SystemExit("Dedicated same-server public law reader profile required")
 if app_uri.username != "laws_tests_app":
     raise SystemExit("Unexpected application role")
 if identity_uri.username != "laws_tests_identity" or identity_uri.hostname != uri.hostname:
     raise SystemExit("Dedicated same-server identity role required")
 admin_url = uri._replace(path="/postgres").geturl()
 with psycopg.connect(admin_url, autocommit=True) as conn:
+    if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='laws_tests_reader'").fetchone():
+        conn.execute(
+            psycopg.sql.SQL("CREATE ROLE laws_tests_reader LOGIN PASSWORD {}").format(
+                psycopg.sql.Literal(unquote(laws_uri.password or ""))
+            )
+        )
     if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='laws_tests_identity'").fetchone():
         conn.execute(
             psycopg.sql.SQL("CREATE ROLE laws_tests_identity LOGIN PASSWORD {}").format(
@@ -92,4 +104,15 @@ with psycopg.connect(identity_admin) as conn:
     conn.execute(
         "GRANT SELECT(user_id,device_id,token_hash,expires_at), UPDATE(last_used_at) ON device_auth_tokens TO laws_tests_identity"
     )
-print("Recovery point created; laws-tests migrations verified.")
+with psycopg.connect(uri._replace(path=laws_uri.path).geturl()) as conn:
+    conn.execute(
+        psycopg.sql.SQL("GRANT CONNECT ON DATABASE {} TO laws_tests_reader").format(
+            psycopg.sql.Identifier(unquote(laws_uri.path.lstrip("/")))
+        )
+    )
+    conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_reader")
+    conn.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM laws_tests_reader")
+    conn.execute(
+        "GRANT SELECT ON law_documents,law_versions,law_metadata,law_provisions,source_artifacts TO laws_tests_reader"
+    )
+print("Recovery point created; laws-tests migrations and read-only source grants verified.")

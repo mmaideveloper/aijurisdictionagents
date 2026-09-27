@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { LegalText, LawReader, type TextToken } from "./LawReader";
 
 type Course = {
   id: string;
@@ -14,7 +15,7 @@ type Course = {
   legal_summary: string;
   case_type: string;
 };
-type Item = { id: string; body: string; answer: string; sequence?: number };
+type Item = { id: string; body: string; answer: string; sequence?: number; linked_body?: TextToken[]; linked_answer?: TextToken[] };
 type Question = Item & {
   test_id: string;
   category: string;
@@ -103,7 +104,8 @@ function App() {
       .then((rows: Course[]) => {
         setCourses(rows);
         const type = new URLSearchParams(location.search).get("caseType");
-        setCourse(rows.find((c) => c.case_type === type) ?? rows[0] ?? null);
+        const requestedTest = new URLSearchParams(location.search).get("test");
+        setCourse(rows.find((c) => c.id === requestedTest) ?? rows.find((c) => c.case_type === type) ?? rows[0] ?? null);
       })
       .catch((e) => setError(e.message));
     api("/me")
@@ -131,7 +133,7 @@ function App() {
       setQuestion(row);
       setExpanded([]);
       if (push)
-        window.history.pushState({}, "", `?question=${encodeURIComponent(id)}`);
+        window.history.pushState({}, "", `?test=${encodeURIComponent(row.test_id)}&question=${encodeURIComponent(id)}`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -661,7 +663,7 @@ function App() {
                           ? `PODOTÁZKA ${n + 1} Z ${items.length}`
                           : "OTÁZKA"}
                       </div>
-                      <h3>{item.body}</h3>
+                      <h3><LegalText tokens={item.linked_body} text={item.body} /></h3>
                       {practice && (
                         <>
                           <label className="answer-label">
@@ -745,9 +747,7 @@ function App() {
                           </button>
                           {expanded.includes(item.id) && (
                             <div className="answer-text">
-                              {item.answer.split("\n").map((p, i) => (
-                                <p key={i}>{p}</p>
-                              ))}
+                              <p className="linked-answer"><LegalText tokens={item.linked_answer} text={item.answer} /></p>
                             </div>
                           )}
                         </div>
@@ -809,4 +809,4 @@ function App() {
     </>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(location.pathname.startsWith("/laws/") ? <LawReader /> : <App />);

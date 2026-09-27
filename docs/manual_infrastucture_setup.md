@@ -1,3 +1,29 @@
+# Laws Tests public reader follow-up (#840)
+
+Owner: JurisDigta platform operator (`jurisdigta-admin` on `jurisdigta-server`), plus the
+question-bank legal reviewer for #841. With the verified encrypted USB mounted, run
+`sudo python3 laws-tests/deploy/provision_profiles.py` from a checked-out release on the
+server. Do not copy laptop secrets or put credentials into GitHub. The updated helper adds
+`LAWS_TEST_LAWS_DATABASE_URL` to `/mnt/jurisdigta-backup/jurisdigta-env/profiles/laws-tests/{dev,prod}/.env-laws-test`
+and refreshes `/srv/jurisdigta/secrets/.env-laws-test` (600, runtime UID 10840).
+The existing approved API `LAWS_DB_CLOUD` must identify PostgreSQL on the same server as
+the identity database; otherwise stop and design a separate least-privilege migration path.
+
+The protected `prod` deployment creates `laws_tests_reader` and grants only CONNECT,
+schema USAGE and SELECT on collector law documents, versions, metadata, provisions and
+artifacts. Apply collector migrations through its existing deployment; do not modify the
+collector schema from the tests deployment. Verify the needed law versions and native
+provision anchors are present. A reviewed course needs a concrete `legal_date` and reviewed
+bare-section annotations. Validate anonymous `/api/laws/{year}/{number}?test={id}` plus
+desktop/mobile new-tab navigation and exact provision highlighting before publication.
+Configuration preparation is not deployment approval: all exact-commit checks still apply.
+
+Rollback: deploy the previous verified release and retain the additive JSONB columns and
+source database. If retiring this feature entirely, revoke the dedicated reader role's
+grants after the old processes have stopped; do not delete collector records or other
+roles. Preserve the encrypted USB profile for recovery. The `test` environment uses only
+the isolated synthetic source database; its fixture cleanup deletes only its own run IDs.
+
 # Manual Infrastructure Setup
 
 ## Local legal explanation acceptance (#810)

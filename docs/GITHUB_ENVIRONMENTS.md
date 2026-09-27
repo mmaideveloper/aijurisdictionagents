@@ -1,3 +1,20 @@
+# Laws Tests public law reader (#840)
+
+For `test`, the existing isolated acceptance runner prepares a synthetic collector database
+`laws_tests_sources_840` on loopback PostgreSQL and applies the current collector migrations.
+The separate `LAWS_TEST_LAWS_DATABASE_URL` belongs to the encrypted-USB `laws-tests-dev`
+profile and local `.env-laws-test`; it is not a GitHub secret or workflow input.
+
+For `prod`, the platform owner must run the updated
+`laws-tests/deploy/provision_profiles.py` on `jurisdigta-server` with the encrypted USB
+mounted. It derives the source database from the approved API's collector configuration,
+creates an independent `laws_tests_reader` credential in the USB production profile and
+server runtime file, and preserves existing keys. The gated deployment migration creates
+the role and SELECT-only grants. The collector must use the approved same database server;
+other topologies require a separately reviewed migration connection. No extra workflow
+dispatch input or GitHub credential is needed. Confirm #841 legal dates and source-version
+availability before release; keep all exact-SHA production build gates enforced.
+
 # GitHub Environments Checklist
 
 For #806/#815 user reporting, both test and prod require the manually isolated Grafana

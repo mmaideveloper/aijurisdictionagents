@@ -54,6 +54,9 @@ API. The repository's `python examples/minimal_demo.py` remains the general offl
 
 ## Architecture and invariants
 
+Public law links, exact provision navigation, editorial attribution, source configuration,
+and the runnable reader example are documented in [law-reader.md](docs/law-reader.md).
+
 - `api/laws_tests`: FastAPI, PostgreSQL, existing Azure Foundry adapter.
 - `web`: React/TypeScript reader, practice, exam, history/export/deletion.
 - `databases/laws-tests`: versioned SQL and explicitly development-only seed SQL.

@@ -18,6 +18,8 @@ $env:PYTHONPATH="$root/laws-tests/api;$root/src"
 if($LASTEXITCODE -ne 0){throw 'Migration failed'}
 & $python -m laws_tests.cli seed-development
 if($LASTEXITCODE -ne 0){throw 'Seed failed'}
+& $python laws-tests/tests/reader_fixture.py
+if($LASTEXITCODE -ne 0){throw 'Synthetic law reader seed failed'}
 $env:NODE_USE_SYSTEM_CA='1'
 foreach($project in @('laws-tests/web','frontend/aijurisdictionfronend')){
     Push-Location $project
@@ -42,4 +44,5 @@ try{
     try { npm run test:e2e; if($LASTEXITCODE -ne 0){throw 'Real E2E failed'} } finally {Pop-Location}
 } finally {
     foreach($process in $processes){ Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
+    & $python laws-tests/tests/reader_fixture.py cleanup
 }

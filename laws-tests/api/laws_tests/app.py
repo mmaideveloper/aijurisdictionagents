@@ -5,7 +5,7 @@ import secrets
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from .config import Settings
 from .db import connect, purge
 from .evaluation import evaluate
 from .identity import Identity
+from .legal import enrich_question, read_law
 
 
 def digest(value: str) -> str:
@@ -223,17 +224,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def question(question_id: str):
         with connect(cfg.database_url) as conn:
             row = conn.execute(
-                "SELECT id,test_id,category,number,title,body,structure,answer,provenance FROM questions WHERE id=%s",
+                "SELECT id,test_id,category,number,title,body,structure,answer,provenance,legal_references FROM questions WHERE id=%s",
                 (question_id,),
             ).fetchone()
             if not row:
                 raise HTTPException(404)
             public_test(conn, row["test_id"])
             row["subquestions"] = conn.execute(
-                "SELECT id,sequence,body,answer FROM subquestions WHERE question_id=%s ORDER BY sequence",
+                "SELECT id,sequence,body,answer,legal_references FROM subquestions WHERE question_id=%s ORDER BY sequence",
                 (question_id,),
             ).fetchall()
-            return row
+            return enrich_question(row)
+
+    @app.get("/api/laws/{year}/{number}")
+    def public_law(
+        year: int,
+        number: int,
+        test: str,
+        section: str | None = Query(None, pattern=r"^[0-9]{1,4}[a-z]?$"),
+        paragraph: str | None = Query(None, pattern=r"^[0-9]{1,3}$"),
+        letter: str | None = Query(None, pattern=r"^[a-z]$"),
+    ):
+        if not 1800 <= year <= 2100 or not 1 <= number <= 9999:
+            raise HTTPException(422, "Neplatné číslo predpisu.")
+        if (paragraph and not section) or (letter and not paragraph):
+            raise HTTPException(422, "Neúplný odkaz na ustanovenie.")
+        with connect(cfg.database_url) as conn:
+            course = public_test(conn, test)
+        return read_law(cfg.laws_database_url, year, number, course["legal_date"], section, paragraph, letter)
 
     @app.post("/api/sessions")
     def start_session(payload: SessionInput, request: Request):

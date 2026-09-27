@@ -17,3 +17,6 @@ with httpx.Client(base_url="http://127.0.0.1:8411", timeout=10) as client:
     print(question["answer"])
     assert client.get("/api/history").status_code == 401
     print("Public reading works; private history requires sign-in.")
+    references = client.get("/api/questions/A-20").json()["subquestions"][0]["linked_body"]
+    assert any(token.get("href", "").startswith("/laws/2003/555?") for token in references)
+    print("Public law links present; each reader resolves the course legal date server-side.")

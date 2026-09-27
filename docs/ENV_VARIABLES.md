@@ -106,3 +106,12 @@ Migration file: same directory, root, 0600. Encrypted USB authoritative paths:
 `/mnt/jurisdigta-backup/jurisdigta-env/profiles/laws-tests/{dev,prod}/.env-laws-test`.
 The dev directory is restricted to the approved SSH operator; production files remain root-only.
 `PYTHON_DOTENV_DISABLED=1` is set by the acceptance service launcher only after explicitly loading valid settings; this prevents the existing account API from implicitly reloading unresolved placeholders.
+## Laws Tests public source connection
+
+`LAWS_TEST_LAWS_DATABASE_URL`: collector PostgreSQL DSN, read only through the dedicated
+production `laws_tests_reader` role. Stored solely in the authoritative encrypted-USB
+laws-tests profiles and `.env-laws-test`. Development/test require loopback. Empty or
+`unknown-variable` leaves the reader visibly unavailable; no shared or production fallback.
+The server profile provisioner derives this connection without exporting secrets, and the
+gated release applies SELECT-only permissions. The root `.env.example` documents the key
+but the application reads its explicit dedicated profile.

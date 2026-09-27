@@ -8,6 +8,17 @@
   --muted: #536783;
   --line: #dce5ef;
 }
+.legal-link { color: #0759a3; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.linked-answer, .law-provision p { white-space: pre-wrap; }
+.law-reader { max-width: 920px; margin: auto; padding: 24px 16px; }
+.law-reader-header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding: 12px 0 28px; }
+.law-reader h1 { font-size: clamp(1.4rem, 3vw, 2rem); }
+.law-reader .item { padding: 24px; margin-bottom: 16px; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.law-reader .law-provision.highlighted { border: 2px solid #1479ba; background: #f0f8ff; }
+.law-reader .law-provision:focus { outline: 3px solid #1479ba; outline-offset: 3px; }
+.law-provision { scroll-margin-top: 24px; }
+.law-provision.highlighted { border: 2px solid #1479ba; background: #f0f8ff; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 * {
   box-sizing: border-box;
 }
