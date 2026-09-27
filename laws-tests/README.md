@@ -4,6 +4,8 @@ Issue #840 adds an independent API and responsive reader at `tests.jurisdigta.eu
 existing JurisDigta accounts. The first **development** bank is **Zbrojný preukaz SK 2026**.
 The full reviewed production bank belongs to #841. Development transcriptions are never
 served when `LAWS_TEST_ENVIRONMENT=production`.
+Both environment examples (root and account frontend) use the confirmed production
+hostname `tests.jurisdigta.eu`; local acceptance continues to use loopback URLs.
 
 ## Run locally (Windows)
 
