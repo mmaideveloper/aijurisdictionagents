@@ -837,6 +837,19 @@ Do not copy the test exception policy or non-EU credential to production.
 
 ## Laws tests (#840): test and prod
 
+Initial preview release: the owner authorized the existing incomplete set on 2026-09-27.
+Use the explicit `preview` status/notice and seed only an empty bank. Published-content
+review constraints stay unchanged. In protected `test`, optional public variable
+`LAWS_TEST_E2E_PYTHON` identifies the trusted Windows runner interpreter; source imports
+use the exact checkout. An official, checksum-verified ephemeral Windows/X64 runner with
+label `laws-tests-e2e` runs one job and unregisters. Register another instance for the
+final main SHA if needed; retain the mandatory E2E gate.
+
+The gated release also installs the same-commit account frontend on its existing port 8090
+for `https://web.jurisdigta.eu/tests-authorize`, retaining its previous static container for
+rollback. The profile provisioner updates the dedicated server/USB auth URL. See
+`laws-tests/docs/preview-release.md` for setup, evidence and cleanup details.
+
 Workflow `LawsTest-Self-Managed-Prod-deploy` accepts only `release_sha` (40 lowercase
 hex characters, already on main). Both its pre-approval gate and deploy job require
 successful exact-SHA `laws-tests-validation`, `laws-tests-real-e2e`, and every additional

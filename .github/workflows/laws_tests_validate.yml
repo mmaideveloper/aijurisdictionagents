@@ -60,6 +60,7 @@ jobs:
           docker build -f laws-tests/deploy/api.Dockerfile -t laws-tests-api:${{ github.sha }} .
           docker build -f laws-tests/deploy/web.Dockerfile -t laws-tests-web:${{ github.sha }} .
           docker build -f laws-tests/deploy/smoke.Dockerfile -t laws-tests-smoke:${{ github.sha }} .
+          docker build -t laws-tests-account:${{ github.sha }} frontend/aijurisdictionfronend
   real_e2e:
     name: laws-tests-real-e2e
     if: github.event_name == 'workflow_dispatch' && inputs.run_real_e2e
@@ -70,8 +71,13 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Preserve the dedicated runner's synthetic PostgreSQL bind mount.
+          clean: false
       - name: Execute real local system with synthetic data
         shell: pwsh
+        env:
+          LAWS_TEST_E2E_PYTHON: ${{ vars.LAWS_TEST_E2E_PYTHON }}
         run: ./laws-tests/tests/run_acceptance.ps1
       - uses: actions/upload-artifact@v4
         if: always()

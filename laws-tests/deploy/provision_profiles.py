@@ -67,7 +67,7 @@ print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'en
         "LAWS_TEST_DATABASE_URL": urlunsplit(("postgresql", netloc, "/laws-tests", uri.query, "")),
         "LAWS_TEST_IDENTITY_DATABASE_URL": approved["identity"],
         "LAWS_TEST_PUBLIC_URL": "https://tests.jurisdigta.eu",
-        "LAWS_TEST_AUTH_URL": "https://jurisdigta.eu/tests-authorize",
+        "LAWS_TEST_AUTH_URL": "https://web.jurisdigta.eu/tests-authorize",
         "LAWS_TEST_ENVIRONMENT": "production",
         "AZURE_OPENAI_ENDPOINT": approved["endpoint"],
         "AZURE_OPENAI_DEPLOYMENT": approved["model"],
@@ -105,8 +105,9 @@ print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'en
         if "=" in line and not line.startswith("#")
     )
     # Apply the operator-confirmed hostname correction without rotating any credentials.
-    if stored.get("LAWS_TEST_PUBLIC_URL") != prod["LAWS_TEST_PUBLIC_URL"]:
+    if any(stored.get(key) != prod[key] for key in ("LAWS_TEST_PUBLIC_URL", "LAWS_TEST_AUTH_URL")):
         stored["LAWS_TEST_PUBLIC_URL"] = prod["LAWS_TEST_PUBLIC_URL"]
+        stored["LAWS_TEST_AUTH_URL"] = prod["LAWS_TEST_AUTH_URL"]
         temporary = prod_path.with_name(".env-laws-test.routing-new")
         write_new(temporary, stored)
         temporary.replace(prod_path)

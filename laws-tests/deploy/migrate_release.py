@@ -86,6 +86,12 @@ if not backup.exists():
     pending_backup.replace(backup)
     backup.chmod(0o600)
 migrate(url, Path("/app"))
+# Import the explicitly authorized preview only into an empty course bank. Never downgrade
+# or overwrite a later reviewed import, and never mark preview content legally reviewed.
+with psycopg.connect(url) as conn:
+    conn.execute("SELECT pg_advisory_xact_lock(840002)")
+    if not conn.execute("SELECT 1 FROM test_definitions LIMIT 1").fetchone():
+        conn.execute(Path("/app/databases/laws-tests/seeds/preview.sql").read_text(encoding="utf-8"))
 with psycopg.connect(url) as conn:
     conn.execute('GRANT CONNECT ON DATABASE "laws-tests" TO laws_tests_app')
     conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_app")

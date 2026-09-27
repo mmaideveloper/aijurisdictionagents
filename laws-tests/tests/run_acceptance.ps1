@@ -2,7 +2,9 @@ $ErrorActionPreference='Stop'
 $root=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 Set-Location $root
 $python=Join-Path $root 'conda/python.exe'
-if(-not(Test-Path $python)){ throw 'Prepare the branch-local conda runtime with scripts/new_task_worktree.ps1 -SetupEnvOnly before running acceptance.' }
+if($env:LAWS_TEST_E2E_PYTHON){ $python=$env:LAWS_TEST_E2E_PYTHON }
+if(-not(Test-Path $python)){ throw 'Prepare conda/python.exe or configure the trusted runner LAWS_TEST_E2E_PYTHON interpreter.' }
+$env:LAWS_TEST_E2E_PYTHON=$python
 foreach($port in @(8410,8411,8412,8413,8414)){
     if(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue){throw "Port $port is already in use; use an isolated runner."}
 }
@@ -45,4 +47,5 @@ try{
 } finally {
     foreach($process in $processes){ Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
     & $python laws-tests/tests/reader_fixture.py cleanup
+    & $python laws-tests/tests/cleanup_acceptance.py
 }

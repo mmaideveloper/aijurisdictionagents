@@ -1023,6 +1023,23 @@ retention review remain applicable. The API Docker build passed in GitHub CI for
 
 ## Laws tests production (#840)
 
+Initial preview authorization (2026-09-27): import `seeds/preview.sql` only into an empty
+bank, retaining the incomplete/not-legally-reviewed notice. Do not invent a legal date or
+rights approval. #841 supplies the later reviewed replacement. Release checks are unchanged.
+
+The runner operator may set `test` environment variable `LAWS_TEST_E2E_PYTHON` to an
+existing trusted interpreter and run a checksum-verified ephemeral GitHub Actions runner
+under the current Windows user with label `laws-tests-e2e`. No persistent service is needed.
+Run only trusted repository workflow-dispatch jobs, with local synthetic PostgreSQL and
+authoritative development profiles. It unregisters after one job; repeat for the main SHA.
+
+The account frontend is at `web.jurisdigta.eu`, and the gated release installs its
+`/tests-authorize` route on port 8090. `deploy_account.sh` retains the previous container
+as `jurisdigta-web-before-laws-<sha>` and restores it if readiness fails. For later rollback,
+replace only the new static web container with that retained container. API, MCP, corporate
+root website and document services are outside this frontend update. The profile helper
+aligns the auth URL on server and encrypted USB. See `laws-tests/docs/preview-release.md`.
+
 Owners: domain operator controls **jurisdigta.eu** (tests), account operator controls
 **jurisdigta.eu**, infrastructure operator owns jurisdigta-server/encrypted USB, GitHub
 administrator owns protected `test`/`prod` environments, content reviewer owns #841.
