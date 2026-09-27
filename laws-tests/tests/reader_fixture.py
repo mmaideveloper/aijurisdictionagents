@@ -88,6 +88,15 @@ def prepare():
                 Jsonb(annotations),
             ),
         )
+    with connect(cfg.database_url) as conn:
+        conn.execute(
+            "INSERT INTO test_definitions(id,name,version,status,preview_notice,categories) VALUES(%s,'Syntetická neúplná sada','fixture','preview','Neúplný syntetický obsah bez právneho overenia.','[\"A\"]')",
+            (run + "-preview",),
+        )
+        conn.execute(
+            "INSERT INTO questions(id,test_id,category,number,title,body,structure,answer) VALUES(%s,%s,'A',1,'Ukážková otázka','Syntetická otázka pre ukážku.','direct','Syntetická odpoveď.')",
+            (run + "-preview", run + "-preview"),
+        )
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(
         json.dumps({"run_id": run, "source_id": run, "version_id": run + "-20260101"}),
@@ -104,6 +113,8 @@ def cleanup():
     run = json.loads(MANIFEST.read_text())["run_id"]
     assert run.startswith("reader-840-")
     with connect(cfg.database_url) as conn:
+        conn.execute("DELETE FROM questions WHERE test_id=%s", (run + "-preview",))
+        conn.execute("DELETE FROM test_definitions WHERE id=%s", (run + "-preview",))
         conn.execute("DELETE FROM questions WHERE test_id=%s", (run,))
         conn.execute("DELETE FROM test_definitions WHERE id=%s", (run,))
     with connect(cfg.laws_database_url) as conn:

@@ -74,7 +74,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def public_test(conn, test_id):
         row = conn.execute("SELECT * FROM test_definitions WHERE id=%s", (test_id,)).fetchone()
         if not row or row["status"] not in (
-            ["published"] if cfg.environment == "production" else ["published", "development"]
+            ["published", "preview"]
+            if cfg.environment == "production"
+            else ["published", "preview", "development"]
         ):
             raise HTTPException(404, "Test nie je dostupný.")
         return row
@@ -207,9 +209,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/tests")
     def catalogue():
         with connect(cfg.database_url) as conn:
-            statuses = ["published"] if cfg.environment == "production" else ["published", "development"]
+            statuses = (
+                ["published", "preview"]
+                if cfg.environment == "production"
+                else ["published", "preview", "development"]
+            )
             return conn.execute(
-                "SELECT id,name,version,legal_date,status,expires_at,categories,exam_categories,aggregation,source_links,category_labels,legal_summary,case_type,(expires_at<=now()) AS expired FROM test_definitions WHERE status=ANY(%s) ORDER BY name",
+                "SELECT id,name,version,legal_date,status,preview_notice,expires_at,categories,exam_categories,aggregation,source_links,category_labels,legal_summary,case_type,(expires_at<=now()) AS expired FROM test_definitions WHERE status=ANY(%s) ORDER BY name",
                 (statuses,),
             ).fetchall()
 

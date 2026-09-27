@@ -31,6 +31,7 @@ for attempt in $(seq 1 30); do
 done
 test "$ready" = 1
 "${compose[@]}" up -d --no-deps web
+bash laws-tests/deploy/deploy_account.sh "$release_sha"
 curl --fail --silent --show-error https://tests.jurisdigta.eu/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d=={"status":"ok","service":"laws-tests"}'
 curl --fail --silent --show-error https://tests.jurisdigta.eu/ >/dev/null
 evidence="/srv/jurisdigta/laws-tests/evidence/$release_sha"
@@ -56,4 +57,10 @@ cleanup
 trap - EXIT
 printf '%s\n' "$release_sha" > "$evidence/sha.txt"
 printf '%s\n' "$release_sha" > /srv/jurisdigta/laws-tests/current-sha
+install -m 750 laws-tests/deploy/retention.sh /srv/jurisdigta/laws-tests/retention.sh
+install -m 644 laws-tests/deploy/laws-tests-retention.service /etc/systemd/system/
+install -m 644 laws-tests/deploy/laws-tests-retention.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now laws-tests-retention.timer
+systemctl start laws-tests-retention.service
 echo "Laws-tests release verified: $release_sha"

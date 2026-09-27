@@ -35,7 +35,8 @@ returns a failed release. The bundled `smoke.mjs` exercises public reading, a re
 authorization exchange and real-model E-1 evaluation using a temporary synthetic identity.
 `smoke_identity.py` creates and deletes that identity through the restricted migration job;
 its credentials are captured in a 0600 temporary file, never logs or evidence. Production
-reviewed E-1 data is a prerequisite, never seeded by deploy. Password/email-OTP browser login
+E-1 data is supplied by the owner-authorized, visibly unverified preview on an empty bank,
+or by a later reviewed import. Password/email-OTP browser login
 is separately covered by the mandatory local real E2E check.
 
 Checks with identical names from different workflows must all succeed. Workflow IDs are
@@ -65,7 +66,7 @@ check suites remain independently required.
    `LAWS_TEST_IDENTITY_NETWORK` set to the existing API/PostgreSQL Docker network.
 5. Map the tests domain through the existing TLS reverse proxy to `127.0.0.1:8410`.
    The tests `/api/` route proxies to its API container; the PostgreSQL port is not public.
-6. Deploy the existing account frontend change exposing `/tests-authorize` on `jurisdigta.eu`
+6. Deploy the existing account frontend change exposing `/tests-authorize` on `web.jurisdigta.eu`
    with `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisdigta.eu`. Preserve the actual account
    authentication/MFA flow. Do not replace the corporate landing page blindly: configure this
    path to the existing account frontend and verify its SPA assets and sign-in return path.
@@ -91,8 +92,12 @@ Before restoring, account for writes since the recovery point and replay deletio
 Never reopen deleted histories by rolling back the application or restoring a stale backup.
 
 This change prepares deployment; production rollout still requires actual DNS/TLS, identity
-route, runtime DB role, backup/deletion handling, runner setup, content review and exact-SHA
+route, runtime DB role, backup/deletion handling, runner setup, labelled preview or content review, and exact-SHA
 checks. Local E2E screenshots alone do not establish those production prerequisites.
+
+The initial owner-authorized preview exception and temporary runner setup are documented
+in [preview-release.md](preview-release.md). It changes content publication only; every
+exact-commit validation gate still applies.
 
 On a network with an approved enterprise TLS inspection CA, local Docker builds can supply
 `--secret id=build_ca,src=<approved-public-CA-bundle.pem>`. The optional BuildKit mount supplies

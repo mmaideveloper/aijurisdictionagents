@@ -100,7 +100,7 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
   await expect(otp).toBeVisible({ timeout: 30000 });
   // Read the real generated OTP from the synthetic local outbox; no mocked login.
   const code = execFileSync(
-    path.join(root, "conda/python.exe"),
+    process.env.LAWS_TEST_E2E_PYTHON || path.join(root, "conda/python.exe"),
     [path.join(root, "laws-tests/tests/read_synthetic_otp.py")],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
   ).trim();

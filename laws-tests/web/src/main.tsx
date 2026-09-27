@@ -9,6 +9,7 @@ type Course = {
   version: string;
   legal_date: string | null;
   status: string;
+  preview_notice: string;
   expired: boolean;
   categories: string[];
   category_labels: Record<string, string>;
@@ -387,10 +388,13 @@ function App() {
               ? "Platnosť skončila"
               : course?.status === "development"
                 ? "Vývojová ukážka · čaká na kontrolu"
+                : course?.status === "preview"
+                  ? "Neúplná skúšobná sada"
                 : "Overený obsah"}
             {course?.legal_date && ` · ${course.legal_date}`}
           </span>
         </section>
+        {course?.status === "preview" && <p className="preview-notice" role="note">{course.preview_notice}</p>}
         {error && (
           <div className="error" role="alert">
             {error}
@@ -790,7 +794,7 @@ function App() {
                       ) : null,
                     )}
                   </div>
-                  {course?.status !== "development" && (
+                  {course?.status === "published" && (
                     <p className="source-note">
                       Nezávislá príprava na skúšku. Nejde o vydanie osvedčenia ani úradné hodnotenie.
                     </p>

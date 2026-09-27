@@ -17,7 +17,7 @@ try {
   const start = await page.request.get(base + '/api/auth/start?return_path=/?question=E-1',{maxRedirects:0});
   assert.equal(start.status(),303);
   const redirect = new URL(start.headers().location);
-  assert.equal(redirect.origin,'https://jurisdigta.eu');
+  assert.equal(redirect.origin,'https://web.jurisdigta.eu');
   const auth = await page.request.post(base + '/api/auth/authorize',{
     headers:{Origin:redirect.origin},data:{state:redirect.searchParams.get('state'),
       user_id:account.user_id,device_id:account.device_id,device_token:account.device_token}});

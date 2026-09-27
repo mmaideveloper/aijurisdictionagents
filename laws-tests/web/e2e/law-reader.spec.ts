@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 
 const root = path.resolve("../..");
 const out = path.join(root, "runs/issue840/evidence");
-const python = path.join(root, "conda", "python.exe");
+const python = process.env.LAWS_TEST_E2E_PYTHON || path.join(root, "conda", "python.exe");
 
 test("anonymous law links open the pinned provision in a new desktop and mobile tab", async ({ browser, request }) => {
   const fixture = JSON.parse(fs.readFileSync(path.join(root, "runs/issue840/reader-fixture.json"), "utf8"));
@@ -57,6 +57,13 @@ test("anonymous law links open the pinned provision in a new desktop and mobile 
       await expect(popup.locator(".law-provision.highlighted")).toHaveCount(0);
       await popup.goto("/laws/2003/190?test=firearms-sk-2026");
       await expect(popup.getByRole("alert")).toContainText("schválený právny dátum");
+      await page.goto(`/?test=${fixture.run_id}-preview&question=${fixture.run_id}-preview`);
+      await expect(page.getByText("Neúplná skúšobná sada", { exact: true })).toBeVisible();
+      await expect(page.getByRole("note")).toContainText("bez právneho overenia");
+      await expect(page.getByRole("heading", { name: "Ukážková otázka", exact: true })).toBeVisible();
+      await expect(page.getByText("Overený obsah", { exact: true })).toHaveCount(0);
+      await page.screenshot({ path: path.join(out, `10-${name}-public-preview.png`), fullPage: true });
+      manifest.screenshots.push(`10-${name}-public-preview.png`);
       await context.close();
     }
     manifest.status = "passed";
