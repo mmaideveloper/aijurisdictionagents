@@ -1,0 +1,78 @@
+name: LawsTest-Self-Managed-Prod-deploy
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact verified 40-character main commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+  checks: read
+  actions: read
+concurrency:
+  group: laws-tests-production
+  cancel-in-progress: false
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+      - id: sha
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          echo "sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Verify every applicable check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAWS_TEST_REQUIRED_CHECKS: ${{ vars.LAWS_TEST_REQUIRED_CHECKS }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: python laws-tests/deploy/verify_checks.py "$RELEASE_SHA"
+  deploy:
+    needs: gate
+    runs-on: [self-hosted, Linux, X64, jurisdigta-prod]
+    environment: prod
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Recheck release checks after approval and on reruns
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAWS_TEST_REQUIRED_CHECKS: ${{ vars.LAWS_TEST_REQUIRED_CHECKS }}
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+        run: python3 laws-tests/deploy/verify_checks.py "$RELEASE_SHA"
+      - name: Deploy the database, API and frontend
+        env:
+          RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+          DEPLOY_HOST: ${{ vars.JURISDIGTA_SSH_HOST }}
+          DEPLOY_USER: ${{ vars.JURISDIGTA_SSH_USER }}
+          DEPLOY_PORT: ${{ vars.JURISDIGTA_SSH_PORT || '22' }}
+          SSH_KEY: ${{ secrets.JURISDIGTA_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.JURISDIGTA_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          install -m 700 -d "$RUNNER_TEMP/laws-tests-ssh"
+          trap 'rm -f "$RUNNER_TEMP/laws-tests-ssh/key" "$RUNNER_TEMP/laws-tests-ssh/known_hosts"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/laws-tests-ssh/key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/laws-tests-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/laws-tests-ssh/"*
+          git archive --format=tar HEAD > "$RUNNER_TEMP/laws-tests-$RELEASE_SHA.tar"
+          scp -P "$DEPLOY_PORT" -i "$RUNNER_TEMP/laws-tests-ssh/key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/laws-tests-ssh/known_hosts" "$RUNNER_TEMP/laws-tests-$RELEASE_SHA.tar" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/laws-tests-$RELEASE_SHA.tar"
+          ssh -p "$DEPLOY_PORT" -i "$RUNNER_TEMP/laws-tests-ssh/key" -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/laws-tests-ssh/known_hosts" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p /srv/jurisdigta/laws-tests/releases/$RELEASE_SHA && tar -xf /tmp/laws-tests-$RELEASE_SHA.tar -C /srv/jurisdigta/laws-tests/releases/$RELEASE_SHA && cd /srv/jurisdigta/laws-tests/releases/$RELEASE_SHA && sudo -n bash laws-tests/deploy/deploy.sh $RELEASE_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: laws-tests-release-checks
+          path: checks.json
+          retention-days: 14

@@ -1,0 +1,81 @@
+name: Laws Tests Validate
+on:
+  pull_request:
+    paths: ['laws-tests/**', 'databases/laws-tests/**', 'frontend/aijurisdictionfronend/**', '.github/workflows/laws_tests*', 'scripts/sync_env_profile.ps1', 'config/env_profiles.json']
+  push:
+    branches: [main]
+    paths: ['laws-tests/**', 'databases/laws-tests/**', 'frontend/aijurisdictionfronend/**', '.github/workflows/laws_tests*', 'scripts/sync_env_profile.ps1', 'config/env_profiles.json']
+  workflow_dispatch:
+    inputs:
+      run_real_e2e:
+        type: boolean
+        default: true
+        description: Run real-model local E2E on the dedicated Windows test runner
+permissions:
+  contents: read
+jobs:
+  validation:
+    name: laws-tests-validation
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-password
+          POSTGRES_DB: laws-tests
+        ports: ['5440:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: pip install -e '.[dev]' -e laws-tests/api
+      - name: Configure synthetic database checks (no model calls)
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          values = {
+            'LAWS_TEST_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/laws-tests',
+            'LAWS_TEST_IDENTITY_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/postgres',
+            'LAWS_TEST_PUBLIC_URL':'http://127.0.0.1:8410', 'LAWS_TEST_AUTH_URL':'http://127.0.0.1:8412/tests-authorize',
+            'LAWS_TEST_ENVIRONMENT':'test','AZURE_OPENAI_ENDPOINT':'https://synthetic.invalid',
+            'AZURE_OPENAI_DEPLOYMENT':'unit-only','AZURE_OPENAI_API_VERSION':'v1','AZURE_OPENAI_API_KEY':'unit-only-no-api-call'}
+          Path('.env-laws-test').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
+          PY
+          python -m laws_tests.cli migrate
+          python -m laws_tests.cli seed-development
+          ruff check laws-tests
+          pytest laws-tests/tests -q
+      - run: npm ci && npm run build
+        working-directory: laws-tests/web
+      - run: npm ci && npm run lint && npm run build
+        working-directory: frontend/aijurisdictionfronend
+      - name: Build deployable images
+        run: |
+          docker build -f laws-tests/deploy/api.Dockerfile -t laws-tests-api:${{ github.sha }} .
+          docker build -f laws-tests/deploy/web.Dockerfile -t laws-tests-web:${{ github.sha }} .
+          docker build -f laws-tests/deploy/smoke.Dockerfile -t laws-tests-smoke:${{ github.sha }} .
+  real_e2e:
+    name: laws-tests-real-e2e
+    if: github.event_name == 'workflow_dispatch' && inputs.run_real_e2e
+    runs-on: [self-hosted, Windows, X64, laws-tests-e2e]
+    environment: test
+    concurrency:
+      group: laws-tests-local-e2e
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+      - name: Execute real local system with synthetic data
+        shell: pwsh
+        run: ./laws-tests/tests/run_acceptance.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: laws-tests-real-e2e-${{ github.sha }}
+          path: runs/issue840/evidence/
+          retention-days: 14

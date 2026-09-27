@@ -1,0 +1,7 @@
+[Unit]
+Description=Clean expired laws-tests personal history every hour
+[Timer]
+OnCalendar=hourly
+Persistent=true
+[Install]
+WantedBy=timers.target

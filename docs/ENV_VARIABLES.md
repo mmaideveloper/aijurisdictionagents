@@ -82,3 +82,36 @@ Audit events may record actor, profile, key name, result, and checksum/version.
 They must never record values, prompts, documents, personal data, or legal-case
 content. Revoke developer SSH access during offboarding and securely delete
 local materialized files and backups.
+
+## Laws tests dedicated configuration (#840)
+
+`laws-tests/api/laws_tests/config.py` explicitly loads `.env-laws-test`, or the path selected
+by `LAWS_TEST_ENV_FILE`. It never implicitly uses root `.env`/`.env.dev` for runtime secrets.
+Root `.env.example` documents every key; actual dedicated files and backup variants are ignored
+by Git and Docker. Missing/`unknown-variable` required values prevent startup.
+
+Required keys: `LAWS_TEST_DATABASE_URL` (database exactly `laws-tests`),
+`LAWS_TEST_IDENTITY_DATABASE_URL`, `LAWS_TEST_PUBLIC_URL`, `LAWS_TEST_AUTH_URL`,
+`LAWS_TEST_ENVIRONMENT` (`development`, `test`, `production`), `AZURE_OPENAI_ENDPOINT`,
+`AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT`, `AZURE_OPENAI_API_KEY`.
+Development/test databases must be loopback PostgreSQL; public production URLs must use HTTPS.
+`LAWS_TEST_LOCAL_PASSWORD` is used only by the isolated local PostgreSQL bootstrap.
+`LAWS_TEST_MIGRATION_DATABASE_URL` lives in the separate server-only `.env-laws-test.migration`.
+`LAWS_TEST_IDENTITY_NETWORK` is a nonsecret Docker network in server `deployment.env`.
+`LAWS_TEST_REQUIRED_CHECKS` is the GitHub exact-SHA additional check list (JSON string array).
+`VITE_LAWS_TEST_PUBLIC_URL` is the only new browser build setting and is public, never a secret.
+
+Production runtime: `/srv/jurisdigta/secrets/.env-laws-test`, UID 10840, mode 0600.
+Migration file: same directory, root, 0600. Encrypted USB authoritative paths:
+`/mnt/jurisdigta-backup/jurisdigta-env/profiles/laws-tests/{dev,prod}/.env-laws-test`.
+The dev directory is restricted to the approved SSH operator; production files remain root-only.
+`PYTHON_DOTENV_DISABLED=1` is set by the acceptance service launcher only after explicitly loading valid settings; this prevents the existing account API from implicitly reloading unresolved placeholders.
+## Laws Tests public source connection
+
+`LAWS_TEST_LAWS_DATABASE_URL`: collector PostgreSQL DSN, read only through the dedicated
+production `laws_tests_reader` role. Stored solely in the authoritative encrypted-USB
+laws-tests profiles and `.env-laws-test`. Development/test require loopback. Empty or
+`unknown-variable` leaves the reader visibly unavailable; no shared or production fallback.
+The server profile provisioner derives this connection without exporting secrets, and the
+gated release applies SELECT-only permissions. The root `.env.example` documents the key
+but the application reads its explicit dedicated profile.

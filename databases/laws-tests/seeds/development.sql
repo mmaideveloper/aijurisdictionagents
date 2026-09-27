@@ -1,0 +1,42 @@
+-- Development transcription examples only. Not approved for production/legal reliance.
+-- Source commit: 3c5a2b9fb956247f141ff703b0f69519c603f1ab, issue #840.
+INSERT INTO test_definitions(id,name,version,status,categories,exam_categories)
+VALUES('firearms-sk-2026','Zbrojný preukaz SK 2026','development-840-v1','development','["A","B","C","D","E"]','["A","B","C","D","E"]')
+ON CONFLICT DO NOTHING;
+INSERT INTO questions(id,test_id,category,number,title,body,structure,answer,provenance) VALUES
+('A-20','firearms-sk-2026','A',20,'Vyhláška, preprava a správca strelnice','Vyhláška, preprava a správca strelnice','grouped',NULL,'["A-20-page-1.jpg","A-20-page-2.jpg"]'),
+('B-1','firearms-sk-2026','B',1,'Trestná zodpovednosť a priestupky','Trestná zodpovednosť a priestupky','grouped',NULL,'["B-1.jpg"]'),
+('C-1','firearms-sk-2026','C',1,'Hlavné časti zbrane a správca strelnice','Hlavné časti zbrane a správca strelnice','grouped',NULL,'["C-1.jpg"]'),
+('D-1','firearms-sk-2026','D',1,'Prvá pomoc pri povrchových poraneniach','Ako sa prejavujú povrchové poranenia tvárovej časti hlavy a v čom spočíva poskytnutie prvej pomoci?','direct',E'Poranenie tvárovej časti hlavy v prípade, ak strela alebo jej časť neprenikla do nosovej, resp. ústnej dutiny, sa prejavuje značným krvácaním, vzhľadom k veľmi dobrému prekrveniu.\nPoskytnutie prvej pomoci spočíva v zastavení krvácania tlakovým obväzom v mieste rany.\nPri krvácaní do nosovej dutiny postupujeme, ako je uvedené vyššie – zastavením krvácania tlakovým obväzom v mieste rany, pričom je lepšie, ak krv vyteká z nosa ako do dutiny ústnej, s ktorou je nosná dutina prepojená. Postihnutý si zväčša sám povie, kedy sa mu lepšie dýcha.','["D-1.jpg"]'),
+('E-1','firearms-sk-2026','E',1,'Bezpečná manipulácia na strelnici','Uveďte a popíšte základné pravidlá bezpečnej manipulácie so zbraňou na strelnici.','direct','So zbraňou sa vždy manipuluje ako keby bola nabitá, nemierime na žiadne osoby, mierime iba do priestoru terčov ak sa tam nenachádzajú iné osoby, neprekračujeme povolené vykláňanie zbrane 45 stupňov hore dole a 90 stupňov vpravo a vľavo.','["E-1.jpg"]') ON CONFLICT DO NOTHING;
+INSERT INTO subquestions(id,question_id,sequence,body,answer) VALUES
+('A-20-1','A-20',1,'Uveďte, čo je predmetom vyhlášky Ministerstva vnútra Slovenskej republiky č. 555/2003 Z. z., ktorou sa vykonávajú niektoré ustanovenia zákona č. 190/2003 Z. z. o strelných zbraniach a strelive a o zmene a doplnení niektorých zákonov (§ 1 vyhlášky).',E'Predmetom vyhlášky Ministerstva vnútra Slovenskej republiky č. 555/2003 Z. z. je:\n• podrobnosti rozsahu a spôsobu vykonania skúšky odbornej spôsobilosti žiadateľa o vydanie zbrojného preukazu a spôsob započítania namiesto tejto skúšky alebo jej časti,\n• náležitosti a spôsob vedenia evidencie zbraní a streliva,\n• podmienky na prechovávanie alebo skladovanie streliva, strelného prachu alebo zápaliek osobou držiteľa zbrojnej licencie,\n• obsah lekárničky prvej pomoci držanej na strelnici,\n• podmienky zabezpečenia zbrane alebo streliva proti ich zneužitiu, strate alebo odcudzeniu počas ich verejného vystavovania,\n• náležitosti potvrdenia o prevzatí zbrane pred jej znehodnotením alebo zničením, alebo výrobou rezu.\nPracovný prepis: rozmazaná časť evidenčných náležitostí vyžaduje kontrolu proti zdroju pred publikovaním.'),
+('A-20-2','A-20',2,'Na aké účely môže držiteľ zbrojného preukazu prepravovať zbrane (§ 28 ods. 2)?',E'Zbraň alebo strelivo môže prepravovať držiteľ príslušnej skupiny zbrojného preukazu na účely:\n1. opravy, úpravy, znehodnotenia, zničenia alebo výroby rezu zbrane alebo streliva,\n2. posúdenia zhody zbrane autorizovanou osobou,\n3. výkonu oprávnenia podľa § 27 ods. 2, 3 alebo ods. 4 a držiteľ skupiny D aj na účel účasti na pietnom akte,\n4. cvičnej streľby a držiteľ skupiny E aj na účely športovej streľby,\n5. vystavovania zbrane alebo streliva,\n6. výučby,\n7. reklamácie a opravy.\nPracovný prepis: presné vymedzenie skupín a pokračovanie na druhej fotografii vyžadujú ľudskú kontrolu; táto vývojová ukážka nie je úplným právnym výkladom.'),
+('A-20-3','A-20',3,'Kto môže byť správcom strelnice podľa zákona o zbraniach a strelive (§ 50)?',E'Správcom strelnice môže byť fyzická osoba staršia ako 25 rokov, ktorá je najmenej tri roky držiteľom skupiny A, B, C, D alebo E zbrojného preukazu. Správca strelnice je povinný:\na) pri výkone funkcie nosiť viditeľné označenie „správca strelnice“ ustanovené prevádzkovým poriadkom strelnice,\nb) zabezpečiť dostupnosť prevádzkového poriadku strelnice,\nc) zabezpečiť prevádzku strelnice v súlade s prevádzkovým poriadkom,\nd) zabezpečiť, aby streľbu na strelnici vykonávala len osoba, ktorá je na to oprávnená,\ne) zabezpečiť, aby na strelnicu nemala prístup osoba, ktorá je zjavne ovplyvnená alkoholom alebo inou návykovou látkou,\nf) zastaviť streľbu na strelnici v prípade ohrozenia života, zdravia alebo majetku,\ng) oznámiť bez zbytočného odkladu policajnému útvaru zranenie alebo usmrtenie osoby pri prevádzkovaní strelnice,\nh) zabezpečiť a kontrolovať dodržiavanie prevádzkového poriadku na strelnici.\nSprávca strelnice je oprávnený vylúčiť zo strelnice osobu, ktorá nedodržiava prevádzkový poriadok.'),
+('B-1-1','B-1',1,'Pri čistení legálne držanej krátkej guľovej zbrane došlo k náhodnému výstrelu a neúmyselnému usmrteniu manželky. Je konanie trestné a podľa ktorého zákona?','Áno, konanie držiteľa zbrane je trestné. Bude stíhaný za prečin usmrtenia podľa § 149 Trestného zákona.'),
+('B-1-2','B-1',2,'Vymenujte orgány činné v trestnom konaní.','Orgány činné v trestnom konaní sú prokurátor a policajt. § 10 – Výklad niektorých pojmov.'),
+('B-1-3','B-1',3,'Popíšte vlastnými slovami, čo je priestupok.','Priestupkom je zavinené konanie, ktoré porušuje alebo ohrozuje záujem spoločnosti a je za priestupok výslovne označené v tomto alebo v inom zákone, ak nejde o iný správny delikt postihnuteľný podľa osobitných právnych predpisov, alebo o trestný čin.'),
+('B-1-4','B-1',4,'Sú policajti oprávnení počas predvádzania vodičovi odňať legálne držanú krátku guľovú zbraň? Vysvetlite prečo.','Príslušník PZ je oprávnený presvedčiť sa, či osoba, proti ktorej vykonáva služobný zákrok, má pri sebe zbraň. Ak áno, je oprávnený odňať mu ju podľa § 22 zákona č. 171/1993 Z. z. o Policajnom zbore. Dôvodom je ochrana života a zdravia.'),
+('C-1-1','C-1',1,'Považujú sa hlavné časti zbrane podľa zákona o zbraniach a strelive za zbraň? Vymenujte ich.','Hlavné časti zbrane podľa zákona č. 190/2003 Z. z. sa považujú za zbraň. Patrí medzi ne hlaveň, vložná hlaveň, rám, telo, puzdro záveru, záver, závorník, nábojová komora a valec revolvera, ktoré sú ako oddelené predmety zahrnuté do kategórie zbraní, na ktoré sú alebo majú byť namontované. § 2 ods. 1 písm. a), b).'),
+('C-1-2','C-1',2,'Aké podmienky musí podľa zákona o zbraniach a strelive spĺňať správca strelnice?','Správca strelnice môže byť fyzická osoba staršia ako 25 rokov, ktorá je najmenej 3 roky držiteľom skupiny A, B, C, D alebo E zbrojného preukazu. § 50 ods. 1 zákona č. 190/2003 Z. z.')
+ON CONFLICT DO NOTHING;
+UPDATE test_definitions SET
+ category_labels='{"A":"Zákon o zbraniach","B":"Právne predpisy","C":"Konštrukcia a bezpečnosť","D":"Prvá pomoc","E":"Bezpečná manipulácia"}',
+ legal_summary='Zákon č. 190/2003 Z. z. · Vyhláška č. 555/2003 Z. z.',
+ case_type='FIREARMS_LICENSE_TEST'
+WHERE id='firearms-sk-2026' AND status='development';
+
+-- Draft citation attribution for the photographed examples; publication still requires #841 review.
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 1 vyhlášky","law_number":555,"law_year":2003,"section":"1"}
+]'
+WHERE id='A-20-1' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 28 ods. 2","law_number":190,"law_year":2003,"section":"28","paragraph":"2"},
+ {"field":"answer","quote":"§ 27 ods. 2, 3 alebo ods. 4","law_number":190,"law_year":2003,"section":"27"}
+]'
+WHERE id='A-20-2' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');
+UPDATE subquestions SET legal_references='[
+ {"field":"body","quote":"§ 50","law_number":190,"law_year":2003,"section":"50"}
+]'
+WHERE id='A-20-3' AND question_id IN (SELECT q.id FROM questions q JOIN test_definitions t ON t.id=q.test_id WHERE t.status='development');

@@ -153,3 +153,25 @@ outside the workstation, approved vault, or `jurisdigta-server` secret path.
 For GDPR security-of-processing expectations, keep transfer logs metadata-only,
 minimize who can read `/srv/jurisdigta/secrets/jurisdigta.env`, and use human
 review before changing production configuration that affects legal-risk outputs.
+
+## Laws tests profiles (#840)
+
+Initial implementation still begins with the `codex-agent` pull. Runtime development additionally
+uses `./scripts/sync_env_profile.ps1 -Mode Pull -Profile laws-tests-dev`, then
+`-Mode Audit -Profile laws-tests-dev -Strict`. The wrapper selects ignored `.env-laws-test`
+and encrypted USB `profiles/laws-tests/dev/.env-laws-test`. It does not use the flat legacy path.
+Production `laws-tests-prod` is available for schema/audit tooling; its laptop Pull is forbidden.
+Do not run the legacy push script. Bootstrap creates missing placeholder keys, not real credentials.
+
+The server operator runs `laws-tests/deploy/provision_profiles.py`; it verifies an actual encrypted
+mount before any writes, uses approved existing Azure Foundry credentials, generates separate
+local/runtime database credentials, and preserves existing project keys. The runtime profile
+uses dedicated `laws_tests_app` and `laws_tests_identity` roles; gated migration grants the minimum
+identity columns and token last-use update. Migration privileges remain in the separate root file.
+Only redacted status/key names may be shared. Never print/cat real profiles, connection strings or tokens.
+
+When USB is unavailable, stop Pull and audit the previously verified local profile with `-Strict`;
+missing/unknown values must fail, never fall back to shared or production DB secrets. The local
+acceptance bootstrap reconciles its own isolated PostgreSQL container password from the approved
+dev profile, and refuses to reuse a container mounted from another worktree. Rotation/recovery is
+server/USB-authoritative as documented in `docs/manual_infrastucture_setup.md`.

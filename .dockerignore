@@ -19,9 +19,13 @@ build
 .ipynb_checkpoints
 .DS_Store
 .env
+.env-laws-test
+.env-laws-test.*
 .env.*
 !.env.example
 node_modules
+**/node_modules
+**/dist
 runs
 cases
 api/aijuristiction-api/e2e-playwright/test-results

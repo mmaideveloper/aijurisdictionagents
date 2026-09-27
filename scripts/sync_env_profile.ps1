@@ -2,7 +2,7 @@
 param(
     [ValidateSet("Audit", "Bootstrap", "Pull")]
     [string]$Mode = "Audit",
-    [ValidateSet("local-core", "codex-agent", "laws-collector", "azure-dev", "mcp-local")]
+    [ValidateSet("local-core", "codex-agent", "laws-collector", "azure-dev", "mcp-local", "laws-tests-dev", "laws-tests-prod")]
     [string]$Profile = "local-core",
     [string]$EnvFilePath,
     [string]$ServerAlias = "jurisdigta-server",
@@ -15,7 +15,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 if (-not $EnvFilePath) {
-    $EnvFilePath = if ($Profile -eq "azure-dev") { ".env.dev" } else { ".env" }
+    $EnvFilePath = if ($Profile -like "laws-tests-*") { ".env-laws-test" } elseif ($Profile -eq "azure-dev") { ".env.dev" } else { ".env" }
+}
+if ($Profile -eq 'laws-tests-prod' -and $Mode -eq 'Pull') {
+    throw 'Production secrets stay on the production host. Use the server provisioning tool.'
 }
 if (-not [System.IO.Path]::IsPathRooted($EnvFilePath)) {
     $EnvFilePath = Join-Path $repoRoot $EnvFilePath
@@ -55,7 +58,12 @@ $backup = Join-Path $temporaryRoot "local-backup.env"
 New-Item -ItemType Directory -Path $temporaryRoot -Force | Out-Null
 try {
     if (Test-Path $EnvFilePath) { Copy-Item -LiteralPath $EnvFilePath -Destination $backup -Force }
-    $remote = "${ServerAlias}:$UsbProfileRoot/$Profile.env"
+    if ($Profile -eq 'laws-tests-dev') {
+        & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes $ServerAlias 'test "$(findmnt -n -o TARGET --target /mnt/jurisdigta-backup)" = "/mnt/jurisdigta-backup" && test "$(lsblk -ndo TYPE "$(findmnt -n -o SOURCE --target /mnt/jurisdigta-backup)")" = crypt'
+        if ($LASTEXITCODE -ne 0) { throw 'Verified encrypted USB mount is unavailable; use strict audit of a previously verified local profile.' }
+    }
+    $remotePath = if ($Profile -eq 'laws-tests-dev') { "$UsbProfileRoot/laws-tests/dev/.env-laws-test" } else { "$UsbProfileRoot/$Profile.env" }
+    $remote = "${ServerAlias}:$remotePath"
     & scp -q -o BatchMode=yes -o StrictHostKeyChecking=yes $remote $download
     if ($LASTEXITCODE -ne 0) { throw "Secure profile download failed for $Profile." }
     $code = Invoke-EnvTool -Arguments @("merge", "--source", $download)

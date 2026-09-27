@@ -21,6 +21,8 @@ build/
 .ipynb_checkpoints/
 .DS_Store
 .env
+.env-laws-test
+.env-laws-test.*
 .env.*
 !.env.example
 node_modules/

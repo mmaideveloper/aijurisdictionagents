@@ -5,6 +5,7 @@ import { useAuth } from "./auth/webAuth";
 import AuthCallbackView from "./auth/AuthCallbackView";
 import Home from "./pages/Home";
 import Auth from "./pages/Auth";
+import LawsTestsAuthorize from "./pages/LawsTestsAuthorize";
 import Pricing from "./pages/Pricing";
 import News from "./pages/News";
 import AppDashboard from "./pages/AppDashboard";
@@ -83,6 +84,7 @@ const App: React.FC = () => {
       <Routes>
         <Route path="/" element={<RootRoute />} />
         <Route path="/auth" element={<Auth />} />
+        <Route path="/tests-authorize" element={<LawsTestsAuthorize />} />
         <Route
           path="/auth/callback"
           element={<AuthCallbackView onSessionReady={() => undefined} />}

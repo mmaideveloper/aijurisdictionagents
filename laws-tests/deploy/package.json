@@ -1,0 +1,7 @@
+{
+  "name": "laws-tests-deployment-smoke",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@playwright/test": "1.61.1" }
+}
