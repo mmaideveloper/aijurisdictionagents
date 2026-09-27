@@ -29,9 +29,11 @@ its credentials are captured in a 0600 temporary file, never logs or evidence. P
 reviewed E-1 data is a prerequisite, never seeded by deploy. Password/email-OTP browser login
 is separately covered by the mandatory local real E2E check.
 
-Checks with identical names from different workflow suites must all succeed. Within a suite,
-only the newest rerun is considered. Rerun a failed/cancelled suite to completion; creating a
-separate successful run does not erase its failure from the gate.
+Checks with identical names from different workflows must all succeed. Workflow IDs are
+resolved through the read-only Actions API; only the newest check for each name/workflow is
+considered. A manually dispatched successful real-E2E run can supersede its earlier skipped
+run on the same commit, while a frontend success cannot hide an API failure. Unknown external
+check suites remain independently required.
 
 ## First installation (infrastructure operator)
 

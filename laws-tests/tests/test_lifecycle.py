@@ -225,6 +225,13 @@ def test_deployment_gate_rejects_latest_failure_pending_and_missing():
         "html_url": "https://example.invalid/run",
     }
     assert gate.check_runs([good], ["build"]) == [good["html_url"]]
+    assert gate.check_runs(
+        [
+            {**good, "conclusion": "skipped", "workflow_id": 99},
+            {**good, "id": 2, "workflow_id": 99},
+        ],
+        ["build"],
+    ) == [good["html_url"]]
     with pytest.raises(ValueError):
         gate.check_runs(
             [

@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: read
 concurrency:
   group: laws-tests-production
   cancel-in-progress: false

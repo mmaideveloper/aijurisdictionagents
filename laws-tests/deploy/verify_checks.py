@@ -11,7 +11,7 @@ def check_runs(runs, required):
     for run in runs:
         # Different workflows may expose the same job name (e.g. test_and_build).
         # A newer successful frontend job must never hide a failed API job.
-        key = (run["name"], (run.get("check_suite") or {}).get("id", 0))
+        key = (run["name"], run.get("workflow_id", (run.get("check_suite") or {}).get("id", 0)))
         if key not in latest or run["id"] > latest[key]["id"]:
             latest[key] = run
     if not required:
@@ -37,6 +37,26 @@ def main():
     required = json.loads(os.environ["LAWS_TEST_REQUIRED_CHECKS"])
     # These feature checks cannot be removed via environment configuration.
     required = list(dict.fromkeys(["laws-tests-validation", "laws-tests-real-e2e"] + required))
+
+    def fetch(path):
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/{path}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+
+    suites = {}
+    for page in range(1, 101):
+        workflows = fetch(f"actions/runs?head_sha={args.sha}&per_page=100&page={page}")[
+            "workflow_runs"
+        ]
+        for workflow in workflows:
+            suites[workflow["check_suite_id"]] = workflow["workflow_id"]
+        if len(workflows) < 100:
+            break
+    else:
+        raise SystemExit("Too many workflow runs to verify safely")
     runs = []
     for page in range(1, 101):
         req = urllib.request.Request(
@@ -48,6 +68,12 @@ def main():
         runs += data["check_runs"]
         if len(data["check_runs"]) < 100:
             break
+    else:
+        raise SystemExit("Too many check runs to verify safely")
+    for run in runs:
+        suite = (run.get("check_suite") or {}).get("id")
+        if suite in suites:
+            run["workflow_id"] = suites[suite]
     links = check_runs(runs, required)
     with open(args.output, "w", encoding="utf-8") as handle:
         json.dump({"sha": args.sha, "checks": links}, handle, indent=2)
