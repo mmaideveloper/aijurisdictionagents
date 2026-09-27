@@ -31,8 +31,8 @@ for attempt in $(seq 1 30); do
 done
 test "$ready" = 1
 "${compose[@]}" up -d --no-deps web
-curl --fail --silent --show-error https://tests.jurisigta.eu/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d=={"status":"ok","service":"laws-tests"}'
-curl --fail --silent --show-error https://tests.jurisigta.eu/ >/dev/null
+curl --fail --silent --show-error https://tests.jurisdigta.eu/api/health | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d=={"status":"ok","service":"laws-tests"}'
+curl --fail --silent --show-error https://tests.jurisdigta.eu/ >/dev/null
 evidence="/srv/jurisdigta/laws-tests/evidence/$release_sha"
 mkdir -p "$evidence"
 chmod 700 "$evidence"

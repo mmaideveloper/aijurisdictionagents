@@ -65,7 +65,7 @@ print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'en
     prod = {
         "LAWS_TEST_DATABASE_URL": urlunsplit(("postgresql", netloc, "/laws-tests", uri.query, "")),
         "LAWS_TEST_IDENTITY_DATABASE_URL": approved["identity"],
-        "LAWS_TEST_PUBLIC_URL": "https://tests.jurisigta.eu",
+        "LAWS_TEST_PUBLIC_URL": "https://tests.jurisdigta.eu",
         "LAWS_TEST_AUTH_URL": "https://jurisdigta.eu/tests-authorize",
         "LAWS_TEST_ENVIRONMENT": "production",
         "AZURE_OPENAI_ENDPOINT": approved["endpoint"],
@@ -103,6 +103,13 @@ print(json.dumps({'identity':s.db_cloud,'laws':os.getenv('LAWS_DB_CLOUD',''),'en
         for line in prod_path.read_text().splitlines()
         if "=" in line and not line.startswith("#")
     )
+    # Apply the operator-confirmed hostname correction without rotating any credentials.
+    if stored.get("LAWS_TEST_PUBLIC_URL") != prod["LAWS_TEST_PUBLIC_URL"]:
+        stored["LAWS_TEST_PUBLIC_URL"] = prod["LAWS_TEST_PUBLIC_URL"]
+        temporary = prod_path.with_name(".env-laws-test.routing-new")
+        write_new(temporary, stored)
+        temporary.replace(prod_path)
+        print("Production public hostname aligned; credential values preserved")
     identity_uri = urlsplit(stored["LAWS_TEST_IDENTITY_DATABASE_URL"])
     if identity_uri.username != "laws_tests_identity":
         identity_password = secrets.token_urlsafe(40)

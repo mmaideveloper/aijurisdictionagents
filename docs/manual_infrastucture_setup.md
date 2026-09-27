@@ -1023,13 +1023,14 @@ retention review remain applicable. The API Docker build passed in GitHub CI for
 
 ## Laws tests production (#840)
 
-Owners: domain operator controls **jurisigta.eu** (tests), account operator controls
+Owners: domain operator controls **jurisdigta.eu** (tests), account operator controls
 **jurisdigta.eu**, infrastructure operator owns jurisdigta-server/encrypted USB, GitHub
 administrator owns protected `test`/`prod` environments, content reviewer owns #841.
 
-1. Verify authoritative DNS ownership, create `tests.jurisigta.eu` pointing to the existing
+1. Verify authoritative DNS ownership, create `tests.jurisdigta.eu` pointing to the existing
    ingress, issue TLS for that exact hostname, and proxy it to `127.0.0.1:8410` on the server.
-   Do not substitute the account-domain spelling. Confirm HTTPS and SPA deep links.
+   Use Cloudflare Tunnel target `http://localhost:8410`. Port `8060` is already used by
+   `jurisdigta-document-engine-api`. Confirm HTTPS and SPA deep links after deployment.
 2. On the server verify `/mnt/jurisdigta-backup` is an actual encrypted mounted volume.
    Run `sudo python3 laws-tests/deploy/provision_profiles.py` from the reviewed release.
    This provisions USB dev/prod `.env-laws-test` and the restricted server runtime/migration

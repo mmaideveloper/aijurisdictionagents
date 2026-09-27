@@ -8,7 +8,7 @@ export default function LawsTestsAuthorize(){
   const [error,setError]=React.useState('');
   const [busy,setBusy]=React.useState(false);
   const state=new URLSearchParams(location.search).get('state')??'';
-  const target=import.meta.env.VITE_LAWS_TEST_PUBLIC_URL || 'https://tests.jurisigta.eu';
+  const target=import.meta.env.VITE_LAWS_TEST_PUBLIC_URL || 'https://tests.jurisdigta.eu';
   if(isAuthLoading)return <p>Načítavam prihlásenie…</p>;
   if(!isAuthenticated)return <Navigate to="/auth" replace state={{from:location}}/>;
   async function proceed(){

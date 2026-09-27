@@ -2,7 +2,7 @@ import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const base = 'https://tests.jurisigta.eu';
+const base = 'https://tests.jurisdigta.eu';
 const account = JSON.parse(fs.readFileSync('/run/secrets/synthetic.json', 'utf8'));
 const browser = await chromium.launch({headless:true});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});

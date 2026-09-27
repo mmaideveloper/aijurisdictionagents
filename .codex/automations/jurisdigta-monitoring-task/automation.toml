@@ -10,7 +10,7 @@ Run one production health check pass for these public targets:
 - https://api.jurisdigta.eu/version
 - https://web.jurisdigta.eu/health
 - https://web.jurisdigta.eu/
-- https://tests.jurisigta.eu/api/health
+- https://tests.jurisdigta.eu/api/health
 - https://agent.jurisdigta.eu/
 - https://mcp.jurisdigta.eu/
 - https://mcp.jurisdigta.eu/MCP

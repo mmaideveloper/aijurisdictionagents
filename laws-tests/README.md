@@ -1,6 +1,6 @@
 # Laws Tests
 
-Issue #840 adds an independent API and responsive reader at `tests.jurisigta.eu`, using
+Issue #840 adds an independent API and responsive reader at `tests.jurisdigta.eu`, using
 existing JurisDigta accounts. The first **development** bank is **Zbrojný preukaz SK 2026**.
 The full reviewed production bank belongs to #841. Development transcriptions are never
 served when `LAWS_TEST_ENVIRONMENT=production`.

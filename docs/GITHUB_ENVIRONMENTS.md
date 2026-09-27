@@ -859,7 +859,7 @@ Keep this list aligned with branch protection and all checks applicable to the r
   reviewed deployment entry point with an equivalent restricted privileged service.
 - Server-only settings and `.env-laws-test` locations are in `laws-tests/docs/deployment.md`.
   Never upload the secret file into GitHub artifacts. The account frontend build needs
-  public `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisigta.eu` and `/tests-authorize` routing.
+  public `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisdigta.eu` and `/tests-authorize` routing.
 
 Acceptance before dispatch: reviewed #841 content, DNS/TLS, account callback, installed
 retention timer and restore/deletion procedure. The release builds API/web/smoke images,

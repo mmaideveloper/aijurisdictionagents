@@ -46,8 +46,9 @@ check suites remain independently required.
 
 ## First installation (infrastructure operator)
 
-1. Verify ownership/control of **jurisigta.eu** and DNS/TLS for **tests.jurisigta.eu**.
-   This is deliberately different from the account domain **jurisdigta.eu**.
+1. Verify ownership/control of **jurisdigta.eu** and DNS/TLS for **tests.jurisdigta.eu**.
+   Cloudflare Tunnel must route this hostname to `http://localhost:8410` on jurisdigta-server.
+   Port `8060` belongs to `jurisdigta-document-engine-api`; do not reuse it for tests.
 2. Verify the encrypted USB mount at `/mnt/jurisdigta-backup`. Run
    `sudo python3 laws-tests/deploy/provision_profiles.py` on the server. It reads approved
    provider configuration in the existing API container, preserves existing files, generates
@@ -65,7 +66,7 @@ check suites remain independently required.
 5. Map the tests domain through the existing TLS reverse proxy to `127.0.0.1:8410`.
    The tests `/api/` route proxies to its API container; the PostgreSQL port is not public.
 6. Deploy the existing account frontend change exposing `/tests-authorize` on `jurisdigta.eu`
-   with `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisigta.eu`. Preserve the actual account
+   with `VITE_LAWS_TEST_PUBLIC_URL=https://tests.jurisdigta.eu`. Preserve the actual account
    authentication/MFA flow. Do not replace the corporate landing page blindly: configure this
    path to the existing account frontend and verify its SPA assets and sign-in return path.
 7. Configure required GitHub variables/secrets per `docs/GITHUB_ENVIRONMENTS.md`. Install the
