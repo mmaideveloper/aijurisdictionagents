@@ -790,11 +790,11 @@ function App() {
                       ) : null,
                     )}
                   </div>
-                  <p className="source-note">
-                    {course?.status === "development"
-                      ? "Vývojový prepis z poskytnutej knihy. Nie je potvrdením aktuálneho právneho stavu. Úplný obsah a právna kontrola sa pripravujú."
-                      : "Nezávislá príprava na skúšku. Nejde o vydanie osvedčenia ani úradné hodnotenie."}
-                  </p>
+                  {course?.status !== "development" && (
+                    <p className="source-note">
+                      Nezávislá príprava na skúšku. Nejde o vydanie osvedčenia ani úradné hodnotenie.
+                    </p>
+                  )}
                 </>
               )}
             </section>

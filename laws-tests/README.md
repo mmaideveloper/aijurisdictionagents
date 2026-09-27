@@ -82,6 +82,8 @@ personal information and identifies AI feedback as practice, not official certif
 No raw model IO is enabled. Public APIs exclude rules, attempts and draft production content.
 Publish only after human review, with the legislation effective on publication day and the
 exact legal date recorded. Two blurred A-20 passages are explicitly identified in the seed.
+Development review status appears in the course badge; the question footer does not repeat
+the development-transcription notice.
 
 Transient screenshots and sanitized manifests live in ignored `runs/issue840/evidence`,
 retained for 14 days. Do not upload synthetic-account credentials, outbox data, service logs
