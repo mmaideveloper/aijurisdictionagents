@@ -29,6 +29,10 @@ its credentials are captured in a 0600 temporary file, never logs or evidence. P
 reviewed E-1 data is a prerequisite, never seeded by deploy. Password/email-OTP browser login
 is separately covered by the mandatory local real E2E check.
 
+Checks with identical names from different workflow suites must all succeed. Within a suite,
+only the newest rerun is considered. Rerun a failed/cancelled suite to completion; creating a
+separate successful run does not erase its failure from the gate.
+
 ## First installation (infrastructure operator)
 
 1. Verify ownership/control of **jurisigta.eu** and DNS/TLS for **tests.jurisigta.eu**.

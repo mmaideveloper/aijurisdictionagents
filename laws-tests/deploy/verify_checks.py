@@ -9,15 +9,20 @@ import urllib.request
 def check_runs(runs, required):
     latest = {}
     for run in runs:
-        if run["name"] not in latest or run["id"] > latest[run["name"]]["id"]:
-            latest[run["name"]] = run
+        # Different workflows may expose the same job name (e.g. test_and_build).
+        # A newer successful frontend job must never hide a failed API job.
+        key = (run["name"], (run.get("check_suite") or {}).get("id", 0))
+        if key not in latest or run["id"] > latest[key]["id"]:
+            latest[key] = run
     if not required:
         raise ValueError("Required check list must not be empty")
     for name in required:
-        run = latest.get(name)
-        if not run or run["status"] != "completed" or run["conclusion"] != "success":
+        matches = [run for (job, _), run in latest.items() if job == name]
+        if not matches or any(
+            run["status"] != "completed" or run["conclusion"] != "success" for run in matches
+        ):
             raise ValueError(f"Required check is not successful: {name}")
-    return [latest[name]["html_url"] for name in required]
+    return [run["html_url"] for (name, _), run in latest.items() if name in required]
 
 
 def main():
