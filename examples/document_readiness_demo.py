@@ -1,6 +1,7 @@
 """Offline readiness demonstration using synthetic data in temporary storage."""
 from pathlib import Path
 import gc
+import json
 import os
 import sys
 import tempfile
@@ -46,6 +47,15 @@ def main() -> None:
             "Pracovný čas: 40 hodín týždenne.\nPodpis zamestnanca: __________\n\n"
             "Mám pripraviť tento dokument vo formáte PDF?"
         )
+        conflicting = Message(session_id=session.id, role=MessageRole.ASSISTANT, content=draft + "\nCASE_UPDATE_JSON: " + json.dumps({
+            "case": {"documents": [{"content": draft.replace("3 200", "4 000")}]}}, ensure_ascii=False))
+        try:
+            api._confirmed_document_drafts_for_storage("uloz dokument vo formate PDF", [conflicting], session=session)
+        except api._DocumentDraftConflictError as error:
+            assert error.status_code == 409
+        else:
+            raise AssertionError("A hidden change must not be saved as a confirmed draft")
+        print("Conflicting hidden document terms: rejected before storage")
         api._repository.add_message(Message(session_id=session.id, role=MessageRole.ASSISTANT, content=draft))
         _, message, _, _, route = api._run_direct_lawyer_turn(
             session_id=session.id, session=session, content="dobre",
@@ -57,6 +67,12 @@ def main() -> None:
         saved = store.read_storage_bytes(storage_uri=documents[0].storage_uri).decode("utf-8")
         assert "3 200 EUR" in saved and "Mám pripraviť" not in saved
         print("Confirmed employment draft saved without model rewrite: ready")
+        _, retried, _, _, route = api._run_direct_lawyer_turn(
+            session_id=session.id, session=session,
+            content="Skús znova vygenerovať a uložiť PDF dokument z už potvrdených údajov.",
+        )
+        assert route is None and retried.generated_document_ids == message.generated_document_ids
+        print("Localized retry reuses the saved document ID")
         gc.collect()  # Release SQLite connections before Windows removes temporary files.
 
 

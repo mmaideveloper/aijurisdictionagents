@@ -1,6 +1,8 @@
 """Persistence, not chat completion, is the document readiness boundary (#835)."""
 from io import BytesIO
 import json
+from pathlib import Path
+import re
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -301,15 +303,73 @@ def test_confirmed_contract_reply_saves_exact_draft_and_serves_real_pdf(saved_ca
     assert retry.json()["generated_document_ids"] == ids
 
 
-def test_confirmed_structured_draft_takes_priority_over_visible_preview(saved_case):
-    _, _, session, _ = saved_case
-    content = CONTRACT_BODY.replace("3 200", "1 000") + "\nCASE_UPDATE_JSON: " + json.dumps({
+@pytest.mark.parametrize("transport", ["reply", "stream"])
+@pytest.mark.parametrize("visible_body", [CONTRACT_BODY.replace("3 200", "1 000"), "Please confirm the document."])
+def test_conflicting_or_hidden_only_draft_is_not_saved(saved_case, monkeypatch, transport, visible_body):
+    client, headers, session, store = saved_case
+    content = visible_body + "\nCASE_UPDATE_JSON: " + json.dumps({
         "case": {"documents": [{"filename": "employment.pdf", "content": CONTRACT_BODY}]}
     })
-    drafts = api._confirmed_document_drafts_for_storage("uloz dokument vo formate PDF", [_message(session, content)])
+    api._repository.add_message(_message(session, content))
+    def unexpected_route(**kwargs):
+        raise AssertionError("Conflicting confirmation must not invoke a model")
+    monkeypatch.setattr(api, "_resolve_session_llm_route", unexpected_route)
+    request = {"content": "uloz dokument vo formate PDF"} if transport == "reply" else {
+        "instruction": "uloz dokument vo formate PDF", "documents": [],
+        "question_timeout_seconds": 1, "max_discussion_minutes": 1, "communication_minutes": 1,
+    }
+    response = client.post(f"/v1/chat/sessions/{session.id}/{transport}", headers=headers, json=request)
+    assert response.status_code == (409 if transport == "reply" else 200), response.text
+    if transport == "stream":
+        events = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+        error = next(event for event in events if event.get("code") == "document_draft_conflict")
+        assert "nový návrh" in error["message"]
+    else:
+        assert "nový návrh" in response.json()["detail"]
+    assert not [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    assert not api._document_export_ready(api._repository.list_messages(session.id))
+
+
+def _presentation(renderer, body):
+    return {
+        "schema_version": 1, "renderer_version": 1, "renderer_id": renderer,
+        "data": {"title": "Pracovná zmluva", "body": body.split("\n", 1)[-1], "text": body},
+        "fallback_text": body, "citations": [], "notices": [],
+        "selection": {"policy_id": "test", "reason_code": "validated", "explicit_user_request": False, "model_proposal_accepted": True},
+    }
+
+
+@pytest.mark.parametrize("renderer", [None, "document_preview", "text"])
+def test_matching_structured_and_visible_draft_can_be_confirmed(saved_case, renderer):
+    _, _, session, _ = saved_case
+    content = CONTRACT_BODY + "\nCASE_UPDATE_JSON: " + json.dumps({
+        "case": {"documents": [{"filename": "employment.pdf", "content": CONTRACT_BODY}]}
+    })
+    message = _message(session, content)
+    if renderer:
+        message.presentation = _presentation(renderer, CONTRACT_BODY)
+    drafts = api._confirmed_document_drafts_for_storage("uloz dokument vo formate PDF", [message])
     assert len(drafts) == 1
     assert "3 200" in drafts[0].body
-    assert "1 000" not in drafts[0].body
+
+
+@pytest.mark.parametrize("renderer", ["document_preview", "text", "notice"])
+def test_presentation_cannot_hide_different_terms_from_confirmation(saved_case, renderer):
+    client, headers, session, store = saved_case
+    message = _message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?")
+    message.presentation = _presentation(renderer, CONTRACT_BODY.replace("3 200", "1 000"))
+    api._repository.add_message(message)
+    response = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers, json={"content": "dobre"})
+    assert response.status_code == 409, response.text
+    assert not [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+
+
+# Exercise the exact shipped UI retry payloads, not a test-only paraphrase.
+UI_RETRY_REQUESTS = re.findall(
+    r'assistantDocumentRetryRequest: "([^"]+)"',
+    (Path(__file__).resolve().parents[3] / "frontend/aijurisdictionfronend/src/data/translations.ts").read_text(encoding="utf-8"),
+)
+assert len(UI_RETRY_REQUESTS) == 3
 
 
 @pytest.mark.parametrize("save_request", [
@@ -325,7 +385,8 @@ def test_changed_or_unconfirmed_facts_do_not_save_old_draft(saved_case, save_req
 
 
 @pytest.mark.parametrize("failure", ["exception", "missing_id"])
-def test_confirmed_draft_storage_failure_and_retry_through_reply(saved_case, monkeypatch, failure):
+@pytest.mark.parametrize("retry_request", ["uloz dokument vo formate PDF", *UI_RETRY_REQUESTS])
+def test_confirmed_draft_storage_failure_and_retry_through_reply(saved_case, monkeypatch, failure, retry_request):
     client, headers, session, store = saved_case
     api._repository.add_message(_message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?"))
     original_add = store.add_case_document
@@ -336,6 +397,9 @@ def test_confirmed_draft_storage_failure_and_retry_through_reply(saved_case, mon
             return ""
         return original_add(**kwargs)
     monkeypatch.setattr(api, "_get_store", lambda: store)
+    def unexpected_route(**kwargs):
+        raise AssertionError("Retry must save the approved draft without a model rewrite")
+    monkeypatch.setattr(api, "_resolve_session_llm_route", unexpected_route)
     monkeypatch.setattr(store, "add_case_document", fail_generated)
     failed = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers, json={"content": "dobre"})
     assert failed.status_code == 503, failed.text
@@ -343,9 +407,19 @@ def test_confirmed_draft_storage_failure_and_retry_through_reply(saved_case, mon
     assert not api._document_export_ready(api._repository.list_messages(session.id))
     monkeypatch.setattr(store, "add_case_document", original_add)
     retry = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers,
-                        json={"content": "uloz dokument vo formate PDF"})
+                        json={"content": retry_request})
     assert retry.status_code == 200, retry.text
     assert len(retry.json()["generated_document_ids"]) == 1
+    document = next(doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document")
+    assert "3 200 EUR" in store.read_storage_bytes(storage_uri=document.storage_uri).decode("utf-8")
+
+
+@pytest.mark.parametrize("retry_request", UI_RETRY_REQUESTS)
+def test_ui_retry_is_generation_intent_but_appended_edits_are_not_save_only(retry_request):
+    assert api._user_requested_document_generation(content=retry_request, previous_messages=[])
+    assert api._is_existing_document_save_request(retry_request)
+    assert not api._is_existing_document_save_request(retry_request + " Change salary to 4000 EUR.")
+    assert not api._is_existing_document_save_request(retry_request + " ale neukladaj dokument")
 
 
 @pytest.mark.parametrize("reply", [
@@ -442,3 +516,40 @@ def test_streamed_confirmation_reports_saved_id_or_storage_error(saved_case, mon
     else:
         assert len(saved) == 1
         assert saved[0].doc_id in response.text
+
+@pytest.mark.parametrize("retry_request", UI_RETRY_REQUESTS)
+def test_actual_ui_retry_through_stream_preserves_confirmed_contract(saved_case, monkeypatch, retry_request):
+    client, headers, session, store = saved_case
+    api._repository.add_message(_message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?"))
+    original = store.add_case_document
+    def fail(**kwargs):
+        if kwargs["kind"] == "generated_document":
+            raise OSError("synthetic-storage-failure")
+        return original(**kwargs)
+    def unexpected_route(**kwargs):
+        raise AssertionError("A confirmed draft retry must not call the model")
+    monkeypatch.setattr(api, "_resolve_session_llm_route", unexpected_route)
+    monkeypatch.setattr(api, "_get_store", lambda: store)
+    monkeypatch.setattr(store, "add_case_document", fail)
+    def stream(instruction):
+        return client.post(f"/v1/chat/sessions/{session.id}/stream", headers=headers, json={
+            "instruction": instruction, "documents": [], "question_timeout_seconds": 1,
+            "max_discussion_minutes": 1, "communication_minutes": 1,
+        })
+    failed = stream("dobre")
+    assert "document_generation_failed" in failed.text
+    assert not [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    monkeypatch.setattr(store, "add_case_document", original)
+    retried = stream(retry_request)
+    assert retried.status_code == 200, retried.text
+    documents = [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    assert len(documents) == 1
+    assert documents[0].doc_id in retried.text
+    pdf = client.get(f"/v1/cases/{session.case_id}/documents/{documents[0].doc_id}/pdf", headers=headers,
+                     params={"user_id": str(session.user_id)})
+    assert pdf.status_code == 200
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
+    assert "3 200" in text and "Test Osoba" in text
+    repeated = stream(retry_request)
+    assert documents[0].doc_id in repeated.text
+    assert len([doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]) == 1

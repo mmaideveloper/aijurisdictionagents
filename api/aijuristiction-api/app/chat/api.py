@@ -137,6 +137,10 @@ class _DocumentPersistenceError(HTTPException):
     """A safe, retryable document-storage failure for HTTP and SSE clients."""
 
 
+class _DocumentDraftConflictError(HTTPException):
+    """The proposed stored content has not been consistently shown to the user."""
+
+
 @dataclass(frozen=True)
 class _TechnicalPayloadAsset:
     content: str
@@ -1775,7 +1779,7 @@ def _run_direct_lawyer_turn_impl(
             None,
         )
 
-    confirmed_drafts = _confirmed_document_drafts_for_storage(content, prior_messages)
+    confirmed_drafts = _confirmed_document_drafts_for_storage(content, prior_messages, session=session)
     if session.case_id and confirmed_drafts:
         # Save the draft the user actually confirmed, without another model rewrite.
         persisted_lawyer = _persist_direct_assistant_message(
@@ -3111,6 +3115,8 @@ def _correlated_error_payload(
     context = current_correlation_context()
     if isinstance(exc, _DocumentPersistenceError):
         payload = {"code": "document_generation_failed", "message": str(exc.detail)}
+    elif isinstance(exc, _DocumentDraftConflictError):
+        payload = {"code": "document_draft_conflict", "message": str(exc.detail)}
     result = dict(
         payload
         or {
@@ -3171,6 +3177,8 @@ def _is_explicit_document_request(normalized: str) -> bool:
     normalized = _canonicalize_document_text(normalized)
     if _declines_document_generation(normalized):
         return False
+    if _is_document_retry_request(normalized):
+        return True
     document_markers = (
         "pdf",
         "document",
@@ -4146,9 +4154,20 @@ def _persist_case_technical_payload(
         return None
 
 
+def _is_document_retry_request(content: str) -> bool:
+    # Exact UI intents only: appended edits/refusals must use normal drafting.
+    return _canonicalize_document_text(content).strip(" .!,") in {
+        "please retry generating and saving the pdf document using the already confirmed facts",
+        "skus znova vygenerovat a ulozit pdf dokument z uz potvrdenych udajov",
+        "bitte erstelle und speichere das pdf-dokument erneut anhand der bereits bestatigten angaben",
+    }
+
+
 def _is_existing_document_save_request(content: str) -> bool:
     """Only a save/format instruction, never a request to change draft facts."""
     normalized = _canonicalize_document_text(content).strip(" .!,")
+    if _is_document_retry_request(normalized):
+        return True
     return bool(re.fullmatch(
         r"(?:(?:ano|dobre|ok|okay|prosim|please|navrh je v poriadku)[, ]+)*"
         r"(?:(?:uloz|ulozte|save|exportuj)\s+(?:(?:mi|tento|the|this)\s+)*"
@@ -4170,6 +4189,7 @@ def _is_explicit_document_export_request(content: str) -> bool:
 
 def _confirmed_document_drafts_for_storage(
     content: str, previous_messages: list[Message],
+    *, session: Session | None = None,
 ) -> list[_GeneratedCaseDocumentDraft]:
     if not (_is_existing_document_save_request(content) or (
         _is_standalone_affirmative_reply(content)
@@ -4186,9 +4206,40 @@ def _confirmed_document_drafts_for_storage(
         if message.role != MessageRole.ASSISTANT:
             continue
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        return _generated_case_document_drafts_from_case_update(
+        structured = _generated_case_document_drafts_from_case_update(
             _extract_case_update(message.content), timestamp=timestamp,
-        ) or _generated_case_document_drafts_for_storage(_user_visible_text(message.content), timestamp=timestamp)
+        )
+        visible = _generated_case_document_drafts_for_storage(_user_visible_text(message.content), timestamp=timestamp)
+        presentation_conflict = False
+        if message.presentation:
+            data = message.presentation.get("data", {})
+            renderer = message.presentation.get("renderer_id")
+            displayed = ""
+            if isinstance(data, dict):
+                if renderer == "document_preview":
+                    displayed = f"{data.get('title', 'Document')}\n{data.get('body', message.presentation.get('fallback_text', ''))}"
+                elif renderer == "text":
+                    displayed = str(data.get("text", message.presentation.get("fallback_text", "")))
+            displayed_drafts = _generated_case_document_drafts_for_storage(displayed, timestamp=timestamp)
+            presentation_conflict = bool(visible) and (
+                [re.sub(r"\s+", " ", draft.body).strip() for draft in visible]
+                != [re.sub(r"\s+", " ", draft.body).strip() for draft in displayed_drafts]
+            )
+            visible = displayed_drafts
+        if presentation_conflict or (structured and (
+            [re.sub(r"\s+", " ", draft.body).strip() for draft in structured]
+            != [re.sub(r"\s+", " ", draft.body).strip() for draft in visible]
+        )):
+            language = (session.language or session.country).lower() if session else "en"
+            if language.startswith("sk"):
+                detail = "Návrh a údaje na uloženie sa nezhodujú. Dokument sa neuložil. Vyžiadajte si nový návrh a potvrďte jeho obsah."
+            elif language.startswith("de"):
+                detail = "Vorschau und Speicherinhalt stimmen nicht überein. Es wurde kein Dokument gespeichert. Fordern Sie einen neuen Entwurf an und bestätigen Sie dessen Inhalt."
+            else:
+                detail = "The preview and proposed stored content differ. No document was saved. Request a new draft and confirm its contents."
+            raise _DocumentDraftConflictError(status_code=409, detail=detail)
+        # Only content actually shown for confirmation may become the artifact.
+        return visible
     return []
 
 
