@@ -108,6 +108,19 @@ describe("structured document actions", () => {
     expect(screen.getByRole("status")).toBeTruthy();
   });
 
+  it.each(["PDF", "Otvoriť PDF", "Zobraziť dokument", "Open document", "PDF öffnen"])(
+    "verifies structured document-opening label %s", (label) => {
+      withPolicy("/app/assistant#", false, label);
+      expect(screen.queryByRole("link")).toBeNull();
+      expect(screen.getByRole("status")).toBeTruthy();
+    }
+  );
+
+  it("allows the PDF label when the saved viewer target is verified", () => {
+    withPolicy(savedHref, false, "PDF");
+    expect(screen.getByRole("link", { name: "PDF" }).getAttribute("href")).toBe(savedHref);
+  });
+
   it("fails closed without a case policy", () => {
     renderBlock(actionBlock(savedHref));
     expect(screen.queryByRole("link")).toBeNull();

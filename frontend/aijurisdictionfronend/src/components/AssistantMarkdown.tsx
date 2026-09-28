@@ -20,7 +20,7 @@ const linkText = (children: React.ReactNode): string => React.Children.toArray(c
 
 const isDocumentAction = (href: string, label: string): boolean => {
   const normalized = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  const downloadLabel = /stiahn|stahn|download|herunterlad/.test(normalized);
+  const downloadLabel = /stiahn|stahn|download|herunterlad|\bpdf\b|(?:otvor|zobraz|open|view|offne|anzeigen).{0,40}(?:dokument|document|zmluv|vertrag)/.test(normalized);
   // A download label must not bypass storage verification by using an external
   // host. Ordinary source citations and non-download section anchors stay usable.
   if (downloadLabel) return true;

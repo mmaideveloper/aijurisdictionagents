@@ -58,6 +58,14 @@ describe("generated document links", () => {
     expect(screen.getByRole("status")).toBeTruthy();
   });
 
+  it.each(["PDF", "Otvoriť PDF", "Zobraziť dokument", "Open document", "PDF öffnen"])(
+    "verifies document-opening label %s even on a navigation target", (label) => {
+      renderWithPolicy(`[${label}](/app/assistant#)`);
+      expect(screen.queryByRole("link")).toBeNull();
+      expect(screen.getByRole("status")).toBeTruthy();
+    }
+  );
+
   it("keeps verified viewer links and source citations working", () => {
     renderWithPolicy("[Download contract](/app/documents/view?caseId=case&docId=saved)\n\n[Source](https://example.org/law.pdf)\n\n[Section](#section)", true);
     expect(screen.getByRole("link", { name: "Download contract" }).getAttribute("href")).toContain("docId=saved");

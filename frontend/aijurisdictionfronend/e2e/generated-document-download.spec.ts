@@ -381,3 +381,25 @@ for (const failFirst of [false, true]) {
     }, null, 2));
   });
 }
+
+for (const renderer of ["markdown", "structured"]) {
+  test(`${renderer} PDF-only label cannot reopen the assistant without a saved document`, async ({ page, context }) => {
+    const href = "/app/assistant#";
+    await page.route("**/v1/cases/case-generated-doc/history?**", route => route.fulfill({ json: {
+      has_more: false, documents: [], messages: [{
+        communication_id: "pdf-label", role: "assistant", agent_name: "Assistant",
+        content: renderer === "markdown" ? `[PDF](${href})` : "Document action",
+        ...(renderer === "structured" ? { presentation: {
+          ...structuredAction(href), data: { href, label: "PDF" }
+        } } : {}), created_at: "2026-06-26T10:05:00Z"
+      }]
+    } }));
+    await page.goto("/app/assistant");
+    await page.locator(".case-item").filter({ hasText: apiCase.title }).click();
+    await expect(page.getByRole("link", { name: "PDF", exact: true })).toHaveCount(0);
+    await expect(page.getByText("The document is not ready for download.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/assistant$/);
+    expect(context.pages()).toHaveLength(1);
+  });
+}
