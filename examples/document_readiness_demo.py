@@ -13,12 +13,16 @@ sys.path[:0] = [str(ROOT / "src"), str(ROOT / "api" / "aijuristiction-api")]
 def main() -> None:
     # This explicit offline example never selects a live LLM or reads case facts.
     storage_root = ROOT / "runs" / "storage" / "document-readiness" / "sqlite"
+    if os.name == "nt":
+        # Use long paths for both writes and TemporaryDirectory cleanup.
+        storage_root = Path("\\\\?\\" + str(storage_root))
     storage_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="demo-", dir=storage_root) as directory:
+        blob_root = str(Path(directory) / "storage")
         os.environ.update({
             "DB_OPTION": "local", "STORAGE_OPTION": "local",
             "DB_LOCAL": str(Path(directory) / "api.sqlite3"),
-            "STORE_LOCAL": str(Path(directory) / "storage"), "LLM_PROVIDER": "mock",
+            "STORE_LOCAL": blob_root, "LLM_PROVIDER": "mock",
         })
         from app.document_content import is_status_only_document
         assert is_status_only_document("Document is ready for download.")
@@ -30,21 +34,29 @@ def main() -> None:
         user = store.create_user(email="readiness@example.test", password="synthetic-only",
                                  phone_number="+421900000835")
         case = store.create_case(user_id=user.user_id, company_id=None, title="Synthetic draft")
-        session = Session(case_id=case.case_id, user_id=UUID(user.user_id), country="SK")
+        session = Session(case_id=case.case_id, user_id=UUID(user.user_id), country="SK", language="sk-SK")
         api._repository.create_session(session)
         message = Message(session_id=session.id, role=MessageRole.ASSISTANT,
                           content="Dokument je pripraveny na stiahnutie.")
         assert not api._document_export_ready([message])
         print("Confirmed prose without storage: not ready")
-        ids = api._persist_generated_case_document_drafts(
-            session=session, case_id=case.case_id,
-            drafts=[api._GeneratedCaseDocumentDraft(filename="synthetic.pdf", body="Synthetic legal draft for human review.")],
+        draft = (
+            "Pracovná zmluva\nZamestnávateľ: Demo Firma\nZamestnanec: Demo Osoba\n"
+            "Druh práce: Vývoj softvéru.\nMesačná mzda: 3 200 EUR brutto.\n"
+            "Pracovný čas: 40 hodín týždenne.\nPodpis zamestnanca: __________\n\n"
+            "Mám pripraviť tento dokument vo formáte PDF?"
         )
-        message.content = api._attach_generated_case_document_references(
-            session=session, content=message.content, doc_ids=ids,
+        api._repository.add_message(Message(session_id=session.id, role=MessageRole.ASSISTANT, content=draft))
+        _, message, _, _, route = api._run_direct_lawyer_turn(
+            session_id=session.id, session=session, content="dobre",
         )
+        assert route is None  # Saving the confirmed draft makes no model call.
+        assert len(message.generated_document_ids) == 1
         assert api._document_export_ready([message])
-        print("Persisted nonempty document with ID: ready")
+        documents = [doc for doc in store.list_case_documents(case_id=case.case_id) if doc.kind == "generated_document"]
+        saved = store.read_storage_bytes(storage_uri=documents[0].storage_uri).decode("utf-8")
+        assert "3 200 EUR" in saved and "Mám pripraviť" not in saved
+        print("Confirmed employment draft saved without model rewrite: ready")
         gc.collect()  # Release SQLite connections before Windows removes temporary files.
 
 

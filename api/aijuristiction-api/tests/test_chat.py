@@ -8324,7 +8324,7 @@ def test_user_visible_text_strips_fake_relative_download_links_and_json_preamble
     assert export_response.content.startswith(b"%PDF")
 
 
-def test_unstructured_relative_download_link_uses_previous_draft_for_case_document(monkeypatch) -> None:
+def test_unstructured_relative_download_link_does_not_save_previous_draft(monkeypatch) -> None:
     import app.chat.api as chat_api
     from app.chat.models import Message, MessageRole, Session
     from app.chat.repository import InMemoryChatRepository
@@ -8398,11 +8398,8 @@ def test_unstructured_relative_download_link_uses_previous_draft_for_case_docume
 
     assert "documents/" not in visible
     assert "Stiahnuť splnomocnenie" not in visible
-    assert doc_ids == ["doc-generated-1"]
-    assert stored_documents[0]["kind"] == "generated_document"
-    assert stored_documents[0]["uploaded_by_user_id"] == str(user_id)
-    assert "Splnomocniteľ: Esolutions SK s.r.o." in str(stored_documents[0]["payload"])
-    assert "PP472DT" in str(stored_documents[0]["payload"])
+    assert doc_ids == []
+    assert stored_documents == []
 
 
 def test_summary_only_previous_assistant_reply_is_not_saved_as_generated_document(monkeypatch) -> None:

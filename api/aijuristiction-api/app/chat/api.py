@@ -1340,25 +1340,32 @@ def _persist_direct_assistant_message(
     agent_name: str,
     allow_document_generation: bool = True,
     presentation: dict[str, Any] | None = None,
+    confirmed_drafts: list[_GeneratedCaseDocumentDraft] | None = None,
 ) -> Message:
     content = _validate_lawyer_output_message(session=session, content=content)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
-    generated_doc_ids = (
-        _persist_generated_case_document_if_needed(session=session, content=content)
-        if allow_document_generation
-        else []
-    )
+    generated_doc_ids: list[str] = []
+    if allow_document_generation:
+        if confirmed_drafts:
+            generated_doc_ids = _persist_generated_case_document_drafts(
+                session=session, case_id=session.case_id or "", drafts=confirmed_drafts,
+            )
+        else:
+            generated_doc_ids = _persist_generated_case_document_if_needed(session=session, content=content)
     if agent_name == "LawyerStatus":
         previous = _repository.list_messages(session_id)
         last_assistant = next((m for m in reversed(previous) if m.role == MessageRole.ASSISTANT), None)
         if last_assistant is not None:
             generated_doc_ids = _verified_document_references(session=session, content=last_assistant.content)
-    content = _attach_generated_case_document_references(
+    guarded_content = _attach_generated_case_document_references(
         session=session,
         content=content,
         doc_ids=generated_doc_ids,
         generation_attempted=allow_document_generation,
     )
+    if not generated_doc_ids and guarded_content != content:
+        presentation = None
+    content = guarded_content
     persisted_lawyer = _repository.add_message(
         Message(
             session_id=session_id,
@@ -1767,6 +1774,23 @@ def _run_direct_lawyer_turn_impl(
             [],
             None,
         )
+
+    confirmed_drafts = _confirmed_document_drafts_for_storage(content, prior_messages)
+    if session.case_id and confirmed_drafts:
+        # Save the draft the user actually confirmed, without another model rewrite.
+        persisted_lawyer = _persist_direct_assistant_message(
+            session_id=session_id, session=session, agent_name="Assistant",
+            content=_document_package_ready_message(
+                country=session.country, language=session.language,
+                document_names=[draft.filename for draft in confirmed_drafts],
+            ),
+            confirmed_drafts=confirmed_drafts,
+        )
+        _record_case_ai_model_audit(
+            session=session, question=persisted_user, answer=persisted_lawyer,
+            task_type="document_save", source="chat.direct_reply", model_used=False,
+        )
+        return persisted_user, persisted_lawyer, _user_visible_text(persisted_lawyer.content), [], None
 
     document_generation_requested = _user_requested_document_generation(
         content=content,
@@ -3119,7 +3143,7 @@ def _is_pdf_format_question(prompt: str) -> bool:
 
 
 def _user_requested_document_generation(*, content: str, previous_messages: list[Message]) -> bool:
-    if _is_standalone_legal_research_request(content):
+    if _declines_document_generation(content) or _is_standalone_legal_research_request(content):
         return False
     normalized = _canonicalize_document_text(content)
     if _is_explicit_document_request(normalized):
@@ -3135,8 +3159,18 @@ def _is_standalone_legal_research_request(content: str) -> bool:
     )
 
 
+def _declines_document_generation(content: str) -> bool:
+    return bool(re.search(
+        r"^nie\b|\b(?:neukladaj|nepripravuj|nevytvaraj|negeneruj)\b|"
+        r"\b(?:do not|don't)\s+(?:save|prepare|create|generate|export)\b",
+        _canonicalize_document_text(content),
+    ))
+
+
 def _is_explicit_document_request(normalized: str) -> bool:
     normalized = _canonicalize_document_text(normalized)
+    if _declines_document_generation(normalized):
+        return False
     document_markers = (
         "pdf",
         "document",
@@ -3173,8 +3207,9 @@ def _is_explicit_document_request(normalized: str) -> bool:
         "aktualizuj",
         "podla",
     )
-    return any(marker in normalized for marker in document_markers) and any(
-        marker in normalized for marker in request_markers
+    return any(marker in normalized for marker in document_markers) and (
+        any(marker in normalized for marker in request_markers)
+        or bool(re.search(r"\b(?:uloz|ulozte|save|exportuj|exportujte)\b", normalized))
     )
 
 
@@ -3193,14 +3228,13 @@ def _is_affirmative_reply(normalized: str) -> bool:
         "potvrdzujem",
     )
     return any(
-        token in candidate
+        re.match(r"^(?:user[: ]+)?(?:" + "|".join((*affirmatives, "dobre")) + r")\b", candidate)
         for candidate in (normalized, replacement_repaired)
-        for token in affirmatives
     )
 
 
 def _is_standalone_affirmative_reply(content: str) -> bool:
-    normalized = _canonicalize_document_text(content)
+    normalized = _canonicalize_document_text(content).strip(" .!,")
     replacement_repaired = normalized.replace("\ufffd", "a")
     standalone_affirmatives = {
         "ano",
@@ -3211,6 +3245,7 @@ def _is_standalone_affirmative_reply(content: str) -> bool:
         "prosim",
         "please",
         "potvrdzujem",
+        "dobre",
         "user: ano",
         "user ano",
     }
@@ -3220,19 +3255,17 @@ def _is_standalone_affirmative_reply(content: str) -> bool:
 def _has_unanswered_document_confirmation(messages: list[Message]) -> bool:
     awaiting_confirmation = False
     for message in messages:
-        if message.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(message.content):
-            awaiting_confirmation = True
-            continue
-        if message.role != MessageRole.USER or not awaiting_confirmation:
-            continue
-        normalized = _canonicalize_document_text(message.content)
-        if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
+        if message.role == MessageRole.ASSISTANT:
+            awaiting_confirmation = _assistant_requests_document_confirmation(message.content)
+        elif message.role == MessageRole.USER:
+            # Any answer consumes the question; a later acknowledgement cannot
+            # confirm an older proposal after a refusal or a change of topic.
             awaiting_confirmation = False
     return awaiting_confirmation
 
 
 def _should_reply_with_ready_document_status(*, content: str, previous_messages: list[Message]) -> bool:
-    if not _is_standalone_affirmative_reply(content):
+    if not (_is_standalone_affirmative_reply(content) or _is_existing_document_save_request(content)):
         return False
     if _has_unanswered_document_confirmation(previous_messages):
         return False
@@ -3240,7 +3273,7 @@ def _should_reply_with_ready_document_status(*, content: str, previous_messages:
 
 
 def _assistant_requests_document_confirmation(content: str) -> bool:
-    lowered = content.lower()
+    lowered = _canonicalize_document_text(content)
     document_markers = ("pdf", "document", "draft", "template", "zmluv", "dokument")
     confirmation_markers = (
         "do you want",
@@ -3250,11 +3283,17 @@ def _assistant_requests_document_confirmation(content: str) -> bool:
         "mam pripravit",
         "pripraviť",
         "pripravit",
+        "mam ulozit",
+        "ulozit",
+        "save",
     )
-    return (
-        any(marker in lowered for marker in document_markers)
-        and "?" in content
-        and any(marker in lowered for marker in confirmation_markers)
+    questions = re.findall(r"[^?.!\n]*\?", lowered)
+    return any(marker in lowered for marker in document_markers) and any(
+        any(marker in question for marker in confirmation_markers)
+        and any(action in question for action in (
+            "priprav", "vygener", "uloz", "zobraz", "vidiet", "prepare", "generate", "save", "show",
+        ))
+        for question in questions
     )
 
 
@@ -3497,6 +3536,8 @@ def _looks_like_document_title(value: str) -> bool:
     ):
         return False
     document_prefixes = (
+        "pracovna zmluva",
+        "employment contract",
         "zmluva",
         "inventarny zoznam",
         "inventar",
@@ -3766,6 +3807,9 @@ def _finalize_document_ready_reply_if_needed(
         return lawyer_content.strip()
     if not _looks_like_processing_placeholder_reply(visible_text):
         return lawyer_content.strip()
+    if (_generated_case_document_drafts_from_case_update(_extract_case_update(lawyer_content), timestamp="check")
+            or _generated_case_document_drafts_for_storage(visible_text, timestamp="check")):
+        return lawyer_content.strip()
     # A placeholder is not a generated artifact, even after user confirmation.
     return _document_generation_failed_message(session)
 
@@ -3774,10 +3818,9 @@ def _current_turn_confirms_document_generation(
     content: str,
     previous_messages: list[Message],
 ) -> bool:
-    normalized = _canonicalize_document_text(content)
     if not _has_unanswered_document_confirmation(previous_messages):
         return False
-    return _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized)
+    return _user_requested_document_generation(content=content, previous_messages=previous_messages)
 
 
 def _build_direct_reply_result(
@@ -3949,20 +3992,19 @@ def _document_generation_confirmed(messages: list[Message]) -> bool:
             continue
         previous_messages = messages[:index]
         normalized = _canonicalize_document_text(message.content)
+        if _declines_document_generation(normalized):
+            continue
         if _is_final_document_generation_command(normalized) and _document_generation_requested(messages[: index + 1]):
             return True
-        if not any(
-            prior.role == MessageRole.ASSISTANT and _assistant_requests_document_confirmation(prior.content)
-            for prior in previous_messages
-        ):
-            continue
-        if _is_affirmative_reply(normalized) or _is_explicit_document_request(normalized):
+        if _current_turn_confirms_document_generation(message.content, previous_messages):
             return True
     return False
 
 
 def _is_final_document_generation_command(normalized: str) -> bool:
     normalized = _canonicalize_document_text(normalized)
+    if _is_existing_document_save_request(normalized):
+        return True
     final_markers = ("vygeneruj", "generuj", "priprav", "konecnu", "konecna", "finalny", "finalnu", "finalne")
     document_markers = ("pdf", "dokument", "document")
     return any(token in normalized for token in final_markers) and any(
@@ -4104,9 +4146,58 @@ def _persist_case_technical_payload(
         return None
 
 
+def _is_existing_document_save_request(content: str) -> bool:
+    """Only a save/format instruction, never a request to change draft facts."""
+    normalized = _canonicalize_document_text(content).strip(" .!,")
+    return bool(re.fullmatch(
+        r"(?:(?:ano|dobre|ok|okay|prosim|please|navrh je v poriadku)[, ]+)*"
+        r"(?:(?:uloz|ulozte|save|exportuj)\s+(?:(?:mi|tento|the|this)\s+)*"
+        r"(?:dokument|navrh|zmluvu|document|draft|contract|pdf)"
+        r"(?:\s+(?:(?:vo formate|v tvare|ako|as|in)\s+)?pdf)?|"
+        r"priprav\s+pdf(?:\s+verziu)?)", normalized,
+    ))
+
+
+def _is_explicit_document_export_request(content: str) -> bool:
+    normalized = _canonicalize_document_text(content)
+    if not _is_explicit_document_request(normalized):
+        return False
+    return bool(re.search(r"\b(?:uloz|ulozte|save|exportuj|exportujte)\b", normalized)) or bool(
+        re.search(r"\b(?:pdf|export\w*|download|stiahn\w*)\b", normalized)
+        and re.search(r"\b(?:priprav\w*|vytvor\w*|vygeneruj|generuj|prepare|generate|create)\b", normalized)
+    )
+
+
+def _confirmed_document_drafts_for_storage(
+    content: str, previous_messages: list[Message],
+) -> list[_GeneratedCaseDocumentDraft]:
+    if not (_is_existing_document_save_request(content) or (
+        _is_standalone_affirmative_reply(content)
+        and _has_unanswered_document_confirmation(previous_messages)
+    )):
+        return []
+    # A failed write may leave consecutive save requests. Never cross a user edit,
+    # refusal, another assistant reply, or another session to recover a draft.
+    for message in reversed(previous_messages):
+        if message.role == MessageRole.USER:
+            if _is_existing_document_save_request(message.content) or _is_standalone_affirmative_reply(message.content):
+                continue
+            return []
+        if message.role != MessageRole.ASSISTANT:
+            continue
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return _generated_case_document_drafts_from_case_update(
+            _extract_case_update(message.content), timestamp=timestamp,
+        ) or _generated_case_document_drafts_for_storage(_user_visible_text(message.content), timestamp=timestamp)
+    return []
+
+
 def _persist_generated_case_document_if_needed(*, session: Session, content: str) -> list[str]:
     case_id = (session.case_id or "").strip()
     if not case_id:
+        return []
+    if _assistant_requests_document_confirmation(content):
+        # Keep a proposal awaiting confirmation as chat content, not a ready file.
         return []
     case_update = _extract_case_update(content)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -4116,17 +4207,9 @@ def _persist_generated_case_document_if_needed(*, session: Session, content: str
     visible_text = _user_visible_text(content).strip()
     drafts = _generated_case_document_drafts_for_storage(visible_text, timestamp=timestamp)
     if not drafts:
-        if not _looks_like_fake_download_response(content):
-            return []
-        store = _get_store()
-        if _has_generated_case_documents(store=store, case_id=case_id):
-            return []
-        drafts = _generated_case_document_drafts_from_previous_assistant_message(
-            session=session,
-            timestamp=timestamp,
-        )
-        if not drafts:
-            return []
+        # A fabricated link does not authorize recovering an older draft. Only
+        # the explicit confirmation/save path may reuse the current proposal.
+        return []
     return _persist_generated_case_document_drafts(session=session, case_id=case_id, drafts=drafts)
 
 
@@ -4140,7 +4223,10 @@ def _claims_document_download_ready(content: str) -> bool:
     return bool(re.search(
         r"(?:pripraven\w*|hotov\w*|ready|prepared|complete|bereit).{0,100}"
         r"(?:stiahn|stazen|export|download|herunterlad)|"
-        r"(?:export|pdf).{0,35}(?:hotov\w*|complete|ready)", normalized
+        r"(?:export|pdf).{0,35}(?:hotov\w*|complete|ready)|"
+        r"(?:vytvoril|vygeneroval|ulozil)\w*\s+(?:som\s+)?(?:.{0,80})(?:pdf|dokument|zmluv)|"
+        r"(?:created|saved|generated).{0,80}(?:pdf|document|contract)|"
+        r"(?:pdf|document|contract).{0,40}(?:has been|was)\s+(?:created|saved|generated)", normalized
     )) or bool(re.search(r"(?:\]\(|^|\s)documents/", content, re.IGNORECASE))
 
 
@@ -4173,6 +4259,9 @@ def _attach_generated_case_document_references(
                 _canonicalize_document_text(content).strip(". ") in {"", "done", "finished", "hotovo"}
                 or (latest_user_index is not None and _current_turn_confirms_document_generation(
                     messages[latest_user_index].content, messages[:latest_user_index]
+                ))
+                or (latest_user_index is not None and _is_explicit_document_export_request(
+                    messages[latest_user_index].content,
                 ))
             )
         )
@@ -4309,37 +4398,6 @@ def _generated_case_document_drafts_from_visible_sections(
                 section["content"],
                 timestamp=timestamp,
             ),
-            body=section["content"],
-        )
-        for section in sections
-        if section.get("content")
-    ]
-
-
-def _generated_case_document_drafts_from_previous_assistant_message(
-    *,
-    session: Session,
-    timestamp: str,
-) -> list[_GeneratedCaseDocumentDraft]:
-    session_id = getattr(session, "id", None)
-    if session_id is None:
-        return []
-    previous_assistant_messages = [
-        message.content
-        for message in _repository.list_messages(session_id)
-        if message.role == MessageRole.ASSISTANT
-    ]
-    source = _pick_document_message(previous_assistant_messages)
-    if not source:
-        return []
-    visible_source = _user_visible_text(source).strip()
-    drafts = _generated_case_document_drafts_for_storage(visible_source, timestamp=timestamp)
-    if drafts:
-        return drafts
-    sections = _exportable_visible_document_sections_for_storage(visible_source)
-    return [
-        _GeneratedCaseDocumentDraft(
-            filename=_generated_case_document_filename_for_storage(section["content"], timestamp=timestamp),
             body=section["content"],
         )
         for section in sections
@@ -4745,16 +4803,6 @@ def _next_generated_case_document_version(*, store: ApiDatabaseStore, case_id: s
     return (max(versions) + 1) if versions else 1
 
 
-def _has_generated_case_documents(*, store: ApiDatabaseStore, case_id: str) -> bool:
-    list_case_documents = getattr(store, "list_case_documents", None)
-    if not callable(list_case_documents):
-        return False
-    return any(
-        getattr(document, "kind", "") == "generated_document"
-        for document in list_case_documents(case_id=case_id)
-    )
-
-
 def _case_document_download_url(*, session: Session, doc_id: str) -> str:
     case_id = quote((session.case_id or "").strip(), safe="")
     encoded_doc_id = quote(doc_id, safe="")
@@ -4911,14 +4959,6 @@ def _looks_like_fake_download_link(line: str) -> bool:
             stripped,
             flags=re.IGNORECASE,
         )
-    )
-
-
-def _looks_like_fake_download_response(content: str) -> bool:
-    normalized = _canonicalize_document_text(content)
-    return "documents/" in content.lower() or (
-        any(marker in normalized for marker in ("na stiahnutie", "download", "stiahnut"))
-        and any(marker in normalized for marker in ("dokument", "document"))
     )
 
 
@@ -7305,6 +7345,17 @@ def _is_visible_document_conversation_boundary(line: str) -> bool:
     normalized = re.sub(r"^\s{0,3}#{1,6}\s+", "", line.strip())
     normalized = normalized.strip("*_#:- ")
     canonical = _canonicalize_document_text(normalized).rstrip("?")
+    if _assistant_requests_document_confirmation(line):
+        return True
+    if _claims_document_download_ready(line) and re.match(
+        r"^(?:dokument\w*|document\w*|the|pdf|i|vytvoril|vygeneroval|ulozil|dokoncil)\b", canonical,
+    ):
+        return True
+    if canonical.startswith((
+        "ak mate dalsie otazky", "if you have further questions", "prosim, chvilu pockajte",
+        "prosim chvilu pockajte", "pracovna zmluva bola uspesne pripravena",
+    )):
+        return True
     return canonical in {
         "co dalej",
         "what next",

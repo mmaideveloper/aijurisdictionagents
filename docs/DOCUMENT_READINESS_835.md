@@ -72,3 +72,63 @@ a legal completeness or correctness assessment. Real drafts still require human
 review. Regression fixtures are synthetic and contain no supplied PDF files or
 account details. The positive regression parses the exported PDF and verifies
 employment terms, not just the PDF header. Historical HTTP outcomes remain unknown.
+
+## Confirmed draft persistence follow-up
+
+Employment contract headings (`Pracovná zmluva`, including plain text, bold and
+Markdown headings, and `Employment contract`) are recognized without requiring
+download-ready prose. Structured document content remains the first choice;
+visible document sections are the fallback. Confirmation questions and recognized
+closing download announcements are excluded from the stored document section.
+A reply still asking the user to confirm document preparation remains a preview
+and does not create a generated document yet.
+
+A standalone `dobre` confirms only the current document-preparation question.
+Affirmatives match words rather than substrings (for example, `dokument` is not
+`ok`). Any intervening answer or unrelated assistant message consumes the old
+question. Explicit save commands such as `ulož dokument vo formáte PDF` also work
+without an unanswered question; refusals do not authorize generation.
+
+For an unambiguous confirmation/save-only instruction, the direct reply path
+saves the latest substantive assistant draft without asking the model to rewrite
+it. It never searches past a user edit or an unrelated assistant response. A
+failed write may leave consecutive save requests; these can retry the same draft.
+Successful retries reuse the existing payload/ID, including partial package writes.
+Requests that also change facts continue through normal drafting.
+
+Persistence completes before the success message and generated IDs are published.
+An explicit PDF/save attempt that produces no artifact returns the existing safe
+failure notice; storage exceptions and missing IDs retain the 503 error contract.
+Unverified created/saved-PDF claims are rejected as well as ready/download claims,
+and a replaced false-success response drops its structured presentation.
+
+Minimal offline example: `python examples/document_readiness_demo.py`.
+Deterministic regression: `python -m pytest api/aijuristiction-api/tests/test_document_readiness.py`.
+The API integration test confirms a synthetic contract through `/reply`, checks
+the saved ID in case history, reads its source and PDF, and verifies employment
+terms in the extracted PDF. These tests are not real-model browser acceptance;
+that requires the local PostgreSQL/API/MCP/frontend environment and evidence
+defined in `docs/E2E_TEST_EVIDENCE_RULE.md`. Production cases 08/09 remain a separate
+post-deployment check; no historical links are repaired or fabricated.
+
+Privacy and legal-risk scope: no new storage, permissions, retention period,
+external recipient or consent purpose is introduced. Tests use synthetic facts;
+operational errors retain only correlation IDs and reason/error types, not the
+contract body. Saved legal drafts still require human review.
+
+### Validation boundary for this follow-up
+
+The deterministic suite covers the complete API draft/confirmation/save/PDF
+sequence, streamed success and storage failures, retries, and rejection of
+historical fake-link recovery. It uses a synthetic model response and local test
+storage; it does not establish real-model browser acceptance.
+
+On the implementation host, the approved `codex-agent` profile passes its strict
+local audit, but the dedicated real-model E2E profile is incomplete. The missing
+required settings are `E2E_AZURE_FOUNDRY_ENDPOINT`,
+`E2E_AZURE_FOUNDRY_API_VERSION`, `E2E_AZURE_FOUNDRY_DEPLOYMENT`, and
+`AI_MODEL_CREDENTIAL_ENCRYPTION_KEY`. Restore authorized SSH access and use the
+credential bootstrap documented in `docs/E2E_TEST_EVIDENCE_RULE.md` before the
+final PostgreSQL/API/MCP/frontend run. Keep that acceptance pending until its
+screenshots, PDF and result manifest are recorded. Transient test output belongs
+under ignored `runs/validation/835-backend/` and should be removed after review.

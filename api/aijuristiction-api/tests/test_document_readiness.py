@@ -1,5 +1,7 @@
 """Persistence, not chat completion, is the document readiness boundary (#835)."""
 from io import BytesIO
+import json
+from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -221,3 +223,222 @@ def test_actual_contract_survives_status_intro_and_is_selected_over_later_placeh
     for value in ["Test Firma", "Test Osoba", "3 200", "40 hodín", "dobu neurčitú"]:
         assert value in text
     assert "pripravený na stiahnutie" not in text
+
+
+@pytest.mark.parametrize("heading", ["Pracovná zmluva", "**PRACOVNÁ ZMLUVA**", "## Pracovná zmluva"])
+def test_employment_draft_extraction_does_not_require_ready_prose(heading):
+    content = CONTRACT_BODY.replace("Pracovná zmluva", heading, 1)
+    content += "\n\nMám pripraviť tento dokument vo formáte PDF?"
+    drafts = api._generated_case_document_drafts_for_storage(content, timestamp="test")
+    assert len(drafts) == 1
+    assert "3 200 EUR" in drafts[0].body
+    assert "Podpis zamestnanca" in drafts[0].body
+    assert "Mám pripraviť" not in drafts[0].body
+
+
+def test_contract_clauses_survive_while_closing_pdf_claim_is_excluded():
+    clause = "Zamestnávateľ vytvoril dokument o pracovných postupoch."
+    content = CONTRACT_BODY + "\n" + clause + "\n\nI have created the PDF document."
+    drafts = api._generated_case_document_drafts_for_storage(content, timestamp="test")
+    assert len(drafts) == 1
+    assert clause in drafts[0].body
+    assert "I have created" not in drafts[0].body
+
+
+@pytest.mark.parametrize("content, expected", [
+    ("dobre", True), ("Dobre!", True), ("áno", True), ("�no", True),
+    ("nie", False), ("dokument", False), ("neukladaj dokument", False),
+    ("diagnostika", False), ("nie, prosím neukladaj dokument", False),
+    ("dobre, ale neukladaj dokument", False),
+    ("Kde je uložený dokument PDF?", False),
+])
+def test_document_confirmation_matches_words_and_current_question(saved_case, content, expected):
+    _, _, session, _ = saved_case
+    history = [_message(session, "Mám pripraviť tento dokument vo formáte PDF?")]
+    assert api._user_requested_document_generation(content=content, previous_messages=history) is expected
+    if content.lower().strip("!") == "dobre":
+        assert not api._user_requested_document_generation(content=content, previous_messages=[])
+        unrelated = _message(session, "Chcete vysvetliť výpovednú dobu?")
+        assert not api._user_requested_document_generation(content=content, previous_messages=[*history, unrelated])
+        declined = Message(session_id=session.id, role=MessageRole.USER, content="nie")
+        assert not api._user_requested_document_generation(content=content, previous_messages=[*history, declined])
+
+
+@pytest.mark.parametrize("save_request", ["dobre", "dobre, ulož dokument vo formáte PDF", "Save this document as PDF"])
+def test_confirmed_contract_reply_saves_exact_draft_and_serves_real_pdf(saved_case, monkeypatch, save_request):
+    client, headers, session, store = saved_case
+    preview = _message(session, CONTRACT_BODY + "\n\nMám pripraviť tento dokument vo formáte PDF?")
+    api._repository.add_message(preview)
+    # The accepted draft must not be rewritten by an LLM or sent to another workflow.
+    def unexpected_route(**kwargs):
+        raise AssertionError("Saving a confirmed draft must not invoke model routing")
+    monkeypatch.setattr(api, "_resolve_session_llm_route", unexpected_route)
+    response = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers, json={"content": save_request})
+    assert response.status_code == 200, response.text
+    ids = response.json()["generated_document_ids"]
+    assert len(ids) == 1
+    documents = [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    assert [doc.doc_id for doc in documents] == ids
+    url = f"/v1/cases/{session.case_id}/documents/{ids[0]}"
+    params = {"user_id": str(session.user_id)}
+    source = client.get(url, headers=headers, params=params)
+    assert source.status_code == 200
+    for line in CONTRACT_BODY.splitlines():
+        assert line in source.text
+    assert "Mám pripraviť" not in source.text
+    pdf = client.get(url + "/pdf", headers=headers, params=params)
+    assert pdf.status_code == 200
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
+    for expected in ["Test Firma", "Test Osoba", "3 200", "40 hodín", "dobu neurčitú"]:
+        assert expected in text
+    history = client.get(f"/v1/cases/{session.case_id}/history", headers=headers, params=params)
+    saved = next(doc for doc in history.json()["documents"] if doc["doc_id"] == ids[0])
+    assert saved["download_available"] is True
+    # A subsequent save acknowledgement returns the same persisted artifact.
+    retry = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers,
+                        json={"content": "uloz dokument vo formate PDF"})
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["generated_document_ids"] == ids
+
+
+def test_confirmed_structured_draft_takes_priority_over_visible_preview(saved_case):
+    _, _, session, _ = saved_case
+    content = CONTRACT_BODY.replace("3 200", "1 000") + "\nCASE_UPDATE_JSON: " + json.dumps({
+        "case": {"documents": [{"filename": "employment.pdf", "content": CONTRACT_BODY}]}
+    })
+    drafts = api._confirmed_document_drafts_for_storage("uloz dokument vo formate PDF", [_message(session, content)])
+    assert len(drafts) == 1
+    assert "3 200" in drafts[0].body
+    assert "1 000" not in drafts[0].body
+
+
+@pytest.mark.parametrize("save_request", [
+    "uloz dokument vo formate PDF, ale zmen mzdu na 4000 EUR",
+    "dobre, uprav miesto výkonu práce", "neukladaj dokument", "dokument",
+])
+def test_changed_or_unconfirmed_facts_do_not_save_old_draft(saved_case, save_request):
+    _, _, session, _ = saved_case
+    draft = _message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?")
+    assert not api._confirmed_document_drafts_for_storage(save_request, [draft])
+    changed = Message(session_id=session.id, role=MessageRole.USER, content="Zmen mzdu na 4000 EUR")
+    assert not api._confirmed_document_drafts_for_storage("uloz dokument vo formate PDF", [draft, changed])
+
+
+@pytest.mark.parametrize("failure", ["exception", "missing_id"])
+def test_confirmed_draft_storage_failure_and_retry_through_reply(saved_case, monkeypatch, failure):
+    client, headers, session, store = saved_case
+    api._repository.add_message(_message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?"))
+    original_add = store.add_case_document
+    def fail_generated(**kwargs):
+        if kwargs["kind"] == "generated_document":
+            if failure == "exception":
+                raise OSError("private-storage-details")
+            return ""
+        return original_add(**kwargs)
+    monkeypatch.setattr(api, "_get_store", lambda: store)
+    monkeypatch.setattr(store, "add_case_document", fail_generated)
+    failed = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers, json={"content": "dobre"})
+    assert failed.status_code == 503, failed.text
+    assert "private-storage-details" not in failed.text
+    assert not api._document_export_ready(api._repository.list_messages(session.id))
+    monkeypatch.setattr(store, "add_case_document", original_add)
+    retry = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers,
+                        json={"content": "uloz dokument vo formate PDF"})
+    assert retry.status_code == 200, retry.text
+    assert len(retry.json()["generated_document_ids"]) == 1
+
+
+@pytest.mark.parametrize("reply", [
+    "Dokončil som prípravu pracovnej zmluvy a vytvoril som PDF verziu dokumentu.",
+    "I have created the PDF document.", "The PDF document has been saved.",
+    "Ak potrebujete ďalšie úpravy, neváhajte sa opýtať.",
+])
+def test_explicit_save_without_content_reports_failure(saved_case, monkeypatch, reply):
+    _, _, session, _ = saved_case
+    api._repository.add_message(Message(session_id=session.id, role=MessageRole.USER,
+                                        content="uloz dokument vo formate PDF"))
+    monkeypatch.setattr(api, "_validate_lawyer_output_message", lambda **kwargs: kwargs["content"])
+    result = api._persist_direct_assistant_message(session_id=session.id, session=session,
+        content=reply, agent_name="Assistant", presentation={"renderer_id": "action_link", "data": {"href": "/app/assistant#"}})
+    assert result.generated_document_ids == []
+    assert "nepodarilo uložiť" in result.content
+    assert not api._document_export_ready([result])
+    assert result.presentation == {}
+
+
+def test_fake_download_does_not_save_a_historical_draft(saved_case):
+    _, _, session, store = saved_case
+    api._repository.add_message(_message(session, CONTRACT_BODY))
+    api._repository.add_message(Message(session_id=session.id, role=MessageRole.USER, content="Zmen mzdu na 4000 EUR"))
+    assert api._persist_generated_case_document_if_needed(
+        session=session, content="Dokument je pripravený na stiahnutie. [PDF](documents/invented.pdf)",
+    ) == []
+    assert not store.list_case_documents(case_id=session.case_id)
+
+
+@pytest.mark.parametrize("prompt", ["Prosím vysvetli formát PDF.", "Prosím skontroluj návrh PDF."])
+def test_pdf_explanation_or_review_is_not_a_failed_export(saved_case, prompt):
+    _, _, session, _ = saved_case
+    api._repository.add_message(Message(session_id=session.id, role=MessageRole.USER, content=prompt))
+    reply = "PDF zachováva rozloženie dokumentu. Návrh vyžaduje odbornú kontrolu."
+    assert api._attach_generated_case_document_references(
+        session=session, content=reply, doc_ids=[], generation_attempted=True,
+    ) == reply
+
+
+def test_api_draft_confirmation_storage_and_pdf_sequence(saved_case, monkeypatch):
+    client, headers, session, store = saved_case
+    model_calls = []
+    class DraftingModel:
+        system_prompt = "Synthetic drafting regression"
+        def respond(self, **kwargs):
+            model_calls.append(True)
+            return SimpleNamespace(content=CONTRACT_BODY + "\n\nMám pripraviť tento dokument vo formáte PDF?",
+                                   agent_name="Assistant")
+    monkeypatch.setattr("aijurisdictionagents.agents.create_lawyer_agent", lambda *args, **kwargs: DraftingModel())
+    monkeypatch.setattr(api, "build_mcp_law_context", lambda **kwargs: None)
+    monkeypatch.setattr(api, "route_primary_chat_workflow_turn", lambda **kwargs: SimpleNamespace(
+        workflow_run=None, decision=SimpleNamespace(route="generic", confidence=1, confidence_gap=1, evidence=[]),
+    ))
+    draft = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers,
+                        json={"content": "Priprav návrh pracovnej zmluvy vo formáte PDF. " + CONTRACT_BODY})
+    assert draft.status_code == 200, draft.text
+    assert draft.json()["generated_document_ids"] == []
+    assert not [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    confirmed = client.post(f"/v1/chat/sessions/{session.id}/reply", headers=headers, json={"content": "dobre"})
+    assert confirmed.status_code == 200, confirmed.text
+    assert len(model_calls) == 1
+    ids = confirmed.json()["generated_document_ids"]
+    assert len(ids) == 1
+    pdf = client.get(f"/v1/cases/{session.case_id}/documents/{ids[0]}/pdf", headers=headers,
+                     params={"user_id": str(session.user_id)})
+    assert pdf.status_code == 200
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf.content)).pages)
+    assert "3 200" in text and "Test Osoba" in text and "Mám pripraviť" not in text
+
+
+@pytest.mark.parametrize("fail_write", [False, True])
+def test_streamed_confirmation_reports_saved_id_or_storage_error(saved_case, monkeypatch, fail_write):
+    client, headers, session, store = saved_case
+    api._repository.add_message(_message(session, CONTRACT_BODY + "\nMám pripraviť tento dokument vo formáte PDF?"))
+    if fail_write:
+        original = store.add_case_document
+        def fail(**kwargs):
+            if kwargs["kind"] == "generated_document":
+                raise OSError("synthetic-private-detail")
+            return original(**kwargs)
+        monkeypatch.setattr(store, "add_case_document", fail)
+        monkeypatch.setattr(api, "_get_store", lambda: store)
+    response = client.post(f"/v1/chat/sessions/{session.id}/stream", headers=headers, json={
+        "instruction": "dobre", "documents": [], "question_timeout_seconds": 1,
+        "max_discussion_minutes": 1, "communication_minutes": 1,
+    })
+    assert response.status_code == 200
+    saved = [doc for doc in store.list_case_documents(case_id=session.case_id) if doc.kind == "generated_document"]
+    if fail_write:
+        assert saved == []
+        assert "document_generation_failed" in response.text
+        assert "synthetic-private-detail" not in response.text
+    else:
+        assert len(saved) == 1
+        assert saved[0].doc_id in response.text
