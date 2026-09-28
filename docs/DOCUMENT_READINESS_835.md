@@ -95,3 +95,44 @@ npx playwright test e2e/generated-document-download.spec.ts -g "placeholder down
 The original exported PDF and user account data are not committed. End-to-end
 regeneration remains a separate acceptance check: no link repair can create the
 missing saved contract or establish why generation did not persist its body.
+
+## Structured actions and confirmation regression (PR #837)
+
+`action_link` presentations now use the same safe link renderer and case-scoped
+stored-document policy as Markdown. A document action is clickable only when the
+viewer URL belongs to the active case and its ID is a generated document with
+available content. Placeholder targets, missing IDs, other-case targets and
+unavailable content show the localized unavailable notice and retry action.
+Retry is disabled while generation is running. Ordinary navigation and source
+citations remain usable, and unsafe URLs remain non-clickable.
+
+Minimal runnable checks:
+
+```powershell
+cd frontend/aijurisdictionfronend
+npm test -- --run src/__tests__/assistantMarkdown.test.tsx src/__tests__/assistantPresentationBlock.test.tsx
+npx playwright test e2e/generated-document-download.spec.ts --workers=1
+```
+
+The PDF scenarios additionally require Python with `pypdf` and `PyMuPDF` available
+(the existing `PYTHON` test-runtime override is supported). Browser regression
+covers a synthetic employment draft, `dobre`, successful storage or an initial
+storage failure and retry, the structured viewer action, and PDF download. It
+checks all expected employment terms, human-review wording, and one PDF page.
+Final-state screenshots, the downloaded PDF, first-page rendering and a sanitized
+manifest are retained under ignored frontend `test-results/`; remove them within
+seven days after review. No supplied case facts or account details are fixtures.
+
+These are deterministic browser tests with intercepted API responses, not final
+real-model E2E acceptance. The real local run must combine PR #837 and backend
+PR #844 with current migrations, seeded local PostgreSQL, API/MCP/frontend and
+the approved real model, following `docs/E2E_TEST_EVIDENCE_RULE.md`. On the current
+host it remains pending: the dedicated `E2E_AZURE_FOUNDRY_ENDPOINT`,
+`E2E_AZURE_FOUNDRY_API_VERSION`, `E2E_AZURE_FOUNDRY_DEPLOYMENT` and
+`AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` are missing, and SSH credential import is
+unavailable. Unit/browser successes do not substitute for that run or production
+regeneration of cases 08/09.
+
+This change introduces no new recipients, retention purpose or permission grant.
+The application still requires human review of legal drafts; test evidence uses
+synthetic identities only.

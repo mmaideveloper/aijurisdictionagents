@@ -1,10 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 
 const authUser = {
   userId: "user-e2e",
-  email: "marek@example.test",
-  name: "Marek Matonok"
+  email: "readiness@example.test",
+  name: "Synthetic Tester"
 };
 
 const apiCase = {
@@ -27,6 +28,10 @@ const generatedDocument = {
   processed_at: "2026-06-26T10:05:00Z",
   created_at: "2026-06-26T10:05:00Z"
 };
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (!page.isClosed()) await page.screenshot({ path: testInfo.outputPath("03-final-state.png"), fullPage: true });
+});
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/v1/cases?user_id=**", async (route) => {
@@ -239,5 +244,140 @@ for (const href of ["#", "/", "https://agent.jurisdigta.eu/app/assistant#", "/ap
     await expect(page.getByRole("button", { name: "Retry document generation", exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/app\/assistant$/);
     expect(context.pages()).toHaveLength(1);
+  });
+}
+
+const structuredAction = (href: string) => ({
+  schema_version: 1, renderer_id: "action_link", renderer_version: 1,
+  data: { href, label: "Stiahnuť pracovnú zmluvu" }, fallback_text: "Document action",
+  citations: [], notices: [], selection: {
+    policy_id: "synthetic-835", reason_code: "validated", explicit_user_request: false, model_proposal_accepted: true
+  }
+});
+
+for (const [name, href, documents] of [
+  ["placeholder", "/app/assistant#", []],
+  ["external PDF", "https://example.test/invented.pdf", []],
+  ["missing ID", "/app/documents/view?caseId=case-generated-doc&docId=missing", []],
+  ["other case", "/app/documents/view?caseId=other&docId=doc-generated-splnomocnenie", [generatedDocument]],
+  ["unavailable content", "/app/documents/view?caseId=case-generated-doc&docId=doc-generated-splnomocnenie", [{ ...generatedDocument, download_available: false }]]
+] as const) {
+  test(`structured download rejects ${name}`, async ({ page, context }) => {
+    await page.route("**/v1/cases/case-generated-doc/history?**", route => route.fulfill({ json: {
+      has_more: false, documents, messages: [{
+        communication_id: "structured-link", role: "assistant", agent_name: "Assistant",
+        content: "Document action", presentation: structuredAction(href), created_at: "2026-06-26T10:05:00Z"
+      }]
+    } }));
+    await page.goto("/app/assistant");
+    await page.locator(".case-item").filter({ hasText: apiCase.title }).click();
+    const block = page.locator('[data-renderer="action_link"]');
+    await expect(block.getByRole("link")).toHaveCount(0);
+    await expect(block.getByRole("status")).toContainText("The document is not ready for download.");
+    await expect(block.getByRole("button", { name: "Retry document generation" })).toBeVisible();
+    await expect(page).toHaveURL(/\/app\/assistant$/);
+    expect(context.pages()).toHaveLength(1);
+  });
+}
+
+const contractLines = [
+  "Pracovna zmluva", "Zamestnavatel: Synthetic Firma", "Zamestnanec: Synthetic Osoba",
+  "Druh prace: Vyvoj softveru", "Miesto vykonu prace: Kosice", "Nastup: 1. oktobra 2026",
+  "Mesacna mzda: 3 200 EUR brutto", "Pracovny cas: 40 hodin tyzdenne",
+  "Pracovny pomer na dobu neurcitu", "Podpis zamestnanca: __________",
+  "Draft for human review before signing."
+];
+
+// Deterministic transport fixture, not evidence of real backend generation.
+function contractPdf(): Buffer {
+  const stream = `BT /F1 12 Tf 50 790 Td 22 TL\n${contractLines.map(line => `(${line}) Tj T*`).join("\n")}\nET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => { offsets.push(Buffer.byteLength(pdf)); pdf += `${index + 1} 0 obj\n${object}\nendobj\n`; });
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf);
+}
+
+for (const failFirst of [false, true]) {
+  test(`employment draft confirmation reaches structured viewer and PDF${failFirst ? " after storage retry" : ""}`, async ({ page }, testInfo) => {
+    let attempts = 0;
+    let saved = false;
+    const href = "/app/documents/view?caseId=case-generated-doc&docId=doc-generated-splnomocnenie&kind=generated_document&filename=employment.pdf&userId=user-e2e";
+    const message = () => ({
+      communication_id: saved ? "stored" : "draft", role: "assistant", agent_name: "Assistant",
+      content: saved ? "Document action" : `${contractLines.join("\n")}\n\nMam pripravit tento dokument vo formate PDF?`,
+      ...(saved ? { presentation: structuredAction(href) } : {}), created_at: "2026-06-26T10:05:00Z"
+    });
+    await page.route("**/v1/cases/case-generated-doc/history?**", route => route.fulfill({ json: {
+      has_more: false, documents: saved ? [{ ...generatedDocument, original_filename: "employment.pdf", download_available: true }] : [],
+      messages: [message()]
+    } }));
+    await page.route("**/v1/chat/sessions", route => route.fulfill({ json: {
+      id: "employment-835", user_id: authUser.userId, case_id: apiCase.case_id, country: "SK", language: "en",
+      discussion_type: "advice", state: "active", created_at: "2026-06-26T10:04:00Z"
+    } }));
+    await page.route("**/v1/chat/sessions/employment-835/stream", route => {
+      attempts += 1;
+      const request = route.request().postDataJSON();
+      expect(request.instruction).toBeTruthy();
+      if (attempts === 1) expect(request.instruction).toBe("dobre");
+      saved = !failFirst || attempts > 1;
+      const events = saved
+        ? `event: message\ndata: ${JSON.stringify({ ...message(), id: "stored", session_id: "employment-835", generated_document_ids: [generatedDocument.doc_id] })}\n\nevent: done\ndata: {"session_id":"employment-835"}\n\n`
+        : 'event: error\ndata: {"code":"document_generation_failed","message":"The document could not be saved. Please retry document generation."}\n\n';
+      return route.fulfill({ contentType: "text/event-stream", body: events });
+    });
+    const pdfBytes = contractPdf();
+    await page.route("**/v1/cases/case-generated-doc/documents/doc-generated-splnomocnenie**", route => {
+      expect(saved).toBe(true);
+      const pdf = new URL(route.request().url()).pathname.endsWith("/pdf");
+      return route.fulfill({ contentType: pdf ? "application/pdf" : "text/plain", body: pdf ? pdfBytes : contractLines.join("\n") });
+    });
+    await page.goto("/app/assistant");
+    await page.locator(".case-item").filter({ hasText: apiCase.title }).click();
+    await expect(page.locator(".assistant-thread__viewport")).toContainText("3 200 EUR");
+    await expect(page.getByLabel("Generated documents")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Stiahnuť pracovnú zmluvu" })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("01-unpersisted-draft.png"), fullPage: true });
+    await page.getByLabel("Assistant message").fill("dobre");
+    await page.getByRole("button", { name: "Send message", exact: true }).click();
+    if (failFirst) {
+      await expect(page.getByText("The document could not be saved.", { exact: false })).toBeVisible();
+      await expect(page.getByLabel("Generated documents")).toHaveCount(0);
+      await page.screenshot({ path: testInfo.outputPath("02-storage-error.png"), fullPage: true });
+      await page.getByRole("button", { name: "Retry document generation", exact: true }).click();
+    }
+    const action = page.locator('[data-renderer="action_link"]').getByRole("link", { name: "Stiahnuť pracovnú zmluvu" });
+    await expect(action).toBeVisible();
+    await action.click();
+    await expect(page.locator(".document-viewer-page")).toBeVisible();
+    const save = page.getByRole("button", { name: /save|download/i }).first();
+    await expect(save).toBeEnabled();
+    const downloadEvent = page.waitForEvent("download");
+    await save.click();
+    const download = await downloadEvent;
+    const pdfPath = testInfo.outputPath("04-generated-document.pdf");
+    await download.saveAs(pdfPath);
+    expect((await readFile(pdfPath)).equals(pdfBytes)).toBe(true);
+    const script = "import fitz,json,sys; from pypdf import PdfReader; r=PdfReader(sys.argv[1]); d=fitz.open(sys.argv[1]); d[0].get_pixmap().save(sys.argv[2]); print(json.dumps({'pages':len(r.pages),'text':'\\n'.join(p.extract_text() for p in r.pages)}))";
+    const output = execFileSync(process.env.PYTHON || "python", ["-c", script, pdfPath, testInfo.outputPath("05-pdf-first-page.png")], { encoding: "utf8" });
+    const result = output.trim().split(/\r?\n/).findLast(line => line.startsWith("{"));
+    expect(result, "PDF validator must emit a result").toBeTruthy();
+    const parsed = JSON.parse(result!);
+    expect(parsed.pages).toBe(1);
+    for (const line of contractLines) expect(parsed.text).toContain(line);
+    expect(attempts).toBe(failFirst ? 2 : 1);
+    await writeFile(testInfo.outputPath("result-manifest.json"), JSON.stringify({
+      scenario: testInfo.title, syntheticOnly: true, validation: "mocked browser regression", realE2E: "pending",
+      provider: "fixture", model: "fixture", services: ["frontend"], savedDocumentId: generatedDocument.doc_id,
+      pdfPages: parsed.pages, expectedTextVerified: true, attempts, retention: "Delete within 7 days after review."
+    }, null, 2));
   });
 }

@@ -42,7 +42,7 @@ describe("generated document links", () => {
     return retry;
   };
 
-  it.each(["#", "/", "/app/assistant#", "https://agent.jurisdigta.eu/app/assistant#"])(
+  it.each(["#", "/", "/app/assistant#", "https://agent.jurisdigta.eu/app/assistant#", "https://example.test/invented.pdf"])(
     "blocks a placeholder download target %s without navigating", (href) => {
       const retry = renderWithPolicy(`[Stiahnuť pracovnú zmluvu](${href})`);
       expect(screen.queryAllByRole("link")).toHaveLength(0);

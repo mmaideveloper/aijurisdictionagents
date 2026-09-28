@@ -21,14 +21,12 @@ const linkText = (children: React.ReactNode): string => React.Children.toArray(c
 const isDocumentAction = (href: string, label: string): boolean => {
   const normalized = label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const downloadLabel = /stiahn|stahn|download|herunterlad/.test(normalized);
-  // Model-authored navigation links are not document downloads. Leave ordinary
-  // external source citations and non-download section anchors intact.
-  if (downloadLabel && (!href || href.startsWith("#") || href.startsWith("/"))) return true;
+  // A download label must not bypass storage verification by using an external
+  // host. Ordinary source citations and non-download section anchors stay usable.
+  if (downloadLabel) return true;
   try {
     const url = new URL(href, window.location.origin);
-    return url.pathname === "/app/documents/view" || /^\/v1\/cases\/[^/]+\/documents\//.test(url.pathname) ||
-      (downloadLabel && (url.origin === window.location.origin ||
-        /^\/(?:app(?:\/assistant|\/chat)?|auth)?\/?$/.test(url.pathname)));
+    return url.pathname === "/app/documents/view" || /^\/v1\/cases\/[^/]+\/documents\//.test(url.pathname);
   } catch {
     return downloadLabel;
   }
@@ -42,8 +40,21 @@ const safeHref = (url: string): string => {
   return allowed && !unsafe ? url : "";
 };
 
-export const AssistantMarkdown: React.FC<{ text: string }> = ({ text }) => {
+export const AssistantLink: React.FC<{ href: string; children: React.ReactNode; newTab?: boolean }> = ({ href, children, newTab = true }) => {
   const policy = React.useContext(AssistantDocumentLinkContext);
+  const safe = safeHref(href);
+  if (isDocumentAction(safe, linkText(children)) && !policy?.isAllowed(safe)) {
+    return policy ? <span role="status">
+      {policy.unavailableLabel}{" "}
+      <button type="button" className="button ghost" disabled={policy.retryDisabled} onClick={policy.onRetry}>
+        {policy.retryLabel}
+      </button>
+    </span> : <span>{children}</span>;
+  }
+  return safe ? <a href={safe} target={newTab ? "_blank" : undefined} rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
+};
+
+export const AssistantMarkdown: React.FC<{ text: string }> = ({ text }) => {
   return (
   <div className="assistant-markdown">
     <Markdown
@@ -52,17 +63,7 @@ export const AssistantMarkdown: React.FC<{ text: string }> = ({ text }) => {
       disallowedElements={["img", "input"]}
       urlTransform={safeHref}
       components={{
-        a: ({ href, children }) => {
-          if (isDocumentAction(href ?? "", linkText(children)) && !policy?.isAllowed(href ?? "")) {
-            return policy ? <span role="status">
-              {policy.unavailableLabel}{" "}
-              <button type="button" className="button ghost" disabled={policy.retryDisabled} onClick={policy.onRetry}>
-                {policy.retryLabel}
-              </button>
-            </span> : <span>{children}</span>;
-          }
-          return href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
-        },
+        a: ({ href, children }) => <AssistantLink href={href ?? ""}>{children}</AssistantLink>,
         table: ({ children }) => <div className="assistant-presentation__table-scroll"><table>{children}</table></div>
       }}
     >

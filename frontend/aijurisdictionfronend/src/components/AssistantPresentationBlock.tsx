@@ -1,5 +1,5 @@
 import React from "react";
-import { AssistantMarkdown } from "./AssistantMarkdown";
+import { AssistantLink, AssistantMarkdown } from "./AssistantMarkdown";
 import { LegalDocumentPreview } from "./LegalDocumentPreview";
 import { useLanguage } from "./LanguageProvider";
 import { displayValue, type PresentationBlock } from "../presentation";
@@ -83,7 +83,7 @@ export const AssistantPresentationBlock: React.FC<{ block: PresentationBlock }> 
       break;
     case "action_link": {
       const href = text(data.href);
-      body = href.startsWith("/app/") ? <a href={href}>{text(data.label, "Open")}</a> : <p>{block.fallback_text}</p>;
+      body = <AssistantLink href={href} newTab={false}>{text(data.label, block.fallback_text || "Open")}</AssistantLink>;
       break;
     }
     case "result_card":
