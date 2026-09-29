@@ -208,3 +208,46 @@ synthetic E2E exception flag remains restricted to loopback test databases; it i
 not a production configuration tool. All other release checks and provider/
 retention review remain applicable. The API Docker build passed in GitHub CI for
 45c56c0, resolving the earlier local certificate-trust build blocker there.
+
+## Production EU route (2026-09-29)
+
+At the owner's request, production now registers `azure_speech_sts_eu` as
+**Azure Speech EU (West Europe)**, with profile
+`azure_speech_sts_eu:speech-sk-SK`. Its API key is encrypted in the existing
+model credential store; it is never sent to the frontend. The default
+`speech_transcription` policies for `free`, `case`, `basic` and `premium` select
+this profile, require explicit external-processing consent and EU eligibility,
+and disable automatic fallback. The previous `eastus2` provider remains
+registered but is not selected by these policies. Existing per-case overrides
+were not changed.
+
+The owner-provided Foundry project is
+`https://sts-eu-resource.services.ai.azure.com/api/projects/sts-eu`.
+This is project metadata, not the streaming Speech endpoint. The deployed
+adapter derives the Speech endpoint from `region=westeurope` and the encrypted
+key. Provider endpoint metadata is `https://westeurope.stt.speech.microsoft.com`.
+This configuration change required no application deployment; it does not
+complete the configurable-adapter/admin work tracked in #831.
+
+Real synthetic Slovak audio passed through the public production WebSocket:
+the isolated EU-profile test produced 23 partial events; a fresh case without
+an override produced 24 partial events. Both produced four final segments and
+24 words with normalized word error rate 0.0. Stop, cancellation, disconnect
+audits and absence of automatic chat submission were verified. These are
+production STT smoke tests, not replacement evidence for local full-stack E2E
+or native-device acceptance. Provider terms/retention review remains separate
+from a successful regional Speech test.
+
+Production browser smoke `speech-eu-browser-bfab5b1baf226` also passed through
+the actual frontend, microphone capture and backend Speech adapter: EU profile
+confirmed, four visible transcript lines, 23 partial events, normalized word
+error rate 0.0, microphone activity/Stop/off state verified, and editable review
+without automatic Send. Screenshots cover consent, recording and stopped review
+under `runs/eu-speech-831/browser/`. This STT-only check did not submit a chat
+message. On Windows, Node used `NODE_USE_SYSTEM_CA=1` to trust the system CA
+store; TLS verification remained enabled.
+
+Sanitized evidence lives under ignored `runs/eu-speech-831/` with seven-day
+retention. Synthetic cases are soft-deleted, accounts disabled, device tokens
+revoked, and the isolated test override removed. The existing minimal runnable
+example remains `python examples/streaming_stt_demo.py`.
