@@ -238,7 +238,7 @@ production STT smoke tests, not replacement evidence for local full-stack E2E
 or native-device acceptance. Provider terms/retention review remains separate
 from a successful regional Speech test.
 
-Production browser smoke `speech-eu-browser-bfab5b1baf226` also passed through
+Production browser smoke `speech-eu-browser-bfab5bbaf226` also passed through
 the actual frontend, microphone capture and backend Speech adapter: EU profile
 confirmed, four visible transcript lines, 23 partial events, normalized word
 error rate 0.0, microphone activity/Stop/off state verified, and editable review
