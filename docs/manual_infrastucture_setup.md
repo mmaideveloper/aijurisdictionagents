@@ -1021,6 +1021,43 @@ not a production configuration tool. All other release checks and provider/
 retention review remain applicable. The API Docker build passed in GitHub CI for
 45c56c0, resolving the earlier local certificate-trust build blocker there.
 
+## Production EU Speech configuration (2026-09-29, #831)
+
+Production operator: the repository service administrator, with the resource
+owner responsible for Azure access, processor terms and retention settings.
+The owner supplied the `sts-eu` Foundry project on resource `sts-eu-resource`.
+Its key authenticated successfully against West Europe Speech and is stored
+encrypted under provider `azure_speech_sts_eu`, credential `production-eu`.
+No new environment variable or GitHub Environment secret is required: the
+running API reads the existing encrypted model credential store.
+
+For replacement/rotation, use the approved production model administration
+credential path, preserving the existing credential-encryption key source.
+Never paste a key into source, issue comments, browser configuration or logs.
+Register provider type `azure_speech`, region `westeurope`, data zone `EU`,
+endpoint metadata `https://westeurope.stt.speech.microsoft.com`, and enabled
+streaming profile `azure_speech_sts_eu:speech-sk-SK`. The deployed adapter uses
+key plus region; do not substitute a Foundry project URL as its Speech endpoint.
+Keep test and production credentials distinct; development env synchronization
+continues through the authoritative encrypted profile tooling.
+
+Validate regional authentication and an isolated synthetic Slovak streaming
+case before changing defaults. Then select the EU profile in existing
+`speech_transcription` policies for `free`, `case`, `basic`, `premium`, preserving
+other policy fields and requiring consent/EU eligibility with no automatic
+fallback. Verify a fresh case without an override through the public route and
+WebSocket endpoints; record sanitized route IDs, partial/final counts and
+transcript accuracy. Audit changes without secret values. Remove test overrides,
+soft-delete synthetic cases, disable accounts, revoke device tokens and delete
+local evidence within seven days. The 2026-09-29 isolated and default-route
+checks passed; see `docs/STREAMING_STT.md`.
+
+Rollback: disable the affected speech policies/profile and leave typed chat
+available. The old non-EU provider is retained for operator reference; do not
+silently restore it or relax EU eligibility. Restoring non-EU processing needs
+an explicit owner decision. Application code/image changes still require the
+normal exact-commit production build gates.
+
 ## Laws tests production (#840)
 
 Initial preview authorization (2026-09-27): import `seeds/preview.sql` only into an empty
