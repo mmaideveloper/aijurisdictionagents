@@ -20,6 +20,9 @@ def is_status_only_document(content: str) -> bool:
         r"(?:dokument|document|export|pdf|balik).{0,100}(?:pripraven|ready|bereit)|"
         r"(?:pripravim|vygenerujem|i will (?:prepare|generate)).{0,80}(?:dokument|zmluv|document|contract)|"
         r"please wait|chvilu.*(?:prosim|trva)|dokument sa nepodarilo ulozit|document could not be saved"
+        r"|(?:vytvoril|vygeneroval|ulozil)\w*\s+(?:som\s+)?.{0,80}(?:pdf|dokument|zmluv)"
+        r"|(?:created|saved|generated).{0,80}(?:pdf|document|contract)"
+        r"|(?:pdf|document|contract).{0,40}(?:has been|was)\s+(?:created|saved|generated)"
     )
     if not re.search(status_pattern, " ".join(normalized.split())):
         return False
