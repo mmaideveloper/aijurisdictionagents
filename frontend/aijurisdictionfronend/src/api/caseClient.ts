@@ -171,6 +171,28 @@ export const listCases = async (userId: string): Promise<ApiCase[]> => {
   });
 };
 
+/** Restore only the support reference, without fetching protected debug payloads. */
+export const fetchLatestCaseCorrelationId = async (
+  caseId: string,
+  userId: string,
+  signal?: AbortSignal
+): Promise<string> => {
+  const config = chatApiRuntimeConfig();
+  const query = new URLSearchParams({ user_id: userId });
+  try {
+    const diagnostics = await requestJson<{ case_id: string; correlation_id?: string }>(
+      `/v1/cases/${encodeURIComponent(caseId)}/diagnostics?${query}`,
+      { method: "GET", headers: { "x-api-key": config.apiKey }, signal }
+    );
+    return diagnostics.case_id === caseId
+      ? diagnostics.correlation_id?.trim() || ""
+      : "";
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return "";
+    throw error;
+  }
+};
+
 export const createApiCase = async (input: CreateApiCaseInput): Promise<ApiCase> => {
   const config = chatApiRuntimeConfig();
   return requestJson<ApiCase>("/v1/cases", {

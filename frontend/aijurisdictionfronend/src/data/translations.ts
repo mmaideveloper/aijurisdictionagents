@@ -248,7 +248,7 @@ export const translations = {
       "If something goes wrong, copy this correlation ID and share it with support so the matching trace can be found.",
     diagnosticsClose: "Close diagnostics",
     diagnosticsUnavailableValue: "Not available yet",
-    diagnosticsUnavailableHint: "The correlation ID will be available after you send your first message.",
+    diagnosticsUnavailableHint: "No correlation ID is available for this case. A new chat request creates one; older messages may not have a saved reference.",
     diagnosticsCopySuccess: "Correlation ID copied to the clipboard.",
     diagnosticsCopyFailed: "The ID could not be copied. Select it above and copy it manually.",
     diagnosticsPrivacyNotice:
@@ -1179,7 +1179,7 @@ export const translations = {
       "Ak sa vyskytne problém, skopírujte toto ID korelácie a poskytnite ho podpore, aby mohla nájsť príslušnú diagnostickú stopu.",
     diagnosticsClose: "Zavrieť diagnostiku",
     diagnosticsUnavailableValue: "Zatiaľ nie je dostupné",
-    diagnosticsUnavailableHint: "ID korelácie bude dostupné po odoslaní prvej správy.",
+    diagnosticsUnavailableHint: "Pre tento prípad nie je dostupné ID korelácie. Nová požiadavka v chate ho vytvorí; staršie správy nemusia mať uloženú referenciu.",
     diagnosticsCopySuccess: "ID korelácie bolo skopírované do schránky.",
     diagnosticsCopyFailed: "ID sa nepodarilo skopírovať. Označte ho vyššie a skopírujte ho manuálne.",
     diagnosticsPrivacyNotice:
@@ -2110,7 +2110,7 @@ export const translations = {
       "Falls ein Problem auftritt, kopieren Sie diese Korrelations-ID und teilen Sie sie dem Support mit, damit die passende Diagnosespur gefunden werden kann.",
     diagnosticsClose: "Diagnose schließen",
     diagnosticsUnavailableValue: "Noch nicht verfügbar",
-    diagnosticsUnavailableHint: "Die Korrelations-ID ist verfügbar, nachdem Sie Ihre erste Nachricht gesendet haben.",
+    diagnosticsUnavailableHint: "Für diesen Fall ist keine Korrelations-ID verfügbar. Eine neue Chat-Anfrage erstellt eine; ältere Nachrichten haben möglicherweise keine gespeicherte Referenz.",
     diagnosticsCopySuccess: "Die Korrelations-ID wurde in die Zwischenablage kopiert.",
     diagnosticsCopyFailed: "Die ID konnte nicht kopiert werden. Markieren Sie sie oben und kopieren Sie sie manuell.",
     diagnosticsPrivacyNotice:

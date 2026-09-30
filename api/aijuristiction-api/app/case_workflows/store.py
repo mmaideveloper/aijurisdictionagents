@@ -593,6 +593,30 @@ class CaseWorkflowStore:
             )
             conn.commit()
 
+    def latest_case_correlation_id(self, *, case_id: str, user_id: str) -> str:
+        """Return only an unexpired session reference, including ordinary chat sessions."""
+        if self._is_postgres:
+            case_field = "payload_json::jsonb #>> '{session,case_id}'"
+            user_field = "payload_json::jsonb #>> '{session,user_id}'"
+        else:
+            case_field = "json_extract(payload_json, '$.session.case_id')"
+            user_field = "json_extract(payload_json, '$.session.user_id')"
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            conn.execute(self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"), (now,))
+            row = conn.execute(
+                self._sql(
+                    "SELECT correlation_id FROM session_debug_events "
+                    "WHERE component = 'chat' AND stage = 'session_created' "
+                    f"AND {case_field} = ? AND {user_field} = ? "
+                    "AND expires_at > ? AND correlation_id <> '' "
+                    "ORDER BY created_at DESC, event_id DESC LIMIT 1"
+                ),
+                (case_id, user_id, now),
+            ).fetchone()
+            conn.commit()
+        return str(_row(row)["correlation_id"]) if row is not None else ""
+
     def list_debug_events(self, *, correlation_id: str, limit: int = 1000) -> list[dict[str, Any]]:
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:

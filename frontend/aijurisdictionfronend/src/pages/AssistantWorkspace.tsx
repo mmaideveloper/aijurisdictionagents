@@ -23,7 +23,7 @@ import {
   fetchSelectableModelProfiles,
   streamSession
 } from "../api/chatClient";
-import { createSessionCorrelationId, setActiveSessionCorrelationId } from "../api/correlation";
+import { createSessionCorrelationId } from "../api/correlation";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
@@ -36,6 +36,7 @@ import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInter
 import { isCaseRoleAvailable } from "../state/caseRoles";
 import { AI_ORCHESTRATOR_AGENT_LABEL, normalizeAssistantPresentationText } from "../utils/assistantPresentation";
 import { caseThreadKey } from "./assistantWorkspaceUtils";
+import { useCaseCorrelationId } from "./useCaseCorrelationId";
 
 type AdapterRunOptions = Parameters<ChatModelAdapter["run"]>[0];
 const EMPTY_CASE_CITATIONS: CaseCitation[] = [];
@@ -656,13 +657,6 @@ const AssistantThread: React.FC<{
   }, [activeCaseId]);
   const sessionRef = React.useRef<{ language: string; userId?: string; caseId?: string; sessionId: string; correlationId: string } | null>(
     null
-  );
-  React.useEffect(
-    () => () => {
-      setActiveSessionCorrelationId("");
-      onCorrelationIdChange("");
-    },
-    [onCorrelationIdChange]
   );
 
   const assistantMessages = React.useMemo<ThreadMessageLike[]>(
@@ -1310,11 +1304,11 @@ const AssistantWorkspace: React.FC = () => {
     isAuthenticated ? pendingModelLabel : fallbackModelLabel
   );
   const [selectedModelProfileId, setSelectedModelProfileId] = React.useState("");
-  const [correlationId, setCorrelationId] = React.useState("");
+  const { correlationId, setCorrelationId: handleCorrelationIdChange } = useCaseCorrelationId(
+    isAuthenticated ? user?.userId : undefined,
+    activeCase?.id
+  );
   const [speechState, setSpeechState] = React.useState("idle");
-  const handleCorrelationIdChange = React.useCallback((nextCorrelationId: string) => {
-    setCorrelationId(nextCorrelationId);
-  }, []);
   const [selectableProfiles, setSelectableProfiles] = React.useState<
     { model_profile_id: string; label: string; is_external: boolean; is_local: boolean }[]
   >([]);
