@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import AssistantWorkspace, { parseAssistantMessagePresentation } from "../pages/AssistantWorkspace";
 import { caseThreadKey } from "../pages/assistantWorkspaceUtils";
+import { fetchLatestCaseCorrelationId } from "../api/caseClient";
 import { ApiRequestError, createChatSession, fetchEffectiveModelRoute, fetchSelectableModelProfiles, streamSession } from "../api/chatClient";
 
 const labels: Record<string, string> = {
@@ -56,7 +57,7 @@ const labels: Record<string, string> = {
   diagnosticsDescription: "Copy this correlation ID and share it with support.",
   diagnosticsClose: "Close diagnostics",
   diagnosticsUnavailableValue: "Not available yet",
-  diagnosticsUnavailableHint: "The correlation ID will be available after you send your first message.",
+  diagnosticsUnavailableHint: "No correlation ID is available for this case. A new chat request creates one; older messages may not have a saved reference.",
   diagnosticsCopySuccess: "Correlation ID copied to the clipboard.",
   diagnosticsCopyFailed: "The ID could not be copied. Select it above and copy it manually.",
   diagnosticsPrivacyNotice: "Share only this ID for troubleshooting.",
@@ -115,6 +116,7 @@ vi.mock("../auth/webAuth", () => ({
 }));
 
 const caseActions = vi.hoisted(() => ({
+  historyRevision: "",
   setCaseRole: vi.fn(),
   setCaseCommunicationMode: vi.fn(),
   loadCaseData: vi.fn(),
@@ -143,7 +145,7 @@ vi.mock("../state/CaseProvider", () => ({
         {
           id: "interaction-2",
           actor: "AI Lawyer",
-          message: "Existing assistant answer",
+          message: "Existing assistant answer" + caseActions.historyRevision,
           createdAt: "2026-06-20T00:00:01Z"
         }
       ],
@@ -169,6 +171,8 @@ vi.mock("../api/chatClient", async () => {
     streamSession: vi.fn()
   };
 });
+
+vi.mock("../api/caseClient", () => ({ fetchLatestCaseCorrelationId: vi.fn() }));
 
 type CapturedRunResult = { content?: readonly { type: string; text?: string }[] };
 
@@ -256,6 +260,8 @@ it("invalidates a hydrated case thread when an existing message gains presentati
 
 describe("AssistantWorkspace", () => {
   beforeEach(() => {
+    caseActions.historyRevision = "";
+    vi.mocked(fetchLatestCaseCorrelationId).mockReset().mockResolvedValue("");
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: { writeText: clipboardWriteText }
@@ -598,14 +604,14 @@ describe("AssistantWorkspace", () => {
     expect(screen.getAllByText("Coming later")).toHaveLength(2);
   });
 
-  it("opens diagnostics and explains that the ID is created after the first message", () => {
+  it("opens diagnostics and explains that historical references can be unavailable", () => {
     render(<AssistantWorkspace />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open diagnostics" }));
 
     expect(screen.getByRole("dialog", { name: "Diagnostics" })).toBeDefined();
     expect(screen.getByText("Not available yet")).toBeDefined();
-    expect(screen.getByText("The correlation ID will be available after you send your first message.")).toBeDefined();
+    expect(screen.getByText("No correlation ID is available for this case. A new chat request creates one; older messages may not have a saved reference.")).toBeDefined();
     expect((screen.getByRole("button", { name: "Copy ID" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole("dialog", { name: "Diagnostics" }).querySelector('a[href^="mailto:"]')).toBeNull();
 
@@ -678,7 +684,7 @@ describe("AssistantWorkspace", () => {
       };
     });
 
-    render(<AssistantWorkspace />);
+    const { rerender } = render(<AssistantWorkspace />);
 
     const result = capturedAdapter?.run({
       messages: [
@@ -715,6 +721,10 @@ describe("AssistantWorkspace", () => {
       signal: expect.any(AbortSignal),
       correlationId: "corr-visible-303"
     });
+    // Persisted history changes the thread key and remounts AssistantThread.
+    // The support reference must survive that normal completion path.
+    caseActions.historyRevision = " with newly persisted answer";
+    rerender(<AssistantWorkspace />);
     fireEvent.click(screen.getByRole("button", { name: "Open diagnostics" }));
     expect(screen.getByRole("dialog", { name: "Diagnostics" }).textContent).toContain("corr-visible-303");
     fireEvent.click(screen.getByRole("button", { name: "Copy ID" }));

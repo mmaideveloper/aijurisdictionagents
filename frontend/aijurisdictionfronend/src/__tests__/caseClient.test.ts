@@ -7,6 +7,7 @@ import {
   fetchCaseDocumentBlob,
   fetchCaseExportBlob
 } from "../api/caseClient";
+import { fetchLatestCaseCorrelationId } from "../api/caseClient";
 
 vi.mock("../logging/consoleLogger", () => ({
   consoleLogger: {
@@ -17,6 +18,32 @@ vi.mock("../logging/consoleLogger", () => ({
 }));
 
 describe("caseClient", () => {
+  it("loads the saved correlation ID for the requested case and owner", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      case_id: "case/a", user_id: "user+a", correlation_id: " saved-reference "
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    const signal = new AbortController().signal;
+    await expect(fetchLatestCaseCorrelationId("case/a", "user+a", signal)).resolves.toBe("saved-reference");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/cases/case%2Fa/diagnostics?user_id=user%2Ba"),
+      expect.objectContaining({ signal, headers: expect.objectContaining({ "x-api-key": "aijuris" }) })
+    );
+  });
+
+  it.each([
+    { case_id: "other-case", user_id: "user-a", correlation_id: "wrong" },
+    { case_id: "case-a", user_id: "user-a" }
+  ])("does not expose a mismatched or missing reference: %j", async (payload) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
+    await expect(fetchLatestCaseCorrelationId("case-a", "user-a")).resolves.toBe("");
+  });
+
+  it("treats missing historical references as unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"detail":"Case not found"}', { status: 404 })));
+    await expect(fetchLatestCaseCorrelationId("case-a", "user-a")).resolves.toBe("");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

@@ -6,6 +6,43 @@ message creates a session, the user can open **Diagnostics** beside **Configurat
 and copy the ID. A fresh `x-request-id` identifies each HTTP or downstream operation while
 `x-parent-request-id` links child calls.
 
+The support reference belongs to the selected case in the workspace, so refreshing persisted
+message history does not clear it when the chat component remounts. On reopening a case, the
+frontend calls `GET /v1/cases/{case_id}/diagnostics?user_id={user_id}`. This uses the existing
+case access check and returns only `case_id` and `correlation_id`, never debug payloads.
+The lookup selects the latest unexpired `chat/session_created` event for that case and owner;
+ordinary chat does not need a dedicated workflow run. Expired events are purged using the same
+seven-day retention as admin debug lookup. Missing references return an empty ID.
+
+A new live chat ID takes precedence over a delayed restoration response. Changing case or
+account clears the visible reference immediately and ignores responses from the previous
+selection. No diagnostic reference is added to local/session storage. Historical sessions
+without retained diagnostic events cannot be recovered by this lookup; the localized empty
+state now explains this. An ID is a session reference, not a permanent case identifier.
+
+Issue #848 minimal regression verification from the repository root:
+
+```powershell
+cd frontend/aijurisdictionfronend
+npm ci
+npm test -- --run src/__tests__/caseCorrelationId.test.tsx src/__tests__/assistantWorkspace.test.tsx src/__tests__/caseClient.test.ts
+```
+
+API verification from the repository root:
+
+```powershell
+.\conda\python.exe -m pytest api/aijuristiction-api/tests/test_case_diagnostics.py -q
+.\scripts\validate_api.ps1
+```
+
+Real local acceptance must additionally follow `docs/E2E_TEST_EVIDENCE_RULE.md`: use a unique
+synthetic case, local PostgreSQL/API/MCP and the configured real model, send an ordinary chat
+question, compare Diagnostics with the session response after history refresh, reload and
+compare again, then switch to an empty case and verify no previous ID appears. Capture the
+final dialog and a sanitized provider/model/service/run manifest under ignored `artifacts/`
+or `runs/`, remove synthetic case records, and delete evidence within seven days. Unit tests
+and a production build do not substitute for that real-model E2E acceptance.
+
 The same correlation context is restored in streaming worker threads and propagated through:
 
 - API requests and correlated error responses;

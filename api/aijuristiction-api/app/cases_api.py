@@ -30,6 +30,7 @@ from app.chat.api import (
     _user_visible_text,
 )
 from app.document_content import is_status_only_document
+from app.case_workflows.store import CaseWorkflowStore
 from app.security import require_api_key
 
 from aijurisdictionagents.api_db import (
@@ -134,6 +135,11 @@ class CaseHistoryResponse(BaseModel):
     has_more: bool
     documents: list[CaseDocumentResponse]
     citations: list[CaseCitationResponse] = Field(default_factory=list)
+
+
+class CaseDiagnosticsResponse(BaseModel):
+    case_id: str
+    correlation_id: str
 
 
 class CaseCitationsResponse(BaseModel):
@@ -315,6 +321,26 @@ def delete_case(case_id: str, user_id: str, store: ApiDatabaseStore = Depends(ge
         )
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+def get_case_diagnostics_store() -> CaseWorkflowStore:
+    from app.case_workflows.service import get_case_workflow_service
+
+    return get_case_workflow_service().store
+
+
+@router.get('/{case_id}/diagnostics', response_model=CaseDiagnosticsResponse)
+def get_case_diagnostics(
+    case_id: str,
+    user_id: str,
+    store: ApiDatabaseStore = Depends(get_store),
+    diagnostics: CaseWorkflowStore = Depends(get_case_diagnostics_store),
+) -> CaseDiagnosticsResponse:
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    return CaseDiagnosticsResponse(
+        case_id=case_id,
+        correlation_id=diagnostics.latest_case_correlation_id(case_id=case_id, user_id=user_id),
+    )
 
 
 @router.get('/{case_id}/history', response_model=CaseHistoryResponse)
