@@ -171,12 +171,12 @@ test('production MCP law grounding is preserved through the configured real mode
       await expect(completedAssistantMessage).toContainText(scenario.law.identifier, {
         timeout: timeoutMs,
       });
-      await expect(page.locator('.assistant-tool-panel')).toContainText(
-        /JurisDigta (?:MCP|laws collector)/i,
-        {
-          timeout: timeoutMs,
-        },
-      );
+      const lawLink = page.locator('.assistant-tool-panel').getByRole('link', {
+        name: new RegExp(escapeRegex(scenario.law.identifier)),
+      });
+      await expect(lawLink).toBeVisible({ timeout: timeoutMs });
+      await expect(lawLink).toHaveAttribute('href', /^\/sources\/[^/]+\/[^/]+$/);
+      await expect(lawLink).toHaveAttribute('target', '_blank');
 
       const historyResponse = await request.get(
         `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/history?user_id=${encodeURIComponent(userId)}&limit=20`,
@@ -356,10 +356,14 @@ test('production remains stable when a synthetic case requests the latest five l
     await page.locator('.assistant-composer__send').click();
     const assistantMessage = page.locator('.assistant-message').last();
     await expect(assistantMessage).toContainText(/zákon|zakon/i, { timeout: timeoutMs });
-    await expect(page.locator('.assistant-tool-panel')).toContainText(
-      /JurisDigta (?:MCP|laws collector)/i,
-      { timeout: timeoutMs },
-    );
+    for (const source of latestSources) {
+      const lawLink = page.locator('.assistant-tool-panel').getByRole('link', {
+        name: new RegExp(escapeRegex(source.identifier)),
+      });
+      await expect(lawLink).toBeVisible({ timeout: timeoutMs });
+      await expect(lawLink).toHaveAttribute('href', /^\/sources\/[^/]+\/[^/]+$/);
+      await expect(lawLink).toHaveAttribute('target', '_blank');
+    }
 
     const historyResponse = await request.get(
       `${apiBaseUrl}/v1/cases/${encodeURIComponent(caseId)}/history?user_id=${encodeURIComponent(userId)}&limit=20`,

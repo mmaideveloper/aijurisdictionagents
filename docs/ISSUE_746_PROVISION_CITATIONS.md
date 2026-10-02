@@ -81,3 +81,9 @@ storage and retained evidence within seven days per `docs/E2E_TEST_EVIDENCE_RULE
 
 The local acceptance spec skips when its private bootstrap is absent, so ordinary
 CI browser regressions cannot accidentally call a real model or claim real acceptance.
+
+The mandatory production MCP-law scenarios assert visible law links opening the
+authenticated full-law route in a new tab. Internal retrieval-tool names belong in
+persisted audit metadata, not sidebar display assertions. The scenarios still require
+direct MCP source identity, official source URL, all five latest-law sources, and the
+configured real model without fallback.
