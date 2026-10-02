@@ -20,8 +20,9 @@ playback, and #827 tracks Phase 2 browser-local STT evaluation.
    parameters are `{"capability":"speech_to_text","streaming":true,
    "locales":"sk-SK,en-US,de-DE"}`. Mark EU capability only after verifying the
    actual deployment. Token pricing is not speech pricing.
-6. Add exact `speech_transcription` policies separately for `free` and paid plan
-   codes. Select the external speech profile, allow external processing, require
+6. Add exact `speech_transcription` policies separately for every supported plan,
+   including `free`, `case`, `basic`, `premium` and `unlimited`. Recheck coverage
+   when adding plans. Select the external speech profile, allow external processing, require
    acknowledgement and EU routing where applicable. Disable implicit fallback.
    Speech fails closed on a positive token-based cost budget; duration-based
    billing/caps need a separately implemented policy before such budgets are used.
@@ -251,3 +252,36 @@ Sanitized evidence lives under ignored `runs/eu-speech-831/` with seven-day
 retention. Synthetic cases are soft-deleted, accounts disabled, device tokens
 revoked, and the isolated test override removed. The existing minimal runnable
 example remains `python examples/streaming_stt_demo.py`.
+
+## Missing unlimited route repaired (2026-09-30, #846)
+
+Production returned HTTP 409 before microphone consent for a new case on the
+`unlimited` plan. The four existing speech policies did not match that plan;
+the resolver selected a generic `default` chat policy and correctly rejected it.
+Signing in again cannot repair this configuration gap.
+
+Added `speech_transcription:unlimited:default` using the existing premium
+policy's West Europe profile. External acknowledgement and EU eligibility remain
+required, automatic fallback remains disabled, and the token cost budget remains
+zero as required by the speech adapter. The insert and maintenance audit event
+(`stt-unlimited-846`) were committed atomically. No image deployment was needed.
+
+The deployed API's `speech_route` check now succeeds for the previously failing
+case, selecting `westeurope` and supporting `sk-SK`, `en-US`, and `de-DE`.
+This is route-resolution verification, not a new audio or full-stack E2E pass.
+No customer audio, transcript, credential, or case content was copied into evidence.
+
+Minimal read-only operator example, in an authenticated production PostgreSQL
+session (do not put connection secrets in shell arguments):
+
+```sql
+SELECT plan_code, enabled, require_external_ack, require_eu_data_zone
+FROM ai_task_route_policies
+WHERE task_type = 'speech_transcription' AND deleted_at IS NULL
+ORDER BY plan_code;
+```
+
+Expect an enabled policy for each supported plan. Also check its selected profile,
+provider and any group-specific or per-case override. Roll back this repair by
+disabling only `speech_transcription:unlimited:default` through model administration;
+typed chat remains available. Never roll back by selecting the old non-EU route.
