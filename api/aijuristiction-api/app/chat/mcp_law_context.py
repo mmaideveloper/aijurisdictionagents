@@ -376,7 +376,14 @@ def _build_laws_only_context(
         court_decisions=[],
         fallback_records=[],
     )
-    evidence = provision_evidence(law_texts)
+    latest_summary_listing = (
+        search_arguments.get("sort") == "latest"
+        and search_arguments.get("include_summaries") is True
+        and int(search_arguments.get("limit") or 1) > 1
+    )
+    # A discovery list is grounded in metadata for every returned law. Provision
+    # evidence from the bounded text subset must not replace those source identities.
+    evidence = [] if latest_summary_listing else provision_evidence(law_texts)
     document = CoreDocument(
         doc_id="internal-mcp-law-context",
         path="internal-mcp-law-context.txt",
@@ -385,11 +392,7 @@ def _build_laws_only_context(
         ),
     )
     grounded_latest_laws_reply = None
-    if (
-        search_arguments.get("sort") == "latest"
-        and search_arguments.get("include_summaries") is True
-        and int(search_arguments.get("limit") or 1) > 1
-    ):
+    if latest_summary_listing:
         grounded_latest_laws_reply = _grounded_latest_laws_reply(
             laws=laws,
             language=language,
