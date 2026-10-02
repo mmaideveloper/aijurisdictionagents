@@ -71,7 +71,9 @@ npx playwright test e2e/issue-746-real-citations.spec.ts --output=../../runs/e2e
 The real browser creates a synthetic case, asks
 `Ake skupiny zbrani definuje zakon, strucne popis?`, verifies Act 190/2003 and categories
 A–D against §§4–7, checks persisted associations and actual model routing, opens the
-full law in a new tab, and reloads the conversation. The service runner first checks
+full law in a new tab, and reloads the conversation. The category-to-provision assertion
+accepts bullets or table rows and requires each category and its expected provision
+to occur on the same answer line. The service runner first checks
 the same source through direct MCP. Screenshots and sanitized result manifests stay
 under ignored `runs/e2e/issue746`; private authentication material is not evidence and
 must be deleted immediately after acceptance. Delete synthetic cases, local service

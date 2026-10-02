@@ -52,7 +52,9 @@ test("real question produces Act 190/2003 with categories A–D and §§4–7", 
   const history = await historyResponse.json();
   const answer = history.messages.filter((message: {role: string}) => message.role === "assistant").at(-1);
   for (const [category, section] of [["A",4],["B",5],["C",6],["D",7]]) {
-    expect(answer.content).toMatch(new RegExp(`(?:kategóri[aeu]|Kategóri[aeu])[^\\n]*${category}[^\\n]*§\\s*${section}\\b`));
+    // A table names the category in its header, while each body row starts with A–D.
+    // Keep the category and its expected provision on the same answer line.
+    expect(answer.content).toMatch(new RegExp(`(?:(?:kategóri[aeu]|Kategóri[aeu])[^\\n]*${category}\\b|^\\s*\\|\\s*${category}\\s*\\|)[^\\n]*§\\s*${section}\\b`, "m"));
     expect(answer.citations.some((citation: {source_id: string; section: string}) =>
       citation.source_id === manifest.sourceId && new RegExp(`^§ ${section}(?:$| )`).test(citation.section))).toBeTruthy();
   }
