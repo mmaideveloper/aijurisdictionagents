@@ -13,6 +13,10 @@ establish provenance. Missing associations are visibly unverified. Retrieval is 
 of the cited text, not a guarantee that the model's interpretation is legally correct;
 human review remains required. Source text is untrusted data, never an instruction.
 
+When a model returns a Markdown table, citation binding preserves its header and
+separator syntax. Unsupported row warnings stay inside the final cell, so the UI
+renders the comparison and its evidence warnings without flattening it into prose.
+
 The answer keeps individual provision references. The Citácie sidebar deduplicates
 laws by source and effective date. A law link opens `/sources/{caseId}/{citationId}`
 in a new tab. That page calls

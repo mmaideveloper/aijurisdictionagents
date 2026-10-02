@@ -33,6 +33,20 @@ def test_model_written_citation_does_not_establish_provenance():
     assert citations == []
 
 
+def test_table_structure_survives_binding_and_unverified_rows_remain_visible():
+    header = "| Category | Legal status and conditions from the supplied sources |"
+    separator = "| --- | :---: |"
+    supported = "| A | Synthetic category supported by evidence [[source:p1]] |"
+    unsupported = "| B | An unsupported legal assertion with enough text to require a warning. |"
+    text, citations = bind_citations("\n".join([header, separator, supported, unsupported]), sources(), "sk")
+    lines = text.splitlines()
+    assert lines[:2] == [header, separator]
+    assert "§ 4 zákona" in lines[2]
+    assert lines[3].endswith("*[Neoverené v zdrojoch]* |")
+    assert len(citations) == 1
+    assert all(line.count("|") == 3 for line in lines)
+
+
 def test_truncated_last_section_cannot_be_cited():
     assert provision_evidence([{"content_text": "§ 4\nIncomplete provision of sufficient length", "content_truncated": True}]) == []
 

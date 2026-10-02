@@ -120,13 +120,27 @@ def bind_citations(text: str, evidence: list[dict[str, Any]], language: str | No
         used[match.group(1)] = {key: value for key, value in item.items() if key != "evidence_text"}
         return f"**({item['citation_label']})**"
 
+    source_lines = text.splitlines()
+    # Table headers are structural, like Markdown headings. Appending a warning
+    # after their final pipe invalidates the table and hides its row structure.
+    separators = {
+        index for index, line in enumerate(source_lines)
+        if "|" in line and re.fullmatch(
+            r"\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*", line
+        )
+    }
+    structural = separators | {index - 1 for index in separators if index > 0}
     lines: list[str] = []
-    for line in text.splitlines():
+    for index, line in enumerate(source_lines):
         has_reference = bool(_TOKEN.search(line))
         rendered = _TOKEN.sub(replace, line)
         # A missing association must remain visible, including model-written references.
-        if line.strip() and not line.lstrip().startswith("#") and len(line.strip()) > 45 and not has_reference:
-            rendered += f" *[{warning}]*"
+        if (index not in structural and line.strip() and not line.lstrip().startswith("#")
+                and len(line.strip()) > 45 and not has_reference):
+            if line.strip().startswith("|") and line.rstrip().endswith("|"):
+                rendered = rendered.rstrip()[:-1] + f" *[{warning}]* |"
+            else:
+                rendered += f" *[{warning}]*"
         lines.append(rendered)
     return "\n".join(lines), list(used.values())
 
