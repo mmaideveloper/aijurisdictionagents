@@ -51,6 +51,7 @@ from app.chat.intent_policy_service import (
     is_legal_research_request,
 )
 from app.chat.mcp_law_context import build_mcp_law_context
+from app.chat.provision_citations import bind_citations, citation_bindings, citation_instruction
 from app.chat.mcp_status_context import build_mcp_status_context
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from app.chat.output_validation import AILawyerOutputMessageValidationAgent, LawyerOutputUserProfile
@@ -2116,8 +2117,14 @@ def _run_direct_lawyer_turn_impl(
         processing_events.append(mcp_status_context.processing_event)
         if processing_event_callback is not None:
             processing_event_callback(mcp_status_context.processing_event)
+    retrieval_query = content
+    if len(content.split()) < 4:
+        previous_question = next((item.content for item in reversed(prior_messages)
+                                  if item.role == MessageRole.USER), "")
+        if previous_question:
+            retrieval_query = f"{previous_question[-1000:]}\n{content}"
     mcp_law_context = build_mcp_law_context(
-        query=content,
+        query=retrieval_query,
         country=session.country,
         language=session.language,
     )
@@ -2165,6 +2172,13 @@ def _run_direct_lawyer_turn_impl(
         all_documents = [CoreDocument(
             doc_id="Legal sources", path="Legal sources", content=mcp_law_context.document.content,
         )] if mcp_law_context.document is not None else []
+    evidence_details = mcp_law_context.processing_event.get("details", {}) if mcp_law_context else {}
+    provision_sources = [
+        item for item in evidence_details.get("citations", [])
+        if isinstance(item, dict) and item.get("evidence_id")
+    ] if isinstance(evidence_details, dict) else []
+    if provision_sources:
+        prompt_override += citation_instruction()
     lawyer_message = lawyer.respond(
         conversation=conversation,
         documents=all_documents,
@@ -2204,12 +2218,21 @@ def _run_direct_lawyer_turn_impl(
             "prompt_boundary reason=instruction_override source=evidence correlation_id=%s policy_version=%s",
             session.correlation_id, POLICY_VERSION,
         )
+    used_sources: list[dict[str, Any]] = []
+    if provision_sources:
+        normalized_lawyer_content, used_sources = bind_citations(
+            normalized_lawyer_content, provision_sources, session.language
+        )
+        if isinstance(evidence_details, dict):
+            evidence_details["citations"] = used_sources
     persisted_lawyer = _persist_direct_assistant_message(
         session_id=session_id,
         session=session,
         content=normalized_lawyer_content,
         agent_name=lawyer_message.agent_name,
         allow_document_generation=document_generation_requested,
+        presentation={"citation_bindings": citation_bindings(_user_visible_text(normalized_lawyer_content), used_sources)}
+        if used_sources else None,
     )
     _record_case_ai_model_audit(
         session=session,
@@ -3905,7 +3928,7 @@ def _document_completion_processing_events(
 
 def _legal_source_citations_from_processing_events(events: list[dict[str, object]]) -> list[dict[str, object]]:
     citations: list[dict[str, object]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     for event in events:
         details = event.get("details")
         if not isinstance(details, dict):
@@ -3922,7 +3945,7 @@ def _legal_source_citations_from_processing_events(events: list[dict[str, object
             title = str(raw_item.get("title") or raw_item.get("citation_label") or source_id or source_url).strip()
             if not title:
                 continue
-            key = (source_type, source_id, source_url or title)
+            key = (source_type, source_id, source_url or title, str(raw_item.get("section") or ""), str(raw_item.get("effective_from") or ""))
             if key in seen:
                 continue
             seen.add(key)
@@ -5004,6 +5027,11 @@ def _persist_case_citations_for_answer(
     return persisted
 
 
+def _citation_law_identifier(value: object) -> str:
+    match = re.search(r"\d+/\d{4}", re.sub(r"\s", "", str(value or "")))
+    return match.group() if match else ""
+
+
 def _case_citation_inputs_from_result(*, case_id: str, result: SessionResult) -> list[dict[str, object]]:
     metadata = result.metadata if isinstance(result.metadata, dict) else {}
     citations: list[dict[str, object]] = _legal_source_citation_inputs(metadata=metadata)
@@ -5015,6 +5043,14 @@ def _case_citation_inputs_from_result(*, case_id: str, result: SessionResult) ->
         if not isinstance(raw_item, dict):
             continue
         law_identifier = str(raw_item.get("law_identifier") or raw_item.get("label") or "").strip()
+        identifier = _citation_law_identifier(law_identifier)
+        if identifier and any(
+            item.get("source_type") == "law"
+            and identifier == _citation_law_identifier(item.get("law_number"))
+            and str(item.get("effective_from") or "")[:10] == str(raw_item.get("effective_from") or "")[:10]
+            for item in citations
+        ):
+            continue  # Prefer the retrieved document ID over a synthesized collector ID.
         title = str(raw_item.get("title") or law_identifier or "Legal source").strip()
         if not law_identifier and not title:
             continue
@@ -5070,7 +5106,7 @@ def _legal_source_citation_inputs(*, metadata: dict[str, object]) -> list[dict[s
     if not isinstance(raw_citations, list):
         return []
     citations: list[dict[str, object]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     for raw_item in raw_citations:
         if not isinstance(raw_item, dict):
             continue
@@ -5082,7 +5118,8 @@ def _legal_source_citation_inputs(*, metadata: dict[str, object]) -> list[dict[s
         title = str(raw_item.get("title") or raw_item.get("citation_label") or source_id or source_url or "").strip()
         if not title:
             continue
-        key = (source_type, source_id or "", source_url or title)
+        key = (source_type, source_id or "", source_url or title,
+               str(raw_item.get("section") or ""), str(raw_item.get("effective_from") or ""))
         if key in seen:
             continue
         seen.add(key)

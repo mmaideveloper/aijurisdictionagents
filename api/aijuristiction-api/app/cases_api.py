@@ -19,7 +19,7 @@ from urllib.parse import quote
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -406,6 +406,58 @@ def get_case_citations(
             for item in store.list_case_citations(case_id=case_id, limit=500)
         ],
     )
+
+
+@router.get('/{case_id}/citations/{citation_id}/full-law')
+def get_citation_full_law(
+    case_id: str, citation_id: str, user_id: str,
+    device_id: str = Header(default="", alias="x-jurisdigta-device-id"),
+    device_token: str = Header(default="", alias="x-jurisdigta-device-token"),
+    store: ApiDatabaseStore = Depends(get_store),
+) -> dict[str, str]:
+    """Deliver cited law text only, pinned to its recorded effective date."""
+    from app.chat.mcp_law_context import _call_mcp_tool
+
+    user = store.authenticate_user_device_auth_token(user_id=user_id, device_id=device_id, token=device_token)
+    if user is None or not user.is_enabled:
+        raise HTTPException(401, "Authentication required")
+    _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
+    citation = next((item for item in store.list_case_citations(case_id=case_id, limit=500)
+                     if item.citation_id == citation_id), None)
+    if citation is None or citation.source_type != "law" or not citation.source_id or not citation.effective_from:
+        raise HTTPException(404, "Cited law version unavailable")
+    chunks: list[str] = []
+    offset = 0
+    version_id: str | None = None
+    try:
+        for _ in range(100):
+            payload = _call_mcp_tool("getLawText", {
+                "document_id": citation.source_id, "effective_from": citation.effective_from[:10],
+                "offset": offset, "max_chars": 100000,
+            })
+            if payload.get("document_id") != citation.source_id:
+                raise ValueError("Cited source mismatch")
+            if str(payload.get("effective_from", ""))[:10] != citation.effective_from[:10]:
+                raise ValueError("Cited version mismatch")
+            current_version = str(payload.get("version_id") or "")
+            if not current_version or (version_id is not None and current_version != version_id):
+                raise ValueError("Cited version changed")
+            version_id = current_version
+            chunk = str(payload.get("content_text") or "")
+            if not chunk:
+                raise ValueError("Missing law text")
+            chunks.append(chunk)
+            if not payload.get("content_truncated"):
+                return {"title": citation.title, "law_number": citation.law_number or "",
+                        "effective_from": citation.effective_from, "content": "".join(chunks)}
+            next_offset = int(payload.get("next_offset") or 0)
+            if next_offset <= offset:
+                raise ValueError("Incomplete source")
+            offset = next_offset
+    except Exception as exc:
+        _LOGGER.warning("citation_full_law_failed error_type=%s", type(exc).__name__)
+        raise HTTPException(503, "Cited law version unavailable") from None
+    raise HTTPException(503, "Full law exceeds the delivery limit")
 
 
 @router.get('/{case_id}/ai-model-audit', response_model=CaseAIModelAuditResponse)

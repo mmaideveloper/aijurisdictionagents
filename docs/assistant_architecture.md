@@ -1,5 +1,9 @@
 # Assistant Architecture
 
+The law citation contract, full-source authorization boundary and runnable example are
+documented in [Provision citations](ISSUE_746_PROVISION_CITATIONS.md). Law-level sidebar
+deduplication preserves each answer's individual provision and effective-version links.
+
 The internal JurisDigta assistant should use JurisDigta MCP as its source-of-truth tool layer for Slovak legal answers.
 
 ## Runtime Flow

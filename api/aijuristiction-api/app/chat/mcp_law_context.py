@@ -18,6 +18,7 @@ from aijurisdictionagents.correlation import (
 from aijurisdictionagents.agents import AIWebSearchAgent
 from aijurisdictionagents.schemas import Document as CoreDocument
 from services.court_decision_collector.query import parse_court_decision_query
+from app.chat.provision_citations import evidence_document, provision_evidence
 
 _LOGGER = logging.getLogger(__name__)
 _LAW_IDENTIFIER_RE = re.compile(r"\b(?P<number>\d{1,4})\s*/\s*(?P<year>\d{4})\b")
@@ -134,7 +135,7 @@ def build_mcp_law_context(
     language: str | None,
     search_limit: int = 3,
     text_limit: int = 2,
-    max_chars_per_law: int = 3000,
+    max_chars_per_law: int = 40000,
     web_search_approved: bool = False,
     force: bool = False,
 ) -> McpLawContext | None:
@@ -348,7 +349,8 @@ def _build_laws_only_context(
         search_arguments = _search_arguments(query=query, limit=search_limit)
         search_payload = _call_mcp_tool("searchLaws", search_arguments)
         laws = _tool_results(search_payload)
-        law_texts = [_law_text_payload(result=result, max_chars=max_chars_per_law) for result in laws[:text_limit]]
+        law_texts = [payload for result in laws[:text_limit]
+                     for payload in _law_text_payloads(result=result, max_chars=max_chars_per_law)]
     except Exception as exc:  # noqa: BLE001
         _log_internal_mcp_failure(tool_name="searchLaws", exc=exc)
         return _unavailable_context(
@@ -374,10 +376,13 @@ def _build_laws_only_context(
         court_decisions=[],
         fallback_records=[],
     )
+    evidence = provision_evidence(law_texts)
     document = CoreDocument(
         doc_id="internal-mcp-law-context",
         path="internal-mcp-law-context.txt",
-        content=_document_content(laws=laws, law_texts=law_texts, court_decisions=[], fallback_records=[]),
+        content=evidence_document(evidence) or _document_content(
+            laws=laws, law_texts=law_texts, court_decisions=[], fallback_records=[]
+        ),
     )
     grounded_latest_laws_reply = None
     if (
@@ -400,7 +405,10 @@ def _build_laws_only_context(
                 "result_count": len(laws),
                 "document_ids": [str(result.get("document_id", "")) for result in laws],
                 "source_origin": "system_vector_db",
-                "citations": _law_citations(laws),
+                "citations": [
+                    {key: value for key, value in item.items() if key != "evidence_text"}
+                    for item in evidence
+                ] or _law_citations(laws),
                 "source_notice_i18n": _mcp_contact_notice_messages(),
                 "user_visible": True,
                 "web_search_status": "not_requested",
@@ -500,13 +508,19 @@ def _should_use_mcp_law_context(*, query: str, country: str, language: str | Non
     normalized_language = (language or "").strip().lower()
     if normalized_country != "SK" and not normalized_language.startswith("sk"):
         return False
-    normalized_query = _canonical(query)
-    if _LAW_IDENTIFIER_RE.search(query):
+    # This is a legal assistant: unknown intent must not silently bypass grounding.
+    # Exempt only complete, unambiguous conversational acknowledgements. Runtime/status
+    # requests are handled separately by the caller. Short legal follow-ups still retrieve.
+    normalized_query = _canonical(query).strip(" .!?")
+    if _LAW_IDENTIFIER_RE.search(query) or any(
+        marker in normalized_query for marker in (*_LEGAL_QUERY_MARKERS, *_COURT_QUERY_MARKERS, *_LEGAL_DOCUMENT_QUERY_MARKERS)
+    ):
         return True
-    return any(
-        marker in normalized_query
-        for marker in (*_LEGAL_QUERY_MARKERS, *_COURT_QUERY_MARKERS, *_LEGAL_DOCUMENT_QUERY_MARKERS)
-    )
+    if re.search(r"\b(hodin|pocasie|recept|fitness|behanie)\b", normalized_query):
+        return False
+    return len(normalized_query.split()) >= 3 and normalized_query not in {
+        "ahoj", "dobry den", "dakujem", "vdaka", "ok", "ano", "nie", "hello", "thanks", "thank you",
+    }
 
 
 def _should_search_court_decisions(query: str) -> bool:
@@ -627,6 +641,27 @@ def _court_name_filter(query: str) -> str | None:
     return f"Okresny sud {city.title()}"
 
 
+def _law_text_payloads(*, result: dict[str, Any], max_chars: int) -> list[dict[str, Any]]:
+    sections = result.get("relevant_sections")
+    if not isinstance(sections, list) or not sections:
+        return [_law_text_payload(result=result, max_chars=max_chars)]
+    # Fetch disjoint provisions individually. One broad min/max range can exhaust
+    # the budget before reaching the relevant sections and produce false labels.
+    payloads = []
+    remaining = max_chars
+    for section in sorted({int(value) for value in sections})[:12]:
+        if remaining < 1000:
+            break
+        payload = _call_mcp_tool("getLawText", {
+            "document_id": str(result["document_id"]), "section_number": section,
+            "max_chars": min(remaining, 20000),
+        })
+        remaining -= len(str(payload.get("content_text") or ""))
+        if not payload.get("content_truncated") and payload.get("section_found"):
+            payloads.append(payload)
+    return payloads
+
+
 def _law_text_payload(*, result: dict[str, Any], max_chars: int) -> dict[str, Any]:
     document_id = str(result.get("document_id", "")).strip()
     if not document_id:
@@ -638,6 +673,10 @@ def _law_text_payload(*, result: dict[str, Any], max_chars: int) -> dict[str, An
     section = _section_start_from_query(str(result.get("matched_query", "")))
     if section:
         arguments["section_start"] = section
+    elif result.get("relevant_sections"):
+        sections = [int(value) for value in result["relevant_sections"]][:16]
+        arguments["section_start"] = min(sections)
+        arguments["section_end"] = max(sections)
     return _call_mcp_tool("getLawText", arguments)
 
 

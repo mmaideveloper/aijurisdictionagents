@@ -14,7 +14,7 @@ def is_general_explanation_request(text: str) -> bool:
     if re.search(r"\b(priprav\w*|napis\w*|vypracuj\w*|vygeneruj\w*|posud\w*|draft|write|assess|review)\b", normalized):
         return False
     return bool(re.search(
-        r"\b(vysvetli\w*|explain|erklare\w*)\b|\bake su moznosti\b|\bako funguje\b",
+        r"\b(vysvetli\w*|explain|erklare\w*|popis|definuje)\b|\bake su moznosti\b|\bako funguje\b",
         normalized,
     ))
 
@@ -40,6 +40,8 @@ Answer format:
 - Start with a short direct conditional answer, stating jurisdiction and necessary assumptions.
 - Give each requested activity/topic an actual Markdown '## ' heading.
 - For multiple activities, include a short Markdown comparison table: activity, possibility, conditions.
+  For a brief classification question, instead use one concise bullet per category, with its source.
+  Respect requests for a short answer; do not expand a category into its full statutory enumeration.
 - Keep unsupported details out of prose and table alike. Do not add speculative restrictions or exceptions.
 - End with brief practical checks: consult the applicable decision and the responsible professional
   where the evidence leaves uncertainty. Do not invent who has authority or which procedure to file.
