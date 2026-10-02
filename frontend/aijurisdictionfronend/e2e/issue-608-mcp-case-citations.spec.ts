@@ -154,8 +154,12 @@ test("legal answer persists and displays its JurisDigta MCP case citation", asyn
   await page.getByRole("button", { name: "Send message" }).click();
 
   await expect(page.getByText(assistantAnswer)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("40/1964 Coll. — Slovak Civil Code")).toHaveCount(2);
-  await expect(page.locator(".assistant-tool-panel")).toContainText("JurisDigta MCP searchLaws");
+  await expect(page.getByText("40/1964 Coll. — Slovak Civil Code")).toHaveCount(1);
+  const lawLink = page.locator(".assistant-tool-panel").getByRole("link", { name: /40\/1964.*Slovak Civil Code/ });
+  await expect(lawLink).toHaveCount(1);
+  await expect(lawLink).toHaveAttribute("href", `/sources/${apiCase.case_id}/${citation.id}`);
+  await expect(lawLink).toHaveAttribute("target", "_blank");
+  await expect(page.locator(".assistant-tool-panel")).not.toContainText("JurisDigta MCP searchLaws");
   await expect(page.locator(".assistant-tool-panel")).not.toContainText("No citations yet.");
 
   const screenshotDirectory = path.resolve(process.cwd(), "../../runs/e2e/issue-608");

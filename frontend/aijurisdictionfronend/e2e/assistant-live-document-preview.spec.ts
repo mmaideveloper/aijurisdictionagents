@@ -220,7 +220,9 @@ test("assistant live response keeps formatted document preview, generated PDF ac
   await expect(generatedAction).toBeVisible();
   await expect(page.locator(".case-item").filter({ hasText: /1 legal document/ }).first()).toBeVisible();
   await expect(page.getByText("Obciansky zakonnik").first()).toBeVisible();
-  await expect(page.getByText("JurisDigta MCP searchLaws").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Obciansky zakonnik", exact: true }).first())
+    .toHaveAttribute("href", `/sources/${citation.case_id}/${citation.id}`);
+  await expect(page.getByText("JurisDigta MCP searchLaws")).toHaveCount(0);
 
   await testInfo.attach("issue-503-live-preview.png", {
     body: await page.screenshot({ fullPage: true }),
