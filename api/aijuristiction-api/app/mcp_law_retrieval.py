@@ -24,6 +24,7 @@ _STOP_WORDS = {
     "zmluvu",
 }
 _CANONICAL_ROOTS = (
+    "zbran", "zbroj", "strel", "kategor", "samocinn",
     "naram",
     "odsuden",
     "monitor",
@@ -54,6 +55,11 @@ _CANONICAL_ROOTS = (
     "uschov",
 )
 _SEARCH_VARIANTS: dict[str, tuple[str, ...]] = {
+    "zbran": ("zbran", "zbraň"),
+    "zbroj": ("zbroj",),
+    "strel": ("strel",),
+    "kategor": ("kategor", "kategór"),
+    "samocinn": ("samocinn", "samočinn"),
     "naram": ("naram", "náram"),
     "odsuden": ("odsuden", "odsúden"),
     "elektronick": ("elektronick",),
@@ -113,6 +119,10 @@ class ProvisionRelevance:
 
 
 _CONCEPTS = (
+    LegalQueryConcept(
+        name="firearms", triggers=frozenset({"zbran", "zbroj", "samocinn"}),
+        expansions=frozenset({"zbran", "zbroj", "strel", "kategor"}),
+    ),
     LegalQueryConcept(
         name="electronic_monitoring",
         triggers=frozenset({"naram"}),
@@ -211,6 +221,11 @@ def build_postgres_legal_tsqueries(profile: LegalQueryProfile) -> tuple[str, ...
     """Return selective per-concept queries so one concept cannot consume every candidate."""
 
     queries: list[str] = []
+    if "firearms" in profile.concepts:
+        queries.append(
+            f"({_tsquery_variant_group('zbran')} & {_tsquery_variant_group('kategor')})"
+            f" | ({_tsquery_variant_group('zbroj')} & {_tsquery_variant_group('preukaz')})"
+        )
     if "electronic_monitoring" in profile.concepts:
         queries.append(
             f"({_tsquery_variant_group('elektronick')} & {_tsquery_variant_group('monitor')})"
@@ -286,6 +301,12 @@ def score_provision_text(
         + matched_concepts * 3.0
         + max(database_rank, 0.0) * 10.0
     )
+    # Classification questions need defining headings before incidental references
+    # in long procedural provisions. This is based on source text, not statute IDs.
+    if re.search(r"\b(skupin\w*|kategor\w*|definuje|druhy)\b", profile.normalized_query):
+        heading_text = normalize_legal_text(heading)
+        if re.fullmatch(r".{0,35}\bkategor\w* [a-z]", heading_text):
+            score += 100.0
     return ProvisionRelevance(
         score=score,
         matched_terms=tuple(sorted(set((*direct_matches, *expanded_matches)))),

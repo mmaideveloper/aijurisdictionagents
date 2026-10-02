@@ -2558,8 +2558,6 @@ def _rank_provision_candidates(
             },
         )
         provisions = cast(list[dict[str, Any]], record["matched_provisions"])
-        if len(provisions) >= 24:
-            continue
         provisions.append(
             {
                 "anchor": str(row[14]),
@@ -2598,6 +2596,8 @@ def _rank_provision_candidates(
                 int(provision["paragraph_number"] or 0),
             )
         )
+        del provisions[24:]
+        sections = {int(provision["section_number"]) for provision in provisions}
         record["relevant_sections"] = sorted(sections)
         record["relevant_section_ranges"] = [
             {"section_start": start, "section_end": end}
@@ -2687,6 +2687,9 @@ def _law_search_limitations(profile: LegalQueryProfile | None) -> list[str]:
 
 def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
     document_id = str(arguments.get("document_id", "")).strip()
+    effective_from = str(arguments.get("effective_from") or "").strip()
+    if effective_from and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", effective_from):
+        raise HTTPException(status_code=400, detail="Invalid effective date")
     if not document_id:
         raise HTTPException(status_code=400, detail="document_id is required")
     offset = _bounded_int(arguments.get("offset"), default=0, minimum=0, maximum=10_000_000)
@@ -2711,6 +2714,7 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         section_end,
     )
     with _LawsQuerySession() as laws:
+        version_filter = f"AND v.effective_from = {laws.param}" if effective_from else ""
         rows = laws.query_all(
             f"""
             SELECT
@@ -2730,10 +2734,11 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
             LEFT JOIN source_artifacts AS s ON s.version_id = v.version_id AND s.artifact_kind = 'html'
             WHERE d.document_id = {laws.param}
               AND v.effective_from <= CURRENT_DATE
+              {version_filter}
             ORDER BY v.effective_from DESC, v.version_token DESC
             LIMIT 1
             """,
-            (document_id,),
+            (document_id, effective_from) if effective_from else (document_id,),
         )
         provision_rows = (
             laws.query_all(
@@ -2810,6 +2815,10 @@ def _tool_get_law_text(arguments: dict[str, Any]) -> dict[str, Any]:
         "requested_sections": requested_sections,
         "requested_paragraph_number": paragraph_number,
         "matched_provision_anchors": matched_provision_anchors,
+        "provisions": [
+            {"anchor": str(item[0]), "heading": str(item[1]), "body_text": str(item[2])}
+            for item in provision_rows if str(item[0]) in matched_provision_anchors
+        ] if not content_truncated else [],
         "section_found": section_found,
         "source_offset": source_offset,
         "offset": offset,
@@ -3630,6 +3639,7 @@ def _mcp_tools() -> list[dict[str, Any]]:
                 "required": ["document_id"],
                 "properties": {
                     "document_id": {"type": "string", "minLength": 1},
+                    "effective_from": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
                     "section_number": {"type": "integer", "minimum": 1},
                     "section_numbers": {
                         "type": "array",

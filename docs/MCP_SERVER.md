@@ -1,5 +1,11 @@
 # MCP server
 
+For answer-to-provision binding, effective-version full-law delivery, and the real
+local acceptance procedure, see [Provision citations](ISSUE_746_PROVISION_CITATIONS.md).
+`getLawText` accepts an optional `effective_from` (ISO date) and returns structured
+`provisions` for complete section selections. Truncated selections cannot establish
+complete-provision evidence. Full-law delivery follows the existing bounded pagination.
+
 JurisDigta runs MCP as a dedicated service, separate from the public API app.
 The local default is `http://127.0.0.1:8070`, and production routing should map
 `https://mcp.jurisdigta.eu` to the MCP service, not to `api.jurisdigta.eu`.

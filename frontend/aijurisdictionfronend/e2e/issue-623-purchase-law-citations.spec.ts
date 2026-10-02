@@ -330,8 +330,9 @@ test("simple house purchase request shows the Civil Code basis in preview and ci
 
   const citationLinks = page.getByRole("link", { name: legalBasis });
   await expect(citationLinks.first()).toBeVisible();
-  await expect(citationLinks.first()).toHaveAttribute("href", lawUrl);
-  await expect(page.getByText("JurisDigta MCP searchLaws").first()).toBeVisible();
+  await expect(citationLinks.first()).toHaveAttribute("href", "/sources/issue-623-case/issue-623-civil-code-citation");
+  await expect(citationLinks.first()).toHaveAttribute("target", "_blank");
+  await expect(page.getByText("JurisDigta MCP searchLaws")).toHaveCount(0);
 
   await page.locator(".assistant-thread__viewport").evaluate((element) => element.scrollTo({ top: 0 }));
   await page.screenshot({ path: screenshotPath, fullPage: true });

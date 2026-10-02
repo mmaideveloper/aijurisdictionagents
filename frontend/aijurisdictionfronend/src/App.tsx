@@ -10,6 +10,7 @@ import Pricing from "./pages/Pricing";
 import News from "./pages/News";
 import AppDashboard from "./pages/AppDashboard";
 import AssistantWorkspace from "./pages/AssistantWorkspace";
+import CitedLaw from "./pages/CitedLaw";
 import CaseIntake from "./pages/CaseIntake";
 import LawyerWorkspace from "./pages/LawyerWorkspace";
 import AdviceSummary from "./pages/AdviceSummary";
@@ -82,6 +83,7 @@ const App: React.FC = () => {
   return (
     <PageLayout>
       <Routes>
+        <Route path="/sources/:caseId/:citationId" element={<ProtectedRoute><CitedLaw /></ProtectedRoute>} />
         <Route path="/" element={<RootRoute />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/tests-authorize" element={<LawsTestsAuthorize />} />

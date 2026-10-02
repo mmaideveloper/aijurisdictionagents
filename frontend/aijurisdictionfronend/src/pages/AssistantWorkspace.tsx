@@ -1,4 +1,5 @@
 import React from "react";
+import { CitationLink } from "../components/CitationLink";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -58,9 +59,6 @@ const latestUserText = (messages: AdapterRunOptions["messages"]): string => {
   return "";
 };
 
-const citationDisplayLabel = (citation: CaseCitation): string =>
-  citation.citationLabel || citation.lawNumber || citation.title;
-
 const citationTypeLabel = (citation: CaseCitation): string => {
   switch (citation.sourceType) {
     case "law":
@@ -82,13 +80,15 @@ const isFallbackCitation = (citation: CaseCitation): boolean =>
 const dedupeCaseCitations = (citations: CaseCitation[]): CaseCitation[] => {
   const seen = new Set<string>();
   return citations.filter((citation) => {
-    const key = citation.sourceId || citation.sourceUrl || citation.id;
+    const key = `${citation.sourceId || citation.sourceUrl || citation.id}:${citation.effectiveFrom ?? ""}`;
     if (seen.has(key)) {
       return false;
     }
     seen.add(key);
     return true;
-  });
+  }).map(citation => citation.sourceType === "law" ? {
+    ...citation, citationLabel: `${citation.lawNumber ?? ""} – ${citation.title}`, snippet: null
+  } : citation);
 };
 
 const CitationList: React.FC<{ citations: CaseCitation[]; emptyLabel: string; title?: string }> = ({
@@ -105,22 +105,16 @@ const CitationList: React.FC<{ citations: CaseCitation[]; emptyLabel: string; ti
         {citations.map((citation) => (
           <li key={citation.id} className="citation-list__item">
             <span className="citation-list__type">{citationTypeLabel(citation)}</span>
-            {citation.sourceUrl ? (
-              <a href={citation.sourceUrl} target="_blank" rel="noreferrer">
-                {citationDisplayLabel(citation)}
-              </a>
-            ) : (
-              <strong>{citationDisplayLabel(citation)}</strong>
-            )}
+            <CitationLink citation={citation} />
             {citation.effectiveFrom ? <span>{citation.effectiveFrom}</span> : null}
             {citation.decisionDate ? <span>{citation.decisionDate}</span> : null}
-            {citation.retrievalTool ? <span>{citation.retrievalTool}</span> : null}
+
             {isFallbackCitation(citation) ? (
               <p className="citation-list__warning">
                 Warning: this source came from official web-search fallback, not from JurisDigta system vector DB. Human legal review is required.
               </p>
             ) : null}
-            {citation.snippet ? <p>{citation.snippet}</p> : null}
+
           </li>
         ))}
       </ul>
