@@ -23,6 +23,12 @@ version through MCP, and returns escaped plain text through the frontend. It fai
 closed on missing sources, version mismatch, pagination errors, or excessive size.
 No internal MCP URL or credential is returned. SK, EN and DE error states are available.
 
+Provision metadata retains an HTTPS Slov-Lex source URL for provenance checks; internal
+hosts, userinfo, query credentials, unsafe schemes and unexpected ports are rejected. Browser law links
+still use the authenticated full-law route. Latest-law discovery summaries retain
+metadata citations for every listed law, even when the bounded full-text context covers
+only a subset. They do not acquire unsupported provision bindings from that subset.
+
 Citation metadata uses existing case retention/deletion and authorization. The feature
 adds no new external-search consent or processing purpose. Logs from source delivery
 contain exception classes only; full law bodies are not duplicated in citation records.

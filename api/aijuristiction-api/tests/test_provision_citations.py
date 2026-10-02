@@ -1,5 +1,6 @@
 from app.chat.provision_citations import bind_citations, provision_evidence
 from app.chat.mcp_law_context import _should_use_mcp_law_context
+import pytest
 
 
 def test_ordinary_legal_questions_do_not_need_keywords():
@@ -78,3 +79,48 @@ def test_classification_prefers_defining_heading_to_incidental_references():
     definition = score_provision_text(profile=profile, title="Zbrane", heading="Zbrane kategórie A", body_text="Definícia zbraní.")
     incidental = score_provision_text(profile=profile, title="Zbrane", heading="Dovoz", body_text="Zbrane kategórie A pri dovoze.", database_rank=1.0)
     assert definition.score > incidental.score
+
+
+@pytest.mark.parametrize("structured", [False, True])
+@pytest.mark.parametrize("url,expected", [
+    ("https://static.slov-lex.sk/static/SK/ZZ/2003/190/20250701.html", True),
+    ("https://www.slov-lex.sk/pravne-predpisy/SK/ZZ/2003/190/", True),
+    ("http://internal-mcp/source", False),
+    ("https://internal-mcp/source", False),
+    ("https://www.slov-lex.sk.evil.test/source", False),
+    ("https://user:password@www.slov-lex.sk/source", False),
+    ("https://www.slov-lex.sk:8080/source", False),
+    ("https://www.slov-lex.sk/source?token=synthetic", False),
+    ("javascript:alert(1)", False),
+])
+def test_provision_metadata_preserves_only_official_public_urls(structured, url, expected):
+    payload = {"document_id": "source", "law_number": 746, "law_year": 2026,
+               "source_url": url, "content_text": "§ 4\nA synthetic provision with sufficient text."}
+    if structured:
+        payload["provisions"] = [{"anchor": "paragraf-4", "body_text": "Synthetic provision text."}]
+    evidence = provision_evidence([payload])
+    assert evidence[0]["source_url"] == (url if expected else None)
+
+
+def test_latest_listing_retains_every_source_when_only_two_laws_have_provision_context(monkeypatch):
+    from app.chat import mcp_law_context
+    laws = [{"document_id": f"law-{index}", "law_number": index, "law_year": 2026,
+             "law_identifier_text": f"{index}/2026", "title": f"Synthetic law {index}",
+             "summary": f"Synthetic summary {index}", "effective_from": "2026-01-01"}
+            for index in range(1, 6)]
+
+    def call(name, arguments):
+        if name == "searchLaws":
+            return {"results": laws}
+        return {"document_id": arguments["document_id"], "law_number": 1, "law_year": 2026,
+                "content_text": "§ 4\nSynthetic provision which must not displace other laws."}
+
+    monkeypatch.setattr(mcp_law_context, "_call_mcp_tool", call)
+    context = mcp_law_context._build_laws_only_context(
+        query="Daj mi poslednych 5 novych zakonov aj so sumarom coho sa tykaju.",
+        search_limit=5, text_limit=2, max_chars_per_law=40000, language="sk", web_search_approved=False,
+    )
+    assert context.grounded_latest_laws_reply
+    citations = context.processing_event["details"]["citations"]
+    assert {item["source_id"] for item in citations} == {f"law-{index}" for index in range(1, 6)}
+    assert all("evidence_id" not in item and "evidence_text" not in item for item in citations)

@@ -3,10 +3,28 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import urlsplit
 from app.mcp_law_retrieval import parse_provision_anchor
 
 _SECTION = re.compile(r"(?m)^[ \t]*§[ \t]*(\d+[a-z]?)[ \t]*$")
 _TOKEN = re.compile(r"\[\[source:([A-Za-z0-9_-]+)\]\]")
+
+
+def _official_source_url(payload: dict[str, Any]) -> str | None:
+    """Preserve public provenance without exposing an internal retrieval address."""
+    value = str(payload.get("source_url") or "").strip()
+    if any(ord(character) < 32 for character in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        if (parsed.scheme == "https" and parsed.hostname in {
+            "static.slov-lex.sk", "www.slov-lex.sk", "slov-lex.sk",
+        } and parsed.port in {None, 443} and not parsed.username and not parsed.password
+                and not parsed.query):
+            return value
+    except ValueError:
+        pass
+    return None
 
 
 def provision_evidence(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -25,7 +43,7 @@ def provision_evidence(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 number = f"{payload.get('law_number')}/{payload.get('law_year')} Z. z."
                 evidence.append({
                     "evidence_id": f"p{len(evidence) + 1}", "source_type": "law",
-                    "source_id": str(payload["document_id"]), "source_url": None,
+                    "source_id": str(payload["document_id"]), "source_url": _official_source_url(payload),
                     "title": str(payload.get("official_name") or number), "law_number": number,
                     "section": section, "citation_label": f"{section} zákona č. {number}",
                     "effective_from": str(payload.get("effective_from") or ""),
@@ -47,7 +65,7 @@ def provision_evidence(payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
             number = f"{payload.get('law_number')}/{payload.get('law_year')} Z. z."
             evidence.append({
                 "evidence_id": f"p{len(evidence) + 1}", "source_type": "law",
-                "source_id": str(payload["document_id"]), "source_url": None,
+                "source_id": str(payload["document_id"]), "source_url": _official_source_url(payload),
                 "title": str(payload.get("official_name") or number),
                 "law_number": number, "section": section,
                 "citation_label": f"{section} zákona č. {number}",
