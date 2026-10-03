@@ -1067,6 +1067,66 @@
     let activeLanguage = "sk";
     const articles = [
       {
+        slug: "slovensky-hlasovy-chat-stt",
+        dateLabel: { sk: "3. október 2026", de: "3. Oktober 2026", en: "October 3, 2026" },
+        title: {
+          sk: "Slovenský hlasový chat: prečo sme zvolili Azure Speech",
+          de: "Slowakischer Sprachchat: Warum wir Azure Speech gewählt haben",
+          en: "Slovak voice chat: why we chose Azure Speech"
+        },
+        summary: {
+          sk: "Dva syntetické testy slovenčiny, lokálne modely a Ollama: čo rozhodlo pri výbere prepisu reči a prečo záleží na audite.",
+          de: "Zwei synthetische slowakische Sprachtests, lokale Modelle und Ollama: Transkription, Datenschutz und Auditierbarkeit.",
+          en: "Two synthetic Slovak speech tests, local models and Ollama: transcription quality, privacy and auditability."
+        },
+        standfirst: {
+          sk: "Nadiktovať správu je pohodlné. V právnom chate však musí byť jasné aj to, kto hlas spracuje, čo sa odošle a čo si používateľ môže opraviť. Pozrite sa na naše výsledky a rozhodnutia.",
+          de: "Diktieren ist bequem. Im Rechtschat zählen auch Verarbeitung, überprüfbare Ergebnisse und die Freigabe durch den Nutzer. Der Artikel ist auf Slowakisch.",
+          en: "Dictation is convenient. Legal chat also needs clear processing, reviewable results and user approval. This article is in Slovak."
+        },
+        body: [
+          { type: "note", text: "Stav k 3. októbru 2026. Výsledky nižšie pochádzajú zo syntetickej slovenskej reči, nie z nahrávok zákazníkov. Nejde o porovnávací benchmark všetkých modelov ani o záruku presnosti pri reálnom diktovaní." },
+          { type: "h3", text: "Od hlasu po správu: dva rôzne modely" },
+          { type: "p", text: "STT (speech-to-text) premieňa zvuk na text. Až následne chatový model pracuje s odoslanou správou. V našom zdokumentovanom hlasovom teste zabezpečoval prepis Azure Speech a chat využil Azure Foundry s gpt-4o-mini. Foundry je platforma; gpt-4o-mini nie je názov nášho streamingového STT modelu." },
+          { type: "p", text: "Aktuálna zdokumentovaná predvolená trasa prepisu je Azure Speech EU (West Europe), s profilom azure_speech_sts_eu:speech-sk-SK a jazykom sk-SK. Služba spravuje rozpoznávací model; neuvádzame neoverené číslo jeho internej verzie. Chat má samostatný výber modelu podľa politiky a prípadu: dokumentovaná lokálna cesta používa Ollama s qwen3:1.7b, externá cesta Azure Foundry s gpt-4o-mini. Nie každý chat preto používa ten istý model." },
+          { type: "h3", text: "Test 1: dve slovenské vety a kontrolované odoslanie" },
+          { type: "p", text: "Pri lokálnom teste z 23. septembra 2026 sme použili syntetické slovenské audio s tichom medzi dvoma výpoveďami. Rozhranie zobrazilo štyri riadky a 23 priebežných aktualizácií. Normalizovaná slovná chybovosť (WER) bola 0 % na tomto konkrétnom vstupe. Overili sme aj sumu 100 EUR, možnosť text upraviť a zhodu skontrolovaného textu s odoslanou správou." },
+          { type: "p", text: "Prvý čiastočný prepis prišiel 4 761 ms od súhlasu vrátane úvodného ticha; dokončenie po Stop trvalo 356 ms. Sú to merania jedného behu, nie priemerná latencia. Test potvrdil odoslanie na skutočnú chatovú trasu gpt-4o-mini, nie dokončenie právneho dokumentu. Vtedy použitá non-EU služba mala výnimku výlučne pre syntetické testovanie; táto výnimka neoprávňovala spracovanie produkčného audia." },
+          { type: "h3", text: "Test 2: slovenský prepis cez EU službu" },
+          { type: "p", text: "Dňa 29. septembra sme overili EU trasu cez verejný WebSocket. Test izolovaného profilu vrátil 23 čiastočných udalostí, nový prípad bez výnimky 24. Oba vytvorili štyri finálne segmenty s 24 slovami a normalizovaným WER 0 %. Následná skúška v skutočnom webovom rozhraní ukázala štyri riadky, 23 čiastočných udalostí a správny stav mikrofónu po Stop." },
+          { type: "p", text: "Overili sme zastavenie, zrušenie, odpojenie a neprítomnosť automatického odoslania. Webová EU skúška ponechala text na kontrolu a správu do chatu neposlala. Ide o STT smoke testy; nenahrádzajú kompletné lokálne E2E ani testy natívnych zariadení. Krátky syntetický vstup nepreukazuje spoľahlivosť pri dialektoch, hluku, menách či zložitých právnych odkazoch." },
+          { type: "h3", text: "Porovnanie: Azure, lokálna slovenčina a Ollama" },
+          { type: "ul", items: [
+            "Azure Speech EU — aktuálne zvolený streamingový prepis. Máme reálne syntetické výsledky, priebežný text a overenú väzbu na ovládanie mikrofónu. Vyžaduje sieť, platenú službu a posúdenie externého spracovateľa aj jeho uchovávania údajov.",
+            "Whisper base/small multilingual — kandidáti na lokálny prepis cez whisper.cpp alebo vhodný browserový runtime. Môžu udržať audio na zariadení; treba odmerať presnosť slovenčiny, segmentáciu, pamäť a latenciu. V tejto sérii nemajú vlastné namerané výsledky.",
+            "KInIT whisper-small-sk — model doladený na slovenskú reč. Autori uvádzajú WER 14,15 % na Common Voice 24 a 8,64 % na svojom internom súbore. Sú to výsledky autorov, nie JurisDigta; nemožno ich porovnať s naším 0 % na krátkej syntetickej vzorke. Slovenské doladenie má aj obmedzenia pre iné jazyky.",
+            "KInIT Whisper-large-v3-turbo-sk — ďalší slovenský ASR kandidát uvedený v katalógu SLAIH. Pred nasadením treba overiť konkrétny model, licenciu, runtime a výkon na cieľovom zariadení. Nemáme vlastný porovnateľný test tohto modelu.",
+            "Ollama + qwen3:1.7b — dokumentovaná lokálna textová cesta chatu, nie prepisovač audia v našej implementácii. Lokálny hlasový variant by potreboval samostatný ASR model pred Ollama. Kvalitu slovenských odpovedí a kvalitu rozpoznania reči treba hodnotiť oddelene."
+          ] },
+          { type: "p", text: "Naším víťazom pre aktuálny streamingový chat je preto Azure Speech v rámci Azure/Foundry ekosystému: rozhodla fungujúca a overiteľná integrácia, nie dokázané prvenstvo v presnosti nad lokálnymi modelmi. Férový ďalší benchmark musí všetkým ASR kandidátom dať rovnaké audio, hardvér a pravidlá normalizácie; zmerať studený aj zahriaty štart, WER/CER a chyby v sumách, dátumoch a paragrafoch." },
+          { type: "h3", text: "Model vo frontende: súkromie aj praktické nevýhody" },
+          { type: "p", text: "Skutočne lokálny model v prehliadači môže fungovať offline po stiahnutí a znížiť prenos citlivého audia. Samotné Web Speech API však nedokazuje lokálne spracovanie: prehliadač môže využívať vzdialenú službu. Lokálny režim musí overiť podporu zariadenia a slovenskej jazykovej sady; tichý prechod na cloud by porušil očakávanie používateľa." },
+          { type: "ul", items: [
+            "Stiahnutie modelu, prvá inicializácia, RAM, batéria a prehrievanie môžu zhoršiť zážitok, najmä na telefóne. WebGPU a WASM nemajú na každom zariadení rovnaký výkon.",
+            "Cache môže zmiznúť a model sa musí stiahnuť znova. Verzie modelu a runtime treba pripnúť, overovať ich integritu a umožniť odstránenie stiahnutých aktív.",
+            "Audit je náročnejší: server nevidí lokálnu inferenciu a klientské hlásenie samo nepotvrdzuje, aký model skutočne bežal. Potrebujeme verziu modelu/runtime, režim spracovania, súhlas a výsledok operácie bez ukladania audia či neodoslaných prepisov.",
+            "Serverová cesta zjednodušuje centrálne riadenie trás a audit metadát, ale neodstraňuje povinnosti voči externému spracovateľovi. Žiadny variant sám osebe nezaručuje právnu správnosť."
+          ] },
+          { type: "h3", text: "Kontrola používateľa je súčasťou kvality" },
+          { type: "p", text: "Povolenie mikrofónu a súhlas s externým spracovaním sú samostatné kroky. Používateľ vidí trasu, spustí nahrávanie, zvolí Stop, skontroluje a opraví text a až potom stlačí Odoslať. Prepis nespúšťa právny úkon ani správu automaticky. Audio a neodoslaný koncept zostávajú v obmedzených dočasných bufferoch; audit zaznamenáva metadáta trasy, súhlasu a výsledku. Odoslaná správa už podlieha pravidlám uchovávania a vymazania prípadu." },
+          { type: "p", text: "GDPR a EU AI Act sme posudzovali aj pri príprave tohto článku: používame iba syntetické výsledky, nezverejňujeme osobné údaje ani prihlasovacie údaje a zachovávame ľudskú kontrolu právne významného textu. EU región sám osebe nie je osvedčenie súladu; osobitne treba posúdiť právny základ, zmluvy, retenčné podmienky a povinnosti konkrétneho použitia." },
+          { type: "h3", text: "Zdroje a rozsah výsledkov" },
+          { type: "link", href: "https://github.com/mmaideveloper/aijurisdictionagents/blob/6d17fe1/docs/STREAMING_STT.md", text: "JurisDigta: testy, EU trasa a hranice akceptácie" },
+          { type: "link", href: "https://github.com/mmaideveloper/aijurisdictionagents/issues/827", text: "Plán hodnotenia lokálneho STT v prehliadači — zatiaľ nie produkčná náhrada" },
+          { type: "link", href: "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support", text: "Microsoft: jazyková podpora Azure Speech" },
+          { type: "link", href: "https://huggingface.co/kinit/whisper-small-sk", text: "KInIT: whisper-small-sk, metodika a výsledky autorov" },
+          { type: "link", href: "https://www.slaih.sk/sk/catalog/whisper-large-v3-turbo-sk", text: "SLAIH: slovenský Whisper-large-v3-turbo-sk" },
+          { type: "link", href: "https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API/Using_the_Web_Speech_API", text: "MDN: Web Speech API a lokálne rozpoznávanie" },
+          { type: "link", href: "https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng", text: "GDPR — oficiálne znenie" },
+          { type: "link", href: "https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng", text: "EU AI Act — oficiálne znenie" }
+        ]
+      },
+      {
         slug: "registracia-krok-za-krokom",
         dateLabel: {
           sk: "9. september 2026",
