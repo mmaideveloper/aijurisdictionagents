@@ -64,6 +64,30 @@ The pricing cards and FAQ mirror the backend subscription and free-case limits:
 
 ## News and articles
 
+### Slovak speech-to-text article (3 October 2026)
+
+`#article-slovensky-hlasovy-chat-stt` explains the two documented synthetic
+Slovak Speech checks, the current EU transcription profile, and the separate
+Ollama/Foundry chat routes. Local Whisper candidates are explicitly untested
+in our comparison; KInIT metrics are attributed to their own datasets.
+The article covers browser-local privacy, audit limitations, user review,
+retention and human oversight without claiming a compliance certification.
+Sources are linked in the article; internal results use the reviewed main
+snapshot `6d17fe1` of `docs/STREAMING_STT.md`.
+
+Minimal runnable preview from the repository root:
+
+```bash
+node corporate-web/e2e/static-server.mjs 8013
+```
+
+Open `http://127.0.0.1:8013/#article-slovensky-hlasovy-chat-stt`.
+Review screenshots and a sanitized manifest belong under ignored
+`artifacts/corporate-stt-blog/`; delete within seven days.
+Static article rendering does not exercise or validate the speech services.
+Merge and production deployment wait for the owner's screenshot review and
+successful checks for the exact deployment commit.
+
 The homepage includes a static articles section at `#articles`. Article detail views are hash-routed
 inside the same static page, for example:
 
