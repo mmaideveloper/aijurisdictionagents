@@ -1,6 +1,15 @@
-name: Validate architecture use case
+name: Validate architecture documents
 
 on:
+  pull_request:
+    paths:
+      - "architecture/**"
+      - ".github/workflows/validate-architecture-use-case.yml"
+  push:
+    branches: [main]
+    paths:
+      - "architecture/**"
+      - ".github/workflows/validate-architecture-use-case.yml"
   workflow_dispatch:
     inputs:
       use_case_id:
@@ -13,7 +22,59 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  validate-documents:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out JurisDigta
+        uses: actions/checkout@v4
+
+      - name: Check out pinned AI Architect Toolkit
+        uses: actions/checkout@v4
+        with:
+          repository: mmaideveloper/aiarchitecttoolkit
+          ref: 16d82099486e03a698a8491f2f47d4163dae9c6f
+          path: .toolkit
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate architecture identifiers, states, references, and links
+        run: python .toolkit/scripts/validate_architecture.py architecture
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Mermaid CLI
+        run: npm install --global @mermaid-js/mermaid-cli@11.4.2
+
+      - name: Render Mermaid architecture sources
+        shell: bash
+        run: |
+          mkdir -p build/architecture/mermaid
+          while IFS= read -r -d '' diagram; do
+            relative="${diagram#architecture/}"
+            output="build/architecture/mermaid/${relative%.mmd}.svg"
+            mkdir -p "$(dirname "$output")"
+            mmdc --input "$diagram" --output "$output" --backgroundColor transparent \
+              --puppeteerConfigFile .github/mermaid-puppeteer-config.json
+          done < <(find architecture -type f -name '*.mmd' -print0)
+
+      - name: Upload rendered architecture diagrams
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-architecture-diagrams
+          path: build/architecture/mermaid/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  validate-use-case:
+    if: github.event_name == 'workflow_dispatch'
     uses: mmaideveloper/aiarchitecttoolkit/.github/workflows/validate-use-case.yml@16d82099486e03a698a8491f2f47d4163dae9c6f
     with:
       project_name: jurisdigta
