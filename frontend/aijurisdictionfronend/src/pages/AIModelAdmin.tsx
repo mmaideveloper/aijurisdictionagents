@@ -202,7 +202,7 @@ const AIModelAdmin: React.FC = () => {
   const [error, setError] = React.useState("");
   const [debugCorrelationId, setDebugCorrelationId] = React.useState("");
   const [debugTrace, setDebugTrace] = React.useState<AdminDebugTrace | null>(null);
-  const [debugView, setDebugView] = React.useState<"timeline" | "flow" | "langgraph">("timeline");
+  const [debugView, setDebugView] = React.useState<"overview" | "timeline" | "flow" | "langgraph">("overview");
   const debugRequestRef = React.useRef(0);
   const [formSubmitting, setFormSubmitting] = React.useState(false);
   const formSubmittingRef = React.useRef(false);
@@ -2017,6 +2017,7 @@ const AIModelAdmin: React.FC = () => {
               </form>
               {debugTrace ? <>
                 <div className="admin-inline-actions">
+                  <button className="button ghost" type="button" onClick={() => setDebugView("overview")}>{t("adminDebugOverview")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("timeline")}>{t("adminDebugTimeline")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("flow")}>{t("adminDebugFlow")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("langgraph")}>{t("adminDebugLangGraph")}</button>
@@ -2030,7 +2031,8 @@ const AIModelAdmin: React.FC = () => {
                   })}><FaDownload aria-hidden="true" />{t("adminDebugExport")}</button>
                 </div>
                 <p className="admin-muted">{debugTrace.correlation_id} · {t("adminDebugRetention")}</p>
-                {debugView === "timeline" ? (
+                {debugView === "overview" ? <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} /> : null}
+                {debugView === "timeline" || debugView === "overview" ? (
                   <ol className="admin-debug__timeline">
                     {debugTrace.timeline.map((item) => <li key={`${item.kind}-${item.event_id}`}>
                       <time>{item.created_at}</time>

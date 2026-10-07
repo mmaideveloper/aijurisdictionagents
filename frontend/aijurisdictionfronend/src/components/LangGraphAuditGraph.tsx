@@ -21,9 +21,12 @@ export const LangGraphAuditGraph: React.FC<Props> = ({ evidence, t }) => {
   }, [evidence]);
   const run = evidence.runs.find((item) => item.workflow_run_id === runId) ?? evidence.runs[0];
   if (!run) {
-    return <p className="admin-muted">{t("adminDebugGraphUnavailable")}</p>;
+    return <p role="status" className="admin-muted">{t("adminDebugNoGraphEvidence")}</p>;
   }
   return <section className="langgraph-audit" aria-label={t("adminDebugLangGraph")}>
+    {evidence.evidence_gaps?.length ? <p role="status" className="admin-warning">
+      {t("adminDebugIncomplete")}: {evidence.evidence_gaps.join(", ")}
+    </p> : null}
     <div className="langgraph-audit__heading">
       <label>{t("adminDebugRun")}
         <select value={run.workflow_run_id} onChange={(event) => {
@@ -37,7 +40,7 @@ export const LangGraphAuditGraph: React.FC<Props> = ({ evidence, t }) => {
       </label>
       <div className="langgraph-audit__badges">
         <span>{run.graph_key}@{run.graph_version}</span>
-        <span>{run.flow_key}@{run.flow_version}</span>
+        {run.flow_key ? <span>{run.flow_key}@{run.flow_version}</span> : null}
         <span>{run.run_status}</span>
         <span>{run.evidence_completeness}</span>
       </div>

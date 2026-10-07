@@ -53,6 +53,43 @@ The same correlation context is restored in streaming worker threads and propaga
 
 ## Administrator workflow
 
+Issue #864 adds **Full audit** (SK: **Celkový audit**) as the default diagnostic view:
+the selected pinned graph and its ordered execution evidence appear above the service timeline.
+The individual Timeline, Flow and LangGraph audit views remain available.
+
+New primary-router invocations record the compiled `primary_router@1` topology before execution
+and cumulative metadata-only execution snapshots after each observed node update. Completion
+records the observed terminal transition; failures retain the last observed prefix and report
+partial evidence. Each invocation has its own opaque run ID; session/request IDs distinguish
+multiple turns under one correlation. Snapshot references identify retained `session_debug_event`
+records, not dedicated workflow events. These snapshots use the existing seven-day expiry.
+
+The `route_generic` branch is actual LangGraph execution. Subsequent generic-chat preparation,
+retrieval and model calls currently execute outside this graph and appear in the timeline;
+the viewer does not invent a separate generic graph. Dedicated workflow runs retain their
+existing topology and event representation. Runs share correlation/session context; no parent
+graph relationship is asserted without recorded evidence.
+
+An empty graph collection now says no snapshot is available and directs administrators to the
+timeline. It does not call a new case historical or imply LangGraph never ran. Older retained
+`primary_router` summary events are not retrospectively converted into graph snapshots.
+Unexpired router summaries without matching session/request graph snapshots add the top-level
+`primary_router_snapshot_unavailable` gap and mark graph evidence partial.
+An existing dedicated historical run without a snapshot still reports missing historical topology.
+The existing not-found/expired HTTP response applies when no diagnostic trace remains.
+
+The graph endpoint bounds dedicated workflow events and router snapshot records independently
+by `limit`/`offset`; `returned_events` counts both streams. Router snapshots are queried newest
+first and deduplicated per run within the page. Every snapshot contains the observed prefix,
+so an older page may show an earlier state of the same run. Any truncated/noninitial page is
+explicitly partial; clients must not merge an older snapshot over a newer one or treat it as
+the current run status. `has_more`/`next_offset` cover either stream. Full audit currently displays
+the returned page; export carries the same bounded evidence and completeness markers.
+
+Offline synthetic example: `python examples/primary_router_audit_demo.py`.
+The default `python examples/minimal_demo.py` remains available.
+Real local acceptance steps and screenshot contract: [ISSUE_864_LANGGRAPH_AUDIT_E2E.md](ISSUE_864_LANGGRAPH_AUDIT_E2E.md).
+
 Open **Admin → Debug**, paste the exact correlation ID supplied by the user, and select Search.
 The timeline shows timestamp, component, stage, status, and protected details. **Flow** remains the
 derived cross-service API → retrieval → model/orchestration → response path. **LangGraph audit** is

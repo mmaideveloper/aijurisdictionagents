@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import pytest
+
+from aijurisdictionagents.correlation import correlation_scope
 
 from aijurisdictionagents.orchestration.primary_router import (
     PrimaryClassification,
@@ -20,6 +23,28 @@ def _candidate(key: str = "sk.civil.payment_confirmation") -> PrimaryRouteCandid
         flow_key=key,
         flow_version=2,
     )
+
+
+def test_failed_router_keeps_only_observed_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(_state: object) -> object:
+        raise RuntimeError("synthetic private failure details")
+
+    monkeypatch.setattr(PrimaryLangGraphRouter, "_route_generic", staticmethod(fail))
+    recorded = []
+    with correlation_scope(
+        correlation_id="synthetic-failure",
+        debug_sink=lambda context, component, stage, status, payload: recorded.append((status, payload)),
+    ):
+        with pytest.raises(RuntimeError):
+            PrimaryLangGraphRouter(classifier=lambda *_: PrimaryClassification(status="no_match")).route(
+                question="synthetic question", verified_facts={}, candidates=[],
+            )
+    status, snapshot = recorded[-1]
+    assert status == "failed"
+    assert [item["node_id"] for item in snapshot["occurrences"]] == [
+        "minimize_verified_context", "classify_registered_flows",
+    ]
+    assert "synthetic private failure details" not in str(snapshot)
 
 
 def test_primary_router_selects_only_registered_high_confidence_flow() -> None:
