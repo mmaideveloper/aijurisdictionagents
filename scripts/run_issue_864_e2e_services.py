@@ -152,7 +152,7 @@ def _start_service(
         stderr.close()
 
 
-def _wait_for_health(url: str, process: subprocess.Popen[str], timeout_seconds: int = 180) -> None:
+def _wait_for_health(url: str, process: subprocess.Popen[str], timeout_seconds: int = 600) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if process.poll() is not None:

@@ -70,6 +70,18 @@ def main() -> int:
     store.initialize()
     users = provision_e2e_test_users(store=store, password=password)
     workflow_user = next(item for item in users if item.email == E2E_TEST_PAID_EMAIL)
+    deployment = os.getenv("E2E_AZURE_FOUNDRY_DEPLOYMENT", "").strip()
+    profiles = {"gpt-5-mini": "azurefoundryeu:gpt-5-mini", "gpt-4o-mini": "azure_foundry_gpt_4o_mini"}
+    if deployment not in profiles:
+        raise RuntimeError("Bootstrap an approved E2E_AZURE_FOUNDRY_DEPLOYMENT before preparation")
+    for task_type in ("default", "chat_reply"):
+        store.upsert_ai_task_route_policy(
+            policy_id=f"issue864:{task_type}:case", task_type=task_type, plan_code="case",
+            preferred_external_model_profile_id=profiles[deployment], allow_external=True,
+            require_external_ack=False, require_eu_data_zone=True,
+            fallback_local_on_error=False, fallback_local_on_budget=False,
+            priority=10000, enabled=True,
+        )
     admin = store.find_user_by_email(email=ADMIN_EMAIL)
     if admin is None:
         admin = store.create_user(

@@ -38,10 +38,14 @@ $env:DB_CLOUD = 'postgresql://postgres:postgres@127.0.0.1:5432/issue_864_e2e'
 ```
 
 Preparation seeds the deterministic synthetic law fixture from the existing #635 seed helper into
-the task laws database and provisions synthetic accounts only. It validates the configured real
+the task laws database, adds the identifier metadata required by MCP search and a source artifact,
+and provisions synthetic accounts only. It validates the configured real
 chat model route and writes a unique run ID and sanitized input manifest under ignored `runs/e2e/`.
 It does not create a case: the browser must do that through the UI. No new environment variable
 is introduced. Existing `JURISDIGTA_E2E_TEST_USER_PASSWORD` is used internally without printing it.
+Preparation pins the synthetic paid plan's `default` and `chat_reply` route policies in the isolated
+task database to the approved E2E deployment, requires EU routing and disables local fallback.
+This avoids selecting an unconfigured catalog profile and does not change production policies.
 
 ## Start and run
 
@@ -53,8 +57,11 @@ In one terminal, start the branch-local services:
 
 The launcher uses API `127.0.0.1:8264`, MCP `127.0.0.1:8364`, the two task databases and the approved
 real Azure Foundry deployment. It fails on occupied ports, missing model credentials or failed
-service health. This scenario does not invoke document generation, email delivery or background
-ingestion, so their workers are not acceptance prerequisites. Sign-in OTP is read only from the
+service health.
+The health deadline is ten minutes because first-start workflow assignment initialization can take
+longer than three minutes even when PostgreSQL is healthy.
+This scenario does not invoke document generation, email delivery or background ingestion, so their
+workers are not acceptance prerequisites. Sign-in OTP is read only from the
 synthetic local outbox; no real email is sent by this test.
 
 In a second terminal:
@@ -74,6 +81,9 @@ in the sanitized evidence. Tracing/video are disabled because network traces can
 The test checks direct API source retrieval, actual generic routing, pinned observed graph nodes,
 completed real-model/MCP calls, persisted synthetic citations and authorized audit/export access.
 It must fail rather than treat a dedicated route, model mismatch or missing citation as acceptance.
+The question explains legal citation notation, avoiding keywords that select a document-generation
+flow. The browser waits for initial case hydration before sending; case citations are read from the
+history response's complete citation collection rather than its paginated message list.
 
 ## Evidence and cleanup
 
@@ -95,8 +105,22 @@ task databases and any private authentication file. Keep no full protected diagn
 
 ## Validation status for the implementation session
 
-Real E2E is **pending**, not passed: Docker Desktop failed during startup on its local
-`dockerInference` socket, so local PostgreSQL/API/MCP real-service acceptance and the final
-screenshot could not yet be produced. Automatic approval rejected socket removal; no factory
-reset or bypass was performed. Rerun the commands above after Docker is restored. Unit tests and
-the production frontend build do not replace this acceptance gate.
+Real E2E **passed on 2026-10-09** after the user restarted Docker Desktop. PostgreSQL recovery
+completed normally; no Docker repair/reset was needed. The Chromium test passed in 57.1 seconds
+against branch-local frontend/API/MCP and migrated isolated PostgreSQL databases, using two real
+Azure Foundry `gpt-5-mini` completions. The persisted source was `issue-635-civil-code`, matching
+the synthetic seed. Observed nodes were `minimize_verified_context`, `classify_registered_flows`,
+`route_generic` and `__end__` with pinned topology.
+
+Ignored evidence directory:
+`runs/e2e/issue-864-langgraph-audit/issue-864-langgraph-audit-20261009T061702Z-fbcfdb6c/`.
+It contains the visually reviewed `full-audit-langgraph.png` and sanitized `result-manifest.json`.
+Correlation: `130a06e3-7d6e-42c4-a5cf-b42d9e0f3597`. Retain evidence for at most seven days
+(delete by 2026-10-16). This validates the local implementation; it is not production deployment
+evidence and does not reconstruct snapshots absent from an older production run.
+
+The browser deleted its case and private authentication file; branch-local API/MCP processes were
+stopped. Final removal of the two isolated databases and their runtime files is pending: automatic
+approval review rejected the cleanup command as blocked by policy, without a more specific reason.
+No alternate deletion mechanism was used. Remove these exact task databases/files using the cleanup
+procedure above; they contain synthetic accounts/outbox/debug data and the encrypted E2E credential.

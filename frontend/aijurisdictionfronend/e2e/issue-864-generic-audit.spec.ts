@@ -45,9 +45,12 @@ test("generic chat appears in the full audit with actual LangGraph and model/MCP
     caseId = (await created.json()).case_id;
     await page.waitForURL("**/app/assistant");
     await page.goto(`/case/${caseId}`);
+    // Initial case hydration can replace the assistant runtime; finish it before sending.
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByLabel("AI model použitý pre tento chat")).toContainText(input.expectedModel);
     const composer = page.locator(".assistant-composer__input");
     await expect(composer).toBeEnabled({ timeout: 60_000 });
-    await composer.fill("Vysvetli všeobecne povinnosť vydať potvrdenie o splnení dlhu podľa § 569 zákona 40/1964 Z. z. Cituj dostupný zdroj. Nepripravuj dokument ani potvrdenie, ide len o vysvetlenie syntetického zdroja.");
+    await composer.fill("Ako sa číta označenie § 569 ods. 1 zákona 40/1964 Z. z. v právnej citácii? Vysvetli význam paragrafu, odseku a čísla zákona s citáciou dostupného zdroja.");
     const streamPromise = page.waitForResponse(r => r.url().endsWith("/stream") && r.request().method() === "POST", { timeout: 60_000 });
     await page.locator(".assistant-composer__send").click();
     const stream = await streamPromise;
@@ -76,8 +79,8 @@ test("generic chat appears in the full audit with actual LangGraph and model/MCP
     expect(debug.timeline.some((event: { component: string; status: string }) => event.component === "mcp" && event.status === "completed")).toBe(true);
     const history = await request.get(`${api}/v1/cases/${caseId}/history?user_id=${auth.workflowUser.userId}`, { headers: headers(auth.workflowUser) });
     expect(history.ok()).toBe(true);
-    const messages = (await history.json()).messages;
-    const citations = messages.filter((m: { role: string }) => m.role === "assistant").flatMap((m: { citations?: Array<{ source_id: string }> }) => m.citations ?? []);
+    // History messages are paginated; the response's citation collection covers the whole case.
+    const citations = (await history.json()).citations ?? [];
     expect(citations.some((c: { source_id: string }) => c.source_id === input.expectedLegalSourceId)).toBe(true);
     await page.evaluate(admin => sessionStorage.setItem("jurisdigta.web.auth.user.v1", JSON.stringify(admin)), auth.adminUser);
     await page.goto("/app/admin");
