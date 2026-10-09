@@ -11,6 +11,10 @@ Apply `databases/court-decision-collector/migrations/0005_work_retry_schedule.sq
 before rollout (store initialization also adds the column idempotently). Existing
 pending work is immediately eligible. Discovery preserves retryable state and
 cooldown; successful completion resets retry metadata and consumes quota once.
+Scheduler pause decisions count only eligible work. Deferred new records remain
+in backlog diagnostics but do not prevent independent backfill; genuine daily
+quota exhaustion still pauses eligible new work. A regression test covers a
+weekly deferred record alongside successful backfill without quota consumption.
 To inspect deferred work, aggregate by status/last_error_type/next_attempt_at;
 never export decision identifiers or bodies. Investigate source URL/availability
 before operator-approved requeue. No enrichment or corpus expansion is enabled.

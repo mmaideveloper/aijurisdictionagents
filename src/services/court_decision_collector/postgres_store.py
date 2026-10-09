@@ -796,13 +796,16 @@ class PostgresCourtDecisionStore:
             )
             conn.commit()
 
-    def pending_work_count(self, *, source_system: str, work_class: str) -> int:
+    def pending_work_count(
+        self, *, source_system: str, work_class: str, eligible_only: bool = False,
+    ) -> int:
         with self._connect() as conn:
             row = conn.execute(
                 """SELECT COUNT(*) AS total FROM court_decision_import_queue
                    WHERE source_system=%s AND work_class=%s
-                     AND status IN ('pending','retryable')""",
-                (source_system, work_class),
+                     AND status IN ('pending','retryable')
+                     AND (%s=FALSE OR next_attempt_at <= CURRENT_TIMESTAMP)""",
+                (source_system, work_class, eligible_only),
             ).fetchone()
         return int(str(row["total"] if row else 0))
 

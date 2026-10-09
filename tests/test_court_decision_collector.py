@@ -118,9 +118,10 @@ class FakeStore:
         self.queue[item.source_guid]["item"] = replace(item, attempt_count=item.attempt_count + 1)
         self.scheduler = replace(self.scheduler, status="retryable_error")
 
-    def pending_work_count(self, *, source_system, work_class):
+    def pending_work_count(self, *, source_system, work_class, eligible_only=False):
         return sum(
             entry["item"].work_class == work_class and entry["status"] in {"pending", "retryable"}
+            and (not eligible_only or entry.get("next_attempt_at", datetime.min.replace(tzinfo=timezone.utc)) <= datetime.now(timezone.utc))
             for entry in self.queue.values()
         )
 
@@ -593,3 +594,28 @@ def test_missing_decision_does_not_block_valid_record_or_consume_quota() -> None
     store.enqueue_work_page(source_system="infosud", work_class="new", source_page=0,
                             entries=[(missing_guid, 0, True)])
     assert store.next_work_item(source_system="infosud", work_class="new") is None
+
+
+def test_deferred_new_record_does_not_pause_eligible_backfill() -> None:
+    records = sample_court_decision_records()
+    store = FakeStore()
+    source = FixtureCourtDecisionSource()
+    now = datetime.now(timezone.utc)
+    store.ensure_scheduler_state(
+        source_system="infosud", source_total=len(source.records), source_updated_at="fixture",
+        page_size=1, daily_new_limit=10, utc_day=now.date(), overlap_pages=1,
+    )
+    store.enqueue_work_page(source_system="infosud", work_class="new", source_page=0,
+                            entries=[("synthetic-missing", 0, True)])
+    missing = store.next_work_item(source_system="infosud", work_class="new")
+    from datetime import timedelta
+
+    store.mark_work_retry(missing, error_type="source_missing", next_attempt_at=now + timedelta(days=7))
+    service = CourtDecisionCollectorService(store=store, source=source, utc_now=lambda: now)
+    result = service.run_priority_cycle(page_size=1, backfill_pages_per_cycle=1)
+    assert result.processed == 1
+    assert store.saved[0].source_guid == records[0].source_guid
+    assert store.pending_work_count(source_system="infosud", work_class="new") == 1
+    assert store.pending_work_count(source_system="infosud", work_class="new", eligible_only=True) == 0
+    assert store.scheduler.quota_used == 0
+    assert store.scheduler.backfill_next_page == 1
