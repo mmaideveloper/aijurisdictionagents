@@ -10,6 +10,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
+from .network_retry import open_with_retry
+
 from pypdf import PdfReader
 
 from .domain import (
@@ -158,7 +160,7 @@ class SlovLexLiveSnapshotLoader:
 def _fetch_resource(*, url: str, timeout_seconds: float) -> FetchedResource:
     request = Request(url, headers=_REQUEST_HEADERS)
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - controlled HTTPS URL
+        with open_with_retry(request, timeout=timeout_seconds, opener=urlopen) as response:  # noqa: S310 - controlled HTTPS URL
             return FetchedResource(
                 url=url,
                 body=response.read(),
