@@ -15,6 +15,8 @@ import time
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from .network_retry import open_with_retry
 import zipfile
 
 from .archive_storage import ArchiveObjectStore, build_archive_object_store
@@ -141,7 +143,7 @@ class SlovLexExportIndexLoader:
     def load(self, *, timeout_seconds: float = 30.0) -> SlovLexExportIndex:
         request = Request(_EXPORT_INDEX_URL, headers=_REQUEST_HEADERS)
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+            with open_with_retry(request, timeout=timeout_seconds, opener=urlopen) as response:  # noqa: S310
                 html = response.read().decode("utf-8", errors="ignore")
         except HTTPError as exc:
             raise RuntimeError(f"SlovLex export index failed: HTTP {exc.code}") from exc
@@ -841,7 +843,7 @@ def _download_file(*, url: str, destination: Path) -> None:
     temporary_path = destination.with_suffix(f"{destination.suffix}.part")
     request = Request(url, headers=_REQUEST_HEADERS)
     try:
-        with urlopen(request, timeout=120) as response, temporary_path.open("wb") as output:  # noqa: S310
+        with open_with_retry(request, timeout=120, opener=urlopen) as response, temporary_path.open("wb") as output:  # noqa: S310
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:

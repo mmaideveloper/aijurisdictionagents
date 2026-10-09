@@ -7,6 +7,8 @@ from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from .network_retry import open_with_retry
+
 from .config import LawsCollectorConfig
 from .domain import CollectorProgress
 from .domain import LawSnapshot
@@ -227,7 +229,7 @@ class SlovLexSequentialImportRunner:
             headers={"User-Agent": "aijurisdictionagents-slovlex-runner/1.0"},
         )
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - controlled HTTPS URL
+            with open_with_retry(request, timeout=timeout_seconds, opener=urlopen) as response:  # noqa: S310 - controlled HTTPS URL
                 status_code = int(getattr(response, "status", 200))
                 return SlovLexProbeResult(
                     target=target,
@@ -236,6 +238,8 @@ class SlovLexSequentialImportRunner:
                     url=target.url,
                 )
         except HTTPError as exc:
+            if exc.code != 404:
+                raise RuntimeError(f"SlovLex probe unavailable: HTTP {exc.code}") from exc
             return SlovLexProbeResult(
                 target=target,
                 exists=False,
