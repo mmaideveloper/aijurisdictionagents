@@ -48,6 +48,10 @@ class FlowPackAmbiguousError(ValueError):
     pass
 
 
+class FlowPackDraftValidationError(ValueError):
+    """A legacy record needs explicit routing examples before cloning a draft."""
+
+
 class FlowPackStore:
     def __init__(self, config: FlowPackStoreConfig) -> None:
         self._config = config
@@ -208,6 +212,15 @@ class FlowPackStore:
                     f"Flow pack '{flow_key}' does not exist for jurisdiction '{target_jurisdiction}'"
                 )
             raise FlowPackNotFoundError(f"Flow pack '{flow_key}' does not exist")
+        positive_examples = (
+            payload.positive_examples
+            if payload.positive_examples is not None else latest.positive_examples
+        )
+        if not positive_examples:
+            raise FlowPackDraftValidationError(
+                "The source version has no positive_examples. Provide at least one "
+                "matching example in the new version request."
+            )
         create_payload = FlowPackCreateRequest(
             flow_key=flow_key,
             version=latest.version + 1,
@@ -219,7 +232,7 @@ class FlowPackStore:
             question_kind=payload.question_kind or latest.question_kind,
             legal_domain=payload.legal_domain or latest.legal_domain,
             requested_outcome=payload.requested_outcome or latest.requested_outcome,
-            positive_examples=payload.positive_examples or latest.positive_examples,
+            positive_examples=positive_examples,
             negative_examples=payload.negative_examples if payload.negative_examples is not None else latest.negative_examples,
             clarification_policy=(
                 payload.clarification_policy
