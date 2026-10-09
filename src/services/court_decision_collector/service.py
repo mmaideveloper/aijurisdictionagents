@@ -127,6 +127,7 @@ class CourtDecisionCollectorService:
         pending_new = self.store.pending_work_count(
             source_system=source.source_system,
             work_class="new",
+            eligible_only=True,
         )
         state = self.store.get_scheduler_state(source_system=source.source_system)
         if pending_new:
@@ -172,6 +173,7 @@ class CourtDecisionCollectorService:
             if max_decisions and self.store.pending_work_count(
                 source_system=source.source_system,
                 work_class="backfill",
+                eligible_only=True,
             ):
                 return summary
             self.store.advance_backfill_checkpoint(
