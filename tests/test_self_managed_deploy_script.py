@@ -41,7 +41,7 @@ def test_deploy_installs_log_retention_and_configures_monitoring() -> None:
     assert 'LOG_RETENTION_DAYS="${LOG_RETENTION_DAYS:-7}"' in script
     assert "install_log_retention_cron" in script
     assert "cleanup_logs.sh" in script
-    assert 'find "$LOG_DIR" -type f -name \'*.log\' -mtime +"$LOG_RETENTION_DAYS" -delete' in script
+    assert 'python3 "$DEPLOY_ROOT/app/scripts/server/log_lifecycle.py" prune --log-dir "$LOG_DIR" --retention-days "$LOG_RETENTION_DAYS"' in script
     assert 'python3 configure_monitoring.py --project-env "$ENV_FILE" --validate --start' in script
 
 
