@@ -450,6 +450,28 @@ class CaseWorkflowStore:
                 ),
                 (correlation_id.strip(), cutoff, event_limit + 1, event_offset),
             ).fetchall()
+            router_rows = conn.execute(
+                self._sql(
+                    "SELECT event_id, session_id, request_id, status, payload_json, created_at "
+                    "FROM session_debug_events WHERE correlation_id = ? "
+                    "AND component = 'langgraph' AND stage = 'graph_execution' "
+                    "AND expires_at > ? ORDER BY created_at DESC, event_id DESC LIMIT ? OFFSET ?"
+                ),
+                (correlation_id.strip(), _utc_now(), event_limit + 1, event_offset),
+            ).fetchall()
+            legacy_router = conn.execute(
+                self._sql(
+                    "SELECT 1 FROM session_debug_events legacy WHERE legacy.correlation_id = ? "
+                    "AND legacy.component = 'langgraph' AND legacy.stage = 'primary_router' "
+                    "AND legacy.expires_at > ? AND NOT EXISTS ("
+                    "SELECT 1 FROM session_debug_events graph WHERE "
+                    "graph.correlation_id = legacy.correlation_id "
+                    "AND graph.request_id = legacy.request_id AND graph.session_id = legacy.session_id "
+                    "AND graph.component = 'langgraph' AND graph.stage = 'graph_execution' "
+                    "AND graph.expires_at > ?) LIMIT 1"
+                ),
+                (correlation_id.strip(), _utc_now(), _utc_now()),
+            ).fetchone()
 
         has_more_events = len(event_rows) > event_limit
         visible_events = event_rows[:event_limit]
@@ -542,19 +564,61 @@ class CaseWorkflowStore:
                     "updated_at": str(run["updated_at"]),
                 }
             )
+        router_has_more = len(router_rows) > event_limit
+        seen_router_runs: set[str] = set()
+        for raw_router in router_rows[:event_limit]:
+            router = _row(raw_router)
+            payload = json.loads(str(router["payload_json"]))
+            router_id = str(payload["workflow_run_id"])
+            if router_id in seen_router_runs:
+                continue
+            seen_router_runs.add(router_id)
+            topology = payload["topology"]
+            occurrences = payload["occurrences"]
+            for occurrence in occurrences:
+                occurrence["event_id"] = str(router["event_id"])
+                occurrence["evidence_refs"] = [
+                    {"type": "session_debug_event", "id": str(router["event_id"])}
+                ]
+            gaps = []
+            if router["status"] != "completed":
+                gaps.append("execution_not_completed")
+            if router_has_more or event_offset:
+                gaps.append("bounded_result_page")
+            runs.append({
+                "workflow_run_id": router_id, "parent_run_id": "",
+                "session_id": str(router["session_id"]), "turn_id": str(router["request_id"]),
+                "graph_key": payload["graph_key"], "graph_version": payload["graph_version"],
+                "flow_key": "", "flow_version": 0,
+                "run_status": str(router["status"]),
+                "current_node_id": payload["current_node_id"],
+                "topology_status": "pinned", "topology": topology,
+                "topology_digest": topology["digest"], "occurrences": occurrences,
+                "observed_transition_ids": list(dict.fromkeys(
+                    item["transition_id"] for item in occurrences if item["transition_id"]
+                )),
+                "evidence_completeness": "partial" if gaps else "complete",
+                "evidence_gaps": gaps, "unmapped_event_count": 0,
+                "created_at": occurrences[0]["started_at"] if occurrences else str(router["created_at"]),
+                "updated_at": str(router["created_at"]),
+            })
+        has_more_events = has_more_events or router_has_more
         return {
             "schema_version": 1,
             "runs": runs,
+            "evidence_gaps": ["primary_router_snapshot_unavailable"] if legacy_router else [],
             "page": {
                 "limit": event_limit,
                 "offset": event_offset,
-                "returned_events": len(visible_events),
+                "returned_events": len(visible_events) + min(len(router_rows), event_limit),
                 "next_offset": event_offset + event_limit if has_more_events else None,
                 "has_more": has_more_events or len(run_rows) > 100,
             },
             "completeness": (
                 "partial"
                 if event_offset > 0 or has_more_events or len(run_rows) > 100
+                or legacy_router is not None
+                or any(item["evidence_completeness"] == "partial" for item in runs)
                 else "complete"
             ),
         }

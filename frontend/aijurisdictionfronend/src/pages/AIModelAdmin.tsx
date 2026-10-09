@@ -203,8 +203,7 @@ const AIModelAdmin: React.FC = () => {
   const [error, setError] = React.useState("");
 
   const [debugTrace, setDebugTrace] = React.useState<AdminDebugTrace | null>(null);
-  const [debugView, setDebugView] = React.useState<"timeline" | "flow" | "langgraph">("timeline");
-
+  const [debugView, setDebugView] = React.useState<"overview" | "timeline" | "flow" | "langgraph">("overview");
   const [formSubmitting, setFormSubmitting] = React.useState(false);
   const formSubmittingRef = React.useRef(false);
   const editFormRef = React.useRef<HTMLFormElement | null>(null);
@@ -2007,6 +2006,7 @@ const AIModelAdmin: React.FC = () => {
               <AdminTraceSearch adminAuth={adminAuth} onTrace={(trace) => { setDebugTrace(trace); setError(""); }} />
               {debugTrace ? <>
                 <div className="admin-inline-actions">
+                  <button className="button ghost" type="button" onClick={() => setDebugView("overview")}>{t("adminDebugOverview")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("timeline")}>{t("adminDebugTimeline")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("flow")}>{t("adminDebugFlow")}</button>
                   <button className="button ghost" type="button" onClick={() => setDebugView("langgraph")}>{t("adminDebugLangGraph")}</button>
@@ -2024,7 +2024,8 @@ const AIModelAdmin: React.FC = () => {
                   })}><FaDownload aria-hidden="true" />{t("adminDebugExport")}</button>
                 </div>
                 <p className="admin-muted">{debugTrace.correlation_id} · {t("adminDebugRetention")}</p>
-                {debugView === "timeline" ? (
+                {debugView === "overview" ? <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} /> : null}
+                {debugView === "timeline" || debugView === "overview" ? (
                   <ol className="admin-debug__timeline">
                     {debugTrace.timeline.map((item) => <li key={`${item.kind}-${item.event_id}`}>
                       <time>{item.created_at}</time>

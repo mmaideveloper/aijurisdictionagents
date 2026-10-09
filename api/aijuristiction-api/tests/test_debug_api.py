@@ -26,6 +26,66 @@ from langgraph.checkpoint.memory import InMemorySaver
 AUTH_HEADERS = {"x-api-key": "aijuris"}
 
 
+def test_generic_router_evidence_is_real_bounded_and_content_free(tmp_path: Path) -> None:
+    from aijurisdictionagents.correlation import CorrelationContext, correlation_scope
+    from aijurisdictionagents.orchestration.primary_router import PrimaryLangGraphRouter
+    from typing import Mapping
+
+    store = _store(tmp_path)
+
+    def sink(
+        context: CorrelationContext, component: str, stage: str,
+        status: str, payload: Mapping[str, Any],
+    ) -> None:
+        store.record_debug_event(
+            correlation_id=context.correlation_id, session_id=context.session_id,
+            request_id=context.request_id, parent_request_id=context.parent_request_id,
+            component=component, stage=stage, status=status, payload=dict(payload),
+        )
+
+    router = PrimaryLangGraphRouter(classifier=lambda *_: (_ for _ in ()).throw(AssertionError()))
+    with correlation_scope(correlation_id="generic-test", session_id="s1", debug_sink=sink):
+        for _ in range(2):
+            assert router.route(
+                question="SYNTHETIC_PRIVATE_QUESTION", verified_facts={"private": "PRIVATE_FACT"},
+                candidates=[],
+            ).route == "generic"
+    evidence = store.list_graph_evidence_by_correlation(correlation_id="generic-test")
+    assert len(evidence["runs"]) == 2
+    run = evidence["runs"][0]
+    assert run["graph_key"] == "primary_router"
+    assert run["run_status"] == "completed"
+    assert run["topology_status"] == "pinned"
+    assert [item["node_id"] for item in run["occurrences"]] == [
+        "minimize_verified_context", "classify_registered_flows", "route_generic", "__end__",
+    ]
+    assert all(item["transition_id"] for item in run["occurrences"])
+    assert all(item["evidence_refs"][0]["type"] == "session_debug_event" for item in run["occurrences"])
+    serialized = json.dumps(store.list_debug_events(correlation_id="generic-test"))
+    assert "SYNTHETIC_PRIVATE_QUESTION" not in serialized
+    assert "PRIVATE_FACT" not in serialized
+    assert store.list_graph_evidence_by_correlation(correlation_id="other")["runs"] == []
+    bounded = store.list_graph_evidence_by_correlation(correlation_id="generic-test", limit=1)
+    assert bounded["page"]["has_more"] is True
+    assert bounded["completeness"] == "partial"
+    with store._connect() as conn:
+        conn.execute("UPDATE session_debug_events SET expires_at = '2000-01-01T00:00:00+00:00'")
+        conn.commit()
+    assert store.list_graph_evidence_by_correlation(correlation_id="generic-test")["runs"] == []
+
+
+def test_retained_router_summary_without_snapshot_is_partial(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.record_debug_event(
+        correlation_id="legacy-router", session_id="s", request_id="r", parent_request_id="",
+        component="langgraph", stage="primary_router", status="completed", payload={"route": "generic"},
+    )
+    evidence = store.list_graph_evidence_by_correlation(correlation_id="legacy-router")
+    assert evidence["runs"] == []
+    assert evidence["completeness"] == "partial"
+    assert evidence["evidence_gaps"] == ["primary_router_snapshot_unavailable"]
+
+
 class _AuditStore:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []

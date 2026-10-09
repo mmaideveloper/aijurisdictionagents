@@ -721,6 +721,7 @@ export interface AdminLangGraphRunEvidence {
 
 export interface AdminLangGraphEvidence {
   schema_version: number;
+  evidence_gaps?: string[];
   runs: AdminLangGraphRunEvidence[];
   page: {
     limit: number;

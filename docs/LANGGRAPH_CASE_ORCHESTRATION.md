@@ -1,5 +1,12 @@
 # LangGraph case orchestration
 
+Primary router execution is now included in correlation-based admin graph evidence, including
+the actual `route_generic` branch, even when no dedicated case workflow exists. The compiled
+topology is pinned per invocation and observed node updates are retained as seven-day diagnostic
+snapshots without question/fact/checkpoint content. Generic chat processing after this branch
+remains service-timeline evidence, not a fabricated graph. See
+[session correlation debugging](SESSION_CORRELATION_DEBUGGING.md) for paging and historical gaps.
+
 JurisDigta uses LangGraph as the mandatory primary chat orchestrator and a registered, versioned runtime for
 guided legal cases. The first active reference is `sk.civil.payment_confirmation@5` on
 `legal_document_workflow@4`; all other enabled Slovak case types receive an explicit

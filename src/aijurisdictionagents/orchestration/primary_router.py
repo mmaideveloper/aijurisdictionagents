@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
+
+from ..correlation import record_debug_event
+from .graph_evidence import serialize_compiled_graph, transition_id
 
 
 PrimaryRoute = Literal["dedicated_flow", "clarification", "generic"]
@@ -105,16 +110,51 @@ class PrimaryLangGraphRouter:
         verified_facts: Mapping[str, str],
         candidates: Sequence[PrimaryRouteCandidate],
     ) -> PrimaryRouteDecision:
-        state = cast(
-            _PrimaryRouterState,
-            self._graph.invoke(
-                {
-                    "question": question,
-                    "verified_facts": dict(verified_facts),
-                    "candidates": tuple(candidates),
-                }
-            ),
+        topology = serialize_compiled_graph(
+            self._graph, graph_key="primary_router", graph_version=1
         )
+        run_id = str(uuid4())
+        occurrences: list[dict[str, Any]] = []
+        previous = "__start__"
+        state: _PrimaryRouterState = {}
+
+        def record(status: str) -> None:
+            record_debug_event("langgraph", "graph_execution", status, {
+                "workflow_run_id": run_id,
+                "graph_key": "primary_router", "graph_version": 1,
+                "topology": topology, "occurrences": list(occurrences),
+                "current_node_id": previous,
+            })
+
+        def observed(node: str) -> None:
+            nonlocal previous
+            now = datetime.now(timezone.utc).isoformat()
+            occurrences.append({
+                "occurrence_id": str(uuid4()), "node_id": node,
+                "attempt": 1, "sequence": len(occurrences) + 1,
+                "event_type": "graph_node_completed", "status": "completed",
+                "started_at": now, "ended_at": now, "duration_ms": None,
+                "source_node_id": previous,
+                "transition_id": transition_id(topology, source=previous, target=node),
+                "reason_code": "", "evidence_refs": [],
+            })
+            previous = node
+
+        record("started")
+        try:
+            for update in self._graph.stream({
+                "question": question, "verified_facts": dict(verified_facts),
+                "candidates": tuple(candidates),
+            }, stream_mode="updates"):
+                for node, values in update.items():
+                    state.update(cast(_PrimaryRouterState, values))
+                    observed(node)
+                    record("running")
+            observed("__end__")
+        except Exception:
+            record("failed")
+            raise
+        record("completed")
         return PrimaryRouteDecision(
             route=state.get("route", "generic"),
             selected_case_type_key=state.get("selected_case_type_key"),
@@ -240,7 +280,7 @@ class PrimaryLangGraphRouter:
 
 def _confidence(value: object) -> float:
     try:
-        parsed = float(value)
+        parsed = float(cast(Any, value))
     except (TypeError, ValueError):
         return 0.0
     return max(0.0, min(parsed, 1.0))

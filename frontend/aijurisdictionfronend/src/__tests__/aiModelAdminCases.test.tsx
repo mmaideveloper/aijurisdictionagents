@@ -200,6 +200,8 @@ describe("AIModelAdmin case reset panel", () => {
     await user.click(screen.getByRole("button", { name: /adminTraceExact/ }));
 
     expect(await screen.findByText("retrieval → case_document_post_filter")).not.toBeNull();
+    expect(screen.getAllByText(/legal_document_workflow@4/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "adminDebugOverview" })).not.toBeNull();
     expect(fetchAdminDebugTrace).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "admin-1" }),
       "corr-admin-303"
