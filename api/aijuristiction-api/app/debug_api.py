@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import base64
+import hashlib
 from io import BytesIO
 import json
 import re
@@ -158,6 +160,93 @@ def _audit(
         reason="Administrator troubleshooting by user-provided correlation ID.",
         correlation_id=str(getattr(request.state, "correlation_id", "")),
     )
+
+
+def _utc_bound(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise HTTPException(status_code=422, detail="Trace time bounds require a UTC offset")
+    return value.astimezone(timezone.utc)
+
+
+@router.get("")
+def search_debug_traces(
+    request: Request,
+    user_id: str | None = Query(default=None, min_length=1, max_length=200),
+    case_id: str | None = Query(default=None, min_length=1, max_length=200),
+    session_id: str | None = Query(default=None, min_length=1, max_length=200),
+    correlation_id: str | None = Query(default=None, min_length=1, max_length=200),
+    start: datetime | None = Query(default=None),
+    end: datetime | None = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=2000),
+    admin: AdminContext = Depends(require_decision_trace_admin),
+    admin_store: ApiDatabaseStore = Depends(get_admin_store),
+    service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
+) -> dict[str, object]:
+    filters = {
+        key: _validated_correlation_id(value)
+        for key, value in {
+            "user_id": user_id, "case_id": case_id,
+            "session_id": session_id, "correlation_id": correlation_id,
+        }.items() if value is not None
+    }
+    if not filters:
+        raise HTTPException(status_code=422, detail="At least one trace identifier is required")
+    fingerprint = hashlib.sha256(json.dumps(filters, sort_keys=True).encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+    resolved_end = _utc_bound(end) if end else now
+    resolved_start = _utc_bound(start) if start else resolved_end - timedelta(days=7)
+    after: tuple[str, str, str] | None = None
+    if cursor:
+        try:
+            page = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+            if not isinstance(page, dict) or page["filters"] != fingerprint:
+                raise ValueError("Cursor filters differ")
+            page_start = _utc_bound(datetime.fromisoformat(page["start"]))
+            page_end = _utc_bound(datetime.fromisoformat(page["end"]))
+            if (start and page_start != resolved_start) or (end and page_end != resolved_end):
+                raise ValueError("Cursor time range differs")
+            resolved_start, resolved_end = page_start, page_end
+            last = page["after"]
+            if not isinstance(last, list) or len(last) != 3 or not all(isinstance(v, str) for v in last):
+                raise ValueError("Invalid cursor position")
+            last_time = _utc_bound(datetime.fromisoformat(last[0])).isoformat()
+            after = (last_time, _validated_correlation_id(last[1]), last[2])
+            if last[2]:
+                _validated_correlation_id(last[2])
+        except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+            raise HTTPException(status_code=422, detail="Invalid trace search cursor") from exc
+    if resolved_start > resolved_end or resolved_end - resolved_start > timedelta(days=7):
+        raise HTTPException(status_code=422, detail="Trace time range must be ordered and at most seven days")
+    if resolved_end > now:
+        raise HTTPException(status_code=422, detail="Trace time range cannot end in the future")
+    # Fixed page snapshot plus a keyset cursor prevents new writes shifting later pages.
+    try:
+        service.store.purge_expired_debug_events()
+        items, has_more = service.store.search_trace_sessions(
+            filters=filters, start=resolved_start.isoformat(), end=resolved_end.isoformat(),
+            limit=limit, after=after,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Trace search unavailable") from exc
+    next_cursor: str | None = None
+    if has_more:
+        last_item = items[-1]
+        next_cursor = base64.urlsafe_b64encode(json.dumps({
+            "filters": fingerprint, "start": resolved_start.isoformat(), "end": resolved_end.isoformat(),
+            "after": [last_item["created_at"], last_item["correlation_id"], last_item["session_id"]],
+        }).encode()).decode()
+    admin_store.record_ai_model_admin_audit_event(
+        admin_user_id=admin.user_id, admin_email=admin.email,
+        action="search_debug_traces", entity_type="session_debug_trace", entity_id="search",
+        new_value_summary={"filter_fields": sorted(filters), "returned": len(items), "retention_days": 7},
+        reason="Administrator metadata-only trace search.",
+        correlation_id=str(getattr(request.state, "correlation_id", "")),
+    )
+    return {
+        "items": items, "limit": limit, "next_cursor": next_cursor,
+        "start": resolved_start.isoformat(), "end": resolved_end.isoformat(), "retention_days": 7,
+    }
 
 
 @router.get("/{correlation_id}")

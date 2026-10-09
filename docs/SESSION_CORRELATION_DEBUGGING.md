@@ -53,7 +53,10 @@ The same correlation context is restored in streaming worker threads and propaga
 
 ## Administrator workflow
 
-Open **Admin → Debug**, paste the exact correlation ID supplied by the user, and select Search.
+Open **Admin → Debug**, supply an exact user, case, session or correlation ID, optionally set
+**From (UTC)** and **Until (UTC)**, and select **Search logs**. All supplied identifiers are
+combined with AND. Select a metadata result to open its protected trace. **Open exact correlation**
+preserves the previous direct lookup, including historical traces without searchable ownership.
 The timeline shows timestamp, component, stage, status, and protected details. **Flow** remains the
 derived cross-service API → retrieval → model/orchestration → response path. **LangGraph audit** is
 separate: it shows the executable, version-pinned graph definition and overlays only node/edge
@@ -75,8 +78,81 @@ complete. Export adds the same `langgraph_evidence.json` and a schema-v2 manifes
 existing diagnostic JSON files.
 
 Search and export require the existing API key, an authenticated administrator identity, and an
-enabled server-side `admin` role. Both actions create admin audit events. Lookup is exact; the
-endpoint does not offer broad browsing of user sessions.
+enabled server-side `admin` role. Search, view and export create minimized admin audit events.
+Search audit records include the filter names and returned count, not the searched identifiers or
+diagnostic content. At least one exact identifier is required; unrestricted browsing is unavailable.
+
+### Metadata search contract (#855)
+
+`GET /v1/admin/debug?user_id=...&case_id=...&session_id=...&correlation_id=...` returns only
+`correlation_id`, `session_id`, `user_id`, `case_id`, `created_at` and `expires_at` in `items`.
+Every filter is optional individually; at least one is required. Identifiers follow the existing
+bounded safe-ID format. `start` and `end` require timezone-aware ISO timestamps, normalize to UTC,
+are inclusive, and define at most seven days ending no later than now. Defaults are the last seven
+days. The range selects the first recorded evidence time for a correlation/session pair, not the
+timestamp of every later event. No query scans request bodies or protected payload JSON.
+
+`limit` defaults to 25 and is bounded to 100. Follow `next_cursor` with the same identifiers and
+time bounds. The cursor preserves the initial upper time bound and uses descending
+`(created_at, correlation_id, session_id)` keyset pagination. New sessions do not shift later pages;
+expiry and deletion can remove results between pages. A changed filter/range or malformed cursor
+returns 422. Unknown and expired identifiers return the same empty list. Search failures return 503;
+disabled/non-admin callers receive 403 before lookup. Existing exact detail/export routes are unchanged.
+
+Migration `0032_debug_trace_search.sql` adds `debug_trace_sessions` and indexes for all four IDs,
+time ordering and expiry. Each row starts with the first retained event and expires seven days later;
+later events do not renew that deadline. Chat-session capture and workflow starts resolve case
+ownership against the authoritative API case record. A mismatched or deleted case is never attributed
+to a supplied user. Historical backfill copies only existing correlation/session/time columns,
+leaving ownership null (displayed as unknown). It deliberately does not infer ownership from payloads.
+Historical traces therefore remain searchable by retained correlation/session IDs, but not by an
+unverified user/case mapping. Workflow-only historical runs without retained debug events remain
+available through the existing exact lookup.
+
+The existing hourly/startup expiry purge also removes search metadata. Authorized case deletion
+removes its indexed sessions and matching protected debug events; session deletion removes its
+index rows and debug events. Existing workflow deletion removes its decision records/checkpoints.
+No new provider processing, consent scope, environment variable or retention period is introduced.
+Roll out the additive API/schema before the UI. Roll back the UI first, then API; the metadata table
+can remain and must continue to follow seven-day deletion. Do not remove existing diagnostic ledgers.
+
+Focused offline example and verification:
+
+```powershell
+.\conda\python.exe examples/audit_trace_search_demo.py
+.\conda\python.exe -m pytest api/aijuristiction-api/tests/test_debug_search.py -q
+.\scripts\validate_api.ps1
+cd frontend/aijurisdictionfronend
+npm test -- --run src/__tests__/adminTraceSearch.test.tsx src/__tests__/aiModelAdminCases.test.tsx
+npm run build
+npx playwright test e2e/issue-855-audit-search.spec.ts --project=chromium --output=../../runs/e2e/issue-855/playwright
+```
+
+The last command is an intercepted synthetic browser regression, **not final real-local acceptance**.
+Its screenshot and manifest remain under ignored `runs/e2e/issue-855/`; delete them within seven days.
+The existing web build also uploads only that sanitized screenshot and manifest as the
+`issue-855-browser-evidence` Actions artifact with seven-day retention. Link that artifact from the
+PR instead of committing transient evidence. This preliminary artifact is not a live-model pass.
+The original `python examples/minimal_demo.py` overview remains available.
+
+For final acceptance, use migrated branch-local API PostgreSQL, the local MCP/law PostgreSQL store,
+and approved real Azure Foundry credentials. Bootstrap with
+`scripts/bootstrap_e2e_model_credentials.py` (or the approved SSH import helper), start the local
+API/MCP, then reuse `scripts/prepare_issue_788_langgraph_audit_e2e.py` to create the existing synthetic
+audit fixture. Set its printed manifest/evidence paths using the existing `ISSUE_788_*` variables
+documented below and run:
+
+```powershell
+cd frontend/aijurisdictionfronend
+npx playwright test e2e/issue-855-audit-search-live.spec.ts --project=chromium --output=../../runs/e2e/issue-855/live
+```
+
+This live scenario checks all four identifiers through the real API, combines filters to exclude an
+unrelated user, verifies recorded model provenance and the synthetic law source, selects the trace
+in the admin UI, retains a screenshot/sanitized manifest, and cleans the synthetic case in `finally`.
+Missing fixture inputs skip it and leave acceptance pending. Docker/PostgreSQL or real-model
+prerequisite failures must never be reported as a passed live test. Screenshot links in chat/PR
+must identify whether they came from the preliminary regression or final acceptance.
 
 For Codex-assisted incident investigation, provide the copied correlation ID, the approximate
 event time, and whether the problem occurred locally or on `jurisdigta-server`. Start with an

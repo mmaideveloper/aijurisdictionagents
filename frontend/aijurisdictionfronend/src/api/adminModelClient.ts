@@ -732,7 +732,7 @@ export interface AdminLangGraphEvidence {
   completeness: "complete" | "partial";
 }
 
-type AdminAuthInput = AdminAuthContext | string;
+export type AdminAuthInput = AdminAuthContext | string;
 
 const normalizeAdminAuth = (adminAuth: AdminAuthInput): AdminAuthContext =>
   typeof adminAuth === "string" ? { userId: adminAuth } : adminAuth;
@@ -771,7 +771,7 @@ const adminRequest = async <T>(path: string, adminAuth: AdminAuthInput, init?: R
     } catch {
       detail = response.statusText || detail;
     }
-    throw new Error(detail);
+    throw Object.assign(new Error(detail), { status: response.status });
   }
   if (response.status === 204) {
     return undefined as T;
@@ -836,6 +836,40 @@ export const fetchAdminDebugTrace = (
 ): Promise<AdminDebugTrace> =>
   adminRequest<AdminDebugTrace>(`/v1/admin/debug/${encodeURIComponent(correlationId)}`, adminAuth, { method: "GET" });
 
+export interface AdminTraceFilters {
+  user_id?: string;
+  case_id?: string;
+  session_id?: string;
+  correlation_id?: string;
+  start?: string;
+  end?: string;
+}
+
+export interface AdminTraceSearchPage {
+  items: Array<{
+    correlation_id: string;
+    session_id: string;
+    user_id: string | null;
+    case_id: string | null;
+    created_at: string;
+    expires_at: string;
+  }>;
+  next_cursor: string | null;
+  start: string;
+  end: string;
+  limit: number;
+  retention_days: number;
+}
+
+export const fetchAdminTraceSearch = (
+  adminAuth: AdminAuthInput, filters: AdminTraceFilters, cursor?: string
+): Promise<AdminTraceSearchPage> => {
+  const params = new URLSearchParams({ limit: "25" });
+  Object.entries(filters).forEach(([key, value]) => { if (value) params.set(key, value); });
+  if (cursor) params.set("cursor", cursor);
+  return adminRequest<AdminTraceSearchPage>(`/v1/admin/debug?${params}`, adminAuth, { method: "GET" });
+};
+
 export const fetchAdminDebugExport = async (
   adminAuth: AdminAuthInput,
   correlationId: string
@@ -846,7 +880,7 @@ export const fetchAdminDebugExport = async (
     { method: "GET", headers: adminHeaders(adminAuth) }
   );
   if (!response.ok) {
-    throw new Error((await response.text()) || `HTTP ${response.status}`);
+    throw Object.assign(new Error("Debug export failed"), { status: response.status });
   }
   return {
     blob: await response.blob(),

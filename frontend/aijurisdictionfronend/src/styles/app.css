@@ -1193,7 +1193,16 @@
 }
 
 .admin-debug__search label {
-  flex: 1 1 26rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.admin-debug__search input {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-debug__timeline {

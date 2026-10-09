@@ -104,6 +104,11 @@ def delete_admin_case(
 
     try:
         after = store.soft_delete_case_for_admin(case_id=case_id, user_id=payload.user_id)
+        from app.case_workflows.service import get_case_workflow_service
+
+        get_case_workflow_service().store.delete_case_workflows(
+            case_id=case_id, user_id=payload.user_id
+        )
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found") from exc
 

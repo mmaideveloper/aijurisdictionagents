@@ -18,6 +18,7 @@ from app.case_workflows.models import (
     WorkflowRunResponse,
 )
 from aijurisdictionagents.api_db.config import ApiDataConfig
+from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.orchestration.case_workflow import CaseWorkflowOutcome, CaseWorkflowState
 from aijurisdictionagents.observability_decision_trace import (
     serialize_decision_trace,
@@ -574,6 +575,7 @@ class CaseWorkflowStore:
         expires_at = now + timedelta(days=7)
         safe_payload = _sanitize_debug_payload(payload)
         with self._connect() as conn:
+            self._insert_trace_session(conn, correlation_id, session_id, now)
             conn.execute(
                 self._sql(
                     "INSERT INTO session_debug_events(event_id, correlation_id, session_id, "
@@ -591,7 +593,80 @@ class CaseWorkflowStore:
                 self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"),
                 (now.isoformat(),),
             )
+            conn.execute(
+                self._sql("DELETE FROM debug_trace_sessions WHERE expires_at <= ?"),
+                (now.isoformat(),),
+            )
             conn.commit()
+
+    def _insert_trace_session(
+        self, conn: Any, correlation_id: str, session_id: str, created: datetime
+    ) -> None:
+        if not correlation_id.strip():
+            return
+        conn.execute(
+            self._sql(
+                "INSERT INTO debug_trace_sessions "
+                "(correlation_id, session_id, created_at, expires_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(correlation_id, session_id) DO NOTHING"
+            ),
+            (correlation_id.strip(), session_id.strip(), created.isoformat(),
+             (created + timedelta(days=7)).isoformat()),
+        )
+
+    def register_trace_session(
+        self, *, correlation_id: str, session_id: str, user_id: str,
+        case_id: str, owner_store: ApiDatabaseStore,
+    ) -> None:
+        """Resolve ownership from authoritative records, never from debug content."""
+        resolved_user: str | None = None
+        resolved_case: str | None = None
+        if case_id:
+            try:
+                case = owner_store.get_case(case_id=case_id)
+            except KeyError:
+                return
+            if case.status == "deleted" or (user_id and case.user_id != user_id):
+                return
+            resolved_user, resolved_case = case.user_id, case.case_id
+        elif user_id and owner_store.find_user_by_id(user_id=user_id) is not None:
+            resolved_user = user_id
+        with self._connect() as conn:
+            self._insert_trace_session(conn, correlation_id, session_id, datetime.now(timezone.utc))
+            conn.execute(
+                self._sql(
+                    "UPDATE debug_trace_sessions SET user_id = ?, case_id = ? "
+                    "WHERE correlation_id = ? AND session_id = ? AND user_id IS NULL "
+                    "AND case_id IS NULL"
+                ),
+                (resolved_user, resolved_case, correlation_id.strip(), session_id.strip()),
+            )
+            conn.commit()
+
+    def search_trace_sessions(
+        self, *, filters: dict[str, str], start: str, end: str, limit: int,
+        after: tuple[str, str, str] | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        clauses = ["created_at >= ?", "created_at <= ?", "expires_at > ?"]
+        params: list[object] = [start, end, _utc_now()]
+        for key in ("user_id", "case_id", "session_id", "correlation_id"):
+            if filters.get(key):
+                clauses.append(f"{key} = ?")
+                params.append(filters[key])
+        if after is not None:
+            clauses.append("(created_at, correlation_id, session_id) < (?, ?, ?)")
+            params.extend(after)
+        page_size = min(max(limit, 1), 100)
+        params.append(page_size + 1)
+        with self._connect() as conn:
+            rows = conn.execute(
+                self._sql(
+                    "SELECT correlation_id, session_id, user_id, case_id, created_at, expires_at "
+                    f"FROM debug_trace_sessions WHERE {' AND '.join(clauses)} "
+                    "ORDER BY created_at DESC, correlation_id DESC, session_id DESC LIMIT ?"
+                ), tuple(params),
+            ).fetchall()
+        return [_row(row) for row in rows[:page_size]], len(rows) > page_size
 
     def latest_case_correlation_id(self, *, case_id: str, user_id: str) -> str:
         """Return only an unexpired session reference, including ordinary chat sessions."""
@@ -641,6 +716,7 @@ class CaseWorkflowStore:
 
         now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
+            conn.execute(self._sql("DELETE FROM debug_trace_sessions WHERE expires_at <= ?"), (now,))
             cursor = conn.execute(
                 self._sql("DELETE FROM session_debug_events WHERE expires_at <= ?"),
                 (now,),
@@ -653,6 +729,8 @@ class CaseWorkflowStore:
         """Retention hook: delete every trace owned by one expired/deleted session."""
 
         with self._connect() as conn:
+            conn.execute(self._sql("DELETE FROM debug_trace_sessions WHERE session_id = ?"), (session_id,))
+            conn.execute(self._sql("DELETE FROM session_debug_events WHERE session_id = ?"), (session_id,))
             cursor = conn.execute(
                 self._sql("DELETE FROM orchestration_decision_traces WHERE session_id = ?"),
                 (session_id,),
@@ -793,6 +871,17 @@ class CaseWorkflowStore:
         with self._connect() as conn:
             conn.execute(
                 self._sql(
+                    "DELETE FROM session_debug_events WHERE (correlation_id, session_id) IN "
+                    "(SELECT correlation_id, session_id FROM debug_trace_sessions "
+                    "WHERE case_id = ? AND user_id = ?)"
+                ), (case_id, user_id),
+            )
+            conn.execute(
+                self._sql("DELETE FROM debug_trace_sessions WHERE case_id = ? AND user_id = ?"),
+                (case_id, user_id),
+            )
+            conn.execute(
+                self._sql(
                     "DELETE FROM workflow_tool_execution_events WHERE case_id = ? AND user_id = ?"
                 ),
                 (case_id, user_id),
@@ -867,6 +956,17 @@ class CaseWorkflowStore:
                         conn.execute(statement)
             else:
                 conn.executescript(schema)
+            # Historical payloads are never scanned to infer ownership. Only existing
+            # allowlisted columns are indexed; absent user/case metadata stays unknown.
+            conn.execute(
+                self._sql(
+                    "INSERT INTO debug_trace_sessions(correlation_id, session_id, created_at, expires_at) "
+                    "SELECT correlation_id, session_id, MIN(created_at), MIN(expires_at) "
+                    "FROM session_debug_events WHERE expires_at > ? AND correlation_id <> '' "
+                    "GROUP BY correlation_id, session_id "
+                    "ON CONFLICT(correlation_id, session_id) DO NOTHING"
+                ), (_utc_now(),),
+            )
             if self._is_postgres:
                 conn.execute(
                     "ALTER TABLE case_workflow_runs ADD COLUMN IF NOT EXISTS "

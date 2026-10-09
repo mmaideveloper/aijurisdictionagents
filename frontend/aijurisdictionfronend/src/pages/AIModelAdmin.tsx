@@ -1,3 +1,4 @@
+import AdminTraceSearch from "../components/AdminTraceSearch";
 import React from "react";
 import { createSearchParams } from "react-router-dom";
 import { FaBriefcase, FaBug, FaCheck, FaDownload, FaEdit, FaKey, FaPlus, FaRoute, FaSearch, FaServer, FaSyncAlt, FaTrash, FaUserCog, FaUserPlus, FaUsers } from "react-icons/fa";
@@ -52,7 +53,7 @@ import {
   setOllamaModelDefault,
   removeOllamaModel,
   updateAdminUser,
-  fetchAdminDebugTrace,
+
   fetchAdminDebugExport
 } from "../api/adminModelClient";
 import { useAuth } from "../auth/webAuth";
@@ -200,10 +201,10 @@ const AIModelAdmin: React.FC = () => {
   const [dashboardLoadState, setDashboardLoadState] = React.useState<AdminDashboardLoadState>("idle");
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
-  const [debugCorrelationId, setDebugCorrelationId] = React.useState("");
+
   const [debugTrace, setDebugTrace] = React.useState<AdminDebugTrace | null>(null);
   const [debugView, setDebugView] = React.useState<"timeline" | "flow" | "langgraph">("timeline");
-  const debugRequestRef = React.useRef(0);
+
   const [formSubmitting, setFormSubmitting] = React.useState(false);
   const formSubmittingRef = React.useRef(false);
   const editFormRef = React.useRef<HTMLFormElement | null>(null);
@@ -994,7 +995,7 @@ const AIModelAdmin: React.FC = () => {
       </section>
 
       {status ? <p className="form-success">{status}</p> : null}
-      {error && !(activeSection === "debug" && debugTrace) ? <p className="form-error" role="alert">{error}</p> : null}
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
 
       <section className="admin-alert">
         <strong>{t("adminExternalWarningTitle")}</strong>
@@ -2003,18 +2004,7 @@ const AIModelAdmin: React.FC = () => {
             <section className="admin-table-section admin-debug">
               <h2>{t("adminDebugTitle")}</h2>
               <p className="admin-muted">{t("adminDebugHelp")}</p>
-              <form className="admin-debug__search" onSubmit={(event) => {
-                event.preventDefault();
-                setError("");
-                const requestId = ++debugRequestRef.current;
-                setDebugTrace(null);
-                void fetchAdminDebugTrace(adminAuth, debugCorrelationId.trim())
-                  .then((trace) => { if (requestId === debugRequestRef.current) setDebugTrace(trace); })
-                  .catch((reason: unknown) => { if (requestId === debugRequestRef.current) setError(reason instanceof Error ? reason.message : String(reason)); });
-              }}>
-                <label>{t("adminDebugCorrelationId")}<input value={debugCorrelationId} onChange={(event) => setDebugCorrelationId(event.target.value)} required /></label>
-                <button className="primary-button" type="submit"><FaSearch aria-hidden="true" />{t("adminDebugSearch")}</button>
-              </form>
+              <AdminTraceSearch adminAuth={adminAuth} onTrace={(trace) => { setDebugTrace(trace); setError(""); }} />
               {debugTrace ? <>
                 <div className="admin-inline-actions">
                   <button className="button ghost" type="button" onClick={() => setDebugView("timeline")}>{t("adminDebugTimeline")}</button>
@@ -2027,6 +2017,10 @@ const AIModelAdmin: React.FC = () => {
                     anchor.download = filename;
                     anchor.click();
                     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  }).catch((reason: unknown) => {
+                    const status = (reason as { status?: number })?.status;
+                    setError(t(status === 401 || status === 403 ? "adminTraceUnauthorized"
+                      : status === 404 ? "adminTraceExpired" : "adminTraceUnavailable"));
                   })}><FaDownload aria-hidden="true" />{t("adminDebugExport")}</button>
                 </div>
                 <p className="admin-muted">{debugTrace.correlation_id} · {t("adminDebugRetention")}</p>
