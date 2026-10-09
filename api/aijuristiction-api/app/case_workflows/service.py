@@ -643,6 +643,12 @@ class CaseWorkflowApplicationService:
         )
 
     def start(self, payload: WorkflowStartRequest) -> WorkflowRunResponse:
+        correlation_id = payload.correlation_id.strip() or str(uuid4())
+        if self.api_store is not None:
+            self.store.register_trace_session(
+                correlation_id=correlation_id, session_id=payload.session_id,
+                user_id=payload.user_id, case_id=payload.case_id, owner_store=self.api_store,
+            )
         assignment = self.store.get_active_assignment(
             case_type_key=payload.case_type_key,
             jurisdiction=payload.jurisdiction,
@@ -654,7 +660,7 @@ class CaseWorkflowApplicationService:
         )
         state = build_initial_case_workflow_state(
             workflow_run_id=str(uuid4()),
-            correlation_id=payload.correlation_id.strip() or str(uuid4()),
+            correlation_id=correlation_id,
             case_id=payload.case_id,
             session_id=payload.session_id,
             user_id=payload.user_id,

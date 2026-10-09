@@ -49,6 +49,14 @@ in `orchestration_decision_traces`, ordered by session and timestamp. Optional l
 failures do not alter an answer; the durable workflow write is transactional so a required legal-risk
 audit record cannot silently disappear.
 
+The enabled-admin audit viewer searches `debug_trace_sessions`, a separate metadata-only index
+of correlation/session identifiers, verified case/user ownership, and a fixed seven-day lifetime.
+Indexed exact filters combine with AND and use bounded UTC ranges and keyset pagination. Protected
+debug payloads remain in the existing ledger; historical unknown ownership is not inferred from
+request bodies. Search, detail and export require the current enabled admin role and audited access.
+See [Session correlation debugging](SESSION_CORRELATION_DEBUGGING.md) for the API contract,
+migration, deletion hooks, limitations, runnable example and E2E evidence requirements.
+
 ## API document-task planning
 
 The API chat reply flow can add policy-driven task-planning guidance for uploaded-document requests before sending the prompt to the lawyer agent.

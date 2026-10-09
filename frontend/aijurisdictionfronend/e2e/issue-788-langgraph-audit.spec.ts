@@ -65,6 +65,7 @@ test("real workflow renders its pinned LangGraph and execution evidence for audi
   await debugNavigation.click();
   await page.getByLabel("Correlation ID").fill(input.correlationId);
   await page.getByRole("button", { name: "Search logs" }).click();
+  await page.getByRole("button", { name: input.correlationId, exact: true }).click();
   const langGraphTab = page.getByRole("button", { name: "LangGraph audit" });
   await expect(langGraphTab).toBeVisible({ timeout: 20_000 });
   await langGraphTab.click();

@@ -66,6 +66,17 @@ jobs:
       - name: E2E tests
         run: npm run test:e2e
 
+      - name: Retain sanitized audit-search browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-855-browser-evidence
+          path: |
+            runs/e2e/issue-855/**/issue-855-search-selected-trace.png
+            runs/e2e/issue-855/**/result-manifest.json
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Build
         run: npm run build
 

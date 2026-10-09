@@ -124,3 +124,11 @@ stopped. Final removal of the two isolated databases and their runtime files is 
 approval review rejected the cleanup command as blocked by policy, without a more specific reason.
 No alternate deletion mechanism was used. Remove these exact task databases/files using the cleanup
 procedure above; they contain synthetic accounts/outbox/debug data and the encrypted E2E credential.
+
+Before merging, integration with the newer audit-search UI was reviewed and revalidated on
+2026-10-09. The test now uses **Open exact correlation**; the searchable filters and default
+Full audit are both retained. API lint/type checks, the full API unit suite, primary-router tests,
+11 frontend regressions, frontend build/lint and runnable examples passed. Real E2E passed again
+(Chromium, 1.5 minutes), with visually reviewed screenshot/manifest under
+`runs/e2e/issue-864-langgraph-audit/issue-864-langgraph-audit-20261009T150947Z-4ff6c4c0/`.
+Correlation: `6057850b-71d8-4bfd-a955-afe3e6fbc2d4`; real model and expected source matched again.

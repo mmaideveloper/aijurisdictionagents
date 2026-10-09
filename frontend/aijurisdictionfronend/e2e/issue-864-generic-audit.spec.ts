@@ -86,7 +86,7 @@ test("generic chat appears in the full audit with actual LangGraph and model/MCP
     await page.goto("/app/admin");
     await page.getByRole("button", { name: "Ladenie", exact: true }).click();
     await page.getByLabel("ID korelácie").fill(correlation);
-    await page.locator(".admin-debug__search button[type=submit]").click();
+    await page.getByRole("button", { name: "Otvoriť presnú koreláciu", exact: true }).click();
     await expect(page.getByRole("button", { name: "Celkový audit", exact: true })).toBeVisible();
     await expect(page.getByRole("img", { name: /primary_router/ })).toBeVisible();
     await expect(page.locator(".admin-debug__timeline")).toContainText("langgraph → graph_execution");

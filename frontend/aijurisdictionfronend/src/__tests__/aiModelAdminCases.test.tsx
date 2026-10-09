@@ -8,6 +8,7 @@ import AIModelAdmin from "../pages/AIModelAdmin";
 import {
   fetchAdminCaseExportBlob,
   fetchAdminDebugTrace,
+  fetchAdminDebugExport,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchOllamaModels,
@@ -196,7 +197,7 @@ describe("AIModelAdmin case reset panel", () => {
 
     await user.click(await screen.findByRole("button", { name: /adminDebugTitle/ }));
     await user.type(screen.getByLabelText("adminDebugCorrelationId"), "corr-admin-303");
-    await user.click(screen.getByRole("button", { name: /adminDebugSearch/ }));
+    await user.click(screen.getByRole("button", { name: /adminTraceExact/ }));
 
     expect(await screen.findByText("retrieval → case_document_post_filter")).not.toBeNull();
     expect(screen.getAllByText(/legal_document_workflow@4/).length).toBeGreaterThan(0);
@@ -210,6 +211,9 @@ describe("AIModelAdmin case reset panel", () => {
     await user.click(screen.getByRole("button", { name: /adminDebugLangGraph/ }));
     expect(screen.getAllByText(/legal_document_workflow@4/).length).toBeGreaterThan(0);
     expect(screen.getByText("event-workflow-1")).not.toBeNull();
+    vi.mocked(fetchAdminDebugExport).mockRejectedValue(Object.assign(new Error("private export detail"), { status: 403 }));
+    await user.click(screen.getByRole("button", { name: /adminDebugExport/ }));
+    expect((await screen.findByRole("alert")).textContent).toBe("adminTraceUnauthorized");
   });
 
   it("downloads an audited admin case export from each case row", async () => {
