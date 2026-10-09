@@ -48,6 +48,7 @@ loki.source.docker "jurisdigta" {
 local.file_match "jurisdigta_job_logs" {
   path_targets = [{
     __path__     = "/srv/jurisdigta/runs/logs/*.log",
+    __path_exclude__ = "/srv/jurisdigta/runs/logs/*-latest.log",
     stack        = "jurisdigta",
     environment  = "prod",
     service      = "jurisdigta-job-log",
@@ -57,12 +58,22 @@ local.file_match "jurisdigta_job_logs" {
 }
 
 loki.source.file "jurisdigta_job_logs" {
-  targets    = local.file_match.jurisdigta_job_logs.targets
+  targets    = discovery.relabel.job_files.output
   forward_to = [loki.write.default.receiver]
 }
 
 loki.write "default" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// Court events already arrive through Docker; avoid ingesting their file copy.
+discovery.relabel "job_files" {
+  targets = local.file_match.jurisdigta_job_logs.targets
+  rule {
+    source_labels = ["__path__"]
+    regex         = ".*/court-decision-collector\\.log"
+    action        = "drop"
   }
 }
