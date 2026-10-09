@@ -803,6 +803,7 @@ DOCUMENT_PROCESSOR_LIMIT_VALUE="${DOCUMENT_PROCESSOR_LIMIT:-20}"
 DOCUMENT_PROCESSOR_MAX_RUNNING_TIME_VALUE="${DOCUMENT_PROCESSOR_MAX_RUNNING_TIME:-15}"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting document processor job" | tee -a "$LOG_FILE"
+python3 "$APP_DIR/scripts/server/log_lifecycle.py" publish --log "$LOG_FILE" --latest "$LATEST_LOG"
 docker run --rm \
   --name jurisdigta-document-processor \
   --network aijuristiction-api_default \
@@ -820,7 +821,7 @@ docker run --rm \
   python -m services.document_processor --limit "$DOCUMENT_PROCESSOR_LIMIT_VALUE" 2>&1 | tee -a "$LOG_FILE"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] document processor job finished" | tee -a "$LOG_FILE"
 
-ln -sfn "$LOG_FILE" "$LATEST_LOG"
+python3 "$APP_DIR/scripts/server/log_lifecycle.py" publish --log "$LOG_FILE" --latest "$LATEST_LOG"
 WRAPPER
   chmod 700 "$DEPLOY_ROOT/ops/run_document_processor.sh"
 
@@ -908,6 +909,7 @@ PY
 )"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] starting laws collector daily job" | tee -a "$LOG_FILE"
+python3 "$APP_DIR/scripts/server/log_lifecycle.py" publish --log "$LOG_FILE" --latest "$LATEST_LOG"
 docker run --rm \
   --name jurisdigta-laws-collector-daily \
   --network aijuristiction-api_default \
@@ -928,7 +930,7 @@ docker run --rm \
   jurisdigta-laws-collector:local 2>&1 | tee -a "$LOG_FILE"
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] laws collector daily job finished" | tee -a "$LOG_FILE"
 
-ln -sfn "$LOG_FILE" "$LATEST_LOG"
+python3 "$APP_DIR/scripts/server/log_lifecycle.py" publish --log "$LOG_FILE" --latest "$LATEST_LOG"
 WRAPPER
   chmod 700 "$DEPLOY_ROOT/ops/run_laws_collector_daily.sh"
 
@@ -981,7 +983,7 @@ fi
 
 LOG_DIR="$DEPLOY_ROOT/runs/logs"
 mkdir -p "$LOG_DIR"
-find "$LOG_DIR" -type f -name '*.log' -mtime +"$LOG_RETENTION_DAYS" -delete
+python3 "$DEPLOY_ROOT/app/scripts/server/log_lifecycle.py" prune --log-dir "$LOG_DIR" --retention-days "$LOG_RETENTION_DAYS"
 WRAPPER
   chmod 700 "$DEPLOY_ROOT/ops/cleanup_logs.sh"
 
