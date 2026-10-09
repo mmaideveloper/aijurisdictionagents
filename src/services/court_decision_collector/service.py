@@ -11,6 +11,7 @@ from typing import Protocol
 from .domain import CourtDecisionRecord, CourtDecisionSyncSummary
 from .infosud_source import InfoSudDecisionPage, InfoSudDecisionRef
 from .postgres_store import CourtDecisionSchedulerState, PostgresCourtDecisionStore
+from .retry import schedule_retry
 
 ProgressLogger = Callable[[str], None]
 SleepFunction = Callable[[float], None]
@@ -320,6 +321,7 @@ class CourtDecisionCollectorService:
     ) -> CourtDecisionSyncSummary:
         source = self._required_source()
         summary = CourtDecisionSyncSummary()
+        attempted: set[str] = set()
         while not max_items or summary.processed < max_items:
             if work_class == "new":
                 state = self.store.get_scheduler_state(source_system=source.source_system)
@@ -341,6 +343,9 @@ class CourtDecisionCollectorService:
             )
             if item is None:
                 break
+            if item.source_guid in attempted:
+                break
+            attempted.add(item.source_guid)
             try:
                 record = source.get_decision(item.source_guid)
                 item_summary = self.sync_records([record], work_class=work_class)
@@ -351,13 +356,23 @@ class CourtDecisionCollectorService:
                 )
                 summary = summary.merge(item_summary)
             except Exception as exc:
-                self.store.mark_work_retry(item, error_type=type(exc).__name__)
+                retry = schedule_retry(
+                    exc, attempt=item.attempt_count + 1,
+                    reference=item.source_guid, now=self.utc_now(),
+                )
+                if retry is None:
+                    self.store.mark_work_retry(item, error_type=type(exc).__name__)
+                    raise
+                self.store.mark_work_retry(
+                    item, error_type=retry.category,
+                    next_attempt_at=retry.next_attempt_at,
+                )
                 self.progress_logger(
                     "court_decision_work_retry "
                     f"reference_hash={_reference_hash(item.source_guid)} work_class={work_class} "
-                    f"error_type={type(exc).__name__}"
+                    f"error_type={type(exc).__name__} category={retry.category} "
+                    f"next_attempt_at={retry.next_attempt_at.isoformat()}"
                 )
-                raise
         return summary
 
     def _required_source(self) -> CourtDecisionSource:

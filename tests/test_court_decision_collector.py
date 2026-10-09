@@ -73,6 +73,8 @@ class FakeStore:
     def enqueue_work_page(self, *, source_system, work_class, source_page, entries):
         for guid, ordinal, counts_toward_quota in entries:
             previous = self.queue.get(guid)
+            if previous and previous["status"] == "retryable":
+                continue
             if previous and previous["item"].work_class == "new" and work_class == "backfill":
                 continue
             self.queue[guid] = {
@@ -92,6 +94,7 @@ class FakeStore:
         items = [
             entry["item"] for entry in self.queue.values()
             if entry["item"].work_class == work_class and entry["status"] in {"pending", "retryable"}
+            and entry.get("next_attempt_at", datetime.min.replace(tzinfo=timezone.utc)) <= datetime.now(timezone.utc)
         ]
         return min(items, key=lambda item: (item.source_ordinal, item.source_guid)) if items else None
 
@@ -109,8 +112,10 @@ class FakeStore:
         )
         return True
 
-    def mark_work_retry(self, item, *, error_type):
+    def mark_work_retry(self, item, *, error_type, next_attempt_at=None):
         self.queue[item.source_guid]["status"] = "retryable"
+        self.queue[item.source_guid]["next_attempt_at"] = next_attempt_at or datetime.now(timezone.utc)
+        self.queue[item.source_guid]["item"] = replace(item, attempt_count=item.attempt_count + 1)
         self.scheduler = replace(self.scheduler, status="retryable_error")
 
     def pending_work_count(self, *, source_system, work_class):
@@ -552,3 +557,39 @@ def test_worker_loop_waits_after_priority_cycle_is_idle() -> None:
     assert sleeps == []
     assert store.scheduler.status == "backfill_cycle_complete"
     assert any("waiting_for_new_judicial_decisions status=backfill_cycle_complete" in item for item in messages)
+
+
+def test_missing_decision_does_not_block_valid_record_or_consume_quota() -> None:
+    records = sample_court_decision_records()
+    store = FakeStore()
+    now = datetime.now(timezone.utc)
+    store.ensure_scheduler_state(
+        source_system="infosud", source_total=2, source_updated_at="",
+        page_size=2, daily_new_limit=10, utc_day=now.date(), overlap_pages=1,
+    )
+    missing_guid = "synthetic-missing"
+    valid = replace(records[0], source_system="infosud")
+    store.enqueue_work_page(
+        source_system="infosud", work_class="new", source_page=0,
+        entries=[(missing_guid, 0, True), (valid.source_guid, 1, True)],
+    )
+
+    class Source:
+        source_system = "infosud"
+
+        def get_decision(self, guid):
+            if guid == missing_guid:
+                response = httpx.Response(404, request=httpx.Request("GET", "https://source.invalid/missing"))
+                response.raise_for_status()
+            return valid
+
+    service = CourtDecisionCollectorService(store=store, source=Source(), utc_now=lambda: now)
+    result = service._drain_work(work_class="new", utc_day=now.date(), daily_new_limit=10, max_items=0)
+    assert result.created == 1
+    assert store.scheduler.quota_used == 1
+    assert store.queue[missing_guid]["status"] == "retryable"
+    assert store.queue[missing_guid]["next_attempt_at"] > now
+    # A discovery overlap / worker restart must not reset the persisted cooldown.
+    store.enqueue_work_page(source_system="infosud", work_class="new", source_page=0,
+                            entries=[(missing_guid, 0, True)])
+    assert store.next_work_item(source_system="infosud", work_class="new") is None
