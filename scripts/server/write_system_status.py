@@ -10,6 +10,12 @@ import shutil
 import subprocess
 from typing import Any
 
+# Support both direct script execution and package imports.
+try:
+    from scripts.server.log_events import classify_line, event_counts
+except ModuleNotFoundError:
+    from log_events import classify_line, event_counts
+
 
 DEFAULT_OUTPUT = "/srv/jurisdigta/runs/status/system-status.json"
 DEFAULT_LAWS_LOG = "/srv/jurisdigta/runs/logs/laws-collector-daily-latest.log"
@@ -19,7 +25,6 @@ DEFAULT_COURT_DECISION_COLLECTOR_LOG = (
 )
 LOG_TAIL_BYTES = 5 * 1024 * 1024
 DEFAULT_APP_ROOT = "/srv/jurisdigta/app"
-ERROR_PATTERN = re.compile(r"\b(error|exception|traceback|critical|failed)\b", re.IGNORECASE)
 HTTP_REQUEST_PATTERN = re.compile(
     r"\|\s*(?P<logger>[A-Za-z0-9_.-]+\.http)\s*\|\s*"
     r"(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+->\s+"
@@ -197,6 +202,7 @@ def _container_status(name: str, *, log_since: str, include_http_metrics: bool =
         "started_at": _clean_docker_timestamp(inspect.get("started_at")),
         "finished_at": _clean_docker_timestamp(inspect.get("finished_at")),
         "error_count": _count_error_lines(log_text),
+        "log_event_counts": event_counts(log_text),
     }
     if include_http_metrics:
         payload["http"] = _http_log_metrics(log_text)
@@ -538,6 +544,7 @@ def _laws_log_status(path: Path) -> dict[str, Any]:
         "last_run_processed": latest_run["processed"],
         "recent_errors": _recent_error_lines(text),
         "error_count": collector_errors,
+        "log_event_counts": event_counts(text),
     }
 
 
@@ -568,6 +575,7 @@ def _document_processor_log_status(path: Path) -> dict[str, Any]:
         "last_run_failed": latest_run["failed"],
         "recent_errors": _recent_error_lines(text),
         "error_count": _count_error_lines(text),
+        "log_event_counts": event_counts(text),
     }
 
 
@@ -592,6 +600,7 @@ def _court_decision_log_status(path: Path) -> dict[str, Any]:
         "last_activity_at": _format_dt(last_activity),
         "recent_errors": _recent_error_lines(text),
         "error_count": _count_error_lines(text),
+        "log_event_counts": event_counts(text),
     }
 
 
@@ -699,7 +708,7 @@ def _last_timestamp(text: str, pattern: re.Pattern[str]) -> datetime | None:
 
 
 def _count_error_lines(text: str) -> int:
-    return sum(1 for line in text.splitlines() if ERROR_PATTERN.search(line))
+    return event_counts(text)["failure"]
 
 
 def _latest_laws_run_summary(text: str) -> dict[str, int]:
@@ -761,7 +770,7 @@ def _int_field(fields: dict[str, str], key: str) -> int:
 def _recent_error_lines(text: str, *, limit: int = 20) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     for line in text.splitlines():
-        if not ERROR_PATTERN.search(line):
+        if classify_line(line) not in {"failure", "retry"}:
             continue
         errors.append(
             {

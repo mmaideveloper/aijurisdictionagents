@@ -204,7 +204,7 @@
             "uid": "jurisdigta-loki"
           },
           "editorMode": "code",
-          "expr": "sum by (container) (count_over_time({stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\" [$__auto]))",
+          "expr": "sum by (container) (count_over_time({stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" |~ \"${search:raw}\" [$__auto]))",
           "legendFormat": "{{container}}",
           "queryType": "range",
           "refId": "A"
@@ -215,14 +215,15 @@
             "uid": "jurisdigta-loki"
           },
           "editorMode": "code",
-          "expr": "sum by (service) (count_over_time({stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\" [$__auto]))",
+          "expr": "sum by (service) (count_over_time({stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" |~ \"${search:raw}\" [$__auto]))",
           "legendFormat": "{{service}}",
           "queryType": "range",
           "refId": "B"
         }
       ],
       "title": "Error Events By Source",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Operational failure matching lines (including retry attempts), not unique incidents. Parsed severity/outcome excludes successful error=null fields. Raw keyword searching remains available in Explore; access denials require separate security investigation."
     },
     {
       "datasource": {
@@ -302,7 +303,7 @@
             "uid": "jurisdigta-loki"
           },
           "editorMode": "code",
-          "expr": "{stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\"",
+          "expr": "{stack=\"jurisdigta\", container=~\"${log_source:regex}\", stream=~\"${stream:regex}\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" |~ \"${search:raw}\"",
           "queryType": "range",
           "refId": "A"
         },
@@ -312,13 +313,14 @@
             "uid": "jurisdigta-loki"
           },
           "editorMode": "code",
-          "expr": "{stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(error|exception|traceback|failed|fatal)\" |~ \"${search:raw}\"",
+          "expr": "{stack=\"jurisdigta\", service=~\"${log_source:regex}\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" |~ \"${search:raw}\"",
           "queryType": "range",
           "refId": "B"
         }
       ],
       "title": "Errors Only",
-      "type": "logs"
+      "type": "logs",
+      "description": "Operational failure matching lines (including retry attempts), not unique incidents. Parsed severity/outcome excludes successful error=null fields. Raw keyword searching remains available in Explore; access denials require separate security investigation."
     }
   ],
   "preload": false,
