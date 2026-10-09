@@ -16,6 +16,7 @@ from app.flow_packs.models import (
 )
 from app.flow_packs.store import (
     FlowPackAmbiguousError,
+    FlowPackDraftValidationError,
     FlowPackNotFoundError,
     FlowPackImmutableError,
     FlowPackStore,
@@ -92,6 +93,8 @@ def create_flow_pack_version(
 ) -> FlowPackResponse:
     try:
         return store.create_version(flow_key=flow_key, payload=payload, jurisdiction=jurisdiction)
+    except FlowPackDraftValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except FlowPackNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except FlowPackVersionConflictError as exc:

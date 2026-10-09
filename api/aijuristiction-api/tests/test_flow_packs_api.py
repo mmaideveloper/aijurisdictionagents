@@ -48,6 +48,46 @@ def test_list_default_flow_packs() -> None:
     assert "cz.contract.sale_purchase" in flow_keys
 
 
+def test_legacy_empty_examples_return_safe_422_and_explicit_override_recovers() -> None:
+    store = get_flow_pack_store()
+    flow_key = "sk.contract.sale_purchase"
+    # Reproduce the old routing-metadata migration default on synthetic storage.
+    with store._connect() as conn:
+        conn.execute(
+            "UPDATE flow_packs SET positive_examples_json = '[]' WHERE flow_key = ? AND jurisdiction = ?",
+            (flow_key, "SK"),
+        )
+        conn.commit()
+    before = client.get(f"/v1/flow-packs/{flow_key}/versions?jurisdiction=SK", headers=AUTH_HEADERS).json()
+    response = client.post(
+        f"/v1/flow-packs/{flow_key}/versions?jurisdiction=SK", headers=AUTH_HEADERS, json={},
+    )
+    assert response.status_code == 422
+    assert "positive_examples" in response.json()["detail"]
+    assert "Traceback" not in response.text
+    assert "ValidationError" not in response.text
+    assert "input_value" not in response.text
+    after = client.get(f"/v1/flow-packs/{flow_key}/versions?jurisdiction=SK", headers=AUTH_HEADERS).json()
+    assert len(after["versions"]) == len(before["versions"])
+    fixed = client.post(
+        f"/v1/flow-packs/{flow_key}/versions?jurisdiction=SK", headers=AUTH_HEADERS,
+        json={"positive_examples": ["Synthetic sale contract request"]},
+    )
+    assert fixed.status_code == 201
+    assert fixed.json()["positive_examples"] == ["Synthetic sale contract request"]
+    assert fixed.json()["is_enabled"] is False
+    assert fixed.json()["lifecycle_state"] == "draft"
+    assert store.get(flow_key=flow_key, version=1, jurisdiction="SK").positive_examples == []
+
+
+def test_explicit_empty_positive_examples_is_still_invalid() -> None:
+    response = client.post(
+        "/v1/flow-packs/sk.contract.sale_purchase/versions?jurisdiction=SK",
+        headers=AUTH_HEADERS, json={"positive_examples": []},
+    )
+    assert response.status_code == 422
+
+
 def test_create_update_enable_disable_soft_delete_and_version() -> None:
     flow_key = f"sk.civil.notice_template.{uuid4().hex[:8]}"
     create_response = client.post(
