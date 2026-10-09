@@ -57,6 +57,7 @@ class CourtDecisionWorkItem:
     source_page: int
     source_ordinal: int
     counts_toward_quota: bool
+    attempt_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -683,12 +684,16 @@ class PostgresCourtDecisionStore:
                                                  THEN EXCLUDED.counts_toward_quota
                                                  ELSE court_decision_import_queue.counts_toward_quota END,
                         status=CASE
+                            WHEN court_decision_import_queue.status='retryable'
+                            THEN court_decision_import_queue.status
                             WHEN court_decision_import_queue.work_class='new'
                                  AND EXCLUDED.work_class='backfill'
                             THEN court_decision_import_queue.status
                             ELSE 'pending'
                         END,
                         last_error_type=CASE
+                            WHEN court_decision_import_queue.status='retryable'
+                            THEN court_decision_import_queue.last_error_type
                             WHEN court_decision_import_queue.work_class='new'
                                  AND EXCLUDED.work_class='backfill'
                             THEN court_decision_import_queue.last_error_type
@@ -714,10 +719,11 @@ class PostgresCourtDecisionStore:
         with self._connect() as conn:
             row = conn.execute(
                 """SELECT source_system,source_guid,work_class,source_page,source_ordinal,
-                          counts_toward_quota
+                          counts_toward_quota,attempt_count
                    FROM court_decision_import_queue
                    WHERE source_system=%s AND work_class=%s
                      AND status IN ('pending','retryable')
+                     AND next_attempt_at <= CURRENT_TIMESTAMP
                    ORDER BY source_ordinal,discovered_at,source_guid LIMIT 1""",
                 (source_system, work_class),
             ).fetchone()
@@ -728,6 +734,7 @@ class PostgresCourtDecisionStore:
             work_class=str(row["work_class"]), source_page=int(str(row["source_page"])),
             source_ordinal=int(str(row["source_ordinal"])),
             counts_toward_quota=bool(row["counts_toward_quota"]),
+            attempt_count=int(str(row["attempt_count"])),
         )
 
     def complete_work_item(
@@ -742,7 +749,8 @@ class PostgresCourtDecisionStore:
         with self._connect() as conn:
             row = conn.execute(
                 """UPDATE court_decision_import_queue
-                   SET status='completed',completed_at=%s,updated_at=%s
+                   SET status='completed',completed_at=%s,updated_at=%s,
+                       attempt_count=0,last_error_type='',next_attempt_at='epoch'
                    WHERE source_system=%s AND source_guid=%s AND status<>'completed'
                    RETURNING work_class,counts_toward_quota""",
                 (now, now, item.source_system, item.source_guid),
@@ -766,15 +774,19 @@ class PostgresCourtDecisionStore:
             conn.commit()
         return True
 
-    def mark_work_retry(self, item: CourtDecisionWorkItem, *, error_type: str) -> None:
+    def mark_work_retry(
+        self, item: CourtDecisionWorkItem, *, error_type: str,
+        next_attempt_at: datetime | None = None,
+    ) -> None:
         now = _now_iso()
         with self._connect() as conn:
             conn.execute(
                 """UPDATE court_decision_import_queue
                    SET status='retryable',attempt_count=attempt_count+1,
-                       last_error_type=%s,updated_at=%s
+                       last_error_type=%s,updated_at=%s,next_attempt_at=%s
                    WHERE source_system=%s AND source_guid=%s""",
-                (error_type[:120], now, item.source_system, item.source_guid),
+                (error_type[:120], now, next_attempt_at or datetime.now(timezone.utc),
+                 item.source_system, item.source_guid),
             )
             conn.execute(
                 """UPDATE court_decision_scheduler_state
@@ -1201,6 +1213,8 @@ _SCHEMA_SQL = (
     """,
     """CREATE INDEX IF NOT EXISTS idx_court_decision_import_queue_pending
     ON court_decision_import_queue(source_system, work_class, status, source_ordinal)""",
+    """ALTER TABLE court_decision_import_queue
+    ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT 'epoch'""",
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_source
     ON court_decision_documents(source_system, source_guid)
