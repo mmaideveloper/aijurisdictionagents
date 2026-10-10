@@ -3090,13 +3090,19 @@ def _start_session_worker(*, session: Session, request_id: str, target: Callable
         with correlation_scope(
             correlation_id=session.correlation_id,
             session_id=str(session.id),
-            request_id=request_id,
+            parent_request_id=request_id,
             debug_sink=debug_event_sink,
         ):
             record_debug_event(
                 "api", "chat_session_worker", "started", {"session_id": str(session.id)}
             )
-            target()
+            try:
+                target()
+            except BaseException:
+                record_debug_event(
+                    "api", "chat_session_worker", "failed", {"reason_code": "worker_failed"}
+                )
+                raise
             record_debug_event(
                 "api", "chat_session_worker", "completed", {"session_id": str(session.id)}
             )
