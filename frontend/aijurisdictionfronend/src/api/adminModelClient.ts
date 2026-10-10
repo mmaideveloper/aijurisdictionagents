@@ -656,6 +656,10 @@ export interface AdminDebugTrace {
   flow: { nodes: Array<{ id: string; label: string }>; edges: Array<{ from: string; to: string }> };
   langgraph_evidence: AdminLangGraphEvidence;
   warnings: string[];
+  validation_evidence?: {
+    categories: Array<{ category: string; evidence_status: string }>;
+    checks: Array<{ execution_id: string | null; validator_id: string | null; validator_version: string | null; category: string | null; outcome: string | null; artifact_link_status: string | null }>;
+  };
 }
 
 export interface AdminLangGraphNode {
@@ -833,9 +837,10 @@ export const fetchAIModelAdminDashboard = (adminAuth: AdminAuthContext): Promise
 
 export const fetchAdminDebugTrace = (
   adminAuth: AdminAuthInput,
-  correlationId: string
+  correlationId: string,
+  offset = 0
 ): Promise<AdminDebugTrace> =>
-  adminRequest<AdminDebugTrace>(`/v1/admin/debug/${encodeURIComponent(correlationId)}`, adminAuth, { method: "GET" });
+  adminRequest<AdminDebugTrace>(`/v1/admin/debug/${encodeURIComponent(correlationId)}${offset ? `?offset=${offset}` : ""}`, adminAuth, { method: "GET" });
 
 export interface AdminTraceFilters {
   user_id?: string;
