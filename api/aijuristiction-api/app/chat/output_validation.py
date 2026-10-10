@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import re
 import unicodedata
 
+from aijurisdictionagents.validation_audit import validation_check
+
 
 @dataclass(frozen=True)
 class LawyerOutputUserProfile:
@@ -20,14 +22,18 @@ class AILawyerOutputMessageValidationAgent:
         content: str,
         user_profile: LawyerOutputUserProfile | None,
     ) -> str:
-        if not content.strip():
-            return content
-        visible, technical_suffix = _split_technical_suffix(content)
-        cleaned = self._validate_missing_information_section(
-            visible=visible,
-            user_profile=user_profile,
-        )
-        return f"{cleaned}{technical_suffix}"
+        with validation_check(category="output_quality", validator_id="chat.profile_section_cleanup", validator_version="1", artifact_id=None) as audit:
+            if not content.strip():
+                audit.update(outcome="not_run", reason_code="empty_output", decision="continue")
+                return content
+            visible, technical_suffix = _split_technical_suffix(content)
+            cleaned = self._validate_missing_information_section(
+                visible=visible,
+                user_profile=user_profile,
+            )
+            result = f"{cleaned}{technical_suffix}"
+            audit.update(outcome="passed", reason_code="profile_section_rewritten" if result != content else "profile_section_unchanged", decision="rewrite" if result != content else "continue")
+            return result
 
     def _validate_missing_information_section(
         self,
