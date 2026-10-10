@@ -78,6 +78,7 @@ class OllamaClient:
             "options": options,
         }
         response_payload = execute_correlated_model_call(
+            route_snapshot=getattr(self, "_audit_route_provenance", None),
             provider=self._config.provider_label,
             model=self._config.model,
             agent_name=agent_name,
