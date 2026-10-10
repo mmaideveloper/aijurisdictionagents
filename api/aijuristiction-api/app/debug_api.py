@@ -21,6 +21,7 @@ from app.decision_trace_api import require_decision_trace_admin
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
 from app.security import require_api_key
 from app.validation_evidence import build_validation_evidence
+from app.decision_evidence import build_decision_evidence
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
 
@@ -89,6 +90,7 @@ def _build_payload(
         correlation_id=correlation_id, limit=min(limit, 1000), offset=offset
     )
     timeline: list[dict[str, object]] = []
+    decision_evidence = build_decision_evidence(decisions, langgraph_evidence)
     for event in debug_events:
         timeline.append({"kind": "debug", **event})
     for decision in decisions:
@@ -132,6 +134,7 @@ def _build_payload(
         "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
         "validation_evidence": build_validation_evidence(timeline),
+        "decision_evidence": decision_evidence,
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
     }
@@ -303,6 +306,7 @@ def export_session_debug_trace(
             "langgraph_evidence",
             "decision_traces",
             "validation_evidence",
+            "decision_evidence",
             "application_logs",
             "warnings",
         ):

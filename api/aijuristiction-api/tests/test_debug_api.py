@@ -204,6 +204,8 @@ def test_admin_can_view_and_export_exact_correlation_trace(
     assert response.json()["flow"]["edge_basis"] == "recorded_parent_request_id"
     with ZipFile(BytesIO(exported.content)) as archive:
         assert json.loads(archive.read("flow.json")) == response.json()["flow"]
+    with ZipFile(BytesIO(exported.content)) as bundle:
+        assert json.loads(bundle.read("decision_evidence.json")) == response.json()["decision_evidence"]
     assert missing.status_code == 404
     assert [event["action"] for event in audit_store.events] == [
         "view_debug_trace",
