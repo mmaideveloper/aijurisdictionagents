@@ -81,7 +81,7 @@ Use $manage-jurisdigta-adr to compare Loki and Azure Log Analytics for incident 
 Invoke the implementation workflow:
 
 ```text
-Use $implement-jurisdigta-task to implement issue 123 from the latest main branch with unit tests, applicable Playwright E2E coverage, and sanitized screenshot evidence in the task and PR.
+Use $implement-jurisdigta-task to implement issue 123 from the latest main branch with unit tests, feasible real-local E2E coverage, and a sanitized final-state test screenshot displayed in chat and included in the PR. Report blocked prerequisites explicitly.
 ```
 
 Invoke the task-preparation workflow:
