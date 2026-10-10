@@ -980,6 +980,15 @@ builds. Configure ingress WebSocket upgrade support and at least a 150-second
 session timeout, TLS, explicit CORS origins, upstream frame limits and global
 concurrency/rate limits. The API's per-process limits are not a cluster quota.
 
+The service administrator must verify speech-policy coverage for every supported
+subscription code in both test and prod: `free`, `case`, `basic`, `premium`, and
+`unlimited`. Generic chat policies cannot supply speech routes. On 2026-09-30,
+issue #846 repaired the missing production `unlimited` policy using the existing
+West Europe profile, with EU eligibility and explicit consent still required.
+No new resource, secret, or GitHub Environment input is needed. Use the read-only
+SQL example and targeted rollback in `docs/STREAMING_STT.md`; validate new plans
+with synthetic accounts before release.
+
 For local synthetic E2E, arrange the existing AIJ_AZURE_SPEECH_KEY and
 AIJ_AZURE_SPEECH_REGION entries through the authoritative encrypted environment
 profile; run approved Pull, never push laptop secrets. `prepare_speech_e2e.py`
