@@ -31,6 +31,7 @@ it("keeps the historical warning for a recorded run whose topology is missing", 
   };
   render(<LangGraphAuditGraph evidence={evidence} t={key => key} />);
   expect(screen.getByRole("status").textContent).toBe("adminDebugGraphUnavailable");
+  expect(screen.getByText("adminProviderSummaryUnavailable")).toBeTruthy();
   expect(screen.queryByText("adminDebugNoGraphEvidence")).toBeNull();
   expect(screen.queryByText("@0")).toBeNull();
 });
