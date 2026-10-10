@@ -59,6 +59,7 @@ import {
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
 import { LangGraphAuditGraph } from "../components/LangGraphAuditGraph";
+import { CausalAuditFlow } from "../components/CausalAuditFlow";
 import AdminFlowPackages from "./AdminFlowPackages";
 
 type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "flowPackages" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
@@ -2035,11 +2036,7 @@ const AIModelAdmin: React.FC = () => {
                     </li>)}
                   </ol>
                 ) : debugView === "flow" ? (
-                  <div className="admin-debug__flow" aria-label={t("adminDebugFlow")}>
-                    {debugTrace.flow.nodes.map((node, index) => <React.Fragment key={node.id}>
-                      {index > 0 ? <span aria-hidden="true">→</span> : null}<strong>{node.label}</strong>
-                    </React.Fragment>)}
-                  </div>
+                  <CausalAuditFlow flow={debugTrace.flow} t={t} />
                 ) : <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} />}
               </> : null}
             </section>

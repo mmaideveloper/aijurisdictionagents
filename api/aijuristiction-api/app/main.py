@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 from pathlib import Path
@@ -359,6 +360,8 @@ async def request_id_middleware(
 ) -> fastapi.Response:
     request_id = request.headers.get("x-request-id", str(uuid4()))
     correlation_id = request.headers.get("x-correlation-id", request_id)
+    parent_claim = request.headers.get("x-parent-request-id", "")
+    parent_request_id = parent_claim if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@+-]{0,199}", parent_claim) else ""
     request_debug_sink = (
         debug_event_sink if request.headers.get("x-correlation-id", "").strip() else None
     )
@@ -369,17 +372,20 @@ async def request_id_middleware(
         with correlation_scope(
             correlation_id=correlation_id,
             request_id=request_id,
+            parent_request_id=parent_request_id,
             debug_sink=request_debug_sink,
         ):
             record_debug_event(
                 "api", "http_request", "started",
-                {"method": request.method, "path": request.url.path},
+                {"method": request.method, "path": request.url.path,
+                 "parent_link_source": "request_header" if parent_request_id else "none"},
             )
             response = await call_next(request)
     except Exception as exc:
         with correlation_scope(
             correlation_id=correlation_id,
             request_id=request_id,
+            parent_request_id=parent_request_id,
             debug_sink=request_debug_sink,
         ):
             record_debug_event(
@@ -411,6 +417,7 @@ async def request_id_middleware(
     with correlation_scope(
         correlation_id=correlation_id,
         request_id=request_id,
+        parent_request_id=parent_request_id,
         debug_sink=request_debug_sink,
     ):
         record_debug_event(
