@@ -201,6 +201,8 @@ def test_admin_can_view_and_export_exact_correlation_trace(
     assert exported.status_code == 200
     assert exported.headers["content-type"] == "application/zip"
     assert exported.content.startswith(b"PK")
+    with ZipFile(BytesIO(exported.content)) as bundle:
+        assert json.loads(bundle.read("decision_evidence.json")) == response.json()["decision_evidence"]
     assert missing.status_code == 404
     assert [event["action"] for event in audit_store.events] == [
         "view_debug_trace",
