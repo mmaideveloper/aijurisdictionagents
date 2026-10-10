@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any, Literal, Protocol, TypedDict, cast
+from uuid import uuid4
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.errors import GraphRecursionError
@@ -12,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, Interrupt, interrupt
 
 from aijurisdictionagents.tools.base import ToolDefinition
+from aijurisdictionagents.validation_audit import validation_check
 
 from .retrieval_policy import (
     McpRetrievalPolicyError,
@@ -118,6 +120,7 @@ class CaseWorkflowState(TypedDict, total=False):
     status: WorkflowStatus
     pending_action: dict[str, Any]
     final_answer: str
+    answer_artifact_id: str
     escalation_reason: str
     termination_reason: TerminationReason | Literal[""]
     started_at: str
@@ -657,8 +660,10 @@ class CaseWorkflowRuntime:
         return "finalize" if state.get("status") == "human_review_required" else "continue"
 
     def _verify_input(self, state: CaseWorkflowState) -> CaseWorkflowState:
-        facts = {key: value.strip() for key, value in state.get("facts", {}).items() if value.strip()}
-        missing = [key for key in state.get("required_facts", []) if not facts.get(key)]
+        with validation_check(category="input_structure", validator_id="required_facts", validator_version="1", artifact_id=None) as audit:
+            facts = {key: value.strip() for key, value in state.get("facts", {}).items() if value.strip()}
+            missing = [key for key in state.get("required_facts", []) if not facts.get(key)]
+            audit.update(outcome="failed" if missing else "passed", reason_code="required_facts_missing" if missing else "required_facts_present", decision="collect_input" if missing else "continue")
         return _update(
             state,
             stage="verify_input",
@@ -875,13 +880,16 @@ class CaseWorkflowRuntime:
             stage="draft_documents",
             status="running",
             final_answer=answer,
+            answer_artifact_id=str(uuid4()),
             artifacts=artifacts,
             event_type="documents_drafted",
             details={"artifact_count": len(artifacts)},
         )
 
     def _verify_output(self, state: CaseWorkflowState) -> CaseWorkflowState:
-        passed, reason = self._services.review_output(state)
+        with validation_check(category="output_quality", validator_id="workflow.review_output", artifact_id=state.get("answer_artifact_id")) as audit:
+            passed, reason = self._services.review_output(state)
+            audit.update(outcome="passed" if passed else "failed", reason_code=reason, decision="continue" if passed else "human_review")
         decisions = dict(state.get("review_decisions", {}))
         decisions["output"] = "passed" if passed else "failed"
         return _update(
@@ -896,7 +904,9 @@ class CaseWorkflowRuntime:
         )
 
     def _verify_safety_and_gdpr(self, state: CaseWorkflowState) -> CaseWorkflowState:
-        passed, reason = self._services.review_safety_and_gdpr(state)
+        with validation_check(category="output_security", validator_id="workflow.review_safety_and_gdpr", artifact_id=state.get("answer_artifact_id")) as audit:
+            passed, reason = self._services.review_safety_and_gdpr(state)
+            audit.update(outcome="passed" if passed else "blocked", reason_code=reason, decision="continue" if passed else "block")
         decisions = dict(state.get("review_decisions", {}))
         decisions["safety_gdpr"] = "passed" if passed else "failed"
         return _update(
