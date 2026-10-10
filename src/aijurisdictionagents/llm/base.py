@@ -7,11 +7,12 @@ import os
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Any, Callable, Protocol, Sequence, TypeVar
 
 from ..schemas import Document, Message
 from ..correlation import child_operation, current_correlation_context, record_debug_event
+from ..audit_model_provenance import bounded_identifier
 
 
 T = TypeVar("T")
@@ -144,6 +145,7 @@ def execute_correlated_model_call(
     agent_name: str,
     request_payload: Sequence[dict[str, Any]],
     invoke: Callable[[], T],
+    route_snapshot: dict[str, object] | None = None,
 ) -> T:
     """Record model I/O for the protected debug bundle without changing prompt prose."""
 
@@ -154,6 +156,7 @@ def execute_correlated_model_call(
                 "provider": provider,
                 "model": model,
                 "agent_name": agent_name,
+                "route_provenance": route_snapshot,
                 "effective_messages": [] if _PRIVATE_MODEL_IO.get() else list(request_payload),
             },
         )
@@ -174,6 +177,8 @@ def execute_correlated_model_call(
         provider_request_id = str(
             getattr(response, "_request_id", "") or getattr(response, "request_id", "") or ""
         )
+        response_model = response.get("model") if isinstance(response, Mapping) else getattr(response, "model", None)
+        response_version = response.get("model_version") if isinstance(response, Mapping) else getattr(response, "model_version", None)
         record_debug_event(
             "model", "completion", "completed",
             {
@@ -181,6 +186,9 @@ def execute_correlated_model_call(
                 "model": model,
                 "agent_name": agent_name,
                 "provider_request_id": provider_request_id,
+                "provider_reported_model": bounded_identifier(response_model),
+                "provider_reported_model_version": bounded_identifier(response_version),
+                "model_version_status": "reported" if bounded_identifier(response_version) else "unavailable",
             },
         )
         logger.info(

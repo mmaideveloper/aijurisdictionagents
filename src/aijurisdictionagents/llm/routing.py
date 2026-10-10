@@ -17,6 +17,7 @@ from .base import LLMClient, read_positive_finite_env_seconds
 from .ollama_client import OllamaClient, OllamaConfig
 from .openai_client import OpenAIClient, OpenAIConfig
 from ..model_parameters import merge_model_parameters
+from ..audit_model_provenance import record_route_provenance, route_provenance
 
 _DEFAULT_AZURE_OPENAI_API_VERSION = "2024-12-01-preview"
 _AZURE_OPENAI_PREVIEW_API_VERSION = "preview"
@@ -48,6 +49,13 @@ class RoutedLLMClient:
     model: str
     route_type: str
     fallback_reason: str
+    requested_model_profile_id: str = ""
+
+    def __post_init__(self) -> None:
+        # Each configured adapter belongs to this route selection. Snapshot now;
+        # never re-read mutable routing policy when the provider call completes.
+        if self.provider != "mock":
+            setattr(self.client, "_audit_route_provenance", route_provenance(self.route, self.requested_model_profile_id))
 
     @property
     def plan_code(self) -> str:
@@ -109,6 +117,7 @@ def get_routed_llm_client(
             task_type=task_type,
             external_acknowledged=external_acknowledged,
         )
+    record_route_provenance(route, normalized_selected_profile_id)
     if route.provider is None or route.model_profile is None:
         if route.route_type == "selected_profile_forbidden":
             raise ModelRouteUnavailable(route.reason, status_code=403)
@@ -149,6 +158,7 @@ def get_routed_llm_client(
             route=route,
             plan=plan,
             subscription=subscription,
+            requested_model_profile_id=normalized_selected_profile_id,
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
@@ -173,6 +183,7 @@ def get_routed_llm_client(
             route=route,
             plan=plan,
             subscription=subscription,
+            requested_model_profile_id=normalized_selected_profile_id,
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
@@ -208,6 +219,7 @@ def get_routed_llm_client(
             route=route,
             plan=plan,
             subscription=subscription,
+            requested_model_profile_id=normalized_selected_profile_id,
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
@@ -232,6 +244,7 @@ def get_routed_llm_client(
             route=route,
             plan=plan,
             subscription=subscription,
+            requested_model_profile_id=normalized_selected_profile_id,
             provider=provider.provider_code,
             model=model,
             route_type=route.route_type,
