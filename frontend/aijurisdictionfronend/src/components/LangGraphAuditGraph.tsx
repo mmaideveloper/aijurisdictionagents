@@ -24,6 +24,7 @@ export const LangGraphAuditGraph: React.FC<Props> = ({ evidence, t }) => {
     return <p role="status" className="admin-muted">{t("adminDebugNoGraphEvidence")}</p>;
   }
   return <section className="langgraph-audit" aria-label={t("adminDebugLangGraph")}>
+    <p>{t("adminProviderSummaryUnavailable")}</p>
     {evidence.evidence_gaps?.length ? <p role="status" className="admin-warning">
       {t("adminDebugIncomplete")}: {evidence.evidence_gaps.join(", ")}
     </p> : null}
@@ -131,6 +132,7 @@ const NodeEvidence: React.FC<{ run: AdminLangGraphRunEvidence; nodeId: string; t
       <div><dt>{t("adminDebugStatus")}</dt><dd>{item.status}</dd></div>
       <div><dt>{t("adminDebugEvidence")}</dt><dd>{item.event_id}</dd></div>
       <div><dt>{t("adminDebugReason")}</dt><dd>{item.reason_code || t("adminDebugUnknown")}</dd></div>
+      {item.decision_evidence ? <div><dt>{t("adminRecordedDecisionCode")}</dt><dd>{item.decision_evidence.reason_code ?? t("adminDebugUnknown")}</dd></div> : null}
     </dl>)}
   </aside>;
 };
