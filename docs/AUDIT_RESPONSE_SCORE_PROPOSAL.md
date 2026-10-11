@@ -1,7 +1,9 @@
 # Final response assessment proposal (#860)
 
-Status: draft for product/quality-owner review. No aggregate is enabled by this
-change. Existing routing confidence is not a final response quality score.
+Status: aggregation implementation approved by the owner on 2026-10-11, with
+missing-evidence gates. See `AUDIT_RESPONSE_SCORE.md` for the implemented contract.
+This document preserves the original proposal; actual assessors remain pending.
+Existing routing confidence is not a final response quality score.
 
 Proposed policy ID: `response-quality`, version `1-draft`. The proposal uses
 deterministic weighted arithmetic over separately produced assessments, on a
