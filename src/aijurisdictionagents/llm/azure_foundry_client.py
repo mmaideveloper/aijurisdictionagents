@@ -94,6 +94,7 @@ class AzureFoundryClient:
                 sorted(self._config.model_parameters),
             )
             response = execute_correlated_model_call(
+                route_snapshot=getattr(self, "_audit_route_provenance", None),
                 provider="azurefoundry",
                 model=self._config.deployment,
                 agent_name=agent_name,

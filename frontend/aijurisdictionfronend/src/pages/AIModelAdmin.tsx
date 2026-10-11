@@ -58,7 +58,9 @@ import {
 } from "../api/adminModelClient";
 import { useAuth } from "../auth/webAuth";
 import { useLanguage } from "../components/LanguageProvider";
+import { AuditEvidenceSummary } from "../components/AuditEvidenceSummary";
 import { LangGraphAuditGraph } from "../components/LangGraphAuditGraph";
+import { CausalAuditFlow } from "../components/CausalAuditFlow";
 import AdminFlowPackages from "./AdminFlowPackages";
 
 type AdminSection = "users" | "assignments" | "cases" | "caseCatalog" | "flowPackages" | "providers" | "profiles" | "credentials" | "groups" | "policies" | "ollamaImport" | "ollama" | "debug" | "audit";
@@ -153,7 +155,7 @@ const emptyUserForm = {
 };
 
 const AIModelAdmin: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user } = useAuth();
   const [activeSection, setActiveSection] = React.useState<AdminSection>("users");
   const [dashboard, setDashboard] = React.useState<AIModelAdminDashboard | null>(null);
@@ -2024,6 +2026,7 @@ const AIModelAdmin: React.FC = () => {
                   })}><FaDownload aria-hidden="true" />{t("adminDebugExport")}</button>
                 </div>
                 <p className="admin-muted">{debugTrace.correlation_id} · {t("adminDebugRetention")}</p>
+                <AuditEvidenceSummary key={debugTrace.correlation_id} trace={debugTrace} language={language} adminAuth={adminAuth} onGraphPage={(correlation, evidence) => setDebugTrace(current => current?.correlation_id === correlation ? { ...current, langgraph_evidence: evidence } : current)} />
                 {debugView === "overview" ? <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} /> : null}
                 {debugView === "timeline" || debugView === "overview" ? (
                   <ol className="admin-debug__timeline">
@@ -2035,11 +2038,7 @@ const AIModelAdmin: React.FC = () => {
                     </li>)}
                   </ol>
                 ) : debugView === "flow" ? (
-                  <div className="admin-debug__flow" aria-label={t("adminDebugFlow")}>
-                    {debugTrace.flow.nodes.map((node, index) => <React.Fragment key={node.id}>
-                      {index > 0 ? <span aria-hidden="true">→</span> : null}<strong>{node.label}</strong>
-                    </React.Fragment>)}
-                  </div>
+                  <CausalAuditFlow flow={debugTrace.flow} t={t} />
                 ) : <LangGraphAuditGraph evidence={debugTrace.langgraph_evidence} t={t} />}
               </> : null}
             </section>

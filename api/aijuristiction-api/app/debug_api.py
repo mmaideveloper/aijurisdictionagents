@@ -15,11 +15,13 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, sta
 from fastapi.responses import Response
 
 from app.ai_model_admin_api import AdminContext, get_admin_store
+from app.causal_trace import build_causal_flow
 from app.case_workflows.service import CaseWorkflowApplicationService, get_case_workflow_service
 from app.decision_trace_api import require_decision_trace_admin
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
 from app.security import require_api_key
 from app.decision_evidence import build_decision_evidence
+from app.validation_evidence import build_validation_evidence
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
 
@@ -120,19 +122,7 @@ def _build_payload(
             }
         )
     timeline.sort(key=lambda item: (str(item.get("created_at", "")), str(item.get("event_id", ""))))
-    stages = [
-        f"{item.get('component', 'unknown')}:{item.get('stage', 'unknown')}"
-        for item in timeline
-    ]
-    nodes = [
-        {"id": stage, "label": stage.replace(":", " → ", 1)}
-        for stage in dict.fromkeys(stages)
-    ]
-    edges = [
-        {"from": stages[index - 1], "to": stages[index]}
-        for index in range(1, len(stages))
-        if stages[index - 1] != stages[index]
-    ]
+    flow = build_causal_flow(timeline, truncated=len(debug_events) >= limit)
     return {
         "correlation_id": correlation_id,
         "retention_days": 7,
@@ -140,10 +130,11 @@ def _build_payload(
         "session": session,
         "messages": messages,
         "timeline": timeline,
-        "flow": {"nodes": nodes, "edges": edges},
+        "flow": flow,
         "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
         "decision_evidence": decision_evidence,
+        "validation_evidence": build_validation_evidence(timeline),
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
     }
@@ -315,6 +306,7 @@ def export_session_debug_trace(
             "langgraph_evidence",
             "decision_traces",
             "decision_evidence",
+            "validation_evidence",
             "application_logs",
             "warnings",
         ):
