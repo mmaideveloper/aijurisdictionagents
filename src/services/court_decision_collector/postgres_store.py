@@ -426,7 +426,7 @@ class PostgresCourtDecisionStore:
             content_source = "chunk" if matched_chunk else "enrichment" if enriched_text else "metadata_snapshot"
             vector_score = cosine_similarity(query_vector, parse_embedding_vector(str(row["embedding_vector_json"])))
             lexical_score = lexical_overlap_score(query_profile.topic_query, f"{summary} {public_text}")
-            database_rank = float(row["lexical_rank"] or 0.0)
+            database_rank = float(str(row["lexical_rank"] or 0.0))
             # A PostgreSQL full-text match is already a valid candidate. Hash-bootstrap
             # vectors may have a negative cosine and must never discard that lexical match.
             score = max(vector_score + (lexical_score * 0.1) + database_rank, database_rank, 0.000001)
@@ -471,10 +471,12 @@ class PostgresCourtDecisionStore:
                 LEFT JOIN court_decision_enrichments AS e ON e.version_id = v.version_id
                 """
             ).fetchone()
+        if row is None:
+            raise RuntimeError("court search coverage query returned no aggregate row")
         return {
-            "published_decisions": int(row["published_decisions"] or 0),
+            "published_decisions": int(str(row["published_decisions"] or 0)),
             "latest_issue_date": str(row["latest_issue_date"] or ""),
-            "enriched_versions": int(row["enriched_versions"] or 0),
+            "enriched_versions": int(str(row["enriched_versions"] or 0)),
         }
 
     def get_decision(self, *, decision_id: str, raw: bool = False) -> dict[str, object] | None:

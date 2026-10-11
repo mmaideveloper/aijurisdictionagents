@@ -135,6 +135,15 @@ unavailability, bypass consent, or relax human review of legal outputs.
 
 ## Validation and rollback
 
+Store typing gate (#894): run `python -m mypy src/services/court_decision_collector
+--follow-imports=silent` and `python -m ruff check src/services/court_decision_collector`.
+Numeric PostgreSQL rank/count values are converted explicitly; a missing aggregate
+row fails visibly instead of fabricating corpus coverage. Valid search scores,
+counts and dates are unchanged. The `--postgres` demo also validates typed empty
+synthetic corpus coverage. Run `python -m pytest tests/test_court_store_types.py`
+for aggregate count/date and missing-row regressions. The default repository
+example remains `python examples/minimal_demo.py`.
+
 ```powershell
 python -m pytest tests/test_court_work_retry.py tests/test_court_source_review.py tests/test_court_source_availability_postgres.py tests/test_court_decision_collector.py tests/test_court_decision_enrichment.py
 python examples/court_work_retry_demo.py
