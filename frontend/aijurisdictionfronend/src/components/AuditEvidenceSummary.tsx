@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchAdminDebugTrace, type AdminAuthContext, type AdminDebugTrace, type AdminLangGraphEvidence } from "../api/adminModelClient";
 import type { Language } from "../data/translations";
+import { ResponseScoreEvidence } from "./ResponseScoreEvidence";
 
 const copy = {
   en: { title: "Audit evidence coverage", help: "Missing evidence does not prove that a check ran or passed. These results cover retained records only.", unavailable: "Some telemetry is unavailable; retained local records remain visible.", unknown: "Not recorded / unknown", next: "Next graph evidence page", previous: "Previous graph evidence page", partial: "Partial graph evidence", noGraph: "Graph execution evidence is not recorded; the engine is unknown.", version: "Validator version", link: "Answer revision linkage", categories: ["Input structure", "Input security", "Output quality", "Output security", "Grounding", "Hallucination assessment"], states: { recorded: "Recorded", missing_evidence: "Missing evidence", not_run: "Not run", unsupported: "Unsupported", not_applicable: "Not applicable", expired: "Expired", unavailable: "Unavailable", partial: "Partial", passed: "Passed", failed: "Failed", blocked: "Blocked", error: "Error" } },
@@ -38,5 +39,6 @@ export function AuditEvidenceSummary({ trace, language, adminAuth, onGraphPage }
       <code>{check.validator_id ?? text.unknown}</code> — <span>{label(check.outcome)}</span>
       <p>{text.version}: {check.validator_version ?? text.unknown} · {text.link}: {label(check.artifact_link_status)}</p>
     </li>)}</ul>
+    <ResponseScoreEvidence trace={trace} language={language} />
   </section>;
 }

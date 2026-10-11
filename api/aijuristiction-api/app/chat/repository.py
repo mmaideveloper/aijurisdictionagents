@@ -5,8 +5,9 @@ from typing import Dict, List
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
 
-from app.chat.models import Message, Session, SessionResult, SessionState
+from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from aijurisdictionagents.correlation import record_debug_event
+from aijurisdictionagents.response_score import assess_response, record_response_assessment
 
 
 class InMemoryChatRepository:
@@ -54,6 +55,10 @@ class InMemoryChatRepository:
                 "content": message.content,
             },
         )
+        if message.role == MessageRole.ASSISTANT:
+            # No approved dimension assessors run here yet. Persist the explicit
+            # incomplete assessment against this delivered message revision.
+            record_response_assessment(assess_response(str(message.id)))
         return message
 
     def list_messages(self, session_id: UUID) -> List[Message]:

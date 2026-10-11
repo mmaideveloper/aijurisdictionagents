@@ -22,6 +22,7 @@ from app.observability import AzureApplicationInsightsLogService, ObservabilityC
 from app.security import require_api_key
 from app.validation_evidence import build_validation_evidence
 from app.decision_evidence import build_decision_evidence
+from app.response_score_evidence import build_response_score_evidence
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
 
@@ -135,6 +136,7 @@ def _build_payload(
         "decision_traces": decisions,
         "validation_evidence": build_validation_evidence(timeline),
         "decision_evidence": decision_evidence,
+        "response_score_evidence": build_response_score_evidence(timeline),
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
     }
@@ -307,6 +309,7 @@ def export_session_debug_trace(
             "decision_traces",
             "validation_evidence",
             "decision_evidence",
+            "response_score_evidence",
             "application_logs",
             "warnings",
         ):
