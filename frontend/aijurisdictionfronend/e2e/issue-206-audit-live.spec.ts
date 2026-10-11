@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const directory = path.resolve("../../runs/e2e/issue864");
 const manifestPath = path.join(directory, "input-manifest.json");
@@ -60,7 +61,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     await expect(page.locator(".assistant-message").last()).toBeVisible({ timeout: 180_000 });
     await page.waitForLoadState("networkidle");
     await expect(composer).toBeEnabled({ timeout: 180_000 });
-    const secondPrompt = "Vysvetli ešte raz stručne rozdiel medzi paragrafom a odsekom v tej istej citácii § 569 ods. 1 zákona 40/1964 Z. z. s dostupným zdrojom.";
+    const secondPrompt = "Ide iba o všeobecné vysvetlenie právnej citácie. Ako sa číta označenie § 569 ods. 1 zákona 40/1964 Z. z.? Vysvetli význam paragrafu, odseku a čísla zákona s citáciou dostupného zdroja. Nežiadam vytvoriť ani upraviť žiadny dokument, zmluvu alebo potvrdenie.";
     await expect(async () => {
       await composer.fill(secondPrompt);
       await expect(composer).toHaveValue(secondPrompt);
@@ -119,6 +120,16 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     expect(secondWorker.id).not.toBe(worker.id);
     expect(debug.flow.edges).toContainEqual({ from: secondHttp, to: secondWorker.id });
     expect(debug.validation_evidence.categories).toHaveLength(6);
+    const assessments = debug.response_score_evidence.assessments;
+    expect(assessments.length).toBeGreaterThan(0);
+    for (const assessment of assessments) {
+      expect(assessment.status).toBe("incomplete");
+      expect(assessment.score).toBeNull();
+      expect(assessment.policy_version).toBe("1");
+      expect(assessment.requires_human_review).toBe(true);
+      expect(assessment.missing_evidence).toContain("dimension:grounding");
+      expect(debug.messages.some((message: { id: string; role: string }) => message.id === assessment.answer_revision && message.role === "assistant")).toBe(true);
+    }
     expect(debug.validation_evidence.categories.find((item: { category: string }) => item.category === "hallucination_assessment").evidence_status).toBe("missing_evidence");
     const provenance = debug.timeline.filter((event: { component: string; stage: string; status: string; payload: { route_provenance?: unknown } }) => event.component === "model" && event.stage === "completion" && event.status === "started" && event.payload.route_provenance);
     expect(provenance.length).toBeGreaterThan(0);
@@ -164,14 +175,28 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     await page.getByRole("button", { name: "Tok", exact: true }).click();
     await expect(page.getByRole("region", { name: "Pokrytie auditnými dôkazmi" })).toContainText("Posúdenie halucinácií");
     await expect(page.getByRole("region", { name: "Pokrytie auditnými dôkazmi" })).toContainText("Chýbajúce dôkazy");
+    const scoreView = page.getByRole("region", { name: "Posúdenie konečnej odpovede", exact: true });
+    await expect(scoreView).toContainText("Neúplné — chýbajú povinné dôkazy");
+    await expect(scoreView).toContainText(assessments[0].answer_revision);
+    await expect(scoreView).not.toContainText("/ 100");
     await expect(page.getByText("Zaznamenaná nadradená operácia", { exact: false }).first()).toBeVisible();
     await page.screenshot({ path: path.join(input.evidenceRoot, "issue-206-real-causal-flow.png"), fullPage: true });
     const exported = await request.get(`${api}/v1/admin/debug/${correlation}/export`, { headers: adminHeaders });
     expect(exported.ok()).toBe(true);
+    // Inspect the ZIP in memory; never retain its protected contents or print it.
+    const unzip = spawnSync(path.resolve("../../conda/python.exe"), ["-c", "import sys,io,json,zipfile; z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); print(json.dumps({key:json.loads(z.read(key+'.json')) for key in ('flow','validation_evidence','decision_evidence','response_score_evidence')}))"], { input: await exported.body(), maxBuffer: 10 * 1024 * 1024 });
+    expect(unzip.status).toBe(0);
+    const exportedEvidence = JSON.parse(unzip.stdout.toString());
+    expect(exportedEvidence.flow).toEqual(debug.flow);
+    expect(exportedEvidence.validation_evidence).toEqual(debug.validation_evidence);
+    expect(exportedEvidence.decision_evidence).toEqual(debug.decision_evidence);
+    expect(exportedEvidence.response_score_evidence).toEqual(debug.response_score_evidence);
     // Persist only sanitized metadata, never the protected full diagnostic export.
     await writeFile(path.join(input.evidenceRoot, "result-manifest.json"), JSON.stringify({
       passed: true, issue: 206, httpRequestIds: [httpRequest, secondHttp], workerRequestIds: [worker.id, secondWorker.id], causalTraces: traces.map(trace => ({ correlationId: trace.correlation_id, edges: trace.flow.edges })), syntheticOnly: true, runId: input.runId, correlationId: correlation,
       validationCategories: debug.validation_evidence.categories,
+      responseAssessments: assessments.map((item: { answer_revision: string; status: string; score: null; policy_version: string }) => ({ answerRevision: item.answer_revision, status: item.status, score: item.score, policyVersion: item.policy_version })),
+      exportParity: { flow: true, validationEvidence: true, decisionEvidence: true, responseScoreEvidence: true },
       provenance: provenance.map((event: { request_id: string; payload: { route_provenance: { model_profile_id: string; policy_digest: string; reason_code: string } } }) => ({ requestId: event.request_id, modelProfile: event.payload.route_provenance.model_profile_id, policyDigest: event.payload.route_provenance.policy_digest, reasonCode: event.payload.route_provenance.reason_code })),
       caseId, provider: models.map((m: { payload: { provider: string; model: string } }) => ({ provider: m.payload.provider, model: m.payload.model })),
       services: ["frontend:5189", "api:8264", "mcp:8364", "loopback-postgresql"],
