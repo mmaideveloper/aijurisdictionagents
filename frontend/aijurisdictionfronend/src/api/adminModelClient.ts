@@ -665,6 +665,10 @@ export interface AdminDebugTrace {
     categories: Array<{ category: string; evidence_status: string }>;
     checks: Array<{ execution_id: string | null; validator_id: string | null; validator_version: string | null; category: string | null; outcome: string | null; artifact_link_status: string | null }>;
   };
+  response_score_evidence?: {
+    evidence_status: string;
+    assessments: Array<{ assessment_id: string; answer_revision: string; policy_version: string; status: "incomplete" | "blocked" | "scored"; score: string | null; requires_human_review: boolean; missing_evidence: string[] }>;
+  };
 }
 
 export interface AdminLangGraphNode {
