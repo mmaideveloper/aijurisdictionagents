@@ -33,3 +33,12 @@ assert retained dispatch/header/completion observations reference the stream
 request ID, verify the untrusted-source label in the admin UI and capture a
 sanitized screenshot. Use synthetic accounts and migrated local PostgreSQL,
 API/MCP and the approved Azure model; delete transient evidence within seven days.
+
+Real acceptance passed on 2026-10-11 in 2.1 minutes using run
+`issue-864-langgraph-audit-20261011T064936Z-3c74ecb4`: two browser turns, three
+observations per request, cross-user rejection, actual Azure `gpt-5-mini`, seeded
+MCP citation, exact protected export parity and incomplete/null score gates.
+The final `issue-206-real-causal-flow.png` was visually reviewed; the sanitized
+`result-manifest.json` records the route, source IDs and observations. Both remain
+under ignored run storage for at most seven days. This proves normal completion;
+real cancellation, network-failure and browser-shutdown scenarios remain pending.

@@ -122,7 +122,7 @@ synthetic cases and private authentication files.
 | Scenario | Runnable coverage | Remaining work |
 | --- | --- | --- |
 | User/case/session/correlation search | #855 existing tests, real trace lookup | Combined search-filter matrix |
-| Actual HTTP/worker/model/MCP parent links | #856 live and #206 two-turn test | Persisted browser receipt |
+| Actual HTTP/worker/model/MCP parent links | #856 live and #206 two-turn test, including unverified browser dispatch/header/completion reports | Real browser cancellation/network-failure scenarios |
 | Parallel/retry/cycle/missing ancestry | #856 unit/browser regression and real workflow interruption/resume | Real parallel/retry/cancellation and preserved-session scenarios |
 | Frozen model policy/provider identity | #857 unit and #206 live snapshot checks | Live policy edit/history check, template versions |
 | Actual validator dispositions | #858 core/API tests | Full real dedicated-workflow matrix and revision linkage |
