@@ -8,6 +8,8 @@ from datetime import date, datetime, timezone
 from hashlib import sha256
 from typing import Protocol
 
+import httpx
+
 from .domain import CourtDecisionRecord, CourtDecisionSyncSummary
 from .infosud_source import InfoSudDecisionPage, InfoSudDecisionRef
 from .postgres_store import CourtDecisionSchedulerState, PostgresCourtDecisionStore
@@ -368,6 +370,7 @@ class CourtDecisionCollectorService:
                 self.store.mark_work_retry(
                     item, error_type=retry.category,
                     next_attempt_at=retry.next_attempt_at,
+                    http_status=exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None,
                 )
                 self.progress_logger(
                     "court_decision_work_retry "

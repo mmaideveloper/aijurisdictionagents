@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS court_decision_import_queue (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'retryable', 'completed')),
     attempt_count INTEGER NOT NULL DEFAULT 0,
     last_error_type TEXT NOT NULL DEFAULT '',
+    source_unavailable BOOLEAN NOT NULL DEFAULT FALSE,
+    last_http_status INTEGER,
     discovered_at TEXT NOT NULL,
     completed_at TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -109,6 +111,21 @@ CREATE TABLE IF NOT EXISTS court_decision_import_queue (
 
 CREATE INDEX IF NOT EXISTS idx_court_decision_import_queue_pending
 ON court_decision_import_queue(source_system, work_class, status, source_ordinal);
+
+CREATE TABLE IF NOT EXISTS court_decision_availability_reviews (
+    review_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    source_system TEXT NOT NULL,
+    reference_hash TEXT NOT NULL CHECK (reference_hash ~ '^[0-9a-f]{64}$'),
+    source_unavailable BOOLEAN NOT NULL,
+    evidence_category TEXT NOT NULL CHECK (evidence_category IN (
+        'source_withdrawal', 'operator_verified_unavailable',
+        'operator_requeue', 'verified_source_change')),
+    evidence_sha256 TEXT NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+    reviewer_sha256 TEXT NOT NULL CHECK (reviewer_sha256 ~ '^[0-9a-f]{64}$'),
+    last_http_status INTEGER,
+    attempt_count INTEGER NOT NULL,
+    reviewed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE INDEX IF NOT EXISTS idx_court_decision_documents_source
 ON court_decision_documents(source_system, source_guid);

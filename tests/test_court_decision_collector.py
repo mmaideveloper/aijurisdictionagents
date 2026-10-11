@@ -112,7 +112,7 @@ class FakeStore:
         )
         return True
 
-    def mark_work_retry(self, item, *, error_type, next_attempt_at=None):
+    def mark_work_retry(self, item, *, error_type, next_attempt_at=None, http_status=None):
         self.queue[item.source_guid]["status"] = "retryable"
         self.queue[item.source_guid]["next_attempt_at"] = next_attempt_at or datetime.now(timezone.utc)
         self.queue[item.source_guid]["item"] = replace(item, attempt_count=item.attempt_count + 1)

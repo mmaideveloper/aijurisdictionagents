@@ -24,6 +24,8 @@ The first schema stores:
 - `court_decision_scheduler_state`: durable UTC quota, source-count watermark, discovery checkpoint,
   and historical reconciliation cursor
 - `court_decision_import_queue`: durable new-data and backfill work, retries, and completion state
+- `court_decision_availability_reviews`: minimized evidence/reviewer digests and timestamps for
+  explicit unavailable/requeue dispositions; see [retry and source review](COURT_COLLECTOR_RETRY.md)
 - `court_decision_enrichments`: PDF provenance, processing state, complete source metadata,
   pseudonymized summary/topics, and summary embedding metadata
 - `court_decision_content_chunks`: pseudonymized chunks and local embedding vectors
