@@ -49,7 +49,7 @@ def build_causal_flow(
         ))
         nodes.append({
             "id": request_id, "label": " / ".join(labels),
-            "parent_link_source": "none" if not parent else "request_header_unverified" if any(
+            "parent_link_source": "client_reported_unverified" if any(row.get("component") == "frontend" for row in rows) else "none" if not parent else "request_header_unverified" if any(
                 row.get("component") == "api" and row.get("stage") == "http_request"
                 for row in rows
             ) else "runtime",

@@ -95,6 +95,8 @@ export type StreamSessionInput = {
   instruction: string;
   userId?: string;
   userEmail?: string;
+  deviceId?: string;
+  deviceAuthToken?: string;
   modelProfileId?: string;
   signal?: AbortSignal;
   correlationId: string;
@@ -398,6 +400,19 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
   const config = resolveApiConfig();
   const path = `/v1/chat/sessions/${input.sessionId}/stream`;
   const url = `${config.baseUrl}${path}`;
+  const traceHeaders = correlationHeaders(input.correlationId);
+  const dispatchedAt = performance.now();
+  const observe = (phase: "dispatch" | "headers_received" | "stream_completed" | "cancelled" | "interrupted" | "network_error") => {
+    if (!input.userId || !input.deviceId || !input.deviceAuthToken) return;
+    // Best-effort metadata only. Failure must never block or retry the chat.
+    void fetch(`${config.baseUrl}/v1/chat/sessions/${input.sessionId}/client-observations`, {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", "x-api-key": config.apiKey,
+        "x-jurisdigta-device-id": input.deviceId, "x-jurisdigta-device-token": input.deviceAuthToken },
+      body: JSON.stringify({ user_id: input.userId, request_id: traceHeaders["x-request-id"], phase,
+        elapsed_ms: phase === "dispatch" ? 0 : Math.min(86_400_000, Math.max(0, Math.round(performance.now() - dispatchedAt))) }),
+    }).catch(() => undefined);
+  };
 
   consoleLogger.info("Starting API stream request", {
     method: "POST",
@@ -412,7 +427,7 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       headers: {
         "Content-Type": "application/json",
         "x-api-key": config.apiKey,
-        ...correlationHeaders(input.correlationId)
+        ...traceHeaders
       },
       body: JSON.stringify({
         instruction: input.instruction,
@@ -424,6 +439,7 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       signal: input.signal
     });
   } catch (error) {
+    observe(input.signal?.aborted ? "cancelled" : "network_error");
     consoleLogger.error("API stream request failed before response", { path, url }, error);
     throw new ApiRequestError(
       "network",
@@ -431,6 +447,8 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
     );
   }
 
+  observe("dispatch");
+  observe("headers_received");
   if (!response.ok) {
     const detail = await parseApiErrorResponse(response);
     consoleLogger.warn("API stream request failed", {
@@ -452,11 +470,13 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let completed = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        completed = true;
         break;
       }
 
@@ -478,6 +498,7 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       yield trailingEvent;
     }
   } finally {
+    observe(completed ? "stream_completed" : input.signal?.aborted ? "cancelled" : "interrupted");
     reader.releaseLock();
   }
 }

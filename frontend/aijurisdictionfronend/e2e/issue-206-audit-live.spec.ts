@@ -78,18 +78,26 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     const correlation = (await diagnostics.json()).correlation_id;
     expect(correlation).toBeTruthy();
     const adminHeaders = { ...headers(auth.adminUser), "x-jurisdigta-admin-user-id": auth.adminUser.userId };
-    const response = await request.get(`${api}/v1/admin/debug/${correlation}`, { headers: adminHeaders });
-    expect(response.ok()).toBe(true);
-    const debug = await response.json();
     const firstCorrelation = stream.request().headers()["x-correlation-id"];
     expect(firstCorrelation).toBeTruthy();
-    const firstResponse = await request.get(`${api}/v1/admin/debug/${firstCorrelation}`, { headers: adminHeaders });
-    expect(firstResponse.ok()).toBe(true);
-    const firstDebug = await firstResponse.json();
+    async function observedTrace(correlationId: string, requestId: string) {
+      let trace;
+      await expect.poll(async () => {
+        const response = await request.get(`${api}/v1/admin/debug/${correlationId}`, { headers: adminHeaders });
+        expect(response.ok()).toBe(true);
+        trace = await response.json();
+        return trace.timeline.filter((event: { component: string; parent_request_id: string }) => event.component === "frontend" && event.parent_request_id === requestId).map((event: { stage: string }) => event.stage).sort();
+      }, { timeout: 30_000 }).toEqual(["dispatch", "headers_received", "stream_completed"]);
+      return trace;
+    }
+    const debug = await observedTrace(correlation, secondStream.request().headers()["x-request-id"]!);
+    const firstDebug = firstCorrelation === correlation ? debug : await observedTrace(firstCorrelation!, stream.request().headers()["x-request-id"]!);
     const traces = firstCorrelation === correlation ? [debug] : [firstDebug, debug];
     expect(debug.decision_evidence.engine).toBe("langgraph");
     expect(debug.decision_evidence.model_supplied_summary_status).toBe("unavailable");
     expect(debug.session.id).toBeTruthy();
+    const forgedObservation = await request.post(`${api}/v1/chat/sessions/${debug.session.id}/client-observations`, { headers: adminHeaders, data: { user_id: auth.adminUser.userId, request_id: secondStream.request().headers()["x-request-id"], phase: "stream_completed", elapsed_ms: 1 } });
+    expect(forgedObservation.status()).toBe(404);
     const search = await request.get(`${api}/v1/admin/debug`, { headers: adminHeaders, params: {
       user_id: auth.workflowUser.userId, case_id: caseId, session_id: debug.session.id, correlation_id: correlation,
     } });
@@ -108,6 +116,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     expect(debug.flow.edge_basis).toBe("recorded_parent_request_id");
     const httpRequest = stream.request().headers()["x-request-id"];
     expect(httpRequest).toBeTruthy();
+    expect(firstDebug.timeline.filter((event: { component: string; parent_request_id: string }) => event.component === "frontend" && event.parent_request_id === httpRequest).map((event: { stage: string }) => event.stage).sort()).toEqual(["dispatch", "headers_received", "stream_completed"]);
     const worker = firstDebug.flow.nodes.find((node: { parent_request_id: string; observations: Array<{ stage: string }> }) =>
       node.parent_request_id === httpRequest && node.observations.some(item => item.stage === "chat_session_worker"));
     expect(worker).toBeTruthy();
@@ -180,6 +189,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     await expect(scoreView).toContainText(assessments[0].answer_revision);
     await expect(scoreView).not.toContainText("/ 100");
     await expect(page.getByText("Zaznamenaná nadradená operácia", { exact: false }).first()).toBeVisible();
+    await expect(page.getByText("Pozorovanie hlásené klientom; nie je nezávislým dôkazom prijatia ani vykonania", { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: path.join(input.evidenceRoot, "issue-206-real-causal-flow.png"), fullPage: true });
     const exported = await request.get(`${api}/v1/admin/debug/${correlation}/export`, { headers: adminHeaders });
     expect(exported.ok()).toBe(true);
@@ -197,6 +207,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
       validationCategories: debug.validation_evidence.categories,
       responseAssessments: assessments.map((item: { answer_revision: string; status: string; score: null; policy_version: string }) => ({ answerRevision: item.answer_revision, status: item.status, score: item.score, policyVersion: item.policy_version })),
       exportParity: { flow: true, validationEvidence: true, decisionEvidence: true, responseScoreEvidence: true },
+      clientObservations: debug.timeline.filter((event: { component: string }) => event.component === "frontend").map((event: { parent_request_id: string; stage: string; status: string }) => ({ requestId: event.parent_request_id, phase: event.stage, status: event.status })),
       provenance: provenance.map((event: { request_id: string; payload: { route_provenance: { model_profile_id: string; policy_digest: string; reason_code: string } } }) => ({ requestId: event.request_id, modelProfile: event.payload.route_provenance.model_profile_id, policyDigest: event.payload.route_provenance.policy_digest, reasonCode: event.payload.route_provenance.reason_code })),
       caseId, provider: models.map((m: { payload: { provider: string; model: string } }) => ({ provider: m.payload.provider, model: m.payload.model })),
       services: ["frontend:5189", "api:8264", "mcp:8364", "loopback-postgresql"],

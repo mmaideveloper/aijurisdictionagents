@@ -27,6 +27,7 @@ from app.debug_api import router as debug_router
 from app.case_workflows.service import get_case_workflow_service
 from app.chat.result_metadata import get_law_knowledge_snapshot
 from app.chat.api import router as chat_router
+from app.chat.client_audit import router as client_audit_router
 from app.admin_cases_api import router as admin_cases_router
 from app.admin_users_api import router as admin_users_router
 from app.ai_model_admin_api import router as ai_model_admin_router
@@ -274,6 +275,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "x-request-id", "x-correlation-id"],
 )
 app.include_router(chat_router)
+app.include_router(client_audit_router)
 app.include_router(admin_cases_router)
 app.include_router(admin_users_router)
 app.include_router(ai_model_admin_router)
