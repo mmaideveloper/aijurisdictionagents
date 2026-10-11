@@ -10,3 +10,6 @@ def show(context, component, stage, status, payload):
 with correlation_scope(correlation_id="synthetic-demo", debug_sink=show):
     with validation_check(category="output_quality", validator_id="synthetic.demo", validator_version="1", artifact_id="synthetic-answer-v1") as result:
         result.update(outcome="passed", reason_code="output_present", decision="continue")
+
+# Rewrites need a new revision; a prior passing check does not validate it.
+print(json.dumps({"artifact_id": "synthetic-answer-v1", "answer_revision": "synthetic-answer-v2", "answer_revision_status": "changed_after_check"}))

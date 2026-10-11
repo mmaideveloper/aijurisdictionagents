@@ -21,8 +21,9 @@ class AILawyerOutputMessageValidationAgent:
         *,
         content: str,
         user_profile: LawyerOutputUserProfile | None,
+        artifact_id: str | None = None,
     ) -> str:
-        with validation_check(category="output_quality", validator_id="chat.profile_section_cleanup", validator_version="1", artifact_id=None) as audit:
+        with validation_check(category="output_quality", validator_id="chat.profile_section_cleanup", validator_version="1", artifact_id=artifact_id) as audit:
             if not content.strip():
                 audit.update(outcome="not_run", reason_code="empty_output", decision="continue")
                 return content
