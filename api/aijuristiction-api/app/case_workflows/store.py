@@ -775,6 +775,27 @@ class CaseWorkflowStore:
             result.append(item)
         return result
 
+    def list_node_execution_events(self, *, workflow_run_ids: list[str], limit: int = 2000) -> list[dict[str, Any]]:
+        """Retained evidence for already-visible runs, including resumed correlations."""
+        run_ids = list(dict.fromkeys(workflow_run_ids))[:100]
+        if not run_ids:
+            return []
+        run_field = ("payload_json::jsonb #>> '{node_execution,workflow_run_id}'" if self._is_postgres
+                     else "json_extract(payload_json, '$.node_execution.workflow_run_id')")
+        placeholders = ",".join("?" for _ in run_ids)
+        with self._connect() as conn:
+            rows = conn.execute(self._sql(
+                "SELECT * FROM session_debug_events WHERE expires_at > ? "
+                "AND component IN ('model','validation','mcp') "
+                f"AND {run_field} IN ({placeholders}) ORDER BY created_at, event_id LIMIT ?"
+            ), (_utc_now(), *run_ids, min(max(limit, 1), 2000))).fetchall()
+        result = []
+        for row in rows:
+            item = _row(row)
+            item["payload"] = json.loads(str(item.pop("payload_json")))
+            result.append(item)
+        return result
+
     def purge_expired_debug_events(self) -> int:
         """Physically remove protected debug rows after their seven-day deadline."""
 

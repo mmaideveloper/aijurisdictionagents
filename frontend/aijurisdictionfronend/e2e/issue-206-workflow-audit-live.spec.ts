@@ -94,6 +94,10 @@ test("real workflow interruption and resume retain distinct audited validator at
     expect(checks.length).toBeGreaterThanOrEqual(2);
     expect(new Set(checks.map((item: { execution_id: string }) => item.execution_id)).size).toBe(checks.length);
     expect(checks.every((item: { outcome: string }) => item.outcome === "failed")).toBe(true);
+    const linkedChecks = traces.flatMap(trace => trace.langgraph_evidence.runs).filter((item: { workflow_run_id: string }) => item.workflow_run_id === run.workflow_run_id)
+      .flatMap(item => item.occurrences).filter((item: { node_id: string }) => item.node_id === "verify_input")
+      .flatMap(item => item.execution_evidence ?? []).filter((item: { component: string }) => item.component === "validation");
+    for (const check of checks) expect(linkedChecks.some((item: { execution_id: string }) => item.execution_id === check.execution_id)).toBe(true);
     const models = traces.flatMap(trace => trace.timeline).filter((item: { component: string; stage: string; status: string }) => item.component === "model" && item.stage === "completion" && item.status === "completed");
     expect(models.length).toBeGreaterThan(0);
     expect(models.every((item: { payload: { provider: string; model: string } }) => item.payload.provider.includes("azure") && item.payload.model === input.expectedModel)).toBe(true);
@@ -104,6 +108,8 @@ test("real workflow interruption and resume retain distinct audited validator at
     await page.getByRole("button", { name: "Otvoriť presnú koreláciu", exact: true }).click();
     await expect(page.getByRole("img", { name: /legal_document_workflow/ })).toBeVisible();
     await expect(page.getByRole("region", { name: "Pokrytie auditnými dôkazmi" })).toContainText("required_facts");
+    await page.locator(".langgraph-audit__execution-list button").filter({ hasText: "verify_input" }).first().click();
+    await expect(page.locator(".langgraph-audit__details")).toContainText("required_facts");
     await page.screenshot({ path: path.join(input.evidenceRoot, "issue-206-workflow-resume.png"), fullPage: true });
     await writeFile(path.join(input.evidenceRoot, "workflow-result-manifest.json"), JSON.stringify({ passed: true, syntheticOnly: true, runId: input.runId, workflowRunId: run.workflow_run_id, graphVersion: run.graph_version, flowVersion: run.flow_version, requests: [firstRequest, secondRequest], correlationIds: correlations, validatorExecutionIds: checks.map((item: { execution_id: string }) => item.execution_id), provider: "azurefoundry", model: input.expectedModel, services: ["frontend:5189", "api:8264", "mcp:8364", "loopback-postgresql"], retention: "Seven days maximum" }, null, 2));
   } finally {
