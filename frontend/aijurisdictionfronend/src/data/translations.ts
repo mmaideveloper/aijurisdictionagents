@@ -6,6 +6,8 @@ export type TranslationValues = Record<string, string | number>;
 
 export const translations = {
   en: {
+    adminRecordedDecisionCode: "Recorded decision code",
+    adminProviderSummaryUnavailable: "Provider-supplied decision summary unavailable. Recorded decisions do not reveal hidden model reasoning.",
     sttMicOn: "Microphone on · Listening",
     sttMicOff: "Microphone off",
     sttConfigureProfile: "Configure streaming STT (SK/EN/DE)",
@@ -957,6 +959,8 @@ export const translations = {
     footerCopy: `Design concept for ${PRODUCT_NAMES.en}.`
   },
   sk: {
+    adminRecordedDecisionCode: "Zaznamenaný kód rozhodnutia",
+    adminProviderSummaryUnavailable: "Zhrnutie rozhodnutia od poskytovateľa nie je dostupné. Zaznamenané rozhodnutia neodhaľujú skryté uvažovanie modelu.",
     sttMicOn: "Mikrofón zapnutý · Počúvam",
     sttMicOff: "Mikrofón vypnutý",
     sttConfigureProfile: "Nastaviť priebežný prepis (SK/EN/DE)",
@@ -1908,6 +1912,8 @@ export const translations = {
     footerCopy: `Dizajnový koncept pre ${PRODUCT_NAMES.sk}.`
   },
   de: {
+    adminRecordedDecisionCode: "Erfasster Entscheidungscode",
+    adminProviderSummaryUnavailable: "Eine Entscheidungszusammenfassung des Anbieters ist nicht verfügbar. Erfasste Entscheidungen legen keine verborgenen Modellüberlegungen offen.",
     sttMicOn: "Mikrofon an · Aufnahme läuft",
     sttMicOff: "Mikrofon aus",
     sttConfigureProfile: "Streaming-Transkription konfigurieren (SK/EN/DE)",

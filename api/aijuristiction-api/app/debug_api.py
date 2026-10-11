@@ -20,6 +20,7 @@ from app.case_workflows.service import CaseWorkflowApplicationService, get_case_
 from app.decision_trace_api import require_decision_trace_admin
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
 from app.security import require_api_key
+from app.decision_evidence import build_decision_evidence
 from app.validation_evidence import build_validation_evidence
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
@@ -89,6 +90,7 @@ def _build_payload(
         correlation_id=correlation_id, limit=min(limit, 1000), offset=offset
     )
     timeline: list[dict[str, object]] = []
+    decision_evidence = build_decision_evidence(decisions, langgraph_evidence)
     for event in debug_events:
         timeline.append({"kind": "debug", **event})
     for decision in decisions:
@@ -131,6 +133,7 @@ def _build_payload(
         "flow": flow,
         "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
+        "decision_evidence": decision_evidence,
         "validation_evidence": build_validation_evidence(timeline),
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
@@ -302,6 +305,7 @@ def export_session_debug_trace(
             "flow",
             "langgraph_evidence",
             "decision_traces",
+            "decision_evidence",
             "validation_evidence",
             "application_logs",
             "warnings",

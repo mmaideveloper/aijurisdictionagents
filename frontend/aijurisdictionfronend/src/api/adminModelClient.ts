@@ -681,6 +681,11 @@ export interface AdminLangGraphEdge {
 }
 
 export interface AdminLangGraphOccurrence {
+  decision_evidence?: {
+    explanation_kind: "recorded_decision_code";
+    reason_code: string | null;
+    model_supplied_summary: { status: "unavailable"; reason: string };
+  };
   occurrence_id: string;
   node_id: string;
   attempt: number;
