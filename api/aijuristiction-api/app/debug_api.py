@@ -20,6 +20,7 @@ from app.case_workflows.service import CaseWorkflowApplicationService, get_case_
 from app.decision_trace_api import require_decision_trace_admin
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
 from app.security import require_api_key
+from app.validation_evidence import build_validation_evidence
 from aijurisdictionagents.api_db import ApiDatabaseStore
 
 
@@ -130,6 +131,7 @@ def _build_payload(
         "flow": flow,
         "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
+        "validation_evidence": build_validation_evidence(timeline),
         "application_logs": logs,
         "warnings": [logs_warning] if logs_warning else [],
     }
@@ -300,6 +302,7 @@ def export_session_debug_trace(
             "flow",
             "langgraph_evidence",
             "decision_traces",
+            "validation_evidence",
             "application_logs",
             "warnings",
         ):
