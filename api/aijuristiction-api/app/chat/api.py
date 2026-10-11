@@ -1342,7 +1342,9 @@ def _persist_direct_assistant_message(
     allow_document_generation: bool = True,
     presentation: dict[str, Any] | None = None,
 ) -> Message:
-    content = _validate_lawyer_output_message(session=session, content=content)
+    candidate_id = str(uuid4())
+    candidate_content = content
+    content = _validate_lawyer_output_message(session=session, content=content, artifact_id=candidate_id)
     content = _attach_technical_payload_to_case_if_needed(session=session, content=content)
     generated_doc_ids = (
         _persist_generated_case_document_if_needed(session=session, content=content)
@@ -1370,6 +1372,7 @@ def _persist_direct_assistant_message(
             generated_document_ids=generated_doc_ids,
         )
     )
+    _record_validated_revision_link(candidate_id, candidate_content, persisted_lawyer)
     _persist_case_message_if_needed(
         session=session,
         role="assistant",
@@ -1380,10 +1383,18 @@ def _persist_direct_assistant_message(
     return persisted_lawyer
 
 
-def _validate_lawyer_output_message(*, session: Session, content: str) -> str:
+def _record_validated_revision_link(candidate_id: str, candidate_content: str, message: Message) -> None:
+    record_debug_event("validation", "answer_revision_link", "recorded", {
+        "schema_version": 1, "artifact_id": candidate_id, "answer_revision": str(message.id),
+        "content_unchanged_since_check": candidate_content == message.content,
+    })
+
+
+def _validate_lawyer_output_message(*, session: Session, content: str, artifact_id: str | None = None) -> str:
     return _LAWYER_OUTPUT_VALIDATOR.validate(
         content=content,
         user_profile=_lawyer_output_user_profile_for_session(session),
+        artifact_id=artifact_id,
     )
 
 
@@ -2701,11 +2712,12 @@ def stream_session(
         nonlocal last_audit_user_message
         nonlocal assistant_messages_seen
         normalized_role = core_message_role(core_message.role)
+        candidate_id = str(uuid4())
         if normalized_role == "assistant":
             assistant_messages_seen += 1
             content = _attach_technical_payload_to_case_if_needed(
                 session=session,
-                content=_validate_lawyer_output_message(session=session, content=core_message.content),
+                content=_validate_lawyer_output_message(session=session, content=core_message.content, artifact_id=candidate_id),
             )
             generated_doc_ids = _persist_generated_case_document_if_needed(
                 session=session,
@@ -2736,6 +2748,8 @@ def stream_session(
             content=content,
             agent_name=core_message.agent_name,
         )
+        if normalized_role == "assistant":
+            _record_validated_revision_link(candidate_id, core_message.content, persisted)
         if normalized_role == "user":
             last_audit_user_message = persisted
         elif normalized_role == "assistant" and last_audit_user_message is not None:

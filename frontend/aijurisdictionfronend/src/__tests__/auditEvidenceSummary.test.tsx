@@ -34,3 +34,10 @@ it.each(["sk", "de"] as const)("localizes evidence absence in %s", language => {
   expect(screen.queryByText("Not recorded / unknown")).toBeNull();
   expect(screen.getByRole("button")).toBeTruthy();
 });
+
+it("does not present a changed final answer as the checked revision", () => {
+  const evidence = { ...trace, validation_evidence: { categories: [], checks: [{ execution_id: "one", validator_id: "cleanup", category: "output_quality", outcome: "passed", validator_version: "1", artifact_link_status: "recorded", answer_revision: "synthetic-final-2", answer_revision_status: "changed_after_check" }] } };
+  render(<AuditEvidenceSummary trace={evidence} language="en" adminAuth={{ userId: "synthetic" }} onGraphPage={vi.fn()} />);
+  expect(screen.getByText(/Changed after check — final revision not checked/)).toBeTruthy();
+  expect(screen.getByText("synthetic-final-2")).toBeTruthy();
+});
