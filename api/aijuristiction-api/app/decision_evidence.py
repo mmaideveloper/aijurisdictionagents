@@ -64,6 +64,7 @@ def build_decision_evidence(
         linked.setdefault(key, []).append({
             "event_id": _id(event.get("event_id") or event.get("id")),
             "request_id": _id(event.get("request_id")),
+            "correlation_id": _id(event.get("correlation_id")),
             "component": event["component"], "stage": _id(event.get("stage")),
             "status": _id(event.get("status")),
             **{field: _id(payload.get(field)) for field in (

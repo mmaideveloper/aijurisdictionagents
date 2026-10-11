@@ -48,3 +48,15 @@ def test_execution_join_requires_run_node_and_occurrence_and_minimizes_fields():
     assert second['execution_evidence_status'] == 'no_linked_evidence'
     assert not graph['runs'][1]['occurrences'][0]['execution_evidence']
     assert 'secret private text' not in str(graph)
+
+def test_node_lookup_follows_resumed_correlation_and_excludes_other_runs_and_expiry(tmp_path):
+    from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
+    ledger = CaseWorkflowStore(CaseWorkflowStoreConfig(db_option='local', db_cloud='', sqlite_path=tmp_path / 'audit.sqlite3'))
+    for correlation, run in [('first', 'owned-run'), ('resumed', 'owned-run'), ('other', 'other-run')]:
+        ledger.record_debug_event(correlation_id=correlation, session_id='synthetic', request_id=correlation, parent_request_id='', component='validation', stage='check', status='passed', payload={'node_execution': {'workflow_run_id': run, 'node_id': 'review', 'occurrence_id': correlation}})
+    assert {item['correlation_id'] for item in ledger.list_node_execution_events(workflow_run_ids=['owned-run'])} == {'first', 'resumed'}
+    with ledger._connect() as conn:
+        conn.execute("UPDATE session_debug_events SET expires_at='2000-01-01T00:00:00+00:00' WHERE correlation_id='resumed'")
+        conn.commit()
+    assert [item['correlation_id'] for item in ledger.list_node_execution_events(workflow_run_ids=['owned-run'])] == ['first']
+    assert ledger.list_node_execution_events(workflow_run_ids=[]) == []
