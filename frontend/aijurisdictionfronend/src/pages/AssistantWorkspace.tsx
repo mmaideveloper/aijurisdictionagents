@@ -739,6 +739,8 @@ const AssistantThread: React.FC<{
             instruction: content,
             userId,
             userEmail: user?.email,
+            deviceId: user?.deviceId,
+            deviceAuthToken: user?.deviceAuthToken,
             modelProfileId: selectedModelProfileId,
             signal: options.abortSignal,
             correlationId: session.correlationId
@@ -856,6 +858,8 @@ const AssistantThread: React.FC<{
       onCorrelationIdChange,
       selectedModelProfileId,
       t,
+      user?.deviceId,
+      user?.deviceAuthToken,
       user?.email,
       user?.userId
     ]
