@@ -1,144 +1,139 @@
 # Combined audit acceptance (#206)
 
-This checkout carries the combined #206 acceptance suite. The initial #856–#861
-increments were reviewed for merge into main; remaining criteria below are not
-automatically completed by a merge. #855 was already merged. On 2026-10-11 the
-owner approved the scoring aggregation contract with missing-evidence gates.
+## Accepted scope
 
-## Real browser scenario
+On 2026-10-11 the owner chose to finish auditing existing execution and clearly
+expose missing quality evidence. The implementation connects user, case, session,
+correlation, HTTP/worker ancestry, LangGraph run/node occurrences, actual model
+routes and executed validation results in the protected admin viewer and export.
+Candidate checks link to the persisted answer revision; later changes are marked
+`changed_after_check`, so an earlier check does not certify a rewritten answer.
+Resumed workflows retain node evidence across distinct request correlations.
 
-Prerequisites: local Docker/PostgreSQL on port 5432, approved synthetic E2E Azure
-settings obtained through the repository profile/import scripts, Node and the
-branch-local Python runtime. Never print `.env` or copy production data.
+The approved #860 score contract uses grounding 40%, factual consistency 30%,
+coverage 20%, clarity 10%, and review threshold 85. Missing required assessments
+produce an incomplete state, null score and mandatory review for ordinary chat.
+Dedicated-workflow score aggregation and new dimension,
+grounding and hallucination assessors remain deferred under #860. Existing narrow
+checks are never represented as comprehensive security or hallucination checks.
+Unknown provider revisions, prompt-template versions and injected-validator
+versions remain unknown. Model explanations use supported bounded decision codes;
+hidden reasoning, checkpoint bodies and retrospective rationales are not collected.
+No new cancellation control or provider-supplied reasoning summary is introduced.
+
+Metadata-only additions preserve enabled-admin authorization, audited access,
+seven-day diagnostic expiry, owning-case deletion, existing consent/routing and
+human review for legal-risk output. This is an engineering traceability change,
+not a legal compliance certification or production deployment.
+
+## Run the real local scenarios
+
+Prerequisites: Docker/PostgreSQL on port 5432, approved synthetic Azure E2E
+credentials, Node, and this worktree's Python runtime. Never print `.env`.
 
 ```powershell
 .\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent
 .\conda\python.exe scripts/audit_e2e_206.py --setup
-# Use the approved import script with the loopback juris_audit_e2e_206 target:
-# scripts/import_e2e_model_credentials_from_server.ps1
-# -RequiredModel gpt-5-mini -UseExistingPostgres -VerifyModel
+# Import the approved credential with scripts/import_e2e_model_credentials_from_server.ps1
+# targeting loopback database juris_audit_e2e_206, with
+# -RequiredModel gpt-5-mini -UseExistingPostgres -VerifyModel.
 .\conda\python.exe scripts/audit_e2e_206.py --prepare
 # Separate terminal:
 .\conda\python.exe scripts/audit_e2e_206.py --services
-# Once services are ready, original terminal:
+# Original terminal, once services are ready:
 .\conda\python.exe scripts/audit_e2e_206.py --authenticate
 cd frontend/aijurisdictionfronend
 $env:VITE_API_BASE_URL = 'http://127.0.0.1:8264'
 $env:CI = 'true'
-npx playwright test e2e/issue-206-audit-live.spec.ts --project=chromium
-# Each scenario removes its private authentication file. Re-authenticate before:
-# (from repository root) .\conda\python.exe scripts/audit_e2e_206.py --authenticate
-npx playwright test e2e/issue-206-workflow-audit-live.spec.ts --project=chromium
+npx --no-install playwright test e2e/issue-206-audit-live.spec.ts --project=chromium
+# Re-authenticate from the repository root before EACH following scenario:
+# .\conda\python.exe scripts/audit_e2e_206.py --authenticate
+npx --no-install playwright test e2e/issue-206-workflow-audit-live.spec.ts --project=chromium
+npx --no-install playwright test e2e/issue-206-lifecycle-audit-live.spec.ts --project=chromium
+npx --no-install playwright test e2e/issue-206-complete-workflow-audit-live.spec.ts --project=chromium
 ```
 
-The wrapper reuses #864 fixture/auth file names inside this checkout but uses
-isolated databases `juris_audit_e2e_206` and `juris_audit_laws_e2e_206`. It requires
-the real configured Azure provider and does not intercept browser routes or
-fabricate authentication, database responses or visible UI state.
+The fixture reuses #864 filenames but isolates data in `juris_audit_e2e_206` and
+`juris_audit_laws_e2e_206`. Tests use the real frontend (5189), API (8264), MCP
+(8364), migrated local PostgreSQL and approved Azure `gpt-5-mini`. Synthetic users,
+cases and seeded legal source `issue-635-civil-code` are used. No mocked provider,
+intercepted response or fabricated UI state counts as acceptance. Missing services
+or credentials mean pending; a skipped test is not a pass.
 
-The runnable scenario creates a synthetic case, retrieves a seeded legal source,
-submits two browser turns, inspects real admin evidence, verifies distinct HTTP
-and worker IDs, validates recorded parent edges and actual model-policy snapshots,
-and checks missing hallucination-assessment evidence. It also verifies persisted
-incomplete response assessments against exact assistant message IDs, their null
-scores and mandatory review, the visible admin state, and in-memory ZIP parity
-for causal flow, validation, decision and score evidence. It checks the actual model
-route, source citation and admin-only access, requests an export, captures a stable
-Flow screenshot and saves an allowlisted manifest. It deletes the case and private
-authentication file even on failure.
+The frontend can create a fresh session after history hydration. Tests follow
+actual request headers and discover all correlations through the case index.
+Durable workflow continuity is asserted through the pinned workflow run ID.
+Browser history restoration does not claim that every UI turn reuses one session.
 
-The current frontend may create a fresh session after its history refresh. The
-test follows the actual browser correlation headers, finds both sessions through
-the case search, and verifies each causal trace independently. It does not merge
-their paths or claim that two UI turns necessarily reuse one backend session.
-It waits for history hydration before filling the second prompt. Repeated turns
-inside one preserved session remain a separate acceptance scenario.
+The lifecycle test runs two browser sessions concurrently against one synthetic
+case, respecting the account's one-active-case limit. It closes one browser context
+after recorded stream headers, checks backend termination separately from client
+receipt, and reloads retained history in the surviving browser. Closing the client
+does not prove cancellation of the provider's in-flight computation.
 
-The workflow scenario starts a real payment-confirmation workflow, waits for its
-first missing fact, then supplies a synthetic payer through the real frontend.
-It asserts the same durable workflow run and pinned versions survive resume,
-retains separate request IDs and validator execution IDs, and checks the actual
-interruption/resume events in the admin graph. Because the browser can open a
-new correlation on resume, it follows both actual headers and requires each
-trace in the case index. This does not claim a direct validator-to-node join.
-It stops while more facts are
-required and therefore does not generate a document. This is real lifecycle
-acceptance only after an executed passing result; merely listing the test is not
-acceptance evidence.
+`scripts/audit_e2e_206_metadata.py` only changes the fixed loopback acceptance DB
+after validating the exact synthetic case/user from the fixture. It edits two
+fixture policies to prove old provenance remains frozen, then ages that case's
+audit metadata eight days to exercise real expiry queries and UI. It does not
+fabricate API responses or change ordinary case-history retention.
 
-## Executed evidence (2026-10-10)
+## Acceptance matrix and limits
 
-The real combined scenario passed in 1.9 minutes against Azure `gpt-5-mini`,
-local API/MCP and migrated PostgreSQL. Both actual browser correlations were
-found through the same synthetic case; each HTTP request linked to its distinct
-worker and recorded children. Admin lookup with all four identifiers succeeded;
-the unrelated-user filter returned no records and non-admin access was denied.
-The returned citation source matched `issue-635-civil-code`. The trace recorded
-the selected model profile and policy digest, showed the executed output cleanup
-check, and explicitly showed absent security/grounding/hallucination evidence.
-The final-state screenshot and sanitized manifest were inspected. Case deletion
-and private-authentication cleanup passed.
-
-Evidence run ID: `issue-864-langgraph-audit-20261010T192302Z-f8a515d8` (the reused
-fixture retains its #864 naming). Files are under the same named directory in
-ignored `runs/e2e/issue-864-langgraph-audit/`: `issue-206-real-causal-flow.png`
-and `result-manifest.json`. Retain no longer than seven days.
-
-Combined API lint/types and full API tests passed (five environment-dependent
-skips); 16 focused UI tests, 35 focused core/provider tests and the frontend build
-passed. The earlier #856 single-turn real scenario also passed. Initial combined
-attempts exposed test assumptions about history hydration/session reuse; those
-assumptions were corrected before the successful run. None of these results
-closes the outstanding matrix cells below or approves a scoring rubric.
-
-## Acceptance matrix
-
-The extended real browser run passed on 2026-10-11 in 2.1 minutes, run ID
-`issue-864-langgraph-audit-20261011T063529Z-e8ecf9aa`. It exercised the owner-approved
-score contract, persisted null/incomplete assessments linked to actual delivered
-assistant message IDs, the visible admin state and exact in-memory ZIP parity for
-all four evidence projections. The real provider remained Azure `gpt-5-mini`;
-API/MCP, migrated local PostgreSQL and seeded source IDs were verified again.
-The final screenshot `issue-206-real-causal-flow.png` was visually/privacy reviewed.
-
-An initial attempt used an abbreviated follow-up that the real router treated as
-needing clarification. That attempt failed its generic-route assertion. The fresh
-passing run used an explicit standalone citation-explanation question; the route,
-real-model, retrieval, score and export assertions were retained. This result does
-not establish deterministic classifier behavior for arbitrary follow-up wording.
-
-The workflow interruption/resume scenario then passed in 51.6 seconds using the
-same fixture run ID. It verified the same workflow run and graph/flow versions,
-two distinct HTTP requests, distinct input-validator executions, repeated
-interruptions and the durable resume event. Both frontend correlations were
-discoverable through the same synthetic case. The actual real Azure route was
-verified and `issue-206-workflow-resume.png` was visually/privacy reviewed.
-The sanitized `workflow-result-manifest.json` records these observations.
-The first attempt looked only at the original correlation and missed the second
-validator record; the passing test follows both recorded browser correlations
-without reducing the required number of attempts. Both scenarios deleted their
-synthetic cases and private authentication files.
-
-| Scenario | Runnable coverage | Remaining work |
+| Area | Executed real coverage | Explicit limit |
 | --- | --- | --- |
-| User/case/session/correlation search | #855 existing tests, real trace lookup | Combined search-filter matrix |
-| Actual HTTP/worker/model/MCP parent links | #856 live and #206 two-turn test, including unverified browser dispatch/header/completion reports | Real browser cancellation/network-failure scenarios |
-| Parallel/retry/cycle/missing ancestry | #856 unit/browser regression and real workflow interruption/resume | Real parallel/retry/cancellation and preserved-session scenarios |
-| Frozen model policy/provider identity | #857 unit and #206 live snapshot checks | Live policy edit/history check, template versions |
-| Actual validator dispositions | #858 core/API tests | Full real dedicated-workflow matrix and revision linkage |
-| Explicit missing validation coverage | #859 component and #206 live UI | Real paging/expired-evidence matrix |
-| LangGraph pinned topology and safe codes | #861 API/UI; real pinned interruption/resume graph and distinct attempts | Per-node model/validator joins and additional retry/loop cases |
-| Final response score | #860 approved arithmetic/gates, persistence/API/UI, #206 live incomplete state | Approved actual dimension assessors and dedicated-workflow integration |
-| Retention/deletion/export | Score storage/expiry/session deletion tests; real four-projection ZIP parity and case cleanup | Full combined seven-day expiry matrix |
+| Search and authorization | Individual/combined user, case, session and correlation filters; unrelated-user isolation; non-admin denial | Admin viewer only; no new mobile audit viewer |
+| Causal flow | Actual HTTP/worker/model/MCP links; two turns; parallel requests; browser disconnect and restored history | Client receipt and backend completion are independent |
+| Historical provenance | Actual real provider/model and policy digest; policy edit leaves history unchanged | Unreported template/provider revisions remain unknown |
+| LangGraph | Pinned topology, repeated input nodes, interruption/resume, exact model/validator occurrence links across correlations | Provider-internal retries and unsupported summaries are not inferred |
+| Validation | Existing checks, candidate/final revision linkage and visible changed-after-check state | No new comprehensive security/grounding/hallucination assessor |
+| Missing/expired evidence | Visible missing categories, pagination, expired ledger/search/graph/score projections | Ordinary retained case content has separate retention |
+| Response quality | Persisted answer-linked incomplete assessments, null scores, mandatory review | Actual dimension assessors remain #860 follow-up |
+| Export/deletion | Four-projection ZIP parity; synthetic case and private-auth deletion | Export read into memory, not retained as a protected archive |
+| Complete document workflow | Runnable real output/security node checks, pinned flow, citation IDs, PDF structure/text/render and UI screenshots | Count as passed only with the passing manifest and reviewed render |
 
-Unit/browser regressions are preliminary evidence. Only successfully executed
-real local scenarios count as real E2E. A skip due to missing fixture, credential
-or service means pending, never passed. The matrix must retain outstanding cells
-until their scenarios execute successfully.
+Unit/regression evidence also covers malformed/missing ancestry, retry/cycle
+projection, unsupported/failed validator states, retention and secret exclusion.
+These tests do not prove execution of every provider-internal retry or model route.
 
-Evidence belongs only under ignored `runs/` or `artifacts/`, with screenshots and
-sanitized result manifests retained for at most seven days. Do not retain raw
-protected exports, prompts containing personal data, credentials or authentication
-files. Stop only this run's API/MCP processes, remove its two dedicated databases
-and transient synthetic storage after investigation. Preserve existing human
-oversight, provider consent/routing and authorization during all scenarios.
+## Executed evidence, 2026-10-11
+
+- Run `issue-864-langgraph-audit-20261011T130557Z-78fa0b92`: node-link two-turn
+  scenario passed (2.7 minutes); resumed workflow passed (1.7 minutes). The resume
+  test found a cross-correlation evidence gap, fixed in PR #890 and verified again.
+- Combined run `issue-864-langgraph-audit-20261011T132538Z-b6766445`: extended
+  two-turn/search/paging/policy/revision/export/expiry scenario passed (3.0 minutes).
+  `issue-206-real-causal-flow.png`, `issue-206-expired-evidence.png`,
+  `result-manifest.json` and `expiry-result-manifest.json` record the result.
+- The same combined run passed parallel requests/browser close/restored history
+  (2.0 minutes). `issue-206-reloaded-history.png` and
+  `lifecycle-result-manifest.json` retain final evidence.
+- Complete document workflow writes `complete-workflow-result-manifest.json`,
+  `issue-206-complete-workflow.pdf`, its first-page render and final user/admin
+  screenshots. Require the passing manifest and visual review before acceptance;
+  test discovery alone is not a passed result.
+
+Earlier failed test attempts assumed a generic route for a follow-up, allowed two
+active cases on a one-case subscription, or assumed browser offline emulation
+would close an existing stream. Passing tests follow actual routes, use two browser
+sessions on one case and explicitly close the browser context. These changes do
+not replace the required real provider, source, isolation or receipt assertions.
+
+API lint/types and full API tests passed for the implementation changes (five
+environment-dependent skips); focused core/UI regressions and frontend builds
+passed. All applicable PR checks passed before implementation merges #890/#892.
+
+## Evidence and cleanup
+
+Evidence is ignored under `runs/e2e/issue-864-langgraph-audit/<run-id>/` and retained
+for at most seven days. Screenshots and manifests contain synthetic identities and
+allowlisted metadata. Document acceptance retains the PDF and first-page render,
+validates PDF structure/extracted expected text and visually reviews the render.
+No credentials, private-auth files, raw protected exports or personal prompts are
+retained as acceptance evidence. Each scenario deletes its case and private auth
+file in cleanup. At the end stop only owned API/MCP processes, drop the two isolated
+acceptance databases and remove transient synthetic file storage; preserve the
+sanitized screenshots/manifests/PDF until the retention deadline.
+
+Minimal offline examples remain runnable:
+`python examples/minimal_demo.py`, `python examples/node_execution_audit_demo.py`
+and `python examples/validation_audit_demo.py`.

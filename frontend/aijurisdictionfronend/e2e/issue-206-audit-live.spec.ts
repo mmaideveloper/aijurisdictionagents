@@ -113,6 +113,30 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     const caseCorrelations = (await caseSearch.json()).items.map((item: { correlation_id: string }) => item.correlation_id);
     expect(caseCorrelations).toContain(firstCorrelation);
     expect(caseCorrelations).toContain(correlation);
+    for (const params of [{ user_id: auth.workflowUser.userId }, { case_id: caseId }, { session_id: debug.session.id }, { correlation_id: correlation }, { user_id: auth.workflowUser.userId, session_id: debug.session.id }]) {
+      const found = await request.get(`${api}/v1/admin/debug`, { headers: adminHeaders, params });
+      expect(found.ok()).toBe(true);
+      expect((await found.json()).items.some((item: { correlation_id: string }) => item.correlation_id === correlation)).toBe(true);
+    }
+    const pagedIds: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await request.get(`${api}/v1/admin/debug`, { headers: adminHeaders, params: { case_id: caseId, limit: 1, ...(cursor ? { cursor } : {}) } });
+      expect(result.ok()).toBe(true);
+      const body = await result.json();
+      pagedIds.push(...body.items.map((item: { correlation_id: string; session_id: string }) => `${item.correlation_id}:${item.session_id}`));
+      cursor = body.next_cursor ?? undefined;
+      expect(pagedIds.length).toBeLessThan(20);
+    } while (cursor);
+    expect(new Set(pagedIds).size).toBe(pagedIds.length);
+    expect(pagedIds.length).toBeGreaterThan(0);
+    const partial = await request.get(`${api}/v1/admin/debug/${correlation}`, { headers: adminHeaders, params: { limit: 1 } });
+    expect(partial.ok()).toBe(true);
+    const partialGraph = (await partial.json()).langgraph_evidence;
+    expect(partialGraph.page.has_more).toBe(true);
+    const nextPage = await request.get(`${api}/v1/admin/debug/${correlation}`, { headers: adminHeaders, params: { limit: 1, offset: partialGraph.page.next_offset } });
+    expect(nextPage.ok()).toBe(true);
+    expect((await nextPage.json()).langgraph_evidence.page.offset).toBeGreaterThan(0);
     expect(debug.flow.edge_basis).toBe("recorded_parent_request_id");
     const httpRequest = stream.request().headers()["x-request-id"];
     expect(httpRequest).toBeTruthy();
@@ -142,6 +166,22 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     expect(debug.validation_evidence.categories.find((item: { category: string }) => item.category === "hallucination_assessment").evidence_status).toBe("missing_evidence");
     const provenance = debug.timeline.filter((event: { component: string; stage: string; status: string; payload: { route_provenance?: unknown } }) => event.component === "model" && event.stage === "completion" && event.status === "started" && event.payload.route_provenance);
     expect(provenance.length).toBeGreaterThan(0);
+    const metadataChange = (action: string) => {
+      const result = spawnSync(path.resolve("../../conda/python.exe"), [path.resolve("../../scripts/audit_e2e_206_metadata.py")], { input: JSON.stringify({ action, case_id: caseId }), encoding: "utf8" });
+      expect(result.status, "isolated metadata fixture action").toBe(0);
+      expect(JSON.parse(result.stdout).changed).toBeGreaterThan(0);
+    };
+    const historical = provenance.map((item: { payload: { route_provenance: unknown } }) => item.payload.route_provenance);
+    expect(historical.some((item: { policy_digest?: string }) => !!item.policy_digest)).toBe(true);
+    metadataChange("policy");
+    const reread = await request.get(`${api}/v1/admin/debug/${correlation}`, { headers: adminHeaders });
+    expect(reread.ok()).toBe(true);
+    expect((await reread.json()).timeline.filter((item: { component: string; stage: string; status: string; payload: { route_provenance?: unknown } }) => item.component === "model" && item.stage === "completion" && item.status === "started" && item.payload.route_provenance).map((item: { payload: { route_provenance: unknown } }) => item.payload.route_provenance)).toEqual(historical);
+    for (const check of debug.validation_evidence.checks.filter((item: { validator_id: string }) => item.validator_id === "chat.profile_section_cleanup")) {
+      expect(check.answer_revision).toBeTruthy();
+      expect(["unchanged_since_check", "changed_after_check"]).toContain(check.answer_revision_status);
+      expect(debug.messages.some((item: { id: string }) => item.id === check.answer_revision)).toBe(true);
+    }
     expect(provenance.some((event: { payload: { route_provenance: { model_profile_id: string } } }) => !!event.payload.route_provenance.model_profile_id)).toBe(true);
     for (const trace of traces) {
       const operations = new Map(trace.flow.nodes.map((node: { id: string }) => [node.id, node]));
@@ -218,6 +258,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
       validationCategories: debug.validation_evidence.categories,
       responseAssessments: assessments.map((item: { answer_revision: string; status: string; score: null; policy_version: string }) => ({ answerRevision: item.answer_revision, status: item.status, score: item.score, policyVersion: item.policy_version })),
       exportParity: { flow: true, validationEvidence: true, decisionEvidence: true, responseScoreEvidence: true },
+      searchFilterMatrix: true, pagination: true, historicalPolicyAfterEdit: true, answerRevisionLinks: true,
       clientObservations: debug.timeline.filter((event: { component: string }) => event.component === "frontend").map((event: { parent_request_id: string; stage: string; status: string }) => ({ requestId: event.parent_request_id, phase: event.stage, status: event.status })),
       provenance: provenance.map((event: { request_id: string; payload: { route_provenance: { model_profile_id: string; policy_digest: string; reason_code: string } } }) => ({ requestId: event.request_id, modelProfile: event.payload.route_provenance.model_profile_id, policyDigest: event.payload.route_provenance.policy_digest, reasonCode: event.payload.route_provenance.reason_code })),
       caseId, provider: models.map((m: { payload: { provider: string; model: string } }) => ({ provider: m.payload.provider, model: m.payload.model })),
@@ -228,6 +269,20 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
       observedNodes: router.occurrences.map((item: { node_id: string }) => item.node_id),
       retention: "Delete evidence within seven days; private authentication removed after test.",
     }, null, 2));
+    metadataChange("expire");
+    const afterExpiry = await request.get(`${api}/v1/admin/debug/${correlation}`, { headers: adminHeaders });
+    expect(afterExpiry.ok()).toBe(true);
+    const expired = await afterExpiry.json();
+    expect(expired.validation_evidence.checks).toHaveLength(0);
+    expect(expired.response_score_evidence.assessments).toHaveLength(0);
+    expect(expired.langgraph_evidence.runs).toHaveLength(0);
+    const expiredSearch = await request.get(`${api}/v1/admin/debug`, { headers: adminHeaders, params: { case_id: caseId } });
+    expect((await expiredSearch.json()).items).toHaveLength(0);
+    await page.getByRole("button", { name: "Otvoriť presnú koreláciu", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Pokrytie auditnými dôkazmi" })).toContainText("Chýbajúce dôkazy");
+    await expect(page.getByRole("img", { name: /primary_router/ })).toHaveCount(0);
+    await page.screenshot({ path: path.join(input.evidenceRoot, "issue-206-expired-evidence.png"), fullPage: true });
+    await writeFile(path.join(input.evidenceRoot, "expiry-result-manifest.json"), JSON.stringify({ passed: true, runId: input.runId, syntheticOnly: true, method: "age this synthetic case's PostgreSQL audit metadata by eight days", validationChecks: 0, responseScores: 0, graphRuns: 0, searchResults: 0, retention: "Seven days maximum" }, null, 2));
   } finally {
     try {
       if (caseId) {
