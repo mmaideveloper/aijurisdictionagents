@@ -684,6 +684,8 @@ class PostgresCourtDecisionStore:
                                                  THEN EXCLUDED.counts_toward_quota
                                                  ELSE court_decision_import_queue.counts_toward_quota END,
                         status=CASE
+                            WHEN court_decision_import_queue.source_unavailable
+                            THEN court_decision_import_queue.status
                             WHEN court_decision_import_queue.status='retryable'
                             THEN court_decision_import_queue.status
                             WHEN court_decision_import_queue.work_class='new'
@@ -692,6 +694,8 @@ class PostgresCourtDecisionStore:
                             ELSE 'pending'
                         END,
                         last_error_type=CASE
+                            WHEN court_decision_import_queue.source_unavailable
+                            THEN court_decision_import_queue.last_error_type
                             WHEN court_decision_import_queue.status='retryable'
                             THEN court_decision_import_queue.last_error_type
                             WHEN court_decision_import_queue.work_class='new'
@@ -723,6 +727,7 @@ class PostgresCourtDecisionStore:
                    FROM court_decision_import_queue
                    WHERE source_system=%s AND work_class=%s
                      AND status IN ('pending','retryable')
+                     AND NOT source_unavailable
                      AND next_attempt_at <= CURRENT_TIMESTAMP
                    ORDER BY source_ordinal,discovered_at,source_guid LIMIT 1""",
                 (source_system, work_class),
@@ -750,8 +755,9 @@ class PostgresCourtDecisionStore:
             row = conn.execute(
                 """UPDATE court_decision_import_queue
                    SET status='completed',completed_at=%s,updated_at=%s,
-                       attempt_count=0,last_error_type='',next_attempt_at='epoch'
+                       attempt_count=0,last_error_type='',last_http_status=NULL,next_attempt_at='epoch'
                    WHERE source_system=%s AND source_guid=%s AND status<>'completed'
+                     AND NOT source_unavailable
                    RETURNING work_class,counts_toward_quota""",
                 (now, now, item.source_system, item.source_guid),
             ).fetchone()
@@ -777,17 +783,23 @@ class PostgresCourtDecisionStore:
     def mark_work_retry(
         self, item: CourtDecisionWorkItem, *, error_type: str,
         next_attempt_at: datetime | None = None,
+        http_status: int | None = None,
     ) -> None:
         now = _now_iso()
         with self._connect() as conn:
-            conn.execute(
+            row = conn.execute(
                 """UPDATE court_decision_import_queue
                    SET status='retryable',attempt_count=attempt_count+1,
-                       last_error_type=%s,updated_at=%s,next_attempt_at=%s
-                   WHERE source_system=%s AND source_guid=%s""",
+                       last_error_type=%s,updated_at=%s,next_attempt_at=%s,last_http_status=%s
+                   WHERE source_system=%s AND source_guid=%s AND NOT source_unavailable
+                     AND status<>'completed'
+                   RETURNING source_guid""",
                 (error_type[:120], now, next_attempt_at or datetime.now(timezone.utc),
-                 item.source_system, item.source_guid),
-            )
+                 http_status, item.source_system, item.source_guid),
+            ).fetchone()
+            # An operator may have paused this item after it was selected.
+            if row is None:
+                return
             conn.execute(
                 """UPDATE court_decision_scheduler_state
                    SET retry_count=retry_count+1,status='retryable_error',updated_at=%s
@@ -804,10 +816,69 @@ class PostgresCourtDecisionStore:
                 """SELECT COUNT(*) AS total FROM court_decision_import_queue
                    WHERE source_system=%s AND work_class=%s
                      AND status IN ('pending','retryable')
+                     AND NOT source_unavailable
                      AND (%s=FALSE OR next_attempt_at <= CURRENT_TIMESTAMP)""",
                 (source_system, work_class, eligible_only),
             ).fetchone()
         return int(str(row["total"] if row else 0))
+
+    def review_work_availability(
+        self, *, source_system: str, source_guid: str, unavailable: bool,
+        evidence_category: str, evidence_sha256: str, reviewer_sha256: str,
+    ) -> bool:
+        """Human-reviewed disposition, never inferred from the number of 404s.
+
+        Call with the worker paused. Only fixed categories and SHA-256 digests
+        enter the audit trail; raw evidence and reviewer identities stay outside it.
+        """
+        categories = {"source_withdrawal", "operator_verified_unavailable"} if unavailable else {
+            "operator_requeue", "verified_source_change",
+        }
+        if evidence_category not in categories:
+            raise ValueError("invalid availability evidence category")
+        if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in (
+            evidence_sha256, reviewer_sha256,
+        )):
+            raise ValueError("evidence and reviewer references must be SHA-256 digests")
+        with self._connect() as conn:
+            row = conn.execute(
+                """SELECT status,last_error_type,last_http_status,source_unavailable,attempt_count
+                   FROM court_decision_import_queue
+                   WHERE source_system=%s AND source_guid=%s FOR UPDATE""",
+                (source_system, source_guid),
+            ).fetchone()
+            if row is None:
+                raise LookupError("court work reference not found")
+            if bool(row["source_unavailable"]) == unavailable:
+                return False
+            if unavailable and (
+                row["status"] != "retryable" or row["last_error_type"] != "source_missing"
+                or row["last_http_status"] not in (404, 410)
+            ):
+                raise ValueError("quarantine requires a recorded missing-source detail response")
+            conn.execute(
+                """UPDATE court_decision_import_queue
+                   SET source_unavailable=%s,updated_at=%s,
+                       status=CASE WHEN %s THEN status ELSE 'pending' END,
+                       next_attempt_at=CASE WHEN %s THEN next_attempt_at ELSE 'epoch' END,
+                       attempt_count=CASE WHEN %s THEN attempt_count ELSE 0 END,
+                       last_error_type=CASE WHEN %s THEN last_error_type ELSE '' END,
+                       last_http_status=CASE WHEN %s THEN last_http_status ELSE NULL END
+                   WHERE source_system=%s AND source_guid=%s""",
+                (unavailable, _now_iso(), unavailable, unavailable, unavailable,
+                 unavailable, unavailable, source_system, source_guid),
+            )
+            conn.execute(
+                """INSERT INTO court_decision_availability_reviews(
+                       source_system,reference_hash,source_unavailable,evidence_category,
+                       evidence_sha256,reviewer_sha256,last_http_status,attempt_count)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (source_system, sha256(source_guid.encode()).hexdigest(), unavailable,
+                 evidence_category, evidence_sha256, reviewer_sha256,
+                 row["last_http_status"], row["attempt_count"]),
+            )
+            conn.commit()
+        return True
 
     def save_discovery_checkpoint(
         self, *, source_system: str, source_total: int, source_updated_at: str,
@@ -1218,6 +1289,24 @@ _SCHEMA_SQL = (
     ON court_decision_import_queue(source_system, work_class, status, source_ordinal)""",
     """ALTER TABLE court_decision_import_queue
     ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT 'epoch'""",
+    """ALTER TABLE court_decision_import_queue
+    ADD COLUMN IF NOT EXISTS source_unavailable BOOLEAN NOT NULL DEFAULT FALSE""",
+    """ALTER TABLE court_decision_import_queue
+    ADD COLUMN IF NOT EXISTS last_http_status INTEGER""",
+    """CREATE TABLE IF NOT EXISTS court_decision_availability_reviews (
+        review_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        source_system TEXT NOT NULL,
+        reference_hash TEXT NOT NULL CHECK (reference_hash ~ '^[0-9a-f]{64}$'),
+        source_unavailable BOOLEAN NOT NULL,
+        evidence_category TEXT NOT NULL CHECK (evidence_category IN (
+            'source_withdrawal', 'operator_verified_unavailable',
+            'operator_requeue', 'verified_source_change')),
+        evidence_sha256 TEXT NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+        reviewer_sha256 TEXT NOT NULL CHECK (reviewer_sha256 ~ '^[0-9a-f]{64}$'),
+        last_http_status INTEGER,
+        attempt_count INTEGER NOT NULL,
+        reviewed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )""",
     """
     CREATE INDEX IF NOT EXISTS idx_court_decision_documents_source
     ON court_decision_documents(source_system, source_guid)

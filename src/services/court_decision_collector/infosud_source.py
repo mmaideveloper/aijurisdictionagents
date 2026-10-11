@@ -5,6 +5,7 @@ from hashlib import sha256
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -78,11 +79,15 @@ class InfoSudSourceClient:
         )
 
     def get_decision(self, guid: str) -> CourtDecisionRecord:
+        if not guid or guid != guid.strip() or any(ord(char) < 32 for char in guid):
+            raise ValueError("invalid InfoSud reference")
         payload = self._get_json(
-            path=f"/rozhodnutie/{guid}",
+            path=f"/rozhodnutie/{quote(guid, safe=':')}",
             params=None,
             context=f"stage=get_decision guid_hash={_guid_hash(guid)}",
         )
+        if payload.get("guid") != guid:
+            raise ValueError("InfoSud detail reference does not match requested guid")
         return record_from_infosud_payload(payload, source_base_url=self.base_url, source_guid=guid)
 
     def _get_json(
@@ -111,16 +116,14 @@ class InfoSudSourceClient:
                     self.progress_logger(
                         "infosud_source_request_failed "
                         f"{context} attempt={attempt} max_attempts={attempts} "
-                        f"timeout_seconds={self.timeout_seconds:g} error_type={type(exc).__name__} "
-                        f"message={_log_safe(str(exc))}"
+                        f"timeout_seconds={self.timeout_seconds:g} error_type={type(exc).__name__}"
                     )
                     raise
                 self.progress_logger(
                     "infosud_source_request_retry "
                     f"{context} attempt={attempt} max_attempts={attempts} "
                     f"timeout_seconds={self.timeout_seconds:g} error_type={type(exc).__name__} "
-                    f"retry_after_seconds={self.retry_backoff_seconds:g} "
-                    f"message={_log_safe(str(exc))}"
+                    f"retry_after_seconds={self.retry_backoff_seconds:g}"
                 )
                 if self.retry_backoff_seconds:
                     self.sleep_fn(self.retry_backoff_seconds)
@@ -131,10 +134,15 @@ class InfoSudSourceClient:
 def _refs_from_payload(payload: dict[str, Any]) -> tuple[InfoSudDecisionRef, ...]:
     refs: list[InfoSudDecisionRef] = []
     for item in _extract_items(payload):
-        guid = _first_text(item, "guid", "id", "uuid")
-        if guid:
-            label = _first_text(item, "spisovaZnacka", "cisloSpisu", "ecli", default=guid)
-            refs.append(InfoSudDecisionRef(guid=guid, label=label))
+        # The public contract uses an opaque guid (often two UUIDs joined by a
+        # colon). An id/uuid from another entity is not a decision reference.
+        guid = item.get("guid")
+        if not isinstance(guid, str) or not guid or guid != guid.strip() or any(
+            ord(char) < 32 for char in guid
+        ):
+            raise ValueError("InfoSud listing entry has no canonical guid")
+        label = _first_text(item, "spisovaZnacka", "cisloSpisu", "ecli", default=guid)
+        refs.append(InfoSudDecisionRef(guid=guid, label=label))
     return tuple(refs)
 
 
@@ -151,7 +159,7 @@ def record_from_infosud_payload(
     source_base_url: str,
     source_guid: str | None = None,
 ) -> CourtDecisionRecord:
-    guid = source_guid or _first_text(payload, "guid", "id", "uuid")
+    guid = source_guid or _first_text(payload, "guid")
     raw_court = payload.get("sud")
     court: dict[str, Any] = raw_court if isinstance(raw_court, dict) else {}
     raw_original_court = payload.get("povodnySud")
@@ -167,7 +175,7 @@ def record_from_infosud_payload(
     pseudonymized = pseudonymize_court_decision_text(raw_text)
     source_url = _first_text(payload, "url", "sourceUrl")
     if not source_url:
-        source_url = f"{source_base_url.rstrip('/')}/rozhodnutie/{guid}"
+        source_url = f"{source_base_url.rstrip('/')}/rozhodnutie/{quote(guid, safe=':')}"
     return CourtDecisionRecord(
         source_system="infosud",
         source_guid=guid,
@@ -236,7 +244,3 @@ def _decision_text(payload: dict[str, Any]) -> str:
 
 def _guid_hash(guid: str) -> str:
     return sha256(guid.encode("utf-8")).hexdigest()[:12]
-
-
-def _log_safe(value: str) -> str:
-    return " ".join(value.split())
