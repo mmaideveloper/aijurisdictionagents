@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Callable, Iterator, Mapping
 from uuid import uuid4
+import re
 
 
 DebugEventSink = Callable[["CorrelationContext", str, str, str, Mapping[str, Any]], None]
@@ -26,6 +27,23 @@ _CONTEXT: ContextVar[CorrelationContext] = ContextVar(
 _DEBUG_SINK: ContextVar[DebugEventSink | None] = ContextVar(
     "aijurisdiction_debug_event_sink", default=None
 )
+_NODE_EXECUTION: ContextVar[dict[str, str] | None] = ContextVar("audit_node_execution", default=None)
+
+
+def current_node_execution() -> dict[str, str]:
+    return dict(_NODE_EXECUTION.get() or {})
+
+
+@contextmanager
+def node_execution_scope(*, run_id: str, node_id: str, occurrence_id: str) -> Iterator[None]:
+    """Identity captured while executing a node, inherited by its child operations."""
+    identity = {"workflow_run_id": run_id, "node_id": node_id, "occurrence_id": occurrence_id}
+    safe = all(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,254}", value) for value in identity.values())
+    token = _NODE_EXECUTION.set(identity if safe else None)
+    try:
+        yield
+    finally:
+        _NODE_EXECUTION.reset(token)
 
 
 def current_correlation_context() -> CorrelationContext:
@@ -96,4 +114,8 @@ def record_debug_event(
     sink = _DEBUG_SINK.get()
     if sink is None or not context.correlation_id:
         return
-    sink(context, component, stage, status, payload or {})
+    observed = dict(payload or {})
+    identity = current_node_execution()
+    if identity:
+        observed["node_execution"] = identity
+    sink(context, component, stage, status, observed)

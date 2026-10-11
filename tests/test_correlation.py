@@ -31,3 +31,20 @@ def test_child_operation_keeps_session_correlation_and_links_parent() -> None:
     assert child.parent_request_id == "request-parent"
     assert captured[0][0].request_id == "request-child"
     assert current_correlation_context().correlation_id == ""
+
+def test_node_identity_isolated_between_parallel_requests_and_reset_after_failure():
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from aijurisdictionagents.correlation import node_execution_scope, current_node_execution
+    barrier = Barrier(2)
+    def run(identity):
+        try:
+            with node_execution_scope(run_id=identity, node_id='review', occurrence_id=identity):
+                barrier.wait(timeout=5)
+                assert current_node_execution()['workflow_run_id'] == identity
+                raise RuntimeError('synthetic')
+        except RuntimeError:
+            assert current_node_execution() == {}
+        return identity
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert set(pool.map(run, ['first', 'second'])) == {'first', 'second'}

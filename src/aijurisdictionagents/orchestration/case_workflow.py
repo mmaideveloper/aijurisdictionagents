@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -14,6 +14,7 @@ from langgraph.types import Command, Interrupt, interrupt
 
 from aijurisdictionagents.tools.base import ToolDefinition
 from aijurisdictionagents.validation_audit import validation_check
+from aijurisdictionagents.correlation import current_node_execution, node_execution_scope
 
 from .retrieval_policy import (
     McpRetrievalPolicyError,
@@ -424,26 +425,26 @@ class CaseWorkflowRuntime:
         presentation_selection: bool = False,
     ) -> Any:
         builder = StateGraph(CaseWorkflowState)
-        builder.add_node("route_case_type", self._route_case_type)
-        builder.add_node("load_flow_pack", self._load_flow_pack)
-        builder.add_node("retrieve_legal_requirements", self._retrieve_legal_requirements)
-        builder.add_node("verify_input", self._verify_input)
-        builder.add_node("collect_missing_facts", self._collect_missing_facts)
+        builder.add_node("route_case_type", _observe_node("route_case_type", self._route_case_type))
+        builder.add_node("load_flow_pack", _observe_node("load_flow_pack", self._load_flow_pack))
+        builder.add_node("retrieve_legal_requirements", _observe_node("retrieve_legal_requirements", self._retrieve_legal_requirements))
+        builder.add_node("verify_input", _observe_node("verify_input", self._verify_input))
+        builder.add_node("collect_missing_facts", _observe_node("collect_missing_facts", self._collect_missing_facts))
         offer_node = (
             self._offer_consented_tool_verification
             if consented_tool_execution
             else self._offer_optional_verification
         )
-        builder.add_node("offer_optional_verification", offer_node)
-        builder.add_node("execute_consented_tools", self._execute_consented_tools)
-        builder.add_node("resolve_conflicts", self._resolve_conflicts)
-        builder.add_node("draft_documents", self._draft_documents)
-        builder.add_node("verify_output", self._verify_output)
-        builder.add_node("verify_safety_and_gdpr", self._verify_safety_and_gdpr)
-        builder.add_node("review_case", self._review_case)
+        builder.add_node("offer_optional_verification", _observe_node("offer_optional_verification", offer_node))
+        builder.add_node("execute_consented_tools", _observe_node("execute_consented_tools", self._execute_consented_tools))
+        builder.add_node("resolve_conflicts", _observe_node("resolve_conflicts", self._resolve_conflicts))
+        builder.add_node("draft_documents", _observe_node("draft_documents", self._draft_documents))
+        builder.add_node("verify_output", _observe_node("verify_output", self._verify_output))
+        builder.add_node("verify_safety_and_gdpr", _observe_node("verify_safety_and_gdpr", self._verify_safety_and_gdpr))
+        builder.add_node("review_case", _observe_node("review_case", self._review_case))
         if presentation_selection:
-            builder.add_node("select_presentation", self._select_presentation)
-        builder.add_node("finalize_or_escalate", self._finalize_or_escalate)
+            builder.add_node("select_presentation", _observe_node("select_presentation", self._select_presentation))
+        builder.add_node("finalize_or_escalate", _observe_node("finalize_or_escalate", self._finalize_or_escalate))
         builder.add_edge(START, "route_case_type")
         builder.add_edge("route_case_type", "load_flow_pack")
         if verify_before_retrieval:
@@ -503,8 +504,8 @@ class CaseWorkflowRuntime:
 
     def _build_unsupported_graph(self, checkpointer: BaseCheckpointSaver[Any]) -> Any:
         builder = StateGraph(CaseWorkflowState)
-        builder.add_node("route_case_type", self._route_case_type)
-        builder.add_node("require_human_review", self._require_human_review)
+        builder.add_node("route_case_type", _observe_node("route_case_type", self._route_case_type))
+        builder.add_node("require_human_review", _observe_node("require_human_review", self._require_human_review))
         builder.add_edge(START, "route_case_type")
         builder.add_edge("route_case_type", "require_human_review")
         builder.add_edge("require_human_review", END)
@@ -1372,6 +1373,9 @@ def _update(
     )
     safe_details = dict(details)
     safe_details.update(_execution_metadata(state, stage=stage, event_sequence=sequence))
+    execution = current_node_execution()
+    if execution.get("workflow_run_id") == state["workflow_run_id"] and execution.get("node_id") == stage:
+        safe_details["execution_occurrence_id"] = execution["occurrence_id"]
     event = WorkflowEvent(
         event_id=f"{state['workflow_run_id']}:{sequence:03d}:{event_type}",
         event_type=event_type,
@@ -1384,6 +1388,13 @@ def _update(
     result = dict(changes)
     result.update({"stage": stage, "status": status, "events": events})
     return cast(CaseWorkflowState, result)
+
+
+def _observe_node(node: str, callback: Callable[[CaseWorkflowState], CaseWorkflowState]) -> Callable[[CaseWorkflowState], CaseWorkflowState]:
+    def invoke(state: CaseWorkflowState) -> CaseWorkflowState:
+        with node_execution_scope(run_id=state["workflow_run_id"], node_id=node, occurrence_id=str(uuid4())):
+            return callback(state)
+    return invoke
 
 
 def _execution_metadata(

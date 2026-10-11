@@ -355,3 +355,18 @@ def test_graph_recursion_error_becomes_controlled_operational_failure() -> None:
     assert outcome.state["termination_reason"] == "operational_failure"
     assert outcome.state["status"] == "human_review_required"
     assert outcome.state["stage"] == "recursion_limit"
+
+def test_validator_evidence_links_to_durable_node_and_exact_output_revision():
+    from aijurisdictionagents.correlation import correlation_scope
+    recorded = []
+    with correlation_scope(correlation_id='validator-test', debug_sink=lambda context, component, stage, status, payload: recorded.append((component, payload))):
+        outcome = _runtime().start(_state(facts={'payer': 'Synthetic A', 'recipient': 'Synthetic B', 'amount': '10 EUR'}))
+    checks = [payload for component, payload in recorded if component == 'validation']
+    assert len(checks) >= 3
+    for check in checks:
+        execution = check['node_execution']
+        event = next(item for item in outcome.state['events'] if item['details'].get('execution_occurrence_id') == execution['occurrence_id'])
+        assert execution['workflow_run_id'] == outcome.state['workflow_run_id']
+        assert execution['node_id'] == event['stage']
+        if check['category'].startswith('output'):
+            assert check['artifact_id'] == outcome.state['answer_artifact_id']

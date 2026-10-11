@@ -91,7 +91,10 @@ def _build_payload(
         correlation_id=correlation_id, limit=min(limit, 1000), offset=offset
     )
     timeline: list[dict[str, object]] = []
-    decision_evidence = build_decision_evidence(decisions, langgraph_evidence)
+    node_events = service.store.list_node_execution_events(
+        workflow_run_ids=[str(run["workflow_run_id"]) for run in langgraph_evidence.get("runs", [])],
+    )
+    decision_evidence = build_decision_evidence(decisions, langgraph_evidence, node_events)
     for event in debug_events:
         timeline.append({"kind": "debug", **event})
     for decision in decisions:

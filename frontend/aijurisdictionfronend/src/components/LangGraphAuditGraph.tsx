@@ -131,6 +131,10 @@ const NodeEvidence: React.FC<{ run: AdminLangGraphRunEvidence; nodeId: string; t
       <div><dt>{t("adminDebugAttempt")}</dt><dd>{item.attempt}</dd></div>
       <div><dt>{t("adminDebugStatus")}</dt><dd>{item.status}</dd></div>
       <div><dt>{t("adminDebugEvidence")}</dt><dd>{item.event_id}</dd></div>
+      <div><dt>{t("adminDebugEvidence")}</dt><dd>{item.execution_evidence?.length ? <ul>{item.execution_evidence.map((record, index) => <li key={`${record.request_id}-${index}`}>
+        {record.component} · {record.stage} · {record.status} · {record.provider} {record.model} {record.validator_id} {record.validator_version}
+        <code>{record.request_id}</code>{record.artifact_id ? <code>{record.artifact_id}</code> : null}
+      </li>)}</ul> : t("adminDebugUnknown")}</dd></div>
       <div><dt>{t("adminDebugReason")}</dt><dd>{item.reason_code || t("adminDebugUnknown")}</dd></div>
       {item.decision_evidence ? <div><dt>{t("adminRecordedDecisionCode")}</dt><dd>{item.decision_evidence.reason_code ?? t("adminDebugUnknown")}</dd></div> : null}
     </dl>)}

@@ -136,3 +136,17 @@ def test_primary_router_fails_closed_to_generic_when_classifier_is_unavailable()
 
     assert decision.route == "generic"
     assert decision.selected_case_type_key is None
+
+def test_classifier_model_evidence_uses_exact_observed_occurrence():
+    from aijurisdictionagents.correlation import record_debug_event, current_node_execution
+    recorded = []
+    def classify(*_args):
+        record_debug_event('model', 'completion', 'completed', {'provider': 'synthetic', 'model': 'fixture'})
+        return PrimaryClassification(status='no_match')
+    with correlation_scope(correlation_id='node-test', debug_sink=lambda context, component, stage, status, payload: recorded.append((component, payload))):
+        PrimaryLangGraphRouter(classifier=classify).route(question='synthetic', verified_facts={}, candidates=[_candidate()])
+        assert current_node_execution() == {}
+    model = next(payload for component, payload in recorded if component == 'model')
+    graph = recorded[-1][1]
+    node = next(item for item in graph['occurrences'] if item['node_id'] == 'classify_registered_flows')
+    assert model['node_execution'] == {'workflow_run_id': graph['workflow_run_id'], 'node_id': node['node_id'], 'occurrence_id': node['occurrence_id']}
