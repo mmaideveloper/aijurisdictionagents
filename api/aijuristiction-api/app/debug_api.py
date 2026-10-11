@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, sta
 from fastapi.responses import Response
 
 from app.ai_model_admin_api import AdminContext, get_admin_store
+from app.causal_trace import build_causal_flow
 from app.case_workflows.service import CaseWorkflowApplicationService, get_case_workflow_service
 from app.decision_trace_api import require_decision_trace_admin
 from app.observability import AzureApplicationInsightsLogService, ObservabilityConfigurationError
@@ -118,19 +119,7 @@ def _build_payload(
             }
         )
     timeline.sort(key=lambda item: (str(item.get("created_at", "")), str(item.get("event_id", ""))))
-    stages = [
-        f"{item.get('component', 'unknown')}:{item.get('stage', 'unknown')}"
-        for item in timeline
-    ]
-    nodes = [
-        {"id": stage, "label": stage.replace(":", " → ", 1)}
-        for stage in dict.fromkeys(stages)
-    ]
-    edges = [
-        {"from": stages[index - 1], "to": stages[index]}
-        for index in range(1, len(stages))
-        if stages[index - 1] != stages[index]
-    ]
+    flow = build_causal_flow(timeline, truncated=len(debug_events) >= limit)
     return {
         "correlation_id": correlation_id,
         "retention_days": 7,
@@ -138,7 +127,7 @@ def _build_payload(
         "session": session,
         "messages": messages,
         "timeline": timeline,
-        "flow": {"nodes": nodes, "edges": edges},
+        "flow": flow,
         "langgraph_evidence": langgraph_evidence,
         "decision_traces": decisions,
         "application_logs": logs,

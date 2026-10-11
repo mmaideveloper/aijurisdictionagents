@@ -1,5 +1,72 @@
 # Session correlation debugging
 
+## Causal operation view (#856)
+
+The Flow view groups retained observations by request ID and links operations only
+using their recorded `parent_request_id`. Timestamps order observations but do not
+establish a causal relationship. Parallel operations, retries with new request IDs,
+and separate turns remain separate. The streaming worker has its own request ID
+and records its initiating HTTP request as its parent, including a terminal failure
+event when its target raises. HTTP response completion records response-header
+readiness; the worker/chat result records answer processing completion.
+
+Header-supplied parent claims are labeled unverified; they do not independently
+prove that a browser or remote component performed an action. Missing parents,
+unlinked legacy events, ambiguous request identities, cycles and a reached event
+limit are explicit gaps. `recorded_evidence_only` describes the retained projection,
+not a claim that every possible stage was instrumented. A missing root remains null.
+The same metadata projection is included in `flow.json` in the protected export.
+No prompt/body copying, extra storage or new retention period is introduced.
+
+Minimal synthetic example: `python examples/causal_audit_demo.py`. The repository
+overview remains `python examples/minimal_demo.py`.
+
+Focused checks: `python -m pytest api/aijuristiction-api/tests/test_causal_trace.py`
+and, in the frontend folder, `npm test -- --run src/__tests__/causalAuditFlow.test.tsx`.
+Real-local acceptance must additionally assert browser request IDs against retained
+API/worker/model/MCP parent links, run two turns and a retry, verify admin-only access,
+compare exported edges, and retain a sanitized screenshot/manifest as specified below.
+
+### Reproduce the #856 real-provider check
+
+Use the `start-postgres` skill to create migrated loopback databases
+`juris_audit_e2e_856` (API, port 5432) and `juris_audit_laws_e2e_856`
+(laws, port 5433). Import the approved E2E Azure credential using
+`scripts/import_e2e_model_credentials_from_server.ps1` into the API database
+with `-RequiredModel gpt-5-mini -UseExistingPostgres -VerifyModel`.
+Then run from this task worktree:
+
+```powershell
+.\conda\python.exe scripts/audit_e2e_856.py --prepare
+# Separate terminal; keep it running:
+.\conda\python.exe scripts/audit_e2e_856.py --services
+# Original terminal, once both services are ready:
+.\conda\python.exe scripts/audit_e2e_856.py --authenticate
+cd frontend/aijurisdictionfronend
+$env:VITE_API_BASE_URL = 'http://127.0.0.1:8264'
+$env:CI = 'true'
+npx playwright test e2e/issue-856-causal-audit-live.spec.ts --project=chromium
+```
+
+The wrapper reuses the #864 fixture and ignored `runs/e2e/issue864` input/auth
+paths, but isolates both databases for #856. On 2026-10-10 the live scenario
+passed using Azure `gpt-5-mini`, an actual LangGraph primary-router run and
+MCP retrieval of synthetic source `issue-635-civil-code`. It asserted browser
+request -> worker -> model/MCP parent links, protected admin lookup, citation
+delivery and export availability. Unit tests separately compare exported edges
+and exercise retries, parallel operations, missing ancestry and cycles.
+
+The live scenario currently covers one turn; real multi-turn, cancellation,
+timeout and resumed-run scenarios remain required for full #856 acceptance.
+Explicit browser dispatch/receipt observations are not yet persisted. A browser
+request ID observed by the API proves request correlation, not client receipt.
+The current change must not be described as universal end-to-end coverage.
+The browser test deletes its case and private authentication file. Stop the
+task's services and remove its two dedicated databases after investigation to
+remove the remaining synthetic accounts/source fixtures. Screenshot and sanitized
+manifest remain in the fixture's ignored evidence directory for at most seven
+days; never commit protected diagnostic exports or private authentication.
+
 Every web chat session owns one opaque `correlation_id`. The browser creates it before the
 session request and sends it in the JSON body and `x-correlation-id` header. After the first
 message creates a session, the user can open **Diagnostics** beside **Configurations** to view
