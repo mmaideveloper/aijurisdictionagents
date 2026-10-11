@@ -31,6 +31,7 @@ vi.mock("../auth/webAuth", () => ({
 
 vi.mock("../components/LanguageProvider", () => ({
   useLanguage: () => ({
+    language: "en",
     t: translate
   })
 }));
