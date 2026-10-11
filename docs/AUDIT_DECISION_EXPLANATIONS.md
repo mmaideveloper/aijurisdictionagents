@@ -63,3 +63,9 @@ Run `python examples/node_execution_audit_demo.py` offline. Focused regression:
 The real #206 browser suites assert classifier/model joins and distinct resumed
 input-validation joins; preserve the screenshot and sanitized manifest under the
 seven-day E2E evidence policy.
+
+Resumed turns may have a different correlation ID. The graph loads retained
+model/validator/tool records by the exact IDs of its already-visible workflow
+runs; each evidence item retains its own correlation ID. This bounded lookup
+excludes expired records and does not merge unrelated runs. The request timeline
+remains scoped to its original correlation.
