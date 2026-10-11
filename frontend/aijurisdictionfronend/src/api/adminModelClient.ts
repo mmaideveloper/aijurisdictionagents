@@ -663,7 +663,7 @@ export interface AdminDebugTrace {
   warnings: string[];
   validation_evidence?: {
     categories: Array<{ category: string; evidence_status: string }>;
-    checks: Array<{ execution_id: string | null; validator_id: string | null; validator_version: string | null; category: string | null; outcome: string | null; artifact_link_status: string | null }>;
+    checks: Array<{ execution_id: string | null; validator_id: string | null; validator_version: string | null; category: string | null; outcome: string | null; artifact_link_status: string | null; answer_revision?: string | null; answer_revision_status?: string | null }>;
   };
   response_score_evidence?: {
     evidence_status: string;

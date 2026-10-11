@@ -25,9 +25,10 @@ Each attempt has an execution UUID and recorded parent operation, bounded reason
 code, decision and latency. New workflow drafts receive opaque artifact IDs in
 checkpoint state; output and safety checks reference that draft. Draft revisions
 receive new IDs, so prior evidence must not be applied to a rewritten answer.
-Legacy drafts, input facts and ordinary chat currently lack a persisted artifact
-reference and explicitly report missing linkage. Completing those associations,
-validator version registration and real-provider acceptance remain #858 work.
+Legacy drafts and input facts without a retained revision reference explicitly
+report missing linkage. Ordinary chat now records candidate-to-final revision
+links as described below. Injected validator versions stay unknown unless supplied
+by the implementation; the instrumentation version is never substituted.
 
 No new raw prompts, output text, sensitive findings, content hashes or hidden
 reasoning are copied into these audit fields. Exceptions retain their error state
@@ -54,3 +55,18 @@ PostgreSQL, frontend, API, MCP and the approved real Azure model:
    evidence under ignored `runs/` for at most seven days; never retain private auth.
 
 These scenarios are a test specification, not a claim of executed acceptance.
+
+## Candidate and final answer revisions
+
+Chat cleanup checks now receive an opaque candidate artifact ID. Once an assistant
+message is persisted, a metadata-only link records its final message UUID and
+whether the delivered content exactly equals the checked candidate. A rewrite or
+later formatting change is explicitly `changed_after_check`; it never inherits a
+claim that the final revision was checked. No prompt/output hash or content is
+added. The admin view and export show the answer ID and this distinction.
+Missing, expired or paged-out links remain missing evidence. Existing seven-day
+retention and case/session deletion apply. This adds no assessor or model call;
+quality scores remain incomplete until all approved evidence exists.
+
+Runnable regression: `python -m pytest api/aijuristiction-api/tests/test_validation_evidence.py`.
+The general offline example remains `python examples/minimal_demo.py`.
