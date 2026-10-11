@@ -30,6 +30,9 @@ def postgres_demo() -> None:
                 config.db_cloud, dbname=database, options="",
             ))
             store.initialize()
+            coverage = store.search_coverage()
+            assert coverage == {"published_decisions": 0, "latest_issue_date": "", "enriched_versions": 0}
+            print(json.dumps({"synthetic_coverage": coverage}))
             store.ensure_scheduler_state(
                 source_system="infosud", source_total=1, source_updated_at="synthetic",
                 page_size=25, daily_new_limit=10, utc_day=date.today(), overlap_pages=1,
