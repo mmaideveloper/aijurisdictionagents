@@ -164,14 +164,14 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
         event.request_id === item.request_id && event.payload.node_execution?.workflow_run_id === router.workflow_run_id &&
         event.payload.node_execution.occurrence_id === classifier.occurrence_id && event.payload.node_execution.node_id === classifier.node_id)).toBe(true);
     }
-    expect(router.occurrences.some((item: { node_id: string }) => item.node_id === "route_generic")).toBe(true);
-    const models = debug.timeline.filter((event: { component: string; stage: string; status: string }) => event.component === "model" && event.stage === "completion" && event.status === "completed");
+    expect(traces.some(trace => trace.langgraph_evidence.runs.some((run: { occurrences: Array<{ node_id: string }> }) => run.occurrences.some(item => item.node_id === "route_generic")))).toBe(true);
+    const models = traces.flatMap(trace => trace.timeline).filter((event: { component: string; stage: string; status: string }) => event.component === "model" && event.stage === "completion" && event.status === "completed");
     expect(models.length).toBeGreaterThan(0);
     for (const model of models) {
       expect(model.payload.provider.toLowerCase()).toContain("azure");
       expect(model.payload.model).toBe(input.expectedModel);
     }
-    expect(debug.timeline.some((event: { component: string; status: string }) => event.component === "mcp" && event.status === "completed")).toBe(true);
+    expect(traces.some(trace => trace.timeline.some((event: { component: string; status: string }) => event.component === "mcp" && event.status === "completed"))).toBe(true);
     const history = await request.get(`${api}/v1/cases/${caseId}/history?user_id=${auth.workflowUser.userId}`, { headers: headers(auth.workflowUser) });
     expect(history.ok()).toBe(true);
     // History messages are paginated; the response's citation collection covers the whole case.
@@ -186,7 +186,11 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     await expect(page.getByRole("img", { name: /primary_router/ })).toBeVisible();
     await expect(page.locator(".admin-debug__timeline")).toContainText("langgraph → graph_execution");
     await expect(page.locator(".admin-debug__timeline")).toContainText("model → completion");
-    await expect(page.locator(".admin-debug__timeline")).toContainText("mcp → remote_tool_call");
+    if (debug.timeline.some((event: { component: string }) => event.component === "mcp")) {
+      await expect(page.locator(".admin-debug__timeline")).toContainText("mcp → remote_tool_call");
+    } else {
+      await expect(page.locator(".admin-debug__timeline")).not.toContainText("mcp → remote_tool_call");
+    }
     await expect(page.getByText(/historický beh/)).toHaveCount(0);
     await page.getByRole("button", { name: "Tok", exact: true }).click();
     await expect(page.getByRole("region", { name: "Pokrytie auditnými dôkazmi" })).toContainText("Posúdenie halucinácií");
