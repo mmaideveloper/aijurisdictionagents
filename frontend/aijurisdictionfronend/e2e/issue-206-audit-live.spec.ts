@@ -157,6 +157,13 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
     const router = debug.langgraph_evidence.runs.find((run: { graph_key: string }) => run.graph_key === "primary_router");
     expect(router.run_status).toBe("completed");
     expect(router.topology_status).toBe("pinned");
+    const classifier = router.occurrences.find((item: { node_id: string }) => item.node_id === "classify_registered_flows");
+    expect(classifier.execution_evidence.some((item: { component: string; status: string }) => item.component === "model" && item.status === "completed")).toBe(true);
+    for (const item of classifier.execution_evidence) {
+      expect(debug.timeline.some((event: { request_id: string; payload: { node_execution?: { workflow_run_id: string; occurrence_id: string; node_id: string } } }) =>
+        event.request_id === item.request_id && event.payload.node_execution?.workflow_run_id === router.workflow_run_id &&
+        event.payload.node_execution.occurrence_id === classifier.occurrence_id && event.payload.node_execution.node_id === classifier.node_id)).toBe(true);
+    }
     expect(router.occurrences.some((item: { node_id: string }) => item.node_id === "route_generic")).toBe(true);
     const models = debug.timeline.filter((event: { component: string; stage: string; status: string }) => event.component === "model" && event.stage === "completion" && event.status === "completed");
     expect(models.length).toBeGreaterThan(0);
@@ -213,6 +220,7 @@ test("two real frontend turns retain separate causal paths and audit evidence", 
       services: ["frontend:5189", "api:8264", "mcp:8364", "loopback-postgresql"],
       expectedSourceIds: [input.expectedLegalSourceId], observedSourceIds: citations.map((c: { source_id: string }) => c.source_id),
       graphKey: router.graph_key, topologyDigest: router.topology_digest,
+      classifierOccurrenceId: classifier.occurrence_id, classifierEvidence: classifier.execution_evidence,
       observedNodes: router.occurrences.map((item: { node_id: string }) => item.node_id),
       retention: "Delete evidence within seven days; private authentication removed after test.",
     }, null, 2));

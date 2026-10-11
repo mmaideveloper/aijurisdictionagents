@@ -685,6 +685,8 @@ export interface AdminLangGraphEdge {
 }
 
 export interface AdminLangGraphOccurrence {
+  execution_evidence_status?: string;
+  execution_evidence?: Array<{ request_id: string | null; component: string; stage: string | null; status: string | null; provider: string | null; model: string | null; validator_id: string | null; validator_version: string | null; artifact_id: string | null }>;
   decision_evidence?: {
     explanation_kind: "recorded_decision_code";
     reason_code: string | null;

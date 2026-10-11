@@ -38,3 +38,28 @@ Also exercise an uninstrumented historical trace and injected narrative/secret
 fixtures in preliminary unit tests. Save a sanitized final-state screenshot and
 manifest under ignored `runs/`, delete synthetic records and retain evidence no
 longer than seven days. The combined scenario is pending, not a passed E2E claim.
+
+## Exact task execution links (#861)
+
+New primary-router and dedicated-workflow node executions allocate an occurrence
+ID before invoking model, tool or validation work. Context-local propagation carries
+only run/node/occurrence identifiers into the existing diagnostic ledger. The
+same occurrence ID is persisted with the graph traversal event. Admin projection
+joins all three identifiers; it never guesses a join from timestamps or stage names.
+The node details show the recorded provider/model or validator/version and request
+ID. Missing historical, expired or paged-out evidence stays explicitly unavailable.
+A node without a model call is not claimed to have performed one.
+
+This metadata-only change adds no evaluator, model call, processor or consent
+purpose. Existing admin access, seven-day retention, case deletion, provider
+consent and human oversight apply. No prompts, answers or hidden reasoning are
+added to these fields. This is an engineering privacy review, not a legal
+compliance certification. Actual quality assessors remain deferred by the owner;
+missing assessments continue to produce an incomplete/null score.
+
+Run `python examples/node_execution_audit_demo.py` offline. Focused regression:
+`python -m pytest tests/test_primary_router.py tests/test_case_workflow.py
+ tests/test_correlation.py api/aijuristiction-api/tests/test_decision_evidence.py`.
+The real #206 browser suites assert classifier/model joins and distinct resumed
+input-validation joins; preserve the screenshot and sanitized manifest under the
+seven-day E2E evidence policy.

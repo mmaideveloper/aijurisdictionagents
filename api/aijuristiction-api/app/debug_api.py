@@ -91,7 +91,7 @@ def _build_payload(
         correlation_id=correlation_id, limit=min(limit, 1000), offset=offset
     )
     timeline: list[dict[str, object]] = []
-    decision_evidence = build_decision_evidence(decisions, langgraph_evidence)
+    decision_evidence = build_decision_evidence(decisions, langgraph_evidence, debug_events)
     for event in debug_events:
         timeline.append({"kind": "debug", **event})
     for decision in decisions:

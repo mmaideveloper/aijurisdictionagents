@@ -8,11 +8,20 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
-from ..correlation import record_debug_event
+from ..correlation import node_execution_scope, record_debug_event
 from .graph_evidence import serialize_compiled_graph, transition_id
 
 
 PrimaryRoute = Literal["dedicated_flow", "clarification", "generic"]
+
+
+def _observe_node(node: str, callback: Callable[..., Any]) -> Callable[..., Any]:
+    def invoke(state: _PrimaryRouterState) -> _PrimaryRouterState:
+        occurrence = str(uuid4())
+        with node_execution_scope(run_id=state["audit_run_id"], node_id=node, occurrence_id=occurrence):
+            result = callback(state)
+        return {**result, "audit_occurrence_id": occurrence}
+    return invoke
 
 
 @dataclass(frozen=True)
@@ -56,6 +65,8 @@ PrimaryClassifier = Callable[
 
 
 class _PrimaryRouterState(TypedDict, total=False):
+    audit_run_id: str
+    audit_occurrence_id: str
     question: str
     verified_facts: dict[str, str]
     candidates: tuple[PrimaryRouteCandidate, ...]
@@ -82,11 +93,8 @@ class PrimaryLangGraphRouter:
         self._confidence_threshold = _confidence(confidence_threshold)
         self._confidence_margin = _confidence(confidence_margin)
         builder = StateGraph(_PrimaryRouterState)
-        builder.add_node("minimize_verified_context", self._minimize_verified_context)
-        builder.add_node("classify_registered_flows", self._classify_registered_flows)
-        builder.add_node("route_dedicated_flow", self._route_dedicated_flow)
-        builder.add_node("ask_clarification", self._ask_clarification)
-        builder.add_node("route_generic", self._route_generic)
+        for node in ("minimize_verified_context", "classify_registered_flows", "route_dedicated_flow", "ask_clarification", "route_generic"):
+            builder.add_node(node, _observe_node(node, getattr(self, f"_{node}")))
         builder.add_edge(START, "minimize_verified_context")
         builder.add_edge("minimize_verified_context", "classify_registered_flows")
         builder.add_conditional_edges(
@@ -126,11 +134,11 @@ class PrimaryLangGraphRouter:
                 "current_node_id": previous,
             })
 
-        def observed(node: str) -> None:
+        def observed(node: str, occurrence_id: str = "") -> None:
             nonlocal previous
             now = datetime.now(timezone.utc).isoformat()
             occurrences.append({
-                "occurrence_id": str(uuid4()), "node_id": node,
+                "occurrence_id": occurrence_id or str(uuid4()), "node_id": node,
                 "attempt": 1, "sequence": len(occurrences) + 1,
                 "event_type": "graph_node_completed", "status": "completed",
                 "started_at": now, "ended_at": now, "duration_ms": None,
@@ -143,12 +151,13 @@ class PrimaryLangGraphRouter:
         record("started")
         try:
             for update in self._graph.stream({
+                "audit_run_id": run_id,
                 "question": question, "verified_facts": dict(verified_facts),
                 "candidates": tuple(candidates),
             }, stream_mode="updates"):
                 for node, values in update.items():
                     state.update(cast(_PrimaryRouterState, values))
-                    observed(node)
+                    observed(node, values.get("audit_occurrence_id", ""))
                     record("running")
             observed("__end__")
         except Exception:
