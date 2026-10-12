@@ -31,3 +31,33 @@ code if genuine failures disappear; never alter stored history to reduce counts.
 
 No model, legal-output, consent or authentication contract changes. Existing
 access control, data minimization, retention and human oversight remain intact.
+
+## Selected Grafana range (#897)
+
+The Errors dashboard's Total Errors now uses an instant Loki
+`sum(count_over_time(... [$__range]))` query at the selected range's end.
+Previously it reduced `sum(jurisdigta_errors_window)` to its latest sample;
+that gauge represents the exporter's fixed status window and cannot count
+events in a user-selected 5-minute or 6-hour interval. Never sum or apply
+`increase` to this gauge: overlapping windows would miscount events.
+
+Total Errors shares the System Logs operational failure filter and counts
+matching lines across Docker and file sources. It includes retries and
+traceback lines, not unique incidents. Source charts/tables retain their
+fixed status windows and are explicitly labelled accordingly. Loki retention
+and ingestion completeness bound historical coverage. No data is left visible
+instead of substituting zero; inspect Loki ingestion and telemetry health.
+Equal counts can still be correct when no additional failures occurred.
+
+Runnable contract check (no Python environment needed):
+`powershell -File examples/grafana_error_range_demo.ps1`.
+Optionally pass `-LokiUrl http://127.0.0.1:3100` on the monitoring host to
+compare 5m and 6h aggregates at the same end timestamp. Default application
+example remains `python examples/minimal_demo.py`.
+
+Roll out the provisioned JSON through the normal reviewed deployment after
+all applicable exact-commit checks succeed. Confirm both ranges in Grafana and
+retain a sanitized screenshot/manifest under ignored runs/artifacts for seven
+days. Roll back by restoring the prior dashboard JSON. This change introduces
+no personal-data fields, labels, consent, retention, or legal-output changes;
+existing GDPR/EU AI Act access controls and human oversight remain applicable.
