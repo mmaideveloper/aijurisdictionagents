@@ -199,8 +199,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "jurisdigta-prometheus"
+        "type": "loki",
+        "uid": "jurisdigta-loki"
       },
       "fieldConfig": {
         "defaults": {
@@ -238,7 +238,7 @@
       "id": 3,
       "options": {
         "colorMode": "background",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "percentChangeColorMode": "standard",
@@ -257,14 +257,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(jurisdigta_errors_window)",
-          "legendFormat": "Errors",
-          "range": true,
+          "expr": "sum(count_over_time({stack=\"jurisdigta\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" [$__range]))",
+          "legendFormat": "Total",
+          "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Errors In Status Window",
-      "type": "stat"
+      "title": "Errors In Selected Range",
+      "type": "stat",
+      "description": "Failure matching log lines within the selected dashboard time range, evaluated at its end. Includes retries and traceback lines; not unique incidents. No data means no matching logs or unavailable ingestion; check telemetry health."
     },
     {
       "datasource": {

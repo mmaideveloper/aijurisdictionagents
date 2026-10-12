@@ -41,6 +41,12 @@ that gauge represents the exporter's fixed status window and cannot count
 events in a user-selected 5-minute or 6-hour interval. Never sum or apply
 `increase` to this gauge: overlapping windows would miscount events.
 
+The Application Performance top-row error stat (formerly Errors In Status
+Window, the 1.12k panel) uses the same query and is renamed Errors In Selected
+Range. The dashboard time picker controls both totals; the Usage window
+variable still controls its separate AI usage panels. The runnable contract
+check validates that both error stats share the query and instant evaluation.
+
 Total Errors shares the System Logs operational failure filter and counts
 matching lines across Docker and file sources. It includes retries and
 traceback lines, not unique incidents. Source charts/tables retain their

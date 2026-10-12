@@ -5,6 +5,14 @@ $root = Split-Path -Parent $PSScriptRoot
 $dashboard = Get-Content (Join-Path $root 'Deployment/monitoring/grafana/dashboards/jurisdigta-errors.json') -Raw | ConvertFrom-Json
 $panel = $dashboard.panels | Where-Object id -eq 1
 $query = $panel.targets[0].expr
+$application = Get-Content (Join-Path $root 'Deployment/monitoring/grafana/dashboards/jurisdigta-application-performance.json') -Raw | ConvertFrom-Json
+$applicationPanel = $application.panels | Where-Object id -eq 3
+if ($applicationPanel.datasource.uid -ne 'jurisdigta-loki' -or
+    $applicationPanel.targets[0].queryType -ne 'instant' -or
+    $applicationPanel.targets[0].expr -ne $query -or
+    $applicationPanel.title -ne 'Errors In Selected Range') {
+    throw 'Application Performance must use the same selected-range error count.'
+}
 if ($panel.datasource.uid -ne 'jurisdigta-loki' -or
     $panel.targets[0].queryType -ne 'instant' -or
     -not $query.Contains('[$__range]') -or
