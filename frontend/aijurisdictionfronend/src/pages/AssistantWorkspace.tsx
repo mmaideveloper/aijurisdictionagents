@@ -26,6 +26,7 @@ import {
 } from "../api/chatClient";
 import { createSessionCorrelationId } from "../api/correlation";
 import { useAuth } from "../auth/webAuth";
+import { SoftwareAssessment } from "../components/SoftwareAssessment";
 import { useLanguage } from "../components/LanguageProvider";
 import { AssistantPresentationBlock } from "../components/AssistantPresentationBlock";
 import { SpeechDictation } from "../components/SpeechDictation";
@@ -1411,6 +1412,7 @@ const AssistantWorkspace: React.FC = () => {
             </div>
           </section>
 
+          <SoftwareAssessment key={`software-${activeCase?.id ?? "none"}`} selectedModelProfileId={selectedModelProfileId || undefined} />
           <AssistantThread
             key={threadKey}
             selectedModelProfileId={selectedModelProfileId || undefined}
