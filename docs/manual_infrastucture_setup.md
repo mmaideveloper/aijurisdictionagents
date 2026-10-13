@@ -1115,3 +1115,21 @@ restricted server path, validate key readiness without values, restart only the 
 Rotation: operator updates USB authority first, applies corresponding DB role/provider changes,
 then refreshes server copy and validates. Provisioning intentionally does not guess missing
 external credentials or rotate existing DB role passwords automatically.
+
+### Dedicated USB-backed model credential test key
+
+Owner: JurisDigta infrastructure operator. Provision a server-generated random key in
+`/mnt/jurisdigta-backup/jurisdigta-env/profiles/model-credentials-test/codex-agent.env`,
+with 0700 directory/0600 file permissions and approved operator ownership. Generate on
+server; never push laptop secrets or print key values. Pull only through
+`scripts/sync_env_profile.ps1` to ignored `.env.model-credentials-test`. Use the approved
+E2E import helper with an explicit new loopback PostgreSQL database; see
+`docs/ENV_VARIABLES.md` for commands. Validation on 2026-10-13: migrations, encrypted
+credential decryption and a real Azure Foundry gpt-4o-mini synthetic call passed.
+This is credential connectivity evidence, not frontend or production E2E acceptance.
+Existing production and ordinary local keys were preserved. Rollback of this isolated
+setup: stop its test services, discard its synthetic database, and remove its local test
+profile; preserve the authoritative USB key if encrypted test records remain in use.
+Production rotation requires coordinated database/key migration and the production
+build gates, with encrypted backup and paired database/runtime rollback. Do not share
+production signing secrets as test encryption keys.

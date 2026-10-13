@@ -115,3 +115,37 @@ laws-tests profiles and `.env-laws-test`. Development/test require loopback. Emp
 The server profile provisioner derives this connection without exporting secrets, and the
 gated release applies SELECT-only permissions. The root `.env.example` documents the key
 but the application reads its explicit dedicated profile.
+
+## USB-backed model credential test profile (2026-10-13)
+
+The encrypted USB holds a dedicated test profile at
+`/mnt/jurisdigta-backup/jurisdigta-env/profiles/model-credentials-test/codex-agent.env`.
+Its `AI_MODEL_CREDENTIAL_ENCRYPTION_KEY` is server-generated and retained across pulls.
+Directory mode is 0700; file mode is 0600, owned by the approved sync operator.
+The production API currently uses its MCP signing secret fallback. Do not distribute
+that fallback to local tests or overwrite an existing database key without migration.
+
+Pull the test profile into a separate ignored file, preserving the ordinary `.env`:
+
+```powershell
+.\scripts\sync_env_profile.ps1 -Mode Pull -Profile codex-agent `
+  -UsbProfileRoot /mnt/jurisdigta-backup/jurisdigta-env/profiles/model-credentials-test `
+  -EnvFilePath .env.model-credentials-test
+.\scripts\import_e2e_model_credentials_from_server.ps1 `
+  -EnvFilePath .env.model-credentials-test -UseExistingPostgres -VerifyModel `
+  -DatabaseUrl postgresql://postgres:postgres@127.0.0.1:5432/model_credentials_test_20261013
+```
+
+Create the isolated loopback database before the import. The importer applies migrations,
+imports only the approved E2E model credential via SSH, encrypts it with the test key,
+and verifies a synthetic real-model call. Never copy customer data or production database
+rows. Load this file explicitly for test services and explicitly set the matching loopback
+DB_CLOUD/DB_OPTION; default application startup does not select this profile automatically.
+Run `python examples/minimal_demo.py` for the default runnable example.
+
+Production rotation remains separate: identify the effective current key inside the API,
+verify every encrypted credential, retain an encrypted rollback backup, quiesce writers,
+transactionally re-encrypt all credentials and activate the new runtime key together.
+Validate all credentials and provider routes, and restore the database/runtime key together
+on failure. A new env-file key without coordinated runtime activation is unsafe. Follow the
+exact-commit production build gates before deploying migration/runtime changes.
