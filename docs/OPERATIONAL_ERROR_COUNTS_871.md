@@ -32,6 +32,43 @@ code if genuine failures disappear; never alter stored history to reduce counts.
 No model, legal-output, consent or authentication contract changes. Existing
 access control, data minimization, retention and human oversight remain intact.
 
+## Embedded monitoring queries (#902)
+
+Grafana/Loki INFO query logs can contain the failure filter itself in `query=`.
+Matching that diagnostic value counts successful queries as failures and creates
+monitoring feedback noise. The shared classifier and all six dashboard failure
+queries now remove complete quoted `query="..."` and JSON `"query": "..."`
+fields before applying the existing severity/outcome filter. Escaped quotes are
+handled; incomplete values stay visible. Unknown events stay unknown, and real
+ERROR/FATAL/CRITICAL, failures, retries and authenticated denials outside query
+metadata remain actionable. Traceback grouping uses the same normalized text.
+
+This is query-time normalization, not deletion or an INFO/container allowlist.
+Errors Only shows normalized messages; Recent Logs and Explore retain original
+records. No other payload fields are removed. Grafana session-token rotation
+warnings, Alloy removed-container errors and cAdvisor filesystem errors are not
+silenced by this change; investigate those independently.
+
+Run `python examples/operational_log_counts_demo.py` for synthetic query metadata
+and real-failure examples, and `powershell -File
+examples/grafana_error_range_demo.ps1` for the shared dashboard pipeline contract.
+The default remains `python examples/minimal_demo.py`. Validate the Python
+classifier and actual Loki pipeline with synthetic escaped/malformed query fields,
+real errors after query fields, retry/traceback records and security outcomes.
+With an isolated loopback Loki running, use `python
+examples/operational_log_counts_demo.py --loki-url http://127.0.0.1:13102` to seed
+ten synthetic records under a unique run label and assert seven failure lines.
+Remove the task's isolated Loki/Grafana containers after capturing the dashboard
+screenshot; never run the synthetic seed against production. This monitoring-only
+path has no application database, legal retrieval or model call; model routing is
+recorded as not applicable rather than claimed as real-model E2E acceptance.
+Compare old/new live counts at a fixed end timestamp and retain aggregate evidence
+under ignored `runs/` or `artifacts/` for at most seven days. Do not print raw logs.
+Rollback the classifier and dashboard queries together if genuine failures vanish.
+Production rollout still requires successful applicable checks for the exact SHA.
+The change preserves GDPR data minimization and EU AI Act traceability/human
+oversight, with existing access, retention and legal-output contracts unchanged.
+
 ## Selected Grafana range (#897)
 
 The Errors dashboard's Total Errors now uses an instant Loki
