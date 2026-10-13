@@ -130,6 +130,17 @@
     "prerequisite": "Requires the exact deployed commit SHA, production MCP OAuth E2E MFA bypass for the approved paid synthetic account, its secret password, the real Azure Foundry gpt-5-mini route, and healthy production frontend/API/MCP services."
   },
   {
+    "id": "post-deploy-prod-mcp-court-decisions-azure",
+    "file": "tests/issue-647-prod-mcp-court-decisions.spec.ts",
+    "title": "production MCP court-decision grounding is preserved through Azure Foundry gpt-5-mini",
+    "name": "Post-deployment production MCP court decisions Azure route",
+    "description": "Authenticates the paid synthetic MCP user, proves metadata-only searchCourtDecisions and getCourtDecision directly, rejects internal_raw, asks for the five latest court decisions through the production frontend/API with Azure Foundry gpt-5-mini, and requires all five persisted citations to match the direct MCP sources without AIWebSearchAgent fallback.",
+    "area": "Post-deployment legal grounding",
+    "scheduled": false,
+    "postDeployment": true,
+    "prerequisite": "Requires the exact deployed commit SHA, production MCP OAuth E2E MFA bypass for the approved paid synthetic account, its secret password, the real Azure Foundry EU gpt-5-mini route, five matching published court decisions with date-quality metadata, and healthy production frontend/API/MCP services."
+  },
+  {
     "id": "frontend-auth-case-document",
     "file": "tests/frontend-auth-case-document.spec.ts",
     "title": "registration and login can create, reopen, and preview a generated potvrdenie PDF",
