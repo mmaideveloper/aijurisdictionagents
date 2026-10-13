@@ -20,8 +20,11 @@ if ($panel.datasource.uid -ne 'jurisdigta-loki' -or
     throw 'Total Errors must count Loki lines over the selected range at its end.'
 }
 $logs = Get-Content (Join-Path $root 'Deployment/monitoring/grafana/dashboards/jurisdigta-system-logs.json') -Raw | ConvertFrom-Json
-$filter = (($logs.panels | Where-Object title -eq 'Errors Only').targets[0].expr -split ' \|~ ')[1]
-if (-not $query.Contains($filter)) { throw 'Operational failure filter differs from System Logs.' }
+$logQuery = ($logs.panels | Where-Object title -eq 'Errors Only').targets[0].expr
+$pipeline = $logQuery.Substring($logQuery.IndexOf(' | line_format ')) -replace ' \|~ "\$\{search:raw\}"$', ''
+if (-not $query.Contains($pipeline) -or -not $pipeline.Contains('regexReplaceAll')) {
+    throw 'Query normalization and operational failure filter differ from System Logs.'
+}
 $end = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds().ToString() + '000000'
 foreach ($window in @('5m', '6h')) {
     $resolved = $query.Replace('$__range', $window)

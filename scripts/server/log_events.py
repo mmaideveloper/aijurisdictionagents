@@ -22,6 +22,17 @@ FAILURE_PATTERN = (
     r"|\bfailed(\s|$)|\berror_type=[A-Za-z_]+(Error|Exception)\b)"
 )
 _FAILURE = re.compile(FAILURE_PATTERN)
+# Quoted query values are diagnostic metadata, not event outcomes. Handle
+# escaped quotes without consuming fields after the query. Incomplete values
+# remain visible (fail closed). Keep this RE2-compatible for the Loki pipeline.
+QUERY_FIELD_PATTERN = r'(?:\bquery=|"query"\s*:\s*)"(?:\\.|[^"\\])*"'
+_QUERY_FIELD = re.compile(QUERY_FIELD_PATTERN)
+LOKI_FAILURE_PIPELINE = (
+    ' | line_format `{{ regexReplaceAll '
+    + json.dumps(QUERY_FIELD_PATTERN)
+    + ' __line__ "" }}` |~ '
+    + json.dumps(FAILURE_PATTERN)
+)
 _RETRY = re.compile(r"\b\w*retry\w*\b", re.I)
 _DENIED = re.compile(r'\bstatus_code[\"\s:=]+(?:401|403)\b', re.I)
 
@@ -29,6 +40,8 @@ _DENIED = re.compile(r'\bstatus_code[\"\s:=]+(?:401|403)\b', re.I)
 def classify_line(line: str) -> EventClass:
     if not line.strip():
         return "unknown"
+    original = line
+    line = _QUERY_FIELD.sub("", line)
     if _DENIED.search(line):
         # Cannot infer authenticated state from a status code; keep security
         # denials separate, never claim they are all expected/benign.
@@ -38,7 +51,7 @@ def classify_line(line: str) -> EventClass:
     if _FAILURE.search(line):
         return "retry" if _RETRY.search(line) else "failure"
     try:
-        record = json.loads(line)
+        record = json.loads(original)
     except (ValueError, TypeError):
         record = None
     if isinstance(record, dict):
@@ -60,8 +73,9 @@ def event_counts(text: str) -> dict[str, int]:
             continue
         seen.add(line)
         category = classify_line(line)
-        start = "Traceback (most recent call last)" in line
-        terminal = bool(re.match(r"^[A-Za-z_.]+(?:Error|Exception):", line))
+        event = _QUERY_FIELD.sub("", line)
+        start = "Traceback (most recent call last)" in event
+        terminal = bool(re.match(r"^[A-Za-z_.]+(?:Error|Exception):", event))
         if in_traceback and terminal:
             in_traceback = False
             continue

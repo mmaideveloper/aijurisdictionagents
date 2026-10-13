@@ -81,7 +81,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(count_over_time({stack=\"jurisdigta\"} |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" [$__range]))",
+          "expr": "sum(count_over_time({stack=\"jurisdigta\"} | line_format `{{ regexReplaceAll \"(?:\\\\bquery=|\\\"query\\\"\\\\s*:\\\\s*)\\\"(?:\\\\\\\\.|[^\\\"\\\\\\\\])*\\\"\" __line__ \"\" }}` |~ \"(?i)(\\\\blevel[=:]\\\\s*\\\\\\\"?(error|fatal|critical)\\\\b|\\\\\\\"level\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|fatal|critical)\\\\\\\"|\\\\|\\\\s*(error|fatal|critical)\\\\s*\\\\||^\\\\s*(error|fatal|critical)\\\\b|^E[0-9]{4}\\\\b|\\\\bstatus[=:]\\\\s*\\\\\\\"?(error|failed|failure)\\\\b|\\\\\\\"status\\\\\\\"\\\\s*:\\\\s*\\\\\\\"(error|failed|failure)\\\\\\\"|\\\\bfailed(_laws)?[=:][1-9][0-9]*\\\\b|traceback \\\\(most recent call last\\\\)|\\\\b[A-Za-z_]+(Error|Exception):|\\\\bfailed(\\\\s|$)|\\\\berror_type=[A-Za-z_]+(Error|Exception)\\\\b)\" [$__range]))",
           "legendFormat": "Total",
           "queryType": "instant",
           "refId": "A"
@@ -89,7 +89,7 @@
       ],
       "title": "Total Errors",
       "type": "stat",
-      "description": "Failure matching log lines within the selected dashboard time range, evaluated at its end. Includes retries and traceback lines; not unique incidents. No data means no matching logs or unavailable ingestion; check telemetry health."
+      "description": "Failure matching log lines within the selected dashboard time range, evaluated at its end. Includes retries and traceback lines; not unique incidents. No data means no matching logs or unavailable ingestion; check telemetry health. Quoted query metadata is removed before failure matching; genuine severity/outcomes remain visible. Original logs remain in Recent Logs/Explore."
     },
     {
       "datasource": {

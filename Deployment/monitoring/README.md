@@ -22,6 +22,13 @@ It complements the protected API endpoint documented in `docs/SYSTEM_STATUS_MONI
 GET /v1/system/status?minutes=60
 ```
 
+Failure totals normalize quoted `query=` / JSON `query` metadata before matching
+severity and outcomes (#902), so successful Loki/Grafana query logs cannot count
+the embedded failure regex as an error. Errors Only displays normalized records;
+Recent Logs and Explore keep original records. This does not suppress real
+collector failures or authentication events. See the validation/rollback contract
+in [Operational failure counts](../../docs/OPERATIONAL_ERROR_COUNTS_871.md).
+
 ## What It Monitors
 
 - API and MCP availability through Blackbox Exporter probing the internal Docker service URLs `http://jurisdigta-api:8080/health` and `http://jurisdigta-mcp:8070/health`.
