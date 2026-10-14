@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, cast
+from collections.abc import Callable
 
 from .base import Tool, ToolDefinition, ToolResult
 from .address_validator import RegisterAdriesAddressValidatorTool
@@ -14,6 +15,7 @@ from .property_validator import SlovakiaPropertyLVTool
 @dataclass
 class ToolRegistry:
     _tools: dict[str, Tool]
+    privacy_check: Callable[[], None] | None = None
 
     def list_definitions(self) -> tuple[ToolDefinition, ...]:
         return tuple(tool.definition for tool in self._tools.values())
@@ -30,6 +32,8 @@ class ToolRegistry:
                 records=(),
                 message=f"Tool '{name}' is not registered.",
             )
+        if self.privacy_check:
+            self.privacy_check()
         return tool.run(**kwargs)
 
 
@@ -41,4 +45,5 @@ def build_default_tool_registry() -> ToolRegistry:
         "slovakia_car_validate": cast(Tool, SlovakiaCarValidatorTool()),
         "dovera_debtor_check": cast(Tool, DoveraDebtorCheckTool()),
     }
-    return ToolRegistry(_tools=tools)
+    from ..privacy import require_external_check
+    return ToolRegistry(_tools=tools, privacy_check=require_external_check)

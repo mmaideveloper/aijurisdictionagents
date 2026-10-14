@@ -82,6 +82,10 @@ def test_document_processor_default_max_running_time_is_15(monkeypatch) -> None:
 
 
 def test_document_processor_logs_failure_reason(monkeypatch, caplog) -> None:
+    from types import SimpleNamespace
+    # This test isolates extraction diagnostics; privacy enforcement has its own
+    # real-store tests in test_privacy_controls.py.
+    monkeypatch.setattr("aijurisdictionagents.privacy.PrivacyControls.require_processing", lambda *_args, **_kwargs: None)
     class FakeStore:
         def __init__(self, document: _FakeCaseDocument) -> None:
             self.document = document
@@ -93,6 +97,9 @@ def test_document_processor_logs_failure_reason(monkeypatch, caplog) -> None:
         def read_storage_bytes(self, *, storage_uri: str) -> bytes:
             assert storage_uri == "memory://bad.pdf"
             return b"%PDF-1.7"
+
+        def get_case(self, *, case_id: str):
+            return SimpleNamespace(user_id="synthetic-diagnostic-user")
 
     class FakeEmbeddingClient:
         def embed_texts(self, texts: list[str]) -> list[list[float]]:

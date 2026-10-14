@@ -191,7 +191,7 @@ def test_parse_duckduckgo_html_results_normalizes_duckduckgo_redirect_url() -> N
     assert records[0].url == "https://platform.openai.com/docs/models/gpt-4o-mini"
 
 
-def test_ai_web_search_agent_falls_back_to_duckduckgo_html(monkeypatch) -> None:
+def test_ai_web_search_agent_falls_back_to_duckduckgo_html(monkeypatch, external_check_subject) -> None:
     class _Response:
         def __init__(self, body: str) -> None:
             self._payload = BytesIO(body.encode("utf-8"))

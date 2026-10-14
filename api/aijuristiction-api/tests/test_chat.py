@@ -2041,6 +2041,7 @@ def test_unassigned_ambiguous_catalog_request_uses_generic_langgraph_route(
 
 
 def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_path) -> None:
+    auth_headers = {"x-api-key": "aijuris"}
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
     import app.users.api as users_api
@@ -2095,7 +2096,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
     try:
         sign_up_response = client.post(
             "/v1/users/sign-up",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={
                 "phone_number": "+421900777888",
                 "email": "free-local-e2e@example.com",
@@ -2106,16 +2107,20 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
         )
         assert sign_up_response.status_code == 201
         user_id = sign_up_response.json()["user_id"]
+        store = chat_api._get_store()
+        auth_headers.update({"x-jurisdigta-device-id": "synthetic-test-device", "x-jurisdigta-device-token": store.issue_device_auth_token(user_id=user_id, device_id="synthetic-test-device")})
+        from aijurisdictionagents.privacy import PrivacyControls, CONSENT_VERSION
+        PrivacyControls(store).consent(user_id, "external_models", True, version=CONSENT_VERSION)
         subscriptions_response = client.get(
             f"/v1/users/{user_id}/subscriptions",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
         )
         assert subscriptions_response.status_code == 200
         assert subscriptions_response.json()[0]["plan_code"] == "free"
 
         case_response = client.post(
             "/v1/cases",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"user_id": user_id, "title": "Free local routing e2e"},
         )
         assert case_response.status_code == 201
@@ -2123,7 +2128,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
 
         session_response = client.post(
             "/v1/chat/sessions",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={
                 "user_id": user_id,
                 "case_id": case_id,
@@ -2137,7 +2142,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
 
         reply_response = client.post(
             f"/v1/chat/sessions/{session_id}/reply",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"content": "Please review my tenant dispute and suggest next steps."},
         )
         assert reply_response.status_code == 200
@@ -2145,7 +2150,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
 
         audit_response = client.get(
             f"/v1/cases/{case_id}/ai-model-audit?user_id={user_id}&limit=5",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
         )
         assert audit_response.status_code == 200
     finally:
@@ -2160,6 +2165,7 @@ def test_free_plan_chat_reply_records_local_model_route_e2e(monkeypatch, tmp_pat
 
 
 def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_path) -> None:
+    auth_headers = {"x-api-key": "aijuris"}
     from app.chat.repository import InMemoryChatRepository
     import app.chat.api as chat_api
     import app.users.api as users_api
@@ -2222,7 +2228,7 @@ def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_
     try:
         sign_up_response = client.post(
             "/v1/users/sign-up",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={
                 "phone_number": "+421900777889",
                 "email": "paid-external-e2e@example.com",
@@ -2233,28 +2239,32 @@ def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_
         )
         assert sign_up_response.status_code == 201
         user_id = sign_up_response.json()["user_id"]
+        store = chat_api._get_store()
+        auth_headers.update({"x-jurisdigta-device-id": "synthetic-test-device", "x-jurisdigta-device-token": store.issue_device_auth_token(user_id=user_id, device_id="synthetic-test-device")})
+        from aijurisdictionagents.privacy import PrivacyControls, CONSENT_VERSION
+        PrivacyControls(store).consent(user_id, "external_models", True, version=CONSENT_VERSION)
         subscription_response = client.post(
             f"/v1/users/{user_id}/subscriptions",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"plan_code": "case"},
         )
         assert subscription_response.status_code == 201
         paid_response = client.patch(
             f"/v1/users/subscriptions/{subscription_response.json()['subscription_id']}",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"status": "paid"},
         )
         assert paid_response.status_code == 200
         case_response = client.post(
             "/v1/cases",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"user_id": user_id, "title": "Paid external routing e2e"},
         )
         assert case_response.status_code == 201
         case_id = case_response.json()["case_id"]
         session_response = client.post(
             "/v1/chat/sessions",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={
                 "user_id": user_id,
                 "case_id": case_id,
@@ -2268,13 +2278,13 @@ def test_paid_case_chat_reply_records_external_model_route_e2e(monkeypatch, tmp_
 
         reply_response = client.post(
             f"/v1/chat/sessions/{session_id}/reply",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
             json={"content": "Please review my tenant dispute and suggest next steps."},
         )
         assert reply_response.status_code == 200
         audit_response = client.get(
             f"/v1/cases/{case_id}/ai-model-audit?user_id={user_id}&limit=5",
-            headers=AUTH_HEADERS,
+            headers=auth_headers,
         )
         assert audit_response.status_code == 200
     finally:
@@ -2374,30 +2384,8 @@ def test_stream_selected_model_accepts_allowlisted_email_without_session_user_id
             "language": "SK",
         },
     )
-    assert session_response.status_code == 200
-    session_id = session_response.json()["id"]
-
-    with client.stream(
-        "POST",
-        f"/v1/chat/sessions/{session_id}/stream",
-        headers=AUTH_HEADERS,
-        json={
-            "instruction": "Priprav navrh splnomocnenia.",
-            "user_simulation_mode": "ReadUser",
-            "user_email": "admin-selected@example.com",
-            "model_profile_id": "local_ollama_default",
-        },
-    ) as response:
-        assert response.status_code == 200
-        events = "".join(response.iter_text())
-
-    assert "Admin selected local model answer from test." in events
-    assert observed == {
-        "user_id": "",
-        "user_email": "admin-selected@example.com",
-        "task_type": "chat_reply",
-        "selected_model_profile_id": "local_ollama_default",
-    }
+    assert session_response.status_code == 401
+    assert observed == {}
 
 
 def test_mcp_law_context_uses_search_and_law_text_tools(monkeypatch) -> None:

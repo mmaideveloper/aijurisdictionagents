@@ -32,6 +32,7 @@ import { SpeechDictation } from "../components/SpeechDictation";
 import { LegalDocumentPreview } from "../components/LegalDocumentPreview";
 import { normalizePresentationBlock, type PresentationBlock } from "../presentation";
 import { AssistantMarkdown } from "../components/AssistantMarkdown";
+import { AITransparencyNotice } from "../components/AITransparencyNotice";
 import { isUserVisibleGeneratedDocument, useCases } from "../state/CaseProvider";
 import type { CaseCitation, CaseCommunicationMode, CaseDocumentRecord, CaseInteraction, CaseRecord, CaseRole } from "../state/CaseProvider";
 import { isCaseRoleAvailable } from "../state/caseRoles";
@@ -156,7 +157,8 @@ const caseInteractionToThreadMessage = (
       custom: {
         actor: interaction.actor,
         citations: interaction.citations,
-        presentation: interaction.presentation
+        presentation: interaction.presentation,
+        ai_transparency: interaction.aiTransparency
       }
     }
   };
@@ -515,9 +517,14 @@ const AssistantTextPart: React.FC = () => {
   const { activeCase } = useCases();
   const runtime = useThreadRuntime();
   const running = useAuiState((state) => state.thread.isRunning);
+  const isAssistant = useAuiState((state) => state.message.role === "assistant");
   const rawPresentation = useAuiState((state) => {
     const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
     return custom?.presentation;
+  });
+  const aiTransparency = useAuiState((state) => {
+    const custom = state.message.metadata.custom as Record<string, unknown> | undefined;
+    return custom?.ai_transparency;
   });
   const typedPresentation = React.useMemo(
     () => normalizePresentationBlock(rawPresentation),
@@ -549,6 +556,7 @@ const AssistantTextPart: React.FC = () => {
           ))
         : null}
       <AssistantDocumentLinks links={documentLinks} />
+      {isAssistant ? <AITransparencyNotice metadata={aiTransparency} /> : null}
       {failed ? (
         <button type="button" className="button ghost" disabled={running} onClick={() => runtime.append({
           role: "user", content: [{ type: "text", text: t("assistantDocumentRetryRequest") }]
@@ -725,6 +733,7 @@ const AssistantThread: React.FC<{
 
           let latestAssistantText = "";
           let latestPresentation: PresentationBlock | null = null;
+          let latestTransparency: unknown;
           const processingMessages: string[] = [];
           const userVisibleProcessingMessages: string[] = [];
           let activeProgressMessage = "";
@@ -771,9 +780,10 @@ const AssistantThread: React.FC<{
                 activeProgressMessage = "";
                 latestAssistantText = streamEvent.data.content;
                 latestPresentation = normalizePresentationBlock(streamEvent.data.presentation);
+                latestTransparency = streamEvent.data.ai_transparency;
                 yield {
                   content: [{ type: "text", text: latestAssistantText }],
-                  metadata: { custom: { presentation: latestPresentation } }
+                  metadata: { custom: { presentation: latestPresentation, ai_transparency: streamEvent.data.ai_transparency } }
                 };
               }
               continue;
@@ -817,7 +827,8 @@ const AssistantThread: React.FC<{
             content: [{ type: "text", text: finalAssistantText }],
             metadata: {
               custom: {
-                presentation: hydratedPresentation ?? latestPresentation
+                presentation: hydratedPresentation ?? latestPresentation,
+                ai_transparency: hydratedAssistantInteraction?.aiTransparency ?? latestTransparency
               }
             },
             status: { type: "complete", reason: "stop" }

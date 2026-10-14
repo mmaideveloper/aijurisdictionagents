@@ -287,6 +287,9 @@ class ProductionCaseWorkflowServices:
     def execute_consented_tools(
         self, state: CaseWorkflowState, tool_names: Sequence[str]
     ) -> list[dict[str, Any]]:
+        from aijurisdictionagents.privacy import PrivacyControls, privacy_scope
+        controls = PrivacyControls(self._api_store)
+        controls.require_processing(state.get("user_id", ""), "external_checks")
         policies = validate_tool_policy(
             state.get("flow_definition", {}).get("tool_policy"),
             registry_definitions=self.available_tool_definitions(),
@@ -332,12 +335,13 @@ class ProductionCaseWorkflowServices:
                 results.append(existing)
                 continue
             inputs = build_tool_inputs(policy, state.get("verified_facts", {}))
-            execution = _run_tool_with_timeout(
-                registry=self._tool_registry,
-                tool_name=tool_name,
-                inputs=inputs,
-                timeout_seconds=policy.timeout_seconds,
-            )
+            with privacy_scope(controls, state.get("user_id", "")):
+                execution = _run_tool_with_timeout(
+                    registry=self._tool_registry,
+                    tool_name=tool_name,
+                    inputs=inputs,
+                    timeout_seconds=policy.timeout_seconds,
+                )
             summary = {
                 "tool_name": tool_name,
                 "status": execution["status"],
@@ -1269,7 +1273,9 @@ def _run_tool_with_timeout(
     timeout_seconds: float,
 ) -> dict[str, Any]:
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workflow-tool")
-    future = executor.submit(registry.run, tool_name, **inputs)
+    from contextvars import copy_context
+    context = copy_context()
+    future = executor.submit(lambda: context.run(registry.run, tool_name, **inputs))
     try:
         result = future.result(timeout=timeout_seconds)
         return {

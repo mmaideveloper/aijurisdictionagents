@@ -1070,12 +1070,12 @@ def test_generated_case_document_pdf_uses_first_selected_document_block(
     assert "---" not in generated_pdf_text
 
 
-def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
+def test_case_history_falls_back_to_summary_when_transcript_missing(tmp_path: Path) -> None:
     import app.cases_api as cases_api
 
     client = TestClient(app)
 
-    class _FakeStore:
+    class _FakeStore(ApiDatabaseStore):
         def get_case(self, *, case_id: str):
             return SimpleNamespace(case_id=case_id, user_id="user-1", status="active")
 
@@ -1097,7 +1097,9 @@ def test_case_history_falls_back_to_summary_when_transcript_missing() -> None:
         def read_storage_text(self, *, storage_uri: str) -> str:
             raise FileNotFoundError(storage_uri)
 
-    app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
+    store = _FakeStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "files")
+    store.initialize()
+    app.dependency_overrides[cases_api.get_store] = lambda: store
     try:
         response = client.get(
             "/v1/cases/case-1/history?user_id=user-1&offset=0&limit=5",

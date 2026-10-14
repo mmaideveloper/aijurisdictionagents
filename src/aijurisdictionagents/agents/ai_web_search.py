@@ -56,6 +56,8 @@ class EntityScreeningAgent:
         )
 
     def search(self, *, query: str, max_results: int = 5) -> list[WebSearchRecord]:
+        from ..privacy import require_external_check
+        require_external_check()
         encoded_query = quote_plus(query.strip())
         if not encoded_query:
             return []

@@ -405,9 +405,14 @@ def test_production_tool_execution_requires_ledger_sanitizes_and_is_idempotent(
             db_option="local", db_cloud="", sqlite_path=tmp_path / "tool-ledger.sqlite3"
         )
     )
+    api_store = ApiDatabaseStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "files")
+    api_store.initialize()
+    user = api_store.create_user(email="workflow-privacy@example.test", password="synthetic")
+    from aijurisdictionagents.privacy import PrivacyControls, CONSENT_VERSION
+    PrivacyControls(api_store).consent(user.user_id, "external_checks", True, version=CONSENT_VERSION)
     tool = _CountingAddressTool()
     service = ProductionCaseWorkflowServices(
-        api_store=cast(Any, object()),
+        api_store=api_store,
         workflow_store=workflow_store,
         tool_registry=ToolRegistry(_tools={tool.definition.name: tool}),
     )
@@ -435,7 +440,7 @@ def test_production_tool_execution_requires_ledger_sanitizes_and_is_idempotent(
             "workflow_run_id": "synthetic-run-tool-1",
             "correlation_id": "synthetic-correlation-tool-1",
             "case_id": "synthetic-case-tool-1",
-            "user_id": "synthetic-user-tool-1",
+            "user_id": user.user_id,
             "jurisdiction": "SK",
             "flow_key": "test.flow",
             "flow_version": 1,

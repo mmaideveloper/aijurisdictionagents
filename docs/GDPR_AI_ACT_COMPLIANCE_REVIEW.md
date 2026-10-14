@@ -3,6 +3,16 @@
 Date: 2026-05-06
 Scope reviewed: API (`api/aijuristiction-api`), core orchestrator (`src/aijurisdictionagents`), frontend legal pages (`frontend/aijurisdictionfronend`), infra/docs.
 
+## Issue #389 implementation update
+
+Central versioned consent/revocation, authenticated subject export/restriction requests,
+operator-reviewed erasure, configurable fail-closed retention, assistant/document transparency,
+and append-only metadata-only events are described in [PRIVACY_CONTROLS_389.md](PRIVACY_CONTROLS_389.md).
+The original gap analysis below is historical. This change does not certify full compliance:
+owner-approved category periods, external-surface DSAR completion, backup suppression,
+production role grants and real local E2E evidence remain release requirements.
+See [DATA_RETENTION_POLICY.md](DATA_RETENTION_POLICY.md).
+
 ## What already exists (good baseline)
 
 - API access is guarded through `x-api-key` for chat and template endpoints, reducing open exposure risk.
