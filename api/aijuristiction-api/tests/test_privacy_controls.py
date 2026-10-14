@@ -62,7 +62,13 @@ def test_events_are_immutable_and_contain_no_subject_or_secret(subject):
             conn.execute("DELETE FROM privacy_compliance_events")
 
 
-def test_export_requires_device_auth_and_includes_owned_files_only(subject):
+def test_export_requires_device_auth_and_includes_owned_files_only(subject, monkeypatch):
+    from app.chat.api import _repository
+
+    monkeypatch.setattr(_repository, "export_subject", lambda _user_id: [
+        {"session": {"metadata": {"api_key": "synthetic-hidden", "nested": {"access_token": "synthetic-hidden"}}},
+         "messages": [{"content": "Owned synthetic message"}]}
+    ])
     store, user, controls = subject
     own = store.create_case(user_id=user.user_id, company_id=None, title="Owned synthetic case")
     store.add_case_document(case_id=own.case_id, kind="upload", version=1, original_filename="synthetic.txt", payload=b"owned synthetic bytes")
@@ -86,6 +92,8 @@ def test_export_requires_device_auth_and_includes_owned_files_only(subject):
             assert "Not exported" not in text
             assert "password_hash" not in text
             assert "device_auth_tokens" not in text
+            assert "synthetic-hidden" not in text
+            assert "Owned synthetic message" in text
             assert archive.read(data["file_manifest"][0]["member"]) == b"owned synthetic bytes"
         assert client.get(f"/v1/privacy/subjects/{other.user_id}/export", headers=headers).status_code == 401
     finally:

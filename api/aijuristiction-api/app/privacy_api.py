@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from app.cases_api import get_store
 from app.security import require_api_key, require_admin_api_key
 from aijurisdictionagents.api_db import ApiDatabaseStore
-from aijurisdictionagents.privacy import CONSENT_SCOPES, CONSENT_VERSION, PrivacyControls, PrivacyDenied
+from aijurisdictionagents.privacy import CONSENT_SCOPES, CONSENT_VERSION, PrivacyControls, PrivacyDenied, sanitize_export
 
 router = APIRouter(prefix="/v1/privacy", tags=["privacy"], dependencies=[Depends(require_api_key)])
 
@@ -89,7 +89,7 @@ def request_erasure(payload: ErasureRequest, user_id: str = Depends(authenticate
 def export_subject(user_id: str = Depends(authenticate_subject), store: ApiDatabaseStore = Depends(get_store)) -> StreamingResponse:
     from app.chat.api import _repository
     data = PrivacyControls(store).export(user_id)
-    data["active_sessions"] = _repository.export_subject(user_id)
+    data["active_sessions"] = sanitize_export(_repository.export_subject(user_id))
     files = SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")
     try:
         manifest: list[dict[str, str]] = []

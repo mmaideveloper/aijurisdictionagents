@@ -121,8 +121,11 @@ No mock/intercepted response is real E2E acceptance. See `E2E_TEST_EVIDENCE_RULE
 ### Validation evidence, 2026-10-14
 
 API Ruff/type checks, all eight privacy regression tests, the frontend production build,
-frontend lint and all 203 frontend unit tests passed. The API suite passed with 735 tests
-and five skips before the final two privacy regressions were added. Those regressions verify restricted real-provider
+frontend lint and all 203 frontend unit tests passed. The final API suite passed with 737 tests
+and five skips. The core suite passed
+with 464 tests and 37 skips after rebasing onto current `main`. An unrelated golden-export
+fixture failed once with `payment_card_number_detected`, then passed its targeted retry and
+the subsequent full core run. Privacy regressions verify restricted real-provider
 chat is rejected before processing, pending erasure cannot be resumed, and approved erasure
 removes owned cases/files and authentication while keeping external cleanup pending.
 
