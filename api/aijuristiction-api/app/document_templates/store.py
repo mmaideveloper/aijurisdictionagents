@@ -69,6 +69,8 @@ class DocumentTemplateStore:
         self._refresh_empty_seeded_document_template_bodies()
         self._refresh_priority_three_release_controls()
         self._seed_case_types_if_empty()
+        # Add the software case on upgrades without replacing any admin-edited prompt.
+        self._seed_case_types(items=build_default_case_types([]), templates=[])
         self._refresh_seeded_case_type_descriptions()
 
     @classmethod
