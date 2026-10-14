@@ -1,0 +1,13 @@
+{
+  "policy_version": "389-draft-v1",
+  "approved": false,
+  "owner_approval_reference": null,
+  "completed_case_days": null,
+  "deleted_case_days": null,
+  "closed_account_days": null,
+  "consent_evidence_days": null,
+  "diagnostic_days": 7,
+  "telemetry_days": 7,
+  "backup_days": null,
+  "accounting": "Statutory retention and legal-owner review; excluded from automatic purge."
+}

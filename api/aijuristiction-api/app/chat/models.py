@@ -43,6 +43,8 @@ class Message(BaseModel):
     citations: List[dict[str, Any]] = Field(default_factory=list)
     presentation: dict[str, Any] = Field(default_factory=dict)
     generated_document_ids: list[str] = Field(default_factory=list)
+    ai_transparency: dict[str, Any] = Field(default_factory=dict)
+    communication_id: str | None = None
 
 
 class GenerationJob(BaseModel):

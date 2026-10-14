@@ -1115,3 +1115,29 @@ restricted server path, validate key readiness without values, restart only the 
 Rotation: operator updates USB authority first, applies corresponding DB role/provider changes,
 then refreshes server copy and validates. Provisioning intentionally does not guess missing
 external credentials or rotate existing DB role passwords automatically.
+# Privacy controls #389 setup and release prerequisites
+
+1. Privacy/legal owner approves category TTLs and hold criteria in
+   `config/privacy_retention.json`, plus sensitive-data lawful conditions, external-provider
+   processing terms and optional consent notice versions. Do not enable destructive retention
+   with the unapproved draft. No new environment variable or secret is introduced.
+2. Database owner applies `databases/api/migrations/389_privacy_controls.sql` to test and prod
+   with the migration identity. Verify event UPDATE/DELETE and consent UPDATE are rejected.
+   Runtime roles need SELECT/INSERT for ledgers and narrowly scoped state/request UPDATE;
+   they must not own triggers or have ALTER/DROP privileges. Reviewed erasure uses a separate
+   operator identity with DELETE on consent records. Superuser access is separately audited.
+3. Operations installs a daily retention timer using the project conda Python and
+   `scripts/run_privacy_retention.py --policy <approved-policy> --execute` only after a reviewed
+   dry run. Pause workers/restart API replicas around destructive operations. Monitor counts
+   and pending cleanup without recording subject data or file paths.
+4. Observability owner verifies the existing seven-day Loki/Azure diagnostic retention.
+   Backup owner approves snapshot expiry, encrypts the restricted deletion suppression ledger,
+   and adds replay-before-service-start to every restore runbook. Storage/email/reporting owners
+   implement the external DSAR inventory in `docs/PRIVACY_CONTROLS_389.md`; do not mark requests
+   complete merely because live API rows were removed.
+5. Validate on synthetic local PostgreSQL plus real Azure Foundry and the local frontend/MCP/
+   workers. Retain a sanitized manifest and final screenshot for at most seven days. Require
+   privacy/legal release review and all exact-commit build gates before production deployment.
+6. Rollback: disable the timer and restore the prior approved policy/application image. Keep
+   privacy ledgers and suppression records. Never rollback by dropping evidence tables or
+   restoring erased data without replaying suppression. Erasure has no simple undo.

@@ -1422,10 +1422,14 @@ def _load_slovak_company_registry_document(
             cache_hit=True,
         )
 
-    result = registry.run(
-        "obchodny_register_company_check",
-        company_name_or_registration=normalized_query,
-    )
+    from aijurisdictionagents.privacy import PrivacyDenied
+    try:
+        result = registry.run(
+            "obchodny_register_company_check",
+            company_name_or_registration=normalized_query,
+        )
+    except PrivacyDenied:
+        return None, None, False
     if not result.ok or not result.records:
         cached_payload = (None, None)
         with _ORSR_CACHE_LOCK:

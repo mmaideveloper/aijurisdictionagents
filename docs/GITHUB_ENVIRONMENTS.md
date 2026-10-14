@@ -879,3 +879,12 @@ retention timer and restore/deletion procedure. The release builds API/web/smoke
 backs up and migrates the dedicated DB, then runs public and synthetic real-model checks.
 Retain successful check links plus SHA for 14 days; production smoke evidence is restricted
 under `/srv/jurisdigta/laws-tests/evidence/<sha>`. A failed smoke means failed deployment.
+# Privacy controls (#389)
+
+The `test` and `prod` environment owners must follow the #389 setup checklist in
+`docs/manual_infrastucture_setup.md`: apply the privacy migration with the migration
+identity, verify append-only role/trigger restrictions, and approve category retention
+periods and restore suppression before enabling the daily retention job. No new workflow
+input, Environment variable or secret is introduced. Existing real Azure Foundry credentials
+and admin authentication remain required. `prod` cleanup remains disabled with the draft
+policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.

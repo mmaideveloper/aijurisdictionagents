@@ -24,7 +24,7 @@ def test_car_validator_rejects_missing_identifiers() -> None:
     assert result["ok"] is False
 
 
-def test_registry_exposes_slovakia_car_validate_tool() -> None:
+def test_registry_exposes_slovakia_car_validate_tool(external_check_subject) -> None:
     registry = build_default_tool_registry()
 
     assert registry.has_tool("slovakia_car_validate")
@@ -34,7 +34,7 @@ def test_registry_exposes_slovakia_car_validate_tool() -> None:
     assert result.records
 
 
-def test_answer_slovak_car_validation_question_uses_tool() -> None:
+def test_answer_slovak_car_validation_question_uses_tool(external_check_subject) -> None:
     response = answer_slovak_car_validation_question(
         "Over mi auto VIN 1HGCM82633A004352 a SPZ BA123AB.",
     )

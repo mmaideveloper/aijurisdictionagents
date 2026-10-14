@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app.chat.models import Message, MessageRole, Session, SessionResult, SessionState
 from aijurisdictionagents.correlation import record_debug_event
 from aijurisdictionagents.response_score import assess_response, record_response_assessment
+from aijurisdictionagents.privacy import transparency
 
 
 class InMemoryChatRepository:
@@ -39,6 +40,8 @@ class InMemoryChatRepository:
         )
 
     def add_message(self, message: Message) -> Message:
+        if message.role == MessageRole.ASSISTANT and not message.ai_transparency:
+            message.ai_transparency = transparency(generated_at=message.created_at.isoformat())
         with self._lock:
             if message.session_id not in self._sessions:
                 raise KeyError(f"Session {message.session_id} not found")
@@ -89,3 +92,10 @@ class InMemoryChatRepository:
         with self._lock:
             if session_id in self._sessions:
                 self._sessions[session_id].state = SessionState.FAILED
+
+    def export_subject(self, user_id: str) -> list[dict[str, object]]:
+        with self._lock:
+            return [{"session": session.model_dump(mode="json"),
+                     "messages": [message.model_dump(mode="json") for message in self._messages_by_session.get(session.id, [])],
+                     "result": self._results[session.id].model_dump(mode="json") if session.id in self._results else None}
+                    for session in self._sessions.values() if str(session.user_id) == user_id]

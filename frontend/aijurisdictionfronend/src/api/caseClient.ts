@@ -21,6 +21,7 @@ export type ApiCaseHistoryMessage = {
   created_at: string;
   citations?: ApiCaseCitation[];
   presentation?: PresentationBlock;
+  ai_transparency?: Record<string, unknown>;
 };
 
 export type ApiCaseCitation = {
@@ -56,6 +57,7 @@ export type ApiCaseDocument = {
   processing_error: string | null;
   processed_at: string | null;
   created_at: string;
+  ai_transparency?: Record<string, unknown>;
 };
 
 export type ApiCaseHistory = {

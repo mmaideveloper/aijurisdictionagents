@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import import_module
 import os
 from typing import cast
@@ -75,6 +75,29 @@ def get_routed_llm_client(
     external_acknowledged: bool = False,
     selected_model_profile_id: str | None = None,
 ) -> RoutedLLMClient:
+    from ..privacy import PrivacyCheckedClient, PrivacyControls
+    route = _select_routed_llm_client(
+        store=store, user_id=user_id, user_email=user_email, task_type=task_type,
+        external_acknowledged=external_acknowledged,
+        selected_model_profile_id=selected_model_profile_id,
+    )
+    if route.provider == "mock":
+        return route
+    return replace(route, client=PrivacyCheckedClient(
+        route.client, PrivacyControls(store), user_id,
+        bool(route.route.provider and route.route.provider.is_external),
+    ))
+
+
+def _select_routed_llm_client(
+    *,
+    store: ApiDatabaseStore,
+    user_id: str,
+    user_email: str = "",
+    task_type: str = "default",
+    external_acknowledged: bool = False,
+    selected_model_profile_id: str | None = None,
+) -> RoutedLLMClient:
     if _explicit_mock_mode():
         plan = _free_plan()
         route = AIModelRouteSelection(
@@ -139,6 +162,13 @@ def get_routed_llm_client(
 
     if route.route_type in {"local_unavailable", "external_unavailable", "external_ack_required", "blocked_non_eu_external"}:
         raise ModelRouteUnavailable(route.reason)
+
+    from ..privacy import PrivacyControls, PrivacyDenied
+    controls = PrivacyControls(store)
+    try:
+        controls.require_processing(user_id, "external_models" if provider.is_external else None)
+    except PrivacyDenied as exc:
+        raise ModelRouteUnavailable(str(exc), status_code=403) from exc
 
     if provider_type in {"ollama", "local_ollama"}:
         if not provider.base_url.strip():
