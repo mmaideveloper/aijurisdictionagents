@@ -5024,6 +5024,15 @@ class ApiDatabaseStore:
                       assessment_id, case_id, expected_revision))
                 if updated.rowcount != 1:
                     raise ValueError("Assessment changed. Reload before saving.")
+                for doc_id in document_ids:
+                    owned = self._fetchone(conn,
+                        "SELECT doc_id FROM case_documents WHERE doc_id = ? AND case_id = ?", (doc_id, case_id))
+                    if owned is None:
+                        raise ValueError("Verification evidence no longer belongs to this case.")
+                    self._execute(conn, """
+                        INSERT INTO software_assessment_documents(assessment_id, doc_id)
+                        VALUES (?, ?) ON CONFLICT(assessment_id, doc_id) DO NOTHING
+                    """, (assessment_id, doc_id))
             conn.commit()
         return self.get_software_assessment(case_id=case_id, assessment_id=assessment_id) or result
 

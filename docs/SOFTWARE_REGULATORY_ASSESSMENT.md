@@ -174,3 +174,62 @@ data and local synthetic authentication. The seeded law is clearly marked **NOT
 actual legislation** and validates retrieval/traceability only. Retain sanitized
 results, screenshot, PDF and first-page render under ignored `runs/e2e/issue896` for
 at most seven days. Clean synthetic cases and uploaded files after evidence capture.
+
+## Conversational Slovak business report (#904)
+
+The code-registered `software_advice_chat@1` path handles explicit software/vendor/
+compliance requests from the ordinary chat (direct reply and ReadUser stream).
+Its candidate runs through `PrimaryLangGraphRouter`; it is preliminary advice, not
+publication or approval of an admin-authored document workflow. The case catalogue
+can disable the software case type; its editable prompt and task model policy apply.
+
+Before external processing, the user must send the displayed exact acknowledgement
+`Súhlasím s externým AI spracovaním tohto prípadu.` in a separate turn. The initial
+turn is saved case-privately and does not invoke retrieval or a model. This is an
+external-provider acknowledgement, not the GDPR legal basis for patient processing.
+`Nesúhlasím` or `Odvolávam súhlas` revokes the acknowledgement for subsequent turns.
+Never use real patient data in examples or E2E evidence.
+
+The bounded report contains a Slovak business summary, conditional regulations,
+questions and exact user-answer quotations, and a five-column actions table.
+Model-selected legal source IDs must exist; article labels/URLs come from retrieved
+sources. Generated answers must be contiguous quotes from actual user turns.
+Unknown facts remain open. The report uses `Deklarované – overiť` for user claims,
+never automatic pass/verified. Chat turns and reports are persisted in the existing
+case-private assessment table, excluded from the document-assessment history list.
+Case deletion purges them. Limits: 20 turns, 30,000 total input characters.
+
+A document-assessment reviewer selecting `verified` must now attach original
+case-owned evidence document IDs. Review decisions record version/hash/reviewer;
+new evidence links extend deletion cascades. This is still the authenticated
+reviewer's judgment, not certification or proof of professional qualifications.
+
+Minimal runnable example: `python examples/minimal_demo.py`.
+Focused checks: `python -m pytest api/aijuristiction-api/tests/test_software_conversation.py`.
+E2E scenario: create a synthetic case, submit the AI receptionist description,
+acknowledge processing, answer the storage/region/retention questions, verify all
+four business-report sections, declared status and clinical/IVD uncertainty.
+Final evidence requires the actual frontend/API/MCP/local PostgreSQL/real-model
+chain and screenshots under ignored `runs/e2e/issue904`, retained at most seven days.
+
+Chat intake is server-owned: Q1 storage/region/encryption/access, Q2 actual software
+functions, Q3 retention/deletion, Q4 supplier/processor responsibilities, Q5 safety
+and continuity. It asks one pending question per turn, accepts an explicit `Qn:`
+answer (or a declarative reply to the pending question), and preserves original
+answer text. A new question or consent/revocation is not treated as an answer.
+The model cannot invent questions/answers or link a control to an unrecorded Q ID.
+MDR/IVDR table rows are explicitly conditional on expert qualification, not blanket
+clinical-document requirements for administrative transcription. Neither laboratory
+terms in a message nor a human callback establish a device qualification/exclusion.
+
+Q1 always produces a GDPR security action with its original answer, evidence for
+encryption in storage/transit, access roles, key management and an unauthorized-access
+test. It remains declared pending evidence review. Unavailable selected model profiles
+are disclosed and resolved through the independently authorized default real route;
+a mock is never accepted as this fallback.
+
+After capturing the real UI, run `python scripts/verify_issue_904_e2e.py` to check
+persisted original-question identity, consent audit, actual provider/model, retrieved
+source IDs, Q1 linkage and Q2, and save a sanitized manifest/business report. This
+fixture checks the workflow, not normative legal accuracy. The local synthetic case
+is retained for inspection with the evidence for at most seven days.

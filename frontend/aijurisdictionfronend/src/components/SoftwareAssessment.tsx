@@ -68,7 +68,7 @@ export function SoftwareAssessment({ selectedModelProfileId }: { selectedModelPr
   const decide = (action: Action, status: Action["status"]) => perform(async () => {
     if (!assessment) return;
     setAssessment(await (await request(`/${assessment.assessment_id}/actions/${encodeURIComponent(action.action_id)}`, "PATCH", {
-      expected_revision: assessment.revision, status, evidence_note: note
+      expected_revision: assessment.revision, status, evidence_note: note, evidence_document_ids: status === "verified" ? selected : []
     })).json());
   });
   const download = () => perform(async () => {

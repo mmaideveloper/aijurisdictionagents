@@ -120,6 +120,7 @@ class ActionDecision(Contract):
     expected_revision: int = Field(ge=1)
     status: Literal["open", "evidence_requested", "ready_for_review", "verified"]
     evidence_note: str = Field(min_length=10, max_length=2000)
+    evidence_document_ids: list[UUID] = Field(default_factory=list, max_length=10)
 
 
 class DraftRequest(Contract):

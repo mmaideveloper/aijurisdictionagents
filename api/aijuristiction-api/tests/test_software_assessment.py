@@ -264,12 +264,27 @@ def test_private_assessment_revision_export_and_deletion(private_case, monkeypat
         json=dict(expected_revision=1, status="ready_for_review", evidence_note="Synthetic controls checked"))
     assert saved.status_code == 200 and saved.json()["revision"] == 2
     assert client.patch(path + "/actions/security-1", params=params, headers=headers,
+        json=dict(expected_revision=2, status="verified", evidence_note="Synthetic note without proof")).status_code == 422
+    assert client.patch(path + "/actions/security-1", params=params, headers=headers,
+        json=dict(expected_revision=2, status="verified", evidence_note="Synthetic wrong-case evidence",
+                  evidence_document_ids=[str(uuid4())])).status_code == 404
+    assert client.patch(path + "/actions/security-1", params=params, headers=headers,
         json=dict(expected_revision=1, status="open", evidence_note="Stale synthetic update")).status_code == 409
     report = client.get(path + "/export", params={**params, "revision": 2}, headers=headers)
     assert report.status_code == 200
     text = "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(report.content)).pages)
     assert "supplier.pdf" in text and "Page 2" in text and "Everyone can read" in text
     assert "not a compliance certificate" in text
+    proof = store.add_case_document(case_id=case_id, kind="uploaded", version=1,
+        payload=b"Synthetic verification evidence", original_filename="proof.txt",
+        uploaded_by_user_id=user)
+    verified = client.patch(path + "/actions/security-1", params=params, headers=headers,
+        json=dict(expected_revision=2, status="verified", evidence_note="Synthetic original evidence reviewed",
+                  evidence_document_ids=[proof]))
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["decisions"][-1]["evidence"][0]["document_id"] == proof
+    store.delete_case_document(case_id=case_id, doc_id=proof, actor_user_id=user, correlation_id="synthetic-904-proof")
+    assert store.get_software_assessment(case_id=case_id, assessment_id=value["assessment_id"]) is None
     store.delete_case_document(case_id=case_id, doc_id=document, actor_user_id=user, correlation_id="synthetic-896")
     assert store.get_software_assessment(case_id=case_id, assessment_id=value["assessment_id"]) is None
 

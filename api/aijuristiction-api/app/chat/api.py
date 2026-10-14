@@ -1734,6 +1734,27 @@ def _run_direct_lawyer_turn_impl(
     )
     _warn_if_flow_pack_missing(session_id=session_id, session=session, request_text=content)
 
+    # Code-registered preliminary software advice uses the constrained primary
+    # graph router and its own consent gate before resolving an external model.
+    if session.case_id and session.user_id and session.country == "SK":
+        from app.software_assessment.conversation import eligible, respond
+        software_store = _get_store()
+        if eligible(software_store, session.case_id, content):
+            try:
+                business_reply, business_route = respond(software_store, case_id=session.case_id,
+                    user_id=str(session.user_id), content=content,
+                    selected_model_profile_id=session.selected_model_profile_id)
+            except ModelRouteUnavailable as exc:
+                raise HTTPException(exc.status_code, "Software advice model unavailable. No mock fallback.") from exc
+            except ValueError as exc:
+                raise HTTPException(422, "Software advice failed validation or reached its limit. No result saved.") from exc
+            business_message = _persist_direct_assistant_message(session_id=session_id, session=session,
+                content=business_reply, agent_name="SoftwareBusinessAdvice", allow_document_generation=False)
+            _record_case_ai_model_audit(session=session, question=persisted_user, answer=business_message,
+                task_type="software_regulatory_assessment", source="chat.software_business_advice",
+                model_used=business_route is not None, route=business_route)
+            return persisted_user, business_message, business_message.content, [], business_route
+
     history = _repository.list_messages(session_id)
     prior_messages = history[:-1]
     processing_events: list[dict[str, object]] = []
@@ -2509,8 +2530,17 @@ def create_message(payload: CreateMessageRequest) -> Message:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+def _authorize_software_turn(session: Session, content: str, request: Request) -> None:
+    from app.software_assessment.conversation import eligible
+    from app.document_review import require_review_user
+    if session.case_id and eligible(_get_store(), session.case_id, content):
+        require_review_user(str(session.user_id or ""), _get_store(),
+            request.headers.get("x-jurisdigta-device-id", ""),
+            request.headers.get("x-jurisdigta-device-token", ""))
+
+
 @router.post("/sessions/{session_id}/reply", response_model=Message)
-def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
+def reply_to_session(session_id: UUID, payload: ReplyRequest, request: Request) -> Message:
     session = _repository.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -2520,6 +2550,7 @@ def reply_to_session(session_id: UUID, payload: ReplyRequest) -> Message:
     _validate_session_metadata(session)
 
     content = payload.content.strip()
+    _authorize_software_turn(session, content, request)
     if not content:
         raise HTTPException(status_code=400, detail="Reply content is required")
     if payload.model_profile_id is not None:
@@ -2576,6 +2607,7 @@ def stream_session(
         session.selected_model_profile_id = payload.model_profile_id.strip() or None
     _ensure_case_write_access_for_session(session)
     _validate_session_metadata(session)
+    _authorize_software_turn(session, payload.instruction, request)
     _persist_inline_case_documents_if_needed(session=session, documents=payload.documents)
     if payload.user_simulation_mode == "ReadUser" or suspicious_instruction(payload.instruction):
         return _stream_read_user_session(

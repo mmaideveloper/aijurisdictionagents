@@ -427,6 +427,10 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       headers: {
         "Content-Type": "application/json",
         "x-api-key": config.apiKey,
+        ...(input.deviceId && input.deviceAuthToken ? {
+          "x-jurisdigta-device-id": input.deviceId,
+          "x-jurisdigta-device-token": input.deviceAuthToken
+        } : {}),
         ...traceHeaders
       },
       body: JSON.stringify({

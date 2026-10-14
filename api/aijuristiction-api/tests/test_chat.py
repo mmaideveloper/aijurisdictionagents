@@ -6617,6 +6617,9 @@ def test_existing_case_history_is_seeded_into_new_reply_session(monkeypatch) -> 
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_software_assessment(self, **_kwargs):
+            return None
+
         def get_case(self, *, case_id: str):
             assert case_id == "case-123"
             return SimpleNamespace(user_id="user-1")
@@ -6907,6 +6910,9 @@ def test_existing_case_history_falls_back_to_summary_when_transcript_missing(mon
     captured: dict[str, object] = {}
 
     class _FakeStore:
+        def get_software_assessment(self, **_kwargs):
+            return None
+
         def get_case(self, *, case_id: str):
             assert case_id == "case-123"
             return SimpleNamespace(user_id="user-1")
@@ -6984,6 +6990,9 @@ def test_reply_persists_session_history_document_to_case(monkeypatch) -> None:
     persisted_history: list[dict[str, str | None]] = []
 
     class _FakeStore:
+        def get_software_assessment(self, **_kwargs):
+            return None
+
         def get_case(self, *, case_id: str):
             assert case_id == "case-123"
             return SimpleNamespace(user_id="user-1")

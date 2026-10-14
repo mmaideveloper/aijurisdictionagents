@@ -55,7 +55,7 @@ def list_assessments(case_id: str, user_id: str,
                      store: ApiDatabaseStore = Depends(get_store)) -> dict[str, Any]:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     return {"items": [{key: item[key] for key in ("assessment_id", "revision", "created_at", "warning")}
-                      for item in store.list_software_assessments(case_id=case_id)]}
+                      for item in store.list_software_assessments(case_id=case_id) if item.get("kind") != "software_chat"]}
 
 
 @router.post("", status_code=201)
@@ -151,12 +151,26 @@ def decide_action(case_id: str, assessment_id: str, action_id: str, user_id: str
         raise HTTPException(404, "Action not found.")
     if request.status == "verified" and action["status"] != "ready_for_review":
         raise HTTPException(409, "Submit evidence and mark ready for review before human verification.")
+    verification_evidence = []
+    if request.status == "verified":
+        if not request.evidence_document_ids:
+            raise HTTPException(422, "Select original evidence documents before verifying this control.")
+        for document_id in request.evidence_document_ids:
+            try:
+                document = store.get_case_document(case_id=case_id, doc_id=str(document_id))
+                if document.kind not in {"uploaded", "chat_attachment"}:
+                    raise HTTPException(422, "Use original uploaded evidence, not an AI-generated report.")
+                digest = hashlib.sha256(store.read_storage_bytes(storage_uri=document.storage_uri)).hexdigest()
+            except (KeyError, OSError) as exc:
+                raise HTTPException(404, "Verification evidence not found in this case.") from exc
+            verification_evidence.append(dict(document_id=str(document_id), content_hash=digest, version=document.version))
     value["decisions"].append(dict(action_id=action_id, old_status=action["status"],
-        status=request.status, reviewer=user_id, evidence_note=request.evidence_note, reviewed_at=now()))
+        status=request.status, reviewer=user_id, evidence_note=request.evidence_note, reviewed_at=now(),
+        evidence=verification_evidence))
     action["status"] = request.status
     try:
         return cast(dict[str, Any], store.save_software_assessment(case_id=case_id, assessment_id=assessment_id,
-            payload=value, document_ids=[], expected_revision=request.expected_revision))
+            payload=value, document_ids=[str(i) for i in request.evidence_document_ids], expected_revision=request.expected_revision))
     except ValueError as exc:
         raise HTTPException(409, "Assessment changed. Reload before saving.") from exc
 

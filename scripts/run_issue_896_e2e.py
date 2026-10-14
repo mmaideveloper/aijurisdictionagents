@@ -34,7 +34,7 @@ def prepare(environment: dict[str, str], sources_only: bool = False) -> None:
     now = datetime.now(timezone.utc)
     seed = ROOT / "databases/laws-collector/seeds/issue896"
     title = "Synthetic E2E software security GDPR 2016/679 — NOT actual legislation"
-    text = "§ 32\nSynthetic E2E security requirement: personal-data software must restrict access to authorized roles, assess processing risk, protect data in transit and document proportionate safeguards. ISSUE896_SECURITY_MARKER."
+    text = "Article 32\nSynthetic E2E security requirement: personal-data software must restrict access to authorized roles, assess processing risk, protect data in transit and document proportionate safeguards. ISSUE896_SECURITY_MARKER."
     with psycopg.connect(LAWS_DB) as conn:
         for filename, arguments in [
             ("01_seed.sql", (SOURCE_ID,)),
@@ -55,7 +55,7 @@ def prepare(environment: dict[str, str], sources_only: bool = False) -> None:
             prefix = f"issue-896-{key}"
             identifier = f"{prefix}-synthetic-source"
             synthetic_title = f"Synthetic {label} {year}/{number} — NOT actual legislation"
-            body = f"§ 1\nSynthetic E2E requirement: {requirement} ISSUE896_{key.upper()}_MARKER."
+            body = f"Article 1\nSynthetic E2E requirement: {requirement} ISSUE896_{key.upper()}_MARKER."
             url = f"https://eur-lex.europa.eu/eli/reg/{year}/{number}/oj"
             for filename, arguments in [
                 ("01_seed.sql", (identifier,)),
