@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
@@ -108,10 +107,10 @@ def log_llm_request(
     if not should_log_llm_io():
         return
     logger.info(
-        "LLM request | provider=%s | agent=%s | payload=%s",
+        "LLM request | provider=%s | agent=%s | message_count=%s",
         provider,
         agent_name,
-        json.dumps(list(request_payload), ensure_ascii=False),
+        len(request_payload),
     )
 
 
@@ -131,10 +130,10 @@ def log_llm_response(
     if not should_log_llm_io():
         return
     logger.info(
-        "LLM raw response | provider=%s | agent=%s | content=%s",
+        "LLM response | provider=%s | agent=%s | character_count=%s",
         provider,
         agent_name,
-        raw_response,
+        len(raw_response),
     )
 
 

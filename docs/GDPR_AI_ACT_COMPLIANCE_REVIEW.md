@@ -3,6 +3,16 @@
 Date: 2026-05-06
 Scope reviewed: API (`api/aijuristiction-api`), core orchestrator (`src/aijurisdictionagents`), frontend legal pages (`frontend/aijurisdictionfronend`), infra/docs.
 
+## Governed context boundary (issue #660)
+
+[ADR 0660](adr/ADR-0660-governed-agent-turn-context.md) records typed artifact
+ownership, provenance, sensitivity and retention, default confidential turn-only
+legacy evidence, immutable human-review governance, deterministic aggregate budgets,
+content-free operational logging and an explicit public metadata allowlist. Contracts
+do not grant consent, access or authority, and no persistent owner/expiry is guessed.
+Existing authorized debug-bundle access and retention still apply separately.
+This implementation does not close #389's ledger, DSAR or retention enforcement gaps.
+
 ## What already exists (good baseline)
 
 - API access is guarded through `x-api-key` for chat and template endpoints, reducing open exposure risk.
