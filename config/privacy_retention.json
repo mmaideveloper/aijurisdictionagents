@@ -1,13 +1,13 @@
 {
-  "policy_version": "389-draft-v1",
-  "approved": false,
-  "owner_approval_reference": null,
-  "completed_case_days": null,
-  "deleted_case_days": null,
-  "closed_account_days": null,
-  "consent_evidence_days": null,
+  "policy_version": "389-approved-20261015-v1",
+  "approved": true,
+  "owner_approval_reference": "Repository owner instruction in Codex chat, 2026-10-15: 30 days for completed cases, deleted cases, closed accounts, consent evidence and backups; implement necessary fixes and deploy to production.",
+  "completed_case_days": 30,
+  "deleted_case_days": 30,
+  "closed_account_days": 30,
+  "consent_evidence_days": 30,
   "diagnostic_days": 7,
   "telemetry_days": 7,
-  "backup_days": null,
+  "backup_days": 30,
   "accounting": "Statutory retention and legal-owner review; excluded from automatic purge."
 }
