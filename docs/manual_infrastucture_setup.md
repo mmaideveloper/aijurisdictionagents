@@ -1117,6 +1117,17 @@ then refreshes server copy and validates. Provisioning intentionally does not gu
 external credentials or rotate existing DB role passwords automatically.
 # Privacy controls #389 setup and release prerequisites
 
+Owner approval recorded on 2026-10-15: the deployment-chat instruction specifies 30 days
+for completed cases, deleted cases, closed accounts, consent evidence and backups.
+`config/privacy_retention.json` contains these periods and the approval reference.
+Validate the configuration with `python -m json.tool config/privacy_retention.json`;
+the established `python examples/minimal_demo.py` remains the runnable project example.
+Operations must still verify runtime-role privileges, the counts-only retention dry run,
+backup expiry/suppression and cleanup adapters before enabling destructive execution.
+This policy change does not install a timer, delete data, change active-case protection,
+override legal holds or shorten statutory accounting retention. Rollback disables the
+timer and restores the prior policy; already purged data requires controlled restore.
+
 1. Privacy/legal owner approves category TTLs and hold criteria in
    `config/privacy_retention.json`, plus sensitive-data lawful conditions, external-provider
    processing terms and optional consent notice versions. Do not enable destructive retention
