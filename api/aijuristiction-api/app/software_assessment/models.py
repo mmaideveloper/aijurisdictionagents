@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.software_assessment.organizational_it import ITContext
+
 CASE_TYPE_KEY = "sk.software.regulatory_assessment"
 TASK_TYPE = "software_regulatory_assessment"
 WARNING = "Preliminary assessment, not a compliance certificate. Legal and medical conclusions require expert review."
@@ -28,6 +30,7 @@ class SoftwareFacts(Contract):
     specimen_analysis: bool | None = None
     automated_decisions: bool | None = None
     suppliers: str = Field(default="", max_length=2000)
+    it_context: ITContext | None = None
 
 
 class AssessmentRequest(Contract):
@@ -73,6 +76,7 @@ class Action(Contract):
     action_id: str = Field(min_length=1, max_length=100)
     finding: str = Field(min_length=1, max_length=2000)
     classification: Literal["suspected_gap", "missing_evidence"]
+    basis: Literal["law", "contractual", "internal_policy", "recommended"] = "law"
     evidence_id: str | None = None
     excerpt: str = Field(default="", max_length=2000)
     source_ids: list[str] = Field(default_factory=list, max_length=10)
@@ -85,7 +89,7 @@ class Action(Contract):
 
 class ChecklistItem(Contract):
     title: str = Field(min_length=1, max_length=300)
-    category: Literal["legal", "contractual", "recommended"]
+    category: Literal["legal", "contractual", "internal_policy", "recommended"]
     purpose: str = Field(min_length=1, max_length=1500)
     owner: str = Field(min_length=1, max_length=300)
     acceptance_criteria: str = Field(min_length=1, max_length=1500)

@@ -34,6 +34,14 @@ def build_default_case_types(
         keywords=["software compliance", "regulatory assessment", "softvér", "GDPR", "IVDR"],
         prompt_text=DEFAULT_PROMPT, template_keys=[], is_enabled=True,
     ))
+    from app.software_assessment.organizational_it import CASE_TYPE_KEY as IT_CASE_TYPE_KEY, PROMPT as IT_PROMPT
+    items.append(CaseTypeCreateRequest(
+        case_type_key=IT_CASE_TYPE_KEY, jurisdiction="SK", language="sk",
+        name="Právna analýza pre IT",
+        description="SK + EU: organizational IT, data warehouses, entity-specific processing purposes, AI and internal compliance; human review required.",
+        keywords=["právna analýza pre IT", "IT compliance", "data warehouse", "dátový sklad", "organizational IT", "interné politiky"],
+        prompt_text=IT_PROMPT, template_keys=[], is_enabled=True,
+    ))
     return items
 
 

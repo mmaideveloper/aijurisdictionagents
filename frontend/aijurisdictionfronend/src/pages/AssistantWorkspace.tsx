@@ -1424,6 +1424,7 @@ const AssistantWorkspace: React.FC = () => {
           </section>
 
           <SoftwareAssessment key={`software-${activeCase?.id ?? "none"}`} selectedModelProfileId={selectedModelProfileId || undefined} />
+          <SoftwareAssessment key={`it-${activeCase?.id ?? "none"}`} organizationalIT selectedModelProfileId={selectedModelProfileId || undefined} />
           <AssistantThread
             key={threadKey}
             selectedModelProfileId={selectedModelProfileId || undefined}

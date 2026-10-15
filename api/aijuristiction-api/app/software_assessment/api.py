@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.llm.base import private_model_io
-from aijurisdictionagents.llm.routing import ModelRouteUnavailable, get_routed_llm_client
+from aijurisdictionagents.llm.routing import ModelRouteUnavailable, RoutedLLMClient, get_routed_llm_client
 from aijurisdictionagents.schemas import Message
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -25,6 +25,7 @@ from app.software_assessment.models import (
     SupplierDecision,
 )
 from app.software_assessment.workflow import DEFAULT_PROMPT, AssessmentValidationError, intake_questions, recommended_document_titles, run_assessment
+from app.software_assessment.organizational_it import CASE_TYPE_KEY as IT_CASE_TYPE_KEY, PROMPT as IT_PROMPT
 
 router = APIRouter(prefix="/v1/cases/{case_id}/software-assessments", tags=["software-assessment"],
                    dependencies=[Depends(require_api_key), Depends(require_review_user)])
@@ -55,16 +56,24 @@ def list_assessments(case_id: str, user_id: str,
                      store: ApiDatabaseStore = Depends(get_store)) -> dict[str, Any]:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     return {"items": [{key: item[key] for key in ("assessment_id", "revision", "created_at", "warning")}
-                      for item in store.list_software_assessments(case_id=case_id) if item.get("kind") != "software_chat"]}
+                      for item in store.list_software_assessments(case_id=case_id) if item.get("kind") not in {"software_chat", "organizational_it", "organizational_it_chat"}]}
 
 
 @router.post("", status_code=201)
 def create_assessment(case_id: str, user_id: str, request: AssessmentRequest,
                       store: ApiDatabaseStore = Depends(get_store)) -> dict[str, Any]:
+    return _create_assessment(case_id, user_id, request, store)
+
+
+def _create_assessment(case_id: str, user_id: str, request: AssessmentRequest,
+                       store: ApiDatabaseStore, route_sink: list[RoutedLLMClient] | None = None) -> dict[str, Any]:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
-    assessment_id = str(uuid5(NAMESPACE_URL, f"software-assessment/{case_id}/{request.request_id}"))
-    fingerprint = hashlib.sha256(request.model_dump_json().encode()).hexdigest()
+    is_it = request.facts.it_context is not None
+    namespace = "organizational-it" if is_it else "software-assessment"
+    assessment_id = str(uuid5(NAMESPACE_URL, f"{namespace}/{case_id}/{request.request_id}"))
+    serialized_request = request.model_dump_json() if is_it else request.model_dump_json(exclude={"facts": {"it_context"}})
+    fingerprint = hashlib.sha256(serialized_request.encode()).hexdigest()
     existing = store.get_software_assessment(case_id=case_id, assessment_id=assessment_id)
     if existing:
         if existing["request_hash"] != fingerprint:
@@ -78,10 +87,10 @@ def create_assessment(case_id: str, user_id: str, request: AssessmentRequest,
         except (ValueError, OSError) as exc:
             raise HTTPException(422, "Evidence is unreadable or exceeds assessment limits. Check original files.") from exc
         try:
-            case_type = get_document_template_store().get_case_type(case_type_key=CASE_TYPE_KEY, jurisdiction="SK")
+            case_type = get_document_template_store().get_case_type(case_type_key=IT_CASE_TYPE_KEY if is_it else CASE_TYPE_KEY, jurisdiction="SK")
             if not case_type.is_enabled or case_type.is_deleted:
                 raise HTTPException(409, "Assessment case type is disabled.")
-            prompt = case_type.prompt.prompt_text if case_type.prompt else DEFAULT_PROMPT
+            prompt = case_type.prompt.prompt_text if case_type.prompt else IT_PROMPT if is_it else DEFAULT_PROMPT
             route = None
             selected_fallback = ""
             if not intake_questions(request.facts):
@@ -100,6 +109,8 @@ def create_assessment(case_id: str, user_id: str, request: AssessmentRequest,
                 if route.route.provider and route.route.provider.is_external and not request.external_acknowledged:
                     raise HTTPException(403, "Acknowledge external processing before assessing confidential documents.")
             result = run_assessment(request.facts, evidence, route.client if route else None, prompt)
+            if route_sink is not None and route and result["model_called"]:
+                route_sink.append(route)
         except ModelRouteUnavailable as exc:
             raise HTTPException(exc.status_code, "Configured assessment model unavailable or processing policy blocked. No mock fallback.") from exc
         except HTTPException:
@@ -115,6 +126,9 @@ def create_assessment(case_id: str, user_id: str, request: AssessmentRequest,
                    fallback_reason=selected_fallback or (route.fallback_reason if route else ""), drafts=[], decisions=[],
                    case_prompt_id=case_type.prompt.case_prompt_id if case_type.prompt else "default",
                    case_prompt_updated_at=str(case_type.prompt.updated_at) if case_type.prompt else "")
+    if is_it:
+        payload.update(kind="organizational_it", case_type_key=IT_CASE_TYPE_KEY,
+                       assessment_scope=["SK", "EU"], assessment_date=now()[:10])
     try:
         return cast(dict[str, Any], store.save_software_assessment(case_id=case_id, assessment_id=assessment_id,
             payload=payload, document_ids=[str(item) for item in request.document_ids]))
@@ -181,6 +195,8 @@ def create_draft(case_id: str, assessment_id: str, user_id: str, request: DraftR
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     value = load(store, case_id, assessment_id)
+    if value.get("kind") == "organizational_it":
+        raise HTTPException(409, "Organizational IT assessments recommend documents only.")
     if request.document_title not in value["output"]["recommended_documents"]:
         raise HTTPException(422, "Select a recommended document explicitly.")
     if len(value["drafts"]) >= 30:
@@ -223,6 +239,8 @@ def edit_draft(case_id: str, assessment_id: str, draft_index: int, user_id: str,
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     _ensure_case_write_access(case_id=case_id, user_id=user_id, store=store)
     value = load(store, case_id, assessment_id)
+    if value.get("kind") == "organizational_it":
+        raise HTTPException(409, "Organizational IT assessments recommend documents only.")
     if not 0 <= draft_index < len(value["drafts"]):
         raise HTTPException(404, "Draft not found.")
     draft = value["drafts"][draft_index]
@@ -266,6 +284,8 @@ def export_assessment(case_id: str, assessment_id: str, user_id: str, revision: 
                        store: ApiDatabaseStore = Depends(get_store)) -> Response:
     _ensure_case_access(case_id=case_id, user_id=user_id, store=store)
     value = load(store, case_id, assessment_id)
+    if value.get("kind") == "organizational_it":
+        raise HTTPException(409, "Organizational IT PDF export is outside this release.")
     if revision != value["revision"]:
         raise HTTPException(409, "Assessment changed. Reload before exporting.")
     from app.chat.api import _build_professional_document_pdf

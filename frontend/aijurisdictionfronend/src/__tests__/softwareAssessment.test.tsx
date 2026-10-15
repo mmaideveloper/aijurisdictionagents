@@ -11,6 +11,25 @@ vi.mock("../api/chatClient", () => ({ chatApiRuntimeConfig: () => ({ baseUrl: "h
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("Software assessment", () => {
+  it("uses the distinct IT contract, preserves country and only recommends documentation", async () => {
+    const result = { assessment_id: "it1", revision: 1, warning: "Review required", provider: "not_called", model: "not_called", coverage: [], documents: [], sources: [], drafts: [],
+      output: { summary: "Jurisdikcia mimo rozsahu SK + EU: CZ", questions: ["Czech national-law review required"], actions: [], applicability: [], supplier_checklist: [], verification_plan: [], recommended_documents: ["Purpose map"], architecture_recommendations: [], responsibilities: [], release_blockers: [] } };
+    const fetch = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => new Response(JSON.stringify(init.method === "POST" ? result : { items: [] })));
+    vi.stubGlobal("fetch", fetch);
+    render(<SoftwareAssessment organizationalIT />);
+    const details = document.querySelector("details")!;
+    details.open = true; fireEvent(details, new Event("toggle"));
+    fireEvent.change(await screen.findByLabelText("description"), { target: { value: "Synthetic Czech ZdravieHospital warehouse" } });
+    fireEvent.change(screen.getByLabelText(/Krajiny/), { target: { value: "CZ" } });
+    fireEvent.click(screen.getByText("Posúdiť / doplniť právnu analýzu IT"));
+    await screen.findByText("Jurisdikcia mimo rozsahu SK + EU: CZ");
+    const call = fetch.mock.calls.find(item => item[1]?.method === "POST")!;
+    expect(call[0]).toContain("/it-assessments");
+    expect(JSON.parse(call[1].body).facts.it_context.countries).toEqual(["CZ"]);
+    expect(screen.getByText("Purpose map")).toBeTruthy();
+    expect(screen.queryByText("Draft Purpose map")).toBeNull();
+    expect(screen.queryByText("Download assessment and drafts PDF")).toBeNull();
+  });
   it("does not add hidden upload controls to the normal chat flow", () => {
     render(<SoftwareAssessment />);
     expect(document.querySelector('input[type="file"]')).toBeNull();

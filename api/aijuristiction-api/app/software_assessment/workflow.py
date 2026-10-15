@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import date
 from typing import Any, TypedDict
@@ -13,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.chat.mcp_law_context import _call_mcp_tool, _law_text_payloads, _tool_results
 from app.software_assessment.models import (
-    AssessmentOutput, Evidence, LegalSource, SoftwareFacts,
+    AssessmentOutput, ChecklistItem, Evidence, LegalSource, SoftwareFacts,
 )
 
 DEFAULT_PROMPT = """Assess software for Slovakia and the EU. Ask only questions that change applicability or required evidence.
@@ -58,6 +59,11 @@ class AssessmentValidationError(ValueError):
 
 
 def intake_questions(facts: SoftwareFacts) -> list[str]:
+    if facts.it_context is not None:
+        from app.software_assessment.organizational_it import intake, jurisdiction_blockers
+        return jurisdiction_blockers(facts.it_context) or intake(
+            facts.it_context, uses_ai=facts.uses_ai, personal_data=facts.personal_data,
+            health_data=facts.health_data)
     return [question for key, question in QUESTIONS.items()
             if getattr(facts, key) is None or getattr(facts, key) == ""]
 
@@ -65,7 +71,14 @@ def intake_questions(facts: SoftwareFacts) -> list[str]:
 def retrieve_sources(facts: SoftwareFacts) -> tuple[list[LegalSource], list[str]]:
     # Search only public regulatory topics, never the description or uploaded facts.
     queries = ["GDPR", "AI Act", "softvér"]
-    if facts.medical_purpose is not False or facts.specimen_analysis is not False:
+    if facts.it_context is not None:
+        queries = ["GDPR", "ochrana osobných údajov", "kybernetická bezpečnosť"]
+        if facts.uses_ai is not False:
+            queries.append("AI Act")
+        if facts.health_data:
+            queries += ["zdravotná starostlivosť", "zdravotná dokumentácia"]
+    if ((facts.it_context is None and (facts.medical_purpose is not False or facts.specimen_analysis is not False))
+            or facts.medical_purpose is True or facts.specimen_analysis is True):
         queries += ["zdravotnícke pomôcky", "in vitro diagnostika"]
     sources: list[LegalSource] = []
     try:
@@ -113,10 +126,14 @@ def retrieve_sources(facts: SoftwareFacts) -> tuple[list[LegalSource], list[str]
                 break
     except Exception:
         return [], ["Legal retrieval unavailable. No grounded legal assessment was completed."]
-    return sources, ["Coverage is limited to retrieved provisions; current SK/EU validity and applicability require expert review."]
+    coverage = ["Coverage is limited to retrieved provisions; current SK/EU validity and applicability require expert review."]
+    if any("not actual legislation" in source.title.lower() for source in sources):
+        coverage.append("Syntetické právne zdroje: tento test nepreukazuje vecnú právnu správnosť posúdenia.")
+    return sources, coverage
 
 
-def validate_output(output: AssessmentOutput, evidence: list[Evidence], sources: list[LegalSource]) -> None:
+def validate_output(output: AssessmentOutput, evidence: list[Evidence], sources: list[LegalSource],
+                    *, require_exact_provisions: bool = False) -> None:
     evidence_map = {item.evidence_id: item for item in evidence}
     source_map = {item.source_id: item for item in sources}
     ids = [item.action_id for item in output.actions]
@@ -125,6 +142,16 @@ def validate_output(output: AssessmentOutput, evidence: list[Evidence], sources:
     for source_ids in [item.source_ids for item in output.actions] + [item.source_ids for item in output.applicability] + [item.source_ids for item in output.supplier_checklist] + [item.source_ids for item in output.verification_plan]:
         if any(source_id not in source_map for source_id in source_ids):
             raise AssessmentValidationError("Unknown legal source.")
+    if require_exact_provisions:
+        pattern = r"(?:Articles?|Člán(?:ok|ku|ky|kov)|čl\.|§)\s*(\d+[a-z]?)\b"
+        claims = [(item.finding + " " + item.action, item.source_ids) for item in output.actions if item.basis == "law"]
+        claims += [(item.reason, item.source_ids) for item in output.applicability]
+        claims += [(item.purpose, item.source_ids) for item in output.supplier_checklist if item.category == "legal"]
+        for text, source_ids in claims:
+            mentioned = set(re.findall(pattern, text, flags=re.I))
+            retrieved = {number for source_id in source_ids for number in re.findall(pattern, source_map[source_id].provision, flags=re.I)}
+            if source_ids and not mentioned <= retrieved:
+                raise AssessmentValidationError("Referenced legal provision was not retrieved.")
     for action in output.actions:
         if action.status != "open":
             raise AssessmentValidationError("Model cannot verify an action.")
@@ -136,7 +163,7 @@ def validate_output(output: AssessmentOutput, evidence: list[Evidence], sources:
             raise AssessmentValidationError("Excerpt has no document location.")
         if action.classification == "suspected_gap" and not action.evidence_id:
             raise AssessmentValidationError("A suspected document gap needs a supporting document excerpt.")
-        if action.classification == "suspected_gap" and not action.source_ids:
+        if action.classification == "suspected_gap" and action.basis == "law" and not action.source_ids:
             raise AssessmentValidationError("A legal gap needs retrieved legal evidence.")
     for item in output.supplier_checklist:
         if item.status != "missing" or (item.category == "legal" and not item.source_ids):
@@ -149,7 +176,8 @@ def validate_output(output: AssessmentOutput, evidence: list[Evidence], sources:
             raise AssessmentValidationError("Verification refers to an unknown action.")
 
 
-def retain_grounded_output(output: AssessmentOutput, evidence: list[Evidence], sources: list[LegalSource]) -> AssessmentOutput:
+def retain_grounded_output(output: AssessmentOutput, evidence: list[Evidence], sources: list[LegalSource],
+                           *, require_exact_provisions: bool = False) -> AssessmentOutput:
     """Keep independently grounded items, with an explicit release-blocking gap.
 
     Never fix a citation by substituting an ID, changing a quote, or relabelling
@@ -164,32 +192,32 @@ def retain_grounded_output(output: AssessmentOutput, evidence: list[Evidence], s
         try:
             if any(item.action_id == action.action_id for item in retained.actions):
                 raise AssessmentValidationError("Duplicate action identifiers.")
-            validate_output(AssessmentOutput(summary="", actions=[action]), evidence, sources)
+            validate_output(AssessmentOutput(summary="", actions=[action]), evidence, sources, require_exact_provisions=require_exact_provisions)
             retained.actions.append(action)
         except AssessmentValidationError:
             rejected += 1
     for applicability in output.applicability:
         try:
-            validate_output(AssessmentOutput(summary="", applicability=[applicability]), evidence, sources)
+            validate_output(AssessmentOutput(summary="", applicability=[applicability]), evidence, sources, require_exact_provisions=require_exact_provisions)
             retained.applicability.append(applicability)
         except AssessmentValidationError:
             rejected += 1
     for item in output.supplier_checklist:
         try:
-            validate_output(AssessmentOutput(summary="", supplier_checklist=[item]), evidence, sources)
+            validate_output(AssessmentOutput(summary="", supplier_checklist=[item]), evidence, sources, require_exact_provisions=require_exact_provisions)
             retained.supplier_checklist.append(item)
         except AssessmentValidationError:
             rejected += 1
     for verification in output.verification_plan:
         try:
             validate_output(AssessmentOutput(summary="", actions=retained.actions,
-                verification_plan=[verification]), evidence, sources)
+                verification_plan=[verification]), evidence, sources, require_exact_provisions=require_exact_provisions)
             retained.verification_plan.append(verification)
         except AssessmentValidationError:
             rejected += 1
     retained.release_blockers = [*retained.release_blockers[:28],
         f"{rejected} proposed items failed evidence validation and were omitted. Obtain expert review before release."]
-    validate_output(retained, evidence, sources)
+    validate_output(retained, evidence, sources, require_exact_provisions=require_exact_provisions)
     return retained
 
 
@@ -217,10 +245,16 @@ class AssessmentState(TypedDict, total=False):
 
 def run_assessment(facts: SoftwareFacts, evidence: list[Evidence], client: Any,
                    prompt: str) -> dict[str, Any]:
+    base_prompt = DEFAULT_PROMPT
+    if facts.it_context is not None:
+        from app.software_assessment.organizational_it import PROMPT
+        base_prompt = PROMPT
     def intake(state: AssessmentState) -> dict[str, Any]:
         return {"questions": intake_questions(state["facts"])}
 
     def retrieve(state: AssessmentState) -> dict[str, Any]:
+        if facts.it_context is not None and state["questions"]:
+            return {"sources": [], "coverage": ["Doplňte údaje a overte jurisdikciu pred právnym posúdením."]}
         sources, coverage = retrieve_sources(state["facts"])
         return {"sources": sources, "coverage": coverage}
 
@@ -235,8 +269,12 @@ def run_assessment(facts: SoftwareFacts, evidence: list[Evidence], client: Any,
         for definition in ("Action", "Applicability", "ChecklistItem", "Verification"):
             schema["$defs"][definition]["properties"]["source_ids"]["items"]["enum"] = source_ids
         schema["$defs"]["Action"]["properties"]["evidence_id"]["enum"] = [item.evidence_id for item in evidence] + [None]
+        if facts.it_context is not None and not evidence:
+            action_properties = schema["$defs"]["Action"]["properties"]
+            action_properties["classification"]["enum"] = ["missing_evidence"]
+            action_properties["excerpt"]["const"] = ""
         system = (
-            DEFAULT_PROMPT + "\nReviewed case prompt:\n" + prompt +
+            base_prompt + "\nReviewed case prompt:\n" + prompt +
             "\nOnly dictionary keys in evidence and legal_sources are eligible reference IDs. "
             "Use those exact keys in evidence_id and source_ids. "
             "\nReturn only JSON conforming to: " + json.dumps(schema)
@@ -256,21 +294,33 @@ def run_assessment(facts: SoftwareFacts, evidence: list[Evidence], client: Any,
                 raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             try:
                 output = AssessmentOutput.model_validate_json(raw)
-                validate_output(output, evidence, state["sources"])
+                validate_output(output, evidence, state["sources"], require_exact_provisions=facts.it_context is not None)
                 return {"model_called": True, "output": output}
             except ValueError as invalid:
                 if attempt == 1:
                     if isinstance(invalid, AssessmentValidationError):
-                        return {"model_called": True, "output": retain_grounded_output(output, evidence, state["sources"])}
+                        return {"model_called": True, "output": retain_grounded_output(output, evidence, state["sources"], require_exact_provisions=facts.it_context is not None)}
                     raise
                 reason = invalid.code if isinstance(invalid, AssessmentValidationError) else "structured_schema_mismatch"
+                logging.getLogger(__name__).info("assessment_output_rejected code=%s", reason)
                 # Retry once with a static failure code and original evidence. Do
                 # not turn a hallucinated citation into a valid one by changing IDs.
                 system += "\nPrior result rejected by validation: " + reason + ". Rebuild from original evidence and satisfy every constraint."
         raise AssessmentValidationError("No validated assessment output.")
 
     def validate(state: AssessmentState) -> dict[str, Any]:
-        validate_output(state["output"], evidence, state["sources"])
+        validate_output(state["output"], evidence, state["sources"], require_exact_provisions=facts.it_context is not None)
+        if facts.it_context is not None:
+            if state["model_called"] and not state["output"].supplier_checklist:
+                from app.software_assessment.organizational_it import document_recommendations
+                state["output"].supplier_checklist = [ChecklistItem.model_validate(item) for item in document_recommendations(
+                    personal_data=facts.personal_data, health_data=facts.health_data, uses_ai=facts.uses_ai)]
+            state["output"].recommended_documents = [item.title for item in state["output"].supplier_checklist]
+            state["output"].release_blockers = list(dict.fromkeys([
+                *state["output"].release_blockers[:27],
+                "Právnik/DPO musí overiť účely, roly samostatných subjektov, právne základy a aktuálnosť zdrojov pred použitím výsledku.",
+                "Všeobecné budúce využitie neoprávňuje združovanie údajov; každý účel a subjekt vyžaduje samostatné posúdenie.",
+            ]))
         return {}
 
     graph = StateGraph(AssessmentState)
@@ -297,7 +347,7 @@ def run_assessment(facts: SoftwareFacts, evidence: list[Evidence], client: Any,
     return {
         "output": output_payload,
         "sources": [item.model_dump(exclude={"text"}) for item in result["sources"]],
-        "coverage": result["coverage"], "graph": "software_regulatory_assessment@1",
-        "prompt_hash": hashlib.sha256((DEFAULT_PROMPT + prompt).encode()).hexdigest(),
+        "coverage": result["coverage"], "graph": "organizational_it_assessment@1" if facts.it_context is not None else "software_regulatory_assessment@1",
+        "prompt_hash": hashlib.sha256((base_prompt + prompt).encode()).hexdigest(),
         "model_called": result["model_called"],
     }

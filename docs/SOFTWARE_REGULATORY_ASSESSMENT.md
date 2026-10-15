@@ -1,5 +1,8 @@
 # Software regulatory assessment (issue #896)
 
+Organizational IT projects use the distinct [Právna analýza pre IT](IT_LEGAL_ANALYSIS.md)
+case type (#909), sharing evidence/review controls with separate intake and history.
+
 The implementation provides an explicit case-private assessment workspace and a
 dedicated LangGraph runtime. It does not certify software or establish complete
 legal-source coverage. Real-provider acceptance evidence is recorded separately.

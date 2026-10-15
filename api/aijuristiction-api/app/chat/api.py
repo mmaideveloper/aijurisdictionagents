@@ -1759,6 +1759,25 @@ def _run_direct_lawyer_turn_impl(
     )
     _warn_if_flow_pack_missing(session_id=session_id, session=session, request_text=content)
 
+    if session.case_id and session.user_id:
+        from app.software_assessment.it_conversation import eligible as it_eligible, respond as it_respond
+        it_store = _get_store()
+        if it_eligible(it_store, session.case_id, content):
+            try:
+                it_reply, it_route = it_respond(it_store, case_id=session.case_id,
+                    user_id=str(session.user_id), content=content,
+                    selected_model_profile_id=session.selected_model_profile_id)
+            except ModelRouteUnavailable as exc:
+                raise HTTPException(exc.status_code, "IT assessment model unavailable. No mock fallback.") from exc
+            except ValueError as exc:
+                raise HTTPException(422, "IT intake failed validation or reached its limit.") from exc
+            it_message = _persist_direct_assistant_message(session_id=session_id, session=session,
+                content=it_reply, agent_name="OrganizationalITAdvice", allow_document_generation=False)
+            _record_case_ai_model_audit(session=session, question=persisted_user, answer=it_message,
+                task_type="software_regulatory_assessment", source="chat.organizational_it",
+                model_used=it_route is not None, route=it_route)
+            return persisted_user, it_message, it_message.content, [], it_route
+
     # Code-registered preliminary software advice uses the constrained primary
     # graph router and its own consent gate before resolving an external model.
     if session.case_id and session.user_id and session.country == "SK":
@@ -2557,8 +2576,9 @@ def create_message(payload: CreateMessageRequest) -> Message:
 
 def _authorize_software_turn(session: Session, content: str, request: Request) -> None:
     from app.software_assessment.conversation import eligible
+    from app.software_assessment.it_conversation import eligible as it_eligible
     from app.document_review import require_review_user
-    if session.case_id and eligible(_get_store(), session.case_id, content):
+    if session.case_id and (eligible(_get_store(), session.case_id, content) or it_eligible(_get_store(), session.case_id, content)):
         require_review_user(str(session.user_id or ""), _get_store(),
             request.headers.get("x-jurisdigta-device-id", ""),
             request.headers.get("x-jurisdigta-device-token", ""))

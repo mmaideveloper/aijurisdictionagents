@@ -1,5 +1,8 @@
 # aijuristiction-api
 
+[Organizational IT legal analysis](../../docs/IT_LEGAL_ANALYSIS.md) exposes the
+authenticated `/v1/cases/{case_id}/it-assessments` recommendation-only contract.
+
 ## Testing
 
 Document upload, authenticated legal review and revised DOCX/PDF contracts:
