@@ -1,3 +1,20 @@
+# Synthetic model acceptance consent (#914)
+
+Owner: the release operator using the existing trusted self-hosted runner and secret
+`JURISDIGTA_E2E_TEST_USER_PASSWORD`. No new installation or secret is needed.
+The release workflow explicitly invokes `scripts/provision_e2e_users.py` with
+`--grant-synthetic-model-consent` after migrations, for the approved free/paid synthetic
+accounts only. Without the flag, provisioning leaves consent unchanged. The helper
+checks the persisted account email against the hardcoded allowlist, records the current
+notice version, and skips duplicate current grants. It does not lift restrictions,
+grant other scopes, or change customer consent. This fixture authorization is limited
+to synthetic content; real users must decide through Privacy controls.
+
+Validate with `python -m pytest tests/test_synthetic_model_consent.py` and the required
+real-model release scenario. If withdrawing this test authorization, revoke external-model
+consent for both synthetic accounts and remove the workflow flag together. The model gate
+will then fail until explicitly authorized again; never bypass the privacy guard.
+
 # Laws Tests public reader follow-up (#840)
 
 Owner: JurisDigta platform operator (`jurisdigta-admin` on `jurisdigta-server`), plus the

@@ -2,6 +2,7 @@
 # Streaming STT routing example: python examples/streaming_stt_demo.py
 # Real synthetic audio acceptance: python scripts/run_speech_e2e.py
 # Governed model-turn contracts: python examples/governed_turn_context_demo.py
+# Synthetic consent provisioning (no writes): python scripts/provision_e2e_users.py --help
 from pathlib import Path
 import sys
 import tempfile
