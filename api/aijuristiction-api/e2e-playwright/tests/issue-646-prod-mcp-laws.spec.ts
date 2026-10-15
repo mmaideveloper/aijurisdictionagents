@@ -85,6 +85,8 @@ const frontendBaseUrl = (process.env.FRONTEND_BASE_URL ?? 'https://web.jurisdigt
 const mcpBaseUrl = (process.env.MCP_PUBLIC_BASE_URL ?? 'https://mcp.jurisdigta.eu').replace(/\/$/, '');
 const apiKey = process.env.API_KEY?.trim() || 'aijuris';
 const e2ePassword = process.env.JURISDIGTA_E2E_TEST_USER_PASSWORD?.trim() || '';
+const evidenceSecrets = new Set<string>(e2ePassword ? [e2ePassword] : []);
+if (apiKey !== 'aijuris') evidenceSecrets.add(apiKey);
 const expectedCommitSha = process.env.ISSUE_646_DEPLOYED_COMMIT_SHA?.trim() || '';
 const timeoutMs = Number(process.env.ISSUE_646_TIMEOUT_MS ?? 660_000);
 const authSessionKey = 'jurisdigta.web.auth.user.v1';
@@ -426,6 +428,10 @@ test('production remains stable when a synthetic case requests the latest five l
       retention: 'Delete this ignored evidence within 7 days.',
       result: 'passed',
     };
+  } catch (error) {
+    const message = sanitizeError(error);
+    manifest = { ...manifest, syntheticOnly: true, result: 'failed', error: message };
+    throw new Error(message);
   } finally {
     if (!screenshotName) {
       screenshotName = 'issue-635-prod-stability-failed.png';
@@ -485,8 +491,10 @@ async function authorizeMcp(
   expect(clientId).not.toBe('');
 
   const verifier = randomBytes(48).toString('base64url');
+  evidenceSecrets.add(verifier);
   const challenge = createHash('sha256').update(verifier, 'ascii').digest('base64url');
   const state = randomUUID();
+  evidenceSecrets.add(state);
   const resource = `${mcpBaseUrl}/MCP`;
   const loginResponse = await request.post(`${mcpBaseUrl}/oauth/authorize/login`, {
     form: {
@@ -511,6 +519,7 @@ async function authorizeMcp(
   const callback = new URL(location);
   expect(callback.searchParams.get('state')).toBe(state);
   const code = callback.searchParams.get('code') ?? '';
+  if (code) evidenceSecrets.add(code);
   expect(code).not.toBe('');
 
   const tokenResponse = await request.post(`${mcpBaseUrl}/oauth/token`, {
@@ -526,6 +535,7 @@ async function authorizeMcp(
   expect(tokenResponse.ok()).toBeTruthy();
   const token = (await tokenResponse.json()) as { access_token?: string };
   const accessToken = String(token.access_token ?? '');
+  if (accessToken) evidenceSecrets.add(accessToken);
   expect(accessToken).not.toBe('');
   return { accessToken, userId: jwtSubject(accessToken) };
 }
@@ -762,6 +772,7 @@ function syntheticBrowserAuth(userId: string, email: string): BrowserCredential 
       typeof credential.deviceAuthToken !== 'string' || !credential.deviceAuthToken.trim()) {
     throw new Error('The private browser credential does not match the approved synthetic subject');
   }
+  evidenceSecrets.add(credential.deviceAuthToken);
   return credential;
 }
 
@@ -829,9 +840,30 @@ function safePreview(value: string): string {
 }
 
 function sanitizeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  let message = error instanceof Error ? error.message : String(error);
+  for (const secret of evidenceSecrets) {
+    message = message.replaceAll(secret, '[REDACTED]').replaceAll(encodeURIComponent(secret), '[REDACTED]');
+  }
   return message
     .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer [REDACTED]')
-    .replace(/(?:password|access_token|refresh_token)\s*[=:]\s*[^\s,}]+/gi, '$1=[REDACTED]')
+    .replace(/((?:x-jurisdigta-device-token|deviceAuthToken|device_auth_token|password|access_token|refresh_token|code_verifier)["']?\s*[=:]\s*["']?)[^\s,}"']+/gi, '$1[REDACTED]')
     .slice(0, 2000);
 }
+
+test('evidence errors redact device and OAuth credentials', () => {
+  const secret = 'synthetic-secret-with-characters/+';
+  evidenceSecrets.add(secret);
+  try {
+    const sanitized = sanitizeError(new Error(
+      `private=${secret} encoded=${encodeURIComponent(secret)}\n` +
+      'x-jurisdigta-device-token: header-secret\n{"deviceAuthToken":"json-secret"}\n' +
+      'code_verifier=verifier-secret Authorization: Bearer oauth-secret',
+    ));
+    for (const value of [secret, encodeURIComponent(secret), 'header-secret', 'json-secret', 'verifier-secret', 'oauth-secret']) {
+      expect(sanitized).not.toContain(value);
+    }
+    expect(sanitized).toContain('[REDACTED]');
+  } finally {
+    evidenceSecrets.delete(secret);
+  }
+});

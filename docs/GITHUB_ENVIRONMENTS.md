@@ -14,6 +14,8 @@ the same path afterward. Never upload the fixture. The production EXIT trap revo
 only the newly created E2E devices, removes both file copies and closes the OAuth test
 window. Cleanup failures fail the job. Trace/video recording is disabled for this
 credential-bearing scenario; retain only sanitized manifests and screenshots for seven days.
+Error evidence also scrubs known device/OAuth credentials, PKCE values and credential
+headers before writing manifests or propagating a scenario failure to the reporter.
 The test checks authenticated privacy state before sending a model question and leaves
 the product authentication and consent requirements enforced.
 
