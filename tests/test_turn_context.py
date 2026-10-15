@@ -236,3 +236,42 @@ def test_even_opt_in_operational_logging_excludes_model_io(monkeypatch, caplog):
     assert "PRIVATE_" not in caplog.text
     assert "message_count=1" in caplog.text
     assert "character_count=23" in caplog.text
+
+
+def test_routed_typed_turn_rechecks_consent_revocation_and_restriction(tmp_path):
+    from aijurisdictionagents.api_db import ApiDatabaseStore
+    from aijurisdictionagents.llm.base import should_log_llm_io
+    from aijurisdictionagents.privacy import (
+        CONSENT_VERSION, PrivacyCheckedClient, PrivacyControls, PrivacyDenied,
+        require_external_processing,
+    )
+
+    store = ApiDatabaseStore(db_path=tmp_path / "sqlite/privacy.db", blob_root=tmp_path / "files")
+    store.initialize()
+    user = store.create_user(email="typed-turn@example.test", password="synthetic-only")
+    controls = PrivacyControls(store)
+    calls = []
+
+    class SyntheticClient:
+        def complete_turn(self, agent_name, context):
+            assert not should_log_llm_io()
+            require_external_processing("external_models")
+            calls.append(context)
+            return "synthetic answer"
+
+    client = PrivacyCheckedClient(SyntheticClient(), controls, user.user_id, external=True)
+    context = AgentTurnContext(governance=Governance(external_processing="upstream_authorized"))
+    with pytest.raises(PrivacyDenied, match="consent_required:external_models"):
+        client.complete_turn("synthetic", context)
+    assert calls == []
+    controls.consent(user.user_id, "external_models", True, version=CONSENT_VERSION)
+    assert client.complete_turn("synthetic", context) == "synthetic answer"
+    assert calls == [context]
+    controls.consent(user.user_id, "external_models", False, version=CONSENT_VERSION)
+    with pytest.raises(PrivacyDenied, match="consent_required:external_models"):
+        client.complete_turn("synthetic", context)
+    controls.consent(user.user_id, "external_models", True, version=CONSENT_VERSION)
+    controls.restrict(user.user_id, True)
+    with pytest.raises(PrivacyDenied, match="processing_restricted"):
+        client.complete_turn("synthetic", context)
+    assert calls == [context]

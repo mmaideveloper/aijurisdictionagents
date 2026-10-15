@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import secrets
 from urllib.parse import quote
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
@@ -93,6 +93,7 @@ class CaseHistoryMessageResponse(BaseModel):
     created_at: str
     citations: list["CaseCitationResponse"] = Field(default_factory=list)
     presentation: dict[str, Any] = Field(default_factory=dict)
+    ai_transparency: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseCitationResponse(BaseModel):
@@ -128,6 +129,7 @@ class CaseDocumentResponse(BaseModel):
     processing_error: str | None = None
     processed_at: str | None = None
     created_at: str
+    ai_transparency: dict[str, Any] = Field(default_factory=dict)
 
 
 class CaseHistoryResponse(BaseModel):
@@ -1414,6 +1416,7 @@ def _to_case_history_message_response(
         created_at=communication.created_at,
         citations=citations or [],
         presentation=getattr(communication, "presentation", {}),
+        ai_transparency=_communication_transparency(store, communication) if role == "assistant" else {},
     )
 
 
@@ -1459,7 +1462,23 @@ def _to_case_document_response(
         processing_error=document.processing_error,
         processed_at=document.processed_at,
         created_at=document.created_at,
+        ai_transparency=_document_transparency(document, store) if document.kind == "generated_document" else {},
     )
+
+
+def _historical_transparency(created_at: str) -> dict[str, Any]:
+    from aijurisdictionagents.privacy import transparency
+    return cast(dict[str, Any], transparency(generated_at=created_at))
+
+
+def _communication_transparency(store: ApiDatabaseStore, communication: CaseCommunication) -> dict[str, Any]:
+    from aijurisdictionagents.privacy import PrivacyControls
+    return cast(dict[str, Any], PrivacyControls(store).artifact(communication.communication_id, communication.created_at))
+
+
+def _document_transparency(document: CaseDocument, store: ApiDatabaseStore | None) -> dict[str, Any]:
+    from aijurisdictionagents.privacy import PrivacyControls
+    return cast(dict[str, Any], PrivacyControls(store).artifact(document.doc_id, document.created_at)) if store else _historical_transparency(document.created_at)
 
 
 def _to_case_ai_model_audit_entry_response(

@@ -11,7 +11,18 @@ legacy evidence, immutable human-review governance, deterministic aggregate budg
 content-free operational logging and an explicit public metadata allowlist. Contracts
 do not grant consent, access or authority, and no persistent owner/expiry is guessed.
 Existing authorized debug-bundle access and retention still apply separately.
-This implementation does not close #389's ledger, DSAR or retention enforcement gaps.
+Consent, DSAR and retention enforcement remain with the controls implemented by #389
+and its documented release requirements below.
+
+## Issue #389 implementation update
+
+Central versioned consent/revocation, authenticated subject export/restriction requests,
+operator-reviewed erasure, configurable fail-closed retention, assistant/document transparency,
+and append-only metadata-only events are described in [PRIVACY_CONTROLS_389.md](PRIVACY_CONTROLS_389.md).
+The original gap analysis below is historical. This change does not certify full compliance:
+owner-approved category periods, external-surface DSAR completion, backup suppression,
+production role grants and real local E2E evidence remain release requirements.
+See [DATA_RETENTION_POLICY.md](DATA_RETENTION_POLICY.md).
 
 ## What already exists (good baseline)
 

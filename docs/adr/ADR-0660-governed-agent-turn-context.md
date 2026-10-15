@@ -46,12 +46,15 @@ context defaults to external processing blocked. `prepare_turn` itself performs 
 external call, and rejects restricted processing. Typed Azure Foundry/OpenAI calls and
 non-loopback Ollama calls reject external processing unless marked upstream authorized.
 The upstream caller must still enforce valid/revoked consent, artifact access and expiry
-before constructing the context. Contracts do not grant tool or disclosure rights.
+before constructing the context. The routed `PrivacyCheckedClient` rechecks live
+restriction and revoked consent for both `complete` and `complete_turn`, retaining
+private model I/O and the authenticated privacy scope. Contracts do not grant tool
+or disclosure rights.
 
 All consequential outputs require human review in context governance. Approval and
 tool-result models describe state, never execute actions. Explicit artifact expiry
 and approval expiry must be timezone-aware; persistent expiry/deletion enforcement
-remains with existing storage policies and the work in #389. Public artifact/event
+remains with existing storage policies and the controls implemented in #389. Public artifact/event
 schemas contain only allowlisted metadata; they exclude hidden prompts, reasoning,
 private owner references, artifact bodies and tool arguments. Before constructing a
 public projection, the API must authorize the owner and source metadata. The only
@@ -63,7 +66,8 @@ Operational model logs contain counts, not raw requests/responses, even when opt
 I/O logging is enabled. Context auditing logs schema version, aggregate size and omitted
 categories only. Existing protected admin debug bundles remain subject to their access,
 redaction and retention controls; they are not operational logs or public contracts.
-This ADR does not close #389's consent ledger, DSAR or executable retention blockers.
+The controls implemented in #389 and their remaining release requirements are documented
+in [Privacy controls](../PRIVACY_CONTROLS_389.md); this contract change does not certify compliance.
 
 ## Budget and failure policy
 

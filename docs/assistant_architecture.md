@@ -10,7 +10,8 @@ artifact/tool/approval/citation/event schemas are documented in
 the server; existing public REST/SSE contracts remain compatible. Operational
 logging reports aggregate counts and omitted categories without context content.
 Run `python examples/governed_turn_context_demo.py` for the synthetic bounded-context
-example. Persistent consent, DSAR and retention obligations remain tracked in #389.
+example. Persistent consent, DSAR and retention enforcement remain with the controls
+implemented in #389; both legacy and typed calls recheck live privacy policy.
 
 The law citation contract, full-source authorization boundary and runnable example are
 documented in [Provision citations](ISSUE_746_PROVISION_CITATIONS.md). Law-level sidebar
