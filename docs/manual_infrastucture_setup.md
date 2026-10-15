@@ -1,3 +1,25 @@
+# CPU embedding runtime compatibility (#919)
+
+Owner: the release/platform operator. No new infrastructure, account or secret is
+required. Install root dependencies normally; do not independently upgrade Transformers
+inside production containers. The pinned production CPU set is PyTorch 2.7.1,
+sentence-transformers 6.1.0 and Transformers 5.19.0. Each API/worker Docker build now
+verifies the actual import offline, so an import-incompatible image fails before rollout.
+Linux x64 builds use the official PyTorch CPU wheel on the canonical host, checked
+against upstream SHA-256, avoiding the slow index-selected mirror observed during this
+release. Other architectures retain the CPU-index resolver. There is no new build
+argument, Environment setting or secret.
+Run `python examples/cpu_embedding_import_demo.py` for an offline installation check.
+This import check does not certify model weights or replace real local embedding tests.
+
+After rollout, require the continuous collector to remain running without an increasing
+restart count and confirm its real model loads from the approved local model directory.
+If a new collector cannot start, restore the previous verified image through the existing
+deployment rollback procedure while retaining the failed image for diagnostics. Never
+switch embedding providers or use a mock to conceal an import failure. The failed
+`c6f9105d` release exposed this regression; its previous collector image imported the
+verified set successfully and was restored while the fix was prepared.
+
 # Synthetic model acceptance consent (#914)
 
 Owner: the release operator using the existing trusted self-hosted runner and secret

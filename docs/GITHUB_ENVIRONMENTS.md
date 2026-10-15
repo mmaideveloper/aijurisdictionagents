@@ -1,3 +1,16 @@
+# CPU embedding image gate (#919)
+
+API, document processor and laws collector image builds must import the real
+`SentenceTransformer` class with `HF_HUB_OFFLINE=1` before succeeding. The verified
+CPU set is PyTorch 2.7.1, sentence-transformers 6.1.0 and Transformers 5.19.0.
+Linux x64/Python 3.13 image builds fetch the official CPU wheel from the canonical
+PyTorch host with its upstream SHA-256 hash; other architectures keep the existing
+CPU-index resolver. The x64 wheel bytes/version are unchanged by this mirror choice.
+Transformers 5.20.0 imports a PyTorch checkpoint module missing from that CPU build.
+Both `test` and `prod` use the same pinned root dependencies and fail-closed image
+import gate. No new Environment inputs or secrets are required. An upgrade requires
+successful image imports and real local embedding acceptance before production.
+
 # Synthetic release-account consent (#914)
 
 For `test`, run `python scripts/provision_e2e_users.py --help` to inspect the explicit
