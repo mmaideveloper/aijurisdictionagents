@@ -21,7 +21,7 @@ redraft may use the last permitted attempt. Repeated unchanged failures stop ear
 session expiry and the recursion backstop still apply. Unknown validator messages are not included
 in critique instructions. Audit events contain fixed categories/instructions, revision numbers,
 provider/model route and parent artifact identifiers; no extra draft bodies or hidden reasoning are
-copied into the event log. Case state/checkpoints retain the current draft under existing case
+copied into the event log. Case state and checkpoint history retain draft content under existing case
 access, retention and deletion controls. AI disclosure and human review remain mandatory.
 
 ## Supported persistence
@@ -84,22 +84,25 @@ and explicitly does not claim durable persistence or real-model UI E2E acceptanc
 Prepare the dedicated loopback databases and browser dependencies once, then run the real example:
 
 ```powershell
-.\scripts\import_e2e_model_credentials_from_server.ps1 -UseExistingPostgres -VerifyModel
+.\scripts\import_e2e_model_credentials_from_server.ps1 -UseExistingPostgres -VerifyModel -DatabaseUrl "postgresql://postgres:postgres@127.0.0.1:5432/aij_e2e_753_reflection_durable_resume"
 .\skills\start-postgres\scripts\start_postgres.ps1 -ProjectName laws-collector -DatabaseName laws_e2e_753_reflection
 npm --prefix frontend/aijurisdictionfronend ci --no-audit --no-fund
 npm --prefix api/aijuristiction-api/e2e-playwright ci --no-audit --no-fund
 .\conda\python.exe scripts/run_issue_753_e2e.py
 ```
 
-The credential import uses the task branch name to create `aij_e2e_753_reflection_durable_resume`.
+The credential import explicitly creates `aij_e2e_753_reflection_durable_resume`, regardless of branch name.
 The runner intentionally uses that synthetic API database and `laws_e2e_753_reflection` on the
 existing local PostgreSQL containers. It starts MCP on 8073, API on 8083 and frontend on 5173,
+with the authentication email outbox also stored in the dedicated API PostgreSQL database,
 fails if those ports are occupied, seeds a labeled synthetic law with the existing reference fixture,
 and verifies the source directly through MCP. It grants the current external-model and
 external-check account consent through the real profile UI; per-run optional checks are declined.
 Only the isolated authentication fixture uses `LOCAL_AUTH_ACCEPT_ANY_CODE=1`; it does
 not change the repository dotenv file, model route, database responses or application UI state.
-The real model is asked to include a placeholder in its first synthetic draft, then repair it after
+The local synthetic-account password is generated per run, passed only to child processes and
+the local account provisioner, and redacted from retained text artifacts.
+The real model is asked to include a synthetic bracketed first-draft marker, then remove it after
 critique. The test must observe an actual revision; a first-pass answer is not accepted as proof.
 
 The browser test is `api/aijuristiction-api/e2e-playwright/tests/issue-753-reflection.spec.ts`.

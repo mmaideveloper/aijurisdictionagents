@@ -71,10 +71,13 @@ test('a real draft is critiqued and revised visibly in the frontend', async ({ p
     const prepared = await request.post(`${api}/v1/case-workflows/runs`, { headers, data: {
       case_id: caseId, session_id: randomUUID(), user_id: fixture.userId, jurisdiction: 'SK', language: 'sk-SK',
       case_type_key: 'sk.civil.payment_confirmation', routing_confidence: 1,
-      request_text: 'Priprav potvrdenie o zaplatení pôžičky. Ide výlučne o syntetický test. '
-        + 'V prvom návrhu uveď doslovný zástupný text [amount] namiesto sumy. '
-        + 'Pri následnej kontrole kvality nahraď zástupný text overenou sumou. '
-        + 'Uveď aj URL dodaného právneho zdroja. Nevykonávaj voliteľné externé kontroly.',
+      request_text: 'Priprav iba tento krátky plain-text návrh potvrdenia o zaplatení, bez ďalších polí: '
+        + '"Synthetic A zaplatil Synthetic B sumu 100 EUR dňa 2026-10-15. '
+        + 'Účel: synthetic loan repayment. Návrh bol vytvorený pomocou AI a pred použitím vyžaduje ľudskú kontrolu. '
+        + 'Podpis príjemcu: __________". Ide výlučne o syntetický test. '
+        + 'Iba v prvom návrhu pridaj samostatný riadok s doslovnou značkou [PRVY_NAVRH]. '
+        + 'Táto značka označuje prvotný pracovný návrh; pri revízii ju odstráň. '
+        + 'Ostatné overené hodnoty použi doslovne. Nepridávaj ďalšie zástupné polia ani externé kontroly.',
       facts: { payer_identification: 'Synthetic A', recipient_identification: 'Synthetic B',
         payment_date: '2026-10-15', payment_purpose: 'synthetic loan repayment' },
     } });
@@ -95,6 +98,9 @@ test('a real draft is critiqued and revised visibly in the frontend', async ({ p
     const auditResponse = await request.get(`${api}/v1/case-workflows/runs/${workflowRunId}/events?user_id=${fixture.userId}`, { headers });
     expect(auditResponse.ok()).toBeTruthy();
     const observedEvents = (await auditResponse.json()).items;
+    if (run.status !== 'completed' && fixture.syntheticOnly === true) {
+      writeFileSync(join(fixture.evidence, 'failed-synthetic-draft.txt'), run.final_answer);
+    }
     writeFileSync(join(fixture.evidence, 'observed-run.json'), JSON.stringify({
       status: run.status, terminationReason: run.termination_reason, revisions: run.retry_count,
       reviews: run.review_decisions,
@@ -108,7 +114,8 @@ test('a real draft is critiqued and revised visibly in the frontend', async ({ p
     expect(run.retry_count).toBeLessThanOrEqual(run.max_revision_attempts);
     await expect(page.getByText(/počet revízií|revisions:/).last()).toBeVisible();
     await expect(page.locator('.assistant-message').last()).toContainText('100 EUR');
-    expect(run.final_answer).toContain('https://static.slov-lex.sk/static/SK/ZZ/1964/40/20240701.html');
+    expect(run.presentation.citations).toContain(fixture.sourceId);
+    await expect(page.locator('.assistant-presentation__citations').last()).toContainText(fixture.sourceId);
     const eventsResponse = await request.get(`${api}/v1/case-workflows/runs/${workflowRunId}/events?user_id=${fixture.userId}`, { headers });
     expect(eventsResponse.ok()).toBeTruthy();
     const events = (await eventsResponse.json()).items;

@@ -973,7 +973,11 @@ class CaseWorkflowRuntime:
         # validator's arbitrary explanation into audit events or revision prompts.
         instructions = {
             "empty_document_draft": "Create the requested draft using only verified facts and cited sources.",
-            "unresolved_placeholder": "Replace placeholders with verified facts; never invent missing information.",
+            "unresolved_placeholder": (
+                "Return a complete revised draft without square-bracket placeholders. "
+                "Use verified facts for required fields; never invent missing information or signatures. "
+                "Omit unfilled optional fields and leave signature areas as blank signing lines without brackets."
+            ),
             "verified_fact_missing_from_output": (
                 "Include every verified fact verbatim, with its original spelling, dates and units. "
                 "Do not translate or reformat verified values."

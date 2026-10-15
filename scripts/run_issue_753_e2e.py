@@ -43,8 +43,9 @@ def main() -> int:
         if value in {"", "unknown-variable"}:
             raise RuntimeError(f"Missing {source}; use the approved E2E credential import")
         environment[target] = value
-    if environment.get("JURISDIGTA_E2E_TEST_USER_PASSWORD", "") in {"", "unknown-variable"}:
-        raise RuntimeError("Missing JURISDIGTA_E2E_TEST_USER_PASSWORD")
+    # This password belongs only to the synthetic accounts in the forced local
+    # database. Do not reuse the authoritative profile's reusable test password.
+    environment["JURISDIGTA_E2E_TEST_USER_PASSWORD"] = secrets.token_urlsafe(32)
     run_id = "issue-753-" + uuid4().hex
     evidence = ROOT / "runs" / "e2e" / "issue-753" / run_id
     evidence.mkdir(parents=True, exist_ok=True)
@@ -52,6 +53,8 @@ def main() -> int:
     environment.update(
         DB_OPTION="postgres",
         DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5432/aij_e2e_753_reflection_durable_resume",
+        EMAIL_DB_OPTION="postgres",
+        EMAIL_DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5432/aij_e2e_753_reflection_durable_resume",
         LAWS_DB_BACKEND="postgres",
         LAWS_DB_CLOUD="postgresql://postgres:postgres@127.0.0.1:5433/laws_e2e_753_reflection",
         STORAGE_OPTION="local",
@@ -167,12 +170,14 @@ def main() -> int:
         if result.returncode:
             return result.returncode
         from pypdf import PdfReader
-        import fitz
+        import pymupdf as fitz
 
         pdf_path = evidence / "reflection.pdf"
         pdf = PdfReader(pdf_path)
         assert not pdf.is_encrypted and len(pdf.pages) > 0
-        assert "100 EUR" in "\n".join(page.extract_text() or "" for page in pdf.pages)
+        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+        assert "100 EUR" in text
+        assert "```" not in text
         with fitz.open(pdf_path) as document:
             document[0].get_pixmap(matrix=fitz.Matrix(1.5, 1.5)).save(
                 evidence / "reflection-page-1.png"
@@ -185,10 +190,6 @@ def main() -> int:
         print(f"real_e2e=passed manifest={result_path}", flush=True)
         return 0
     finally:
-        for prior in store.list_cases(user_id=user.user_id):
-            if prior.title.startswith("[issue-753-"):
-                store.soft_delete_case(case_id=prior.case_id, user_id=user.user_id)
-                workflow_store.delete_case_workflows(case_id=prior.case_id, user_id=user.user_id)
         for process in reversed(processes):
             if process.poll() is None:
                 process.terminate()
@@ -197,6 +198,16 @@ def main() -> int:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
+        cleanup_failed = False
+        try:
+            for prior in store.list_cases(user_id=user.user_id):
+                if prior.title.startswith("[issue-753-"):
+                    store.soft_delete_case(case_id=prior.case_id, user_id=user.user_id)
+                    workflow_store.delete_case_workflows(
+                        case_id=prior.case_id, user_id=user.user_id
+                    )
+        except Exception:
+            cleanup_failed = True
         # Browser failure snapshots can include form values. Never retain them
         # as plain text, even for synthetic accounts with a reusable password.
         for path in evidence.rglob("*"):
@@ -212,6 +223,8 @@ def main() -> int:
                 if secret:
                     content = content.replace(secret, "[REDACTED]")
             path.write_text(content, encoding="utf-8")
+        if cleanup_failed:
+            raise RuntimeError("Synthetic fixture cleanup failed; inspect the task-local databases")
 
 
 if __name__ == "__main__":

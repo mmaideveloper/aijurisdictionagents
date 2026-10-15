@@ -13,8 +13,6 @@ from uuid import uuid4
 from langgraph.checkpoint.postgres import PostgresSaver
 import pytest
 
-from app.case_workflows.service import CaseWorkflowApplicationService, WorkflowConfigurationError
-from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
 from aijurisdictionagents.orchestration.case_workflow import CaseWorkflowRuntime
 from test_case_workflow import _state, RevisingServices
 
@@ -30,6 +28,9 @@ def durable_workflow(tmp_path: Path):
         pytest.skip(
             "Requires explicitly configured synthetic loopback PostgreSQL DB_OPTION/DB_CLOUD"
         )
+    from app.case_workflows.service import CaseWorkflowApplicationService
+    from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
+
     state = _state(graph_version=5)
     state["workflow_run_id"] = "reflection-integration-" + str(uuid4())
     state["case_id"] = state["workflow_run_id"]
@@ -63,6 +64,8 @@ def durable_workflow(tmp_path: Path):
 
 
 def test_two_instances_serialize_duplicate_resume(durable_workflow):
+    from app.case_workflows.service import WorkflowConfigurationError
+
     state, first, make_service, store = durable_workflow
     second = make_service()
     run = store.get_run(state["workflow_run_id"], user_id=state["user_id"])
@@ -89,6 +92,8 @@ def test_two_instances_serialize_duplicate_resume(durable_workflow):
 
 
 def test_projection_failure_is_repaired_without_reexecuting_resume(durable_workflow, monkeypatch):
+    from app.case_workflows.service import WorkflowConfigurationError
+
     state, first, make_service, store = durable_workflow
     token = store.get_run(state["workflow_run_id"], user_id=state["user_id"]).pending_action[
         "resume_token"

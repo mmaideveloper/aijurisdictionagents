@@ -79,6 +79,17 @@ def test_reflection_reviews_defects_before_silent_normalization() -> None:
     assert "ľudskú kontrolu" in result
 
 
+def test_revised_document_strips_code_fences_without_changing_verified_content() -> None:
+    result = _normalize_generated_draft("```text\nSynthetic A paid 100 EUR.\n```",
+        verified_facts={"amount": "100 EUR"}, repair_quality=False)
+    assert "```" not in result
+    assert "Synthetic A paid 100 EUR." in result
+
+
+def test_fence_only_draft_is_still_empty_for_quality_review() -> None:
+    assert _normalize_generated_draft("```\n```", verified_facts={}, repair_quality=False) == ""
+
+
 def test_reflection_preserves_citations_but_rejects_placeholders() -> None:
     services = ProductionCaseWorkflowServices(
         api_store=cast(Any, None), workflow_store=cast(Any, None), tool_registry=ToolRegistry({})
@@ -101,6 +112,29 @@ def test_completed_reply_discloses_revision_count() -> None:
     reply = workflow_user_reply(cast(Any, run), language="en")
     assert "Quality review: the draft was revised; revisions: 1" in reply
     assert "requires human review" in reply
+
+
+def test_revision_prompt_contains_previous_response_and_explicit_iteration(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def respond(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(content="100 EUR synthetic revised draft")
+
+    monkeypatch.setattr("app.case_workflows.service.get_routed_llm_client", lambda **kwargs: SimpleNamespace(
+        client=object(), provider="synthetic-provider", model="synthetic-model", route_type="test"))
+    monkeypatch.setattr("app.case_workflows.service.create_lawyer_agent", lambda *_args: SimpleNamespace(respond=respond))
+    services = ProductionCaseWorkflowServices(api_store=cast(Any, None), workflow_store=cast(Any, None), tool_registry=ToolRegistry({}))
+    services.draft_documents(cast(Any, {
+        "workflow_run_id": "synthetic-revision-test", "graph_version": 5,
+        "jurisdiction": "SK", "request_text": "Prepare a synthetic confirmation.",
+        "retry_count": 1, "critique": {"instruction": "Replace placeholders with verified facts."},
+        "final_answer": "Previous response [amount]", "verified_facts": {"amount": "100 EUR"},
+    }))
+    assert "This is revision 1" in captured["system_prompt_override"]
+    assert "Do not repeat instructions limited to the first draft" in captured["system_prompt_override"]
+    assert "Replace placeholders with verified facts" in captured["system_prompt_override"]
+    assert "Previous response [amount]" in captured["conversation"][0].content
 
 
 def _service(

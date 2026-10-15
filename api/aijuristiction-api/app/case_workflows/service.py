@@ -392,6 +392,10 @@ class ProductionCaseWorkflowServices:
             "hidden reasoning, and clearly mark the result as AI-assisted and subject to human review."
         )
         if state.get("critique"):
+            prompt += (
+                f"\nThis is revision {state.get('retry_count', 0)} of the previous response, "
+                "not the first draft. Do not repeat instructions limited to the first draft."
+            )
             prompt += "\nREVISION INSTRUCTION: " + str(state["critique"].get("instruction", ""))
         answer = lawyer.respond(
             conversation=[
@@ -1380,12 +1384,15 @@ def _normalize_generated_draft(
     value: str, *, verified_facts: dict[str, str], repair_quality: bool = True
 ) -> str:
     """Remove placeholders and preserve every user-verified fact without inference."""
-    lines = [
-        line
-        for line in value.splitlines()
-        if not repair_quality or ("[" not in line and "]" not in line)
-    ]
+    lines = []
+    for line in value.splitlines():
+        if not repair_quality and re.fullmatch(r"```[\w-]*", line.strip()):
+            continue
+        if not repair_quality or ("[" not in line and "]" not in line):
+            lines.append(line)
     normalized = "\n".join(lines).replace("**", "").replace("__", "").strip()
+    if not repair_quality and not normalized:
+        return ""
     missing_facts = [
         (key, fact_value)
         for key, fact_value in sorted(verified_facts.items())
