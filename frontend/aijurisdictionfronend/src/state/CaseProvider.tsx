@@ -47,6 +47,7 @@ export type CaseInteraction = {
   message: string;
   citations: CaseCitation[];
   presentation?: PresentationBlock;
+  aiTransparency?: unknown;
 };
 
 export type CaseCitation = {
@@ -891,7 +892,8 @@ const mapApiCase = (
         ? normalizeAssistantPresentationText(message.content)
         : message.content,
       citations: (message.citations ?? []).map(mapApiCitation),
-      presentation: normalizePresentationBlock(message.presentation) ?? undefined
+      presentation: normalizePresentationBlock(message.presentation) ?? undefined,
+      aiTransparency: message.ai_transparency
     })),
     selectedRole: "AI Lawyer",
     selectedMode: "Draft",

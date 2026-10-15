@@ -123,6 +123,9 @@ def test_case_plan_routes_to_seeded_azure_foundry_gpt_4o_mini_model(
         secret_type="api_key",
     )
 
+    from aijurisdictionagents.privacy import PrivacyControls, CONSENT_VERSION
+    PrivacyControls(store).consent(user.user_id, "external_models", True, version=CONSENT_VERSION)
+
     routed = get_routed_llm_client(
         store=store,
         user_id=user.user_id,
@@ -199,6 +202,9 @@ def test_gpt_5_mini_route_uses_azure_preview_api_when_provider_version_is_stale(
         secret_value="azure-secret-key",
         secret_type="api_key",
     )
+
+    from aijurisdictionagents.privacy import PrivacyControls, CONSENT_VERSION
+    PrivacyControls(store).consent(user.user_id, "external_models", True, version=CONSENT_VERSION)
 
     routed = get_routed_llm_client(
         store=store,
@@ -455,17 +461,8 @@ def test_allowlisted_email_selected_model_override_succeeds_without_user_id(
     store = _store(tmp_path)
     store.create_user(email="selector-email@example.com", password="secret", full_name="Selector Email")
 
-    routed = get_routed_llm_client(
-        store=store,
-        user_id="",
-        user_email="selector-email@example.com",
-        task_type="chat_reply",
-        selected_model_profile_id="local_ollama_default",
-    )
-
-    assert routed.route_type == "user_selected_local"
-    assert routed.route.model_profile is not None
-    assert routed.route.model_profile.model_profile_id == "local_ollama_default"
+    with pytest.raises(ModelRouteUnavailable, match="authenticated_subject_required"):
+        get_routed_llm_client(store=store, user_id="", user_email="selector-email@example.com", task_type="chat_reply", selected_model_profile_id="local_ollama_default")
 
 
 def test_model_credentials_are_encrypted_and_revealed_only_when_requested(

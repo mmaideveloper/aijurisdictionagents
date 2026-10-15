@@ -19,6 +19,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
+from contextvars import copy_context
 from typing import Any, List, Literal, Optional, cast
 from urllib.parse import quote, unquote
 from uuid import UUID, uuid4
@@ -65,8 +66,10 @@ from app.document_templates.disclaimers import resolve_disclaimer_from_templates
 from app.document_templates.catalog import apply_employment_profile_defaults, render_template
 from app.document_templates.store import DocumentTemplateNotFoundError, get_document_template_store
 from app.security import require_api_key
+from app.privacy_auth import require_chat_subject
 from app.services.email_scheduler import EmailScheduler
 from app.versioning import get_api_version, get_core_version
+from aijurisdictionagents.privacy import transparency
 
 from aijurisdictionagents.api_db import ApiDatabaseStore, CaseDocument, User
 from aijurisdictionagents.llm import get_embedding_client
@@ -91,7 +94,7 @@ from services.document_processor.runtime import (
 )
 from services.document_processor.service import DocumentProcessor
 
-router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/v1/chat", tags=["chat"], dependencies=[Depends(require_api_key), Depends(require_chat_subject)])
 _repository = InMemoryChatRepository()
 _FINISH_RESPONSES = {"finish", "no", "nope", "done", "exit", "quit", "stop"}
 _API_VERSION = get_api_version()
@@ -256,10 +259,10 @@ def _persist_case_message_if_needed(
     content: str,
     agent_name: str | None = None,
     presentation: dict[str, Any] | None = None,
-) -> None:
+) -> str | None:
     case_id = session.case_id
     if case_id is None or not case_id.strip():
-        return
+        return None
     store = _get_store()
     if role.strip().lower() == "assistant":
         content = _user_visible_text(content)
@@ -271,7 +274,8 @@ def _persist_case_message_if_needed(
     }
     if presentation:
         message_kwargs["presentation"] = presentation
-    store.add_case_message(**message_kwargs)
+    communication_id = store.add_case_message(**message_kwargs)
+    return str(communication_id) if communication_id else None
 
 
 def _record_case_ai_model_audit(
@@ -284,6 +288,15 @@ def _record_case_ai_model_audit(
     model_used: bool,
     route: RoutedLLMClient | None = None,
 ) -> None:
+    answer.ai_transparency = transparency(
+        getattr(route, "provider", None) if model_used else None,
+        getattr(route, "model", None) if model_used else None,
+        generated_at=answer.created_at.isoformat(),
+    )
+    answer.ai_transparency["source_provenance"] = [
+        {key: item[key] for key in ("source_id", "source_type", "retrieval_tool") if key in item}
+        for item in answer.citations
+    ]
     case_id = (session.case_id or "").strip()
     if not case_id:
         return
@@ -295,6 +308,10 @@ def _record_case_ai_model_audit(
     )
     try:
         store = _get_store()
+        from aijurisdictionagents.privacy import PrivacyControls
+        artifacts = [*answer.generated_document_ids, *([answer.communication_id] if answer.communication_id else [])]
+        for artifact_id in artifacts:
+            PrivacyControls(store).record_artifact(artifact_id, case_id, answer.ai_transparency)
         user_id = str(session.user_id) if session.user_id else ""
         if not user_id:
             try:
@@ -398,7 +415,9 @@ def _resolve_session_llm_route(
             task_type=task_type,
         )
     except ModelRouteUnavailable as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        from aijurisdictionagents.privacy import privacy_problem
+        detail = privacy_problem(str(exc)) if str(exc).startswith(("consent_required", "processing_restricted", "subject_disabled", "authenticated_subject_required")) else str(exc)
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
 
 
 def _estimate_audit_tokens(text: str) -> int:
@@ -746,12 +765,17 @@ def _load_query_embedding_with_timeout(query: str) -> tuple[list[float], str]:
         ):
             try:
                 embedding_client = get_embedding_client()
+                from aijurisdictionagents.llm.embeddings import AzureFoundryEmbeddingClient, OpenAIEmbeddingClient
+                from aijurisdictionagents.privacy import require_external_processing
+                if isinstance(embedding_client, (AzureFoundryEmbeddingClient, OpenAIEmbeddingClient)):
+                    require_external_processing("external_models")
                 query_batch = embedding_client.embed_texts([query])
                 result_queue.put(("completed", query_batch))
             except Exception as exc:  # noqa: BLE001
                 result_queue.put(("failed", exc))
 
-    Thread(target=target, name="chat-query-embedding", daemon=True).start()
+    context = copy_context()
+    Thread(target=lambda: context.run(target), name="chat-query-embedding", daemon=True).start()
     try:
         status, result = result_queue.get(timeout=timeout_seconds)
     except Empty:
@@ -939,6 +963,7 @@ def _message_payload(message: Message) -> dict[str, object]:
         "created_at": visible_message.created_at.isoformat(),
         "presentation": visible_message.presentation,
         "generated_document_ids": visible_message.generated_document_ids,
+        "ai_transparency": visible_message.ai_transparency,
     }
     session = _repository.get_session(message.session_id)
     if session is not None:
@@ -1373,7 +1398,7 @@ def _persist_direct_assistant_message(
         )
     )
     _record_validated_revision_link(candidate_id, candidate_content, persisted_lawyer)
-    _persist_case_message_if_needed(
+    persisted_lawyer.communication_id = _persist_case_message_if_needed(
         session=session,
         role="assistant",
         content=content,
@@ -2774,7 +2799,7 @@ def stream_session(
                 generated_document_ids=generated_doc_ids,
             )
         )
-        _persist_case_message_if_needed(
+        persisted.communication_id = _persist_case_message_if_needed(
             session=session,
             role=normalized_role,
             content=content,
@@ -3153,7 +3178,8 @@ def _start_session_worker(*, session: Session, request_id: str, target: Callable
                 "api", "chat_session_worker", "completed", {"session_id": str(session.id)}
             )
 
-    Thread(target=correlated_target, daemon=True).start()
+    context = copy_context()
+    Thread(target=lambda: context.run(correlated_target), daemon=True).start()
 
 
 def _correlated_error_payload(
@@ -3890,6 +3916,9 @@ def _build_direct_reply_result(
             "legal_source_citations": legal_source_citations or [],
         },
         routed_model_name=route.model if route is not None else None,
+    )
+    metadata["ai_transparency"] = transparency(
+        getattr(route, "provider", None), getattr(route, "model", None),
     )
     return SessionResult(
         final_recommendation=visible_text or f"Direct lawyer reply for session {session_id}.",
@@ -5076,6 +5105,16 @@ def _persist_case_citations_for_answer(
             "citation_count": len(persisted),
         },
     )
+    from aijurisdictionagents.privacy import PrivacyControls
+    answer.citations = persisted
+    answer.ai_transparency["source_provenance"] = [
+        {key: citation[key] for key in ("source_id", "source_type", "retrieval_tool") if key in citation}
+        for citation in persisted
+    ]
+    answer.ai_transparency["source_provenance_status"] = "recorded"
+    artifacts = [answer_message_id, *answer.generated_document_ids]
+    for artifact_id in artifacts:
+        PrivacyControls(store).record_artifact(artifact_id, case_id, answer.ai_transparency)
     return persisted
 
 

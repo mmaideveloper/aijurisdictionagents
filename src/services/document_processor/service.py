@@ -57,6 +57,12 @@ class DocumentProcessor:
                 break
             self.store.mark_document_processing(doc_id=document.doc_id, status='processing', error=None)
             try:
+                from aijurisdictionagents.privacy import PrivacyControls
+                from aijurisdictionagents.llm.embeddings import AzureFoundryEmbeddingClient, OpenAIEmbeddingClient
+                controls = PrivacyControls(self.store)
+                user_id = self.store.get_case(case_id=document.case_id).user_id
+                external = isinstance(self.embedding_client, (AzureFoundryEmbeddingClient, OpenAIEmbeddingClient))
+                controls.require_processing(user_id, "external_models" if external else None)
                 payload = self.store.read_storage_bytes(storage_uri=document.storage_uri)
                 extracted = extract_document_text(
                     filename=document.original_filename,
@@ -68,7 +74,9 @@ class DocumentProcessor:
                     chunks = chunk_document_text(fallback_text)
                 if not chunks:
                     raise ValueError("Document chunking produced no retrievable text.")
+                controls.require_processing(user_id, "external_models" if external else None)
                 chunk_batch = self.embedding_client.embed_texts([chunk.text for chunk in chunks])
+                controls.require_processing(user_id, "external_models" if external else None)
                 document_batch = self.embedding_client.embed_texts([extracted.text])
                 document_vector = serialize_embedding_vector(document_batch.vectors[0])
                 chunk_records = [

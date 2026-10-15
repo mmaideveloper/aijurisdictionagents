@@ -233,3 +233,4 @@ persisted original-question identity, consent audit, actual provider/model, retr
 source IDs, Q1 linkage and Q2, and save a sanitized manifest/business report. This
 fixture checks the workflow, not normative legal accuracy. The local synthetic case
 is retained for inspection with the evidence for at most seven days.
+`nIntegration with the shared privacy-auth chat client uses `deviceAuthHeaders()` for streamed requests so ordinary and software-advice chat share the current authenticated device session.

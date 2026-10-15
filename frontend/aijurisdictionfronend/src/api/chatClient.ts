@@ -1,4 +1,5 @@
 import { consoleLogger } from "../logging/consoleLogger";
+import { deviceAuthHeaders } from "./deviceAuth";
 import {
   correlationHeaders,
   createSessionCorrelationId,
@@ -36,6 +37,14 @@ export type ChatMessage = {
   created_at: string;
   citations?: Array<Record<string, unknown>>;
   presentation?: PresentationBlock;
+  ai_transparency?: {
+    ai_generated: boolean;
+    model_provider: string | null;
+    model_name: string | null;
+    generated_at: string;
+    limitations_notice: string;
+    human_review_recommended: boolean;
+  };
 };
 
 export type EffectiveModelRoute = {
@@ -251,7 +260,7 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   try {
     response = await fetch(url, {
       ...init,
-      headers: { ...correlationHeaders(), ...(init.headers ?? {}) }
+      headers: { ...correlationHeaders(), ...deviceAuthHeaders(), ...(init.headers ?? {}) }
     });
   } catch (error) {
     consoleLogger.error(
@@ -427,11 +436,8 @@ export async function* streamSession(input: StreamSessionInput): AsyncGenerator<
       headers: {
         "Content-Type": "application/json",
         "x-api-key": config.apiKey,
-        ...(input.deviceId && input.deviceAuthToken ? {
-          "x-jurisdigta-device-id": input.deviceId,
-          "x-jurisdigta-device-token": input.deviceAuthToken
-        } : {}),
-        ...traceHeaders
+          ...traceHeaders,
+          ...deviceAuthHeaders()
       },
       body: JSON.stringify({
         instruction: input.instruction,

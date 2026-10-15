@@ -6,6 +6,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import Profile from "../pages/Profile";
 
+// Privacy controls have their own authenticated transport tests. Keep profile
+// export/MFA fixtures scoped to the requests they exercise.
+vi.mock("../components/PrivacyControls", () => ({ PrivacyControls: () => null }));
+
 const authMocks = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   sendEmailChangeCode: vi.fn(),

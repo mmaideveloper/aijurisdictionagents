@@ -915,6 +915,9 @@ class ApiDatabaseStore:
             self._seed_subscription_plans(conn)
             self._seed_ai_model_routing(conn)
 
+        from ..privacy import initialize_privacy
+        initialize_privacy(self)
+
     def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
         with self._connect() as conn:
             row = self._execute(
@@ -2278,6 +2281,8 @@ class ApiDatabaseStore:
 
     def resolve_speech_route(self, *, user_id: str, case_id: str, candidate_profile_id: str | None = None) -> AIModelRouteSelection:
         """Speech has its own exact task policy; chat/user overrides never apply."""
+        from ..privacy import PrivacyControls
+        PrivacyControls(self).require_processing(user_id)
         case = self.get_case(case_id=case_id)
         if case.user_id != user_id or case.status == "deleted":
             raise KeyError("case_not_found")
@@ -3885,6 +3890,8 @@ class ApiDatabaseStore:
             )
 
     def create_case(self, *, user_id: str, company_id: str | None, title: str) -> Case:
+        from ..privacy import PrivacyControls
+        PrivacyControls(self).require_processing(user_id)
         case_id = str(uuid.uuid4())
         now = _now_iso()
         self._ensure_case_root(case_id)
@@ -5102,6 +5109,8 @@ class ApiDatabaseStore:
         payload: bytes,
         uploaded_by_user_id: str | None = None,
     ) -> str:
+        from ..privacy import PrivacyControls
+        PrivacyControls(self).require_processing(self.get_case(case_id=case_id).user_id)
         doc_id = str(uuid.uuid4())
         relative_uri = Path(case_id) / kind / doc_id / f"v{version}_{Path(original_filename).name}"
         storage_uri = self._store_payload(relative_uri=relative_uri, payload=payload)
@@ -5143,6 +5152,8 @@ class ApiDatabaseStore:
         extension: str = "txt",
         presentation: dict[str, Any] | None = None,
     ) -> str:
+        from ..privacy import PrivacyControls
+        PrivacyControls(self).require_processing(self.get_case(case_id=case_id).user_id)
         communication_id = str(uuid.uuid4())
         transcript_uri: str | None = None
         if transcript_payload is not None:

@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.cases_api import router as cases_router
+from app.privacy_api import router as privacy_router
 from app.document_review import router as document_review_router
 from app.software_assessment.api import router as software_assessment_router
 from app.case_types.api import router as case_types_router
@@ -60,6 +61,7 @@ from app.voice_intent_api import router as voice_intent_router
 from app.speech_api import router as speech_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.privacy import PrivacyDenied, privacy_problem
 from aijurisdictionagents.db_migrations import apply_sql_migrations
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.correlation import correlation_scope, record_debug_event
@@ -289,6 +291,12 @@ app.include_router(flow_evaluations_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(privacy_router)
+
+
+@app.exception_handler(PrivacyDenied)
+async def privacy_denied_handler(_request: fastapi.Request, exc: PrivacyDenied) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": privacy_problem(str(exc))})
 app.include_router(document_review_router)
 app.include_router(software_assessment_router)
 app.include_router(case_types_router)

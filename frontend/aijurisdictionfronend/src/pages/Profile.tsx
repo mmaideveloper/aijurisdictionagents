@@ -4,6 +4,7 @@ import { FaDownload } from "react-icons/fa";
 import { fetchCaseExportBlob } from "../api/caseClient";
 import { chatApiRuntimeConfig } from "../api/chatClient";
 import { useLanguage } from "../components/LanguageProvider";
+import { PrivacyControls } from "../components/PrivacyControls";
 import { useAuth } from "../auth/webAuth";
 import { plans } from "../data/plans";
 import { useCases } from "../state/CaseProvider";
@@ -342,6 +343,7 @@ const Profile: React.FC = () => {
       </section>
       <section className="profile-shell">
         <aside className="profile-side-panels">
+          <PrivacyControls />
           <article className="card">
             <h2>{t("profileBilling")}</h2>
             <h3>{t("profilePlan")}</h3>
