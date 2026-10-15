@@ -135,6 +135,8 @@ class CaseWorkflowState(TypedDict, total=False):
     last_failure_category: str
     last_output_fingerprint: str
     retry_count: int
+    max_revision_attempts: int
+    critique: dict[str, Any]
     events: list[WorkflowEvent]
 
 
@@ -304,6 +306,13 @@ class CaseWorkflowRuntime:
                 presentation_selection=True,
             ),
             ("unsupported_or_human_review", 1): self._build_unsupported_graph(checkpointer),
+            ("legal_document_workflow", 5): self._build_legal_document_graph(
+                checkpointer,
+                verify_before_retrieval=True,
+                consented_tool_execution=True,
+                presentation_selection=True,
+                reflection=True,
+            ),
         }
 
     def registered_graphs(self) -> tuple[tuple[str, int], ...]:
@@ -336,7 +345,7 @@ class CaseWorkflowRuntime:
             )
         config = self._invoke_config(state)
         try:
-            result = graph.invoke(state, config=config)
+            result = graph.invoke(state, config=config, durability="sync")
         except GraphRecursionError:
             return self._recursion_failure(graph=graph, config=config, fallback=state)
         return _outcome(result)
@@ -367,6 +376,7 @@ class CaseWorkflowRuntime:
             result = graph.invoke(
                 Command(resume=dict(value) if isinstance(value, Mapping) else value),
                 config=config,
+                durability="sync",
             )
         except GraphRecursionError:
             return self._recursion_failure(graph=graph, config=config, fallback=state)
@@ -384,6 +394,16 @@ class CaseWorkflowRuntime:
         graph = self._graph(graph_key, graph_version)
         snapshot = graph.get_state({"configurable": {"thread_id": workflow_run_id}})
         return cast(CaseWorkflowState, dict(snapshot.values))
+
+    def checkpoint_outcome(self, state: CaseWorkflowState) -> CaseWorkflowOutcome:
+        """Rebuild the read projection from the authoritative checkpoint."""
+        graph = self._graph(state["graph_key"], state["graph_version"])
+        snapshot = graph.get_state(self._invoke_config(state))
+        if not snapshot.values:
+            raise RuntimeError("workflow_checkpoint_missing: recovery required")
+        values = dict(snapshot.values)
+        values["__interrupt__"] = tuple(item for task in snapshot.tasks for item in task.interrupts)
+        return _outcome(values)
 
     def _graph(self, graph_key: str, graph_version: int) -> Any:
         try:
@@ -423,6 +443,7 @@ class CaseWorkflowRuntime:
         verify_before_retrieval: bool,
         consented_tool_execution: bool = False,
         presentation_selection: bool = False,
+        reflection: bool = False,
     ) -> Any:
         builder = StateGraph(CaseWorkflowState)
         builder.add_node("route_case_type", _observe_node("route_case_type", self._route_case_type))
@@ -440,6 +461,8 @@ class CaseWorkflowRuntime:
         builder.add_node("resolve_conflicts", _observe_node("resolve_conflicts", self._resolve_conflicts))
         builder.add_node("draft_documents", _observe_node("draft_documents", self._draft_documents))
         builder.add_node("verify_output", _observe_node("verify_output", self._verify_output))
+        if reflection:
+            builder.add_node("reflect_output", _observe_node("reflect_output", self._reflect_output))
         builder.add_node("verify_safety_and_gdpr", _observe_node("verify_safety_and_gdpr", self._verify_safety_and_gdpr))
         builder.add_node("review_case", _observe_node("review_case", self._review_case))
         if presentation_selection:
@@ -493,7 +516,23 @@ class CaseWorkflowRuntime:
         )
         builder.add_edge("draft_documents", "verify_output")
         builder.add_edge("verify_output", "verify_safety_and_gdpr")
-        builder.add_edge("verify_safety_and_gdpr", "review_case")
+        if reflection:
+            builder.add_conditional_edges(
+                "verify_safety_and_gdpr",
+                self._after_safety_review,
+                {
+                    "review": "review_case",
+                    "reflect": "reflect_output",
+                    "finalize": "finalize_or_escalate",
+                },
+            )
+            builder.add_conditional_edges(
+                "reflect_output",
+                lambda state: "revise" if state.get("status") == "running" else "finalize",
+                {"revise": "draft_documents", "finalize": "finalize_or_escalate"},
+            )
+        else:
+            builder.add_edge("verify_safety_and_gdpr", "review_case")
         if presentation_selection:
             builder.add_edge("review_case", "select_presentation")
             builder.add_edge("select_presentation", "finalize_or_escalate")
@@ -876,19 +915,120 @@ class CaseWorkflowRuntime:
 
     def _draft_documents(self, state: CaseWorkflowState) -> CaseWorkflowState:
         answer, artifacts = self._services.draft_documents(state)
+        revision = state.get("retry_count", 0)
+        parent = state.get("answer_artifact_id", "")
+        answer_id = str(uuid4())
+        previous_artifacts = state.get("artifacts", [])
+        artifacts = [
+            {
+                **item,
+                "artifact_id": f"{state['workflow_run_id']}:draft:r{revision}:{index}",
+                "revision": revision,
+                "review_artifact_id": answer_id,
+                "parent_artifact_id": str(previous_artifacts[index].get("artifact_id", ""))
+                if index < len(previous_artifacts)
+                else "",
+            }
+            for index, item in enumerate(artifacts)
+        ]
         return _update(
             state,
             stage="draft_documents",
             status="running",
             final_answer=answer,
-            answer_artifact_id=str(uuid4()),
+            answer_artifact_id=answer_id,
             artifacts=artifacts,
             event_type="documents_drafted",
-            details={"artifact_count": len(artifacts)},
+            details={
+                "artifact_count": len(artifacts),
+                "revision": revision,
+                "artifact_id": answer_id,
+                "parent_artifact_id": parent,
+                "provider": str(artifacts[0].get("provider", "unspecified"))
+                if artifacts
+                else "unspecified",
+                "model": str(artifacts[0].get("model", "unspecified"))
+                if artifacts
+                else "unspecified",
+                "route_type": str(artifacts[0].get("route_type", "unspecified"))
+                if artifacts
+                else "unspecified",
+            },
         )
 
+    @staticmethod
+    def _after_safety_review(state: CaseWorkflowState) -> str:
+        if state.get("status") == "blocked":
+            return "finalize"
+        return (
+            "reflect" if state.get("review_decisions", {}).get("output") == "failed" else "review"
+        )
+
+    @staticmethod
+    def _reflect_output(state: CaseWorkflowState) -> CaseWorkflowState:
+        deadline_reason = _deadline_termination_reason(state)
+        if deadline_reason:
+            return _terminate(state, reason=deadline_reason, stage="reflect_output")
+        # Only known quality failures may be repaired autonomously. Never echo a
+        # validator's arbitrary explanation into audit events or revision prompts.
+        instructions = {
+            "empty_document_draft": "Create the requested draft using only verified facts and cited sources.",
+            "unresolved_placeholder": (
+                "Return a complete revised draft without square-bracket placeholders. "
+                "Use verified facts for required fields; never invent missing information or signatures. "
+                "Omit unfilled optional fields and leave signature areas as blank signing lines without brackets."
+            ),
+            "verified_fact_missing_from_output": (
+                "Include every verified fact verbatim, with its original spelling, dates and units. "
+                "Do not translate or reformat verified values."
+            ),
+        }
+        category = state.get("escalation_reason", "")
+        if category not in instructions:
+            return _terminate(state, reason="human_review_required", stage="reflect_output")
+        limit = _policy_value(
+            state, "quality_revision_limit", DEFAULT_QUALITY_REVISION_LIMIT, minimum=1, maximum=20
+        )
+        if state.get("retry_count", 0) >= limit:
+            return _terminate(state, reason="revision_budget_exhausted", stage="reflect_output")
+        updated = record_quality_revision_failure(
+            state,
+            failure_category=category,
+            output=state.get("final_answer", ""),
+            count_revision_budget=False,
+            stage="reflect_output",
+        )
+        if updated.get("status") != "running":
+            return updated
+        revision = state.get("retry_count", 0) + 1
+        delta = _update(
+            updated,
+            stage="reflect_output",
+            status="running",
+            retry_count=revision,
+            max_revision_attempts=limit,
+            critique={
+                "failure_category": category,
+                "instruction": instructions[category],
+                "revision": revision,
+            },
+            escalation_reason="",
+            event_type="output_critique_recorded",
+            details={
+                "failure_category": category,
+                "instruction": instructions[category],
+                "revision": revision,
+                "artifact_id": state.get("answer_artifact_id", ""),
+            },
+        )
+        return cast(CaseWorkflowState, {**updated, **delta})
+
     def _verify_output(self, state: CaseWorkflowState) -> CaseWorkflowState:
-        with validation_check(category="output_quality", validator_id="workflow.review_output", artifact_id=state.get("answer_artifact_id")) as audit:
+        with validation_check(
+            category="output_quality",
+            validator_id="workflow.review_output",
+            artifact_id=state.get("answer_artifact_id"),
+        ) as audit:
             passed, reason = self._services.review_output(state)
             audit.update(outcome="passed" if passed else "failed", reason_code=reason, decision="continue" if passed else "human_review")
         decisions = dict(state.get("review_decisions", {}))
@@ -901,7 +1041,8 @@ class CaseWorkflowRuntime:
             review_decisions=decisions,
             event_type="output_validation_completed",
             event_status="passed" if passed else "human_review_required",
-            details={"passed": passed, "reason": reason},
+            details={"passed": passed, "reason": reason, "revision": state.get("retry_count", 0),
+                     "artifact_id": state.get("answer_artifact_id", "")},
         )
 
     def _verify_safety_and_gdpr(self, state: CaseWorkflowState) -> CaseWorkflowState:
@@ -992,6 +1133,14 @@ class CaseWorkflowRuntime:
             for item in tool_results[: policy.max_items]
         ]
         notices = [human_review_notice]
+        revisions = state.get("retry_count", 0)
+        if revisions:
+            if language.startswith("de"):
+                notices.append(f"Qualitätsprüfung: Entwurf überarbeitet; Revisionen: {revisions}.")
+            elif language.startswith("en"):
+                notices.append(f"Quality review: the draft was revised; revisions: {revisions}.")
+            else:
+                notices.append(f"Kontrola kvality: návrh bol upravený; počet revízií: {revisions}.")
         if tool_summaries:
             notices.append(f"{tool_notice_prefix}: {', '.join(tool_summaries)}.")
         presentation = build_presentation_block(
@@ -1133,6 +1282,8 @@ def build_initial_case_workflow_state(
         last_failure_category="",
         last_output_fingerprint="",
         retry_count=0,
+        max_revision_attempts=policy["quality_revision_limit"],
+        critique={},
         events=[
             WorkflowEvent(
                 event_id=f"{workflow_run_id}:001:langgraph_run_started",
@@ -1147,7 +1298,8 @@ def build_initial_case_workflow_state(
 
 
 def record_quality_revision_failure(
-    state: CaseWorkflowState, *, failure_category: str, output: str
+    state: CaseWorkflowState, *, failure_category: str, output: str, count_revision_budget: bool = True,
+    stage: str = "reflection",
 ) -> CaseWorkflowState:
     """Apply the reusable bounded/no-progress contract for a reflection failure."""
 
@@ -1171,24 +1323,24 @@ def record_quality_revision_failure(
         },
     )
     if category in {"privacy", "consent", "legal_risk", "privacy_or_consent"}:
-        return _terminate(updated, reason="privacy_blocked", stage="reflection")
+        return _terminate(updated, reason="privacy_blocked", stage=stage)
     if category in {"provenance", "provenance_missing"}:
-        return _terminate(updated, reason="provenance_missing", stage="reflection")
-    if revision_count >= _policy_value(
+        return _terminate(updated, reason="provenance_missing", stage=stage)
+    if count_revision_budget and revision_count >= _policy_value(
         state,
         "quality_revision_limit",
         DEFAULT_QUALITY_REVISION_LIMIT,
         minimum=1,
         maximum=20,
     ):
-        return _terminate(updated, reason="revision_budget_exhausted", stage="reflection")
+        return _terminate(updated, reason="revision_budget_exhausted", stage=stage)
     if no_progress >= _policy_value(
         state, "no_progress_limit", DEFAULT_NO_PROGRESS_LIMIT, minimum=2, maximum=20
     ):
-        return _terminate(updated, reason="no_progress", stage="reflection")
+        return _terminate(updated, reason="no_progress", stage=stage)
     delta = _update(
         updated,
-        stage="reflection",
+        stage=stage,
         status="running",
         event_type="quality_revision_requested",
         details={"failure_category": category, "quality_revision_count": revision_count},
@@ -1390,10 +1542,19 @@ def _update(
     return cast(CaseWorkflowState, result)
 
 
-def _observe_node(node: str, callback: Callable[[CaseWorkflowState], CaseWorkflowState]) -> Callable[[CaseWorkflowState], CaseWorkflowState]:
+class ObservedWorkflowNode(Protocol):
+    def __call__(self, state: CaseWorkflowState) -> CaseWorkflowState: ...
+
+
+def _observe_node(
+    node: str, callback: Callable[[CaseWorkflowState], CaseWorkflowState]
+) -> ObservedWorkflowNode:
     def invoke(state: CaseWorkflowState) -> CaseWorkflowState:
-        with node_execution_scope(run_id=state["workflow_run_id"], node_id=node, occurrence_id=str(uuid4())):
+        with node_execution_scope(
+            run_id=state["workflow_run_id"], node_id=node, occurrence_id=str(uuid4())
+        ):
             return callback(state)
+
     return invoke
 
 
@@ -1434,7 +1595,7 @@ def _outcome(result: Mapping[str, Any]) -> CaseWorkflowOutcome:
     for item in raw_interrupts if isinstance(raw_interrupts, Sequence) else ():
         value = item.value if isinstance(item, Interrupt) else item
         if isinstance(value, Mapping):
-            interrupts.append(dict(value))
+            interrupts.append({**dict(value), **({"resume_token": item.id} if isinstance(item, Interrupt) else {})})
         else:
             interrupts.append({"type": "input_required", "message": str(value)})
     state = cast(

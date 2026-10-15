@@ -2,6 +2,10 @@
 
 ## Components
 
+- Case workflow graph v5 adds bounded draft/critique/revision with privacy gates before revision.
+  Production interrupt/resume requires PostgreSQL checkpoints, serialized lifecycle execution,
+  and pending-action resume tokens. See [durability and recovery](REFLECTION_AND_DURABLE_RESUME.md).
+
 - Agents: `Lawyer` advocates for the user and `Judge` evaluates and asks clarifying questions.
 - Orchestration: `Orchestrator` manages the turn-taking and synthesis.
 - Documents: `load_documents` ingests files from `data/` and `select_sources` builds citations.

@@ -22,3 +22,10 @@ def _default_local_api_environment(monkeypatch: pytest.MonkeyPatch, tmp_path) ->
         "API_DOCUMENT_TEMPLATES_SQLITE_PATH",
         str(tmp_path / "document_templates.sqlite3"),
     )
+    monkeypatch.setenv("API_CASE_WORKFLOWS_SQLITE_PATH", str(tmp_path / "workflows.sqlite3"))
+    # Explicit offline dependency injection: production never selects memory as
+    # a fallback when durable PostgreSQL configuration is missing.
+    from langgraph.checkpoint.memory import InMemorySaver
+    from app.case_workflows import service
+    monkeypatch.setattr(service, "_build_workflow_checkpointer", lambda _store: InMemorySaver())
+    service.get_case_workflow_service.cache_clear()

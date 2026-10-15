@@ -118,7 +118,10 @@ def resume_workflow(
     service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
 ) -> WorkflowRunResponse:
     try:
-        return service.resume(workflow_run_id, user_id=payload.user_id, value=payload.value)
+        return service.resume(workflow_run_id, user_id=payload.user_id, value=payload.value,
+                              resume_token=payload.resume_token)
+    except WorkflowConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except WorkflowRunNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except WorkflowOwnershipError as exc:

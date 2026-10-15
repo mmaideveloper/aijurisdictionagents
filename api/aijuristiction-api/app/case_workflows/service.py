@@ -7,11 +7,11 @@ from functools import lru_cache
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Sequence, cast
 from uuid import uuid4
 
-from langgraph.checkpoint.memory import InMemorySaver
 
 from app.case_types.models import CaseTypeCreateRequest, CaseTypeUpdateRequest
 from app.case_workflows.models import (
@@ -23,6 +23,7 @@ from app.case_workflows.models import (
 from app.case_workflows.registry import (
     LEGAL_DOCUMENT_GRAPH_VERSION,
     PRESENTATION_GRAPH_VERSION,
+    REFLECTION_GRAPH_VERSION,
     REGISTERED_GRAPHS,
     VERIFIED_RETRIEVAL_GRAPH_VERSION,
     get_registered_graph,
@@ -52,6 +53,7 @@ from aijurisdictionagents.correlation import record_debug_event
 from aijurisdictionagents.llm.routing import get_routed_llm_client
 from aijurisdictionagents.orchestration.case_workflow import (
     CaseWorkflowRuntime,
+    CaseWorkflowOutcome,
     CaseWorkflowState,
     ReviewDisposition,
     build_initial_case_workflow_state,
@@ -363,10 +365,12 @@ class ProductionCaseWorkflowServices:
             )
         return results
 
-    def draft_documents(
-        self, state: CaseWorkflowState
-    ) -> tuple[str, list[dict[str, Any]]]:
-        template_first_draft = _render_template_first_employment_draft(state)
+    def draft_documents(self, state: CaseWorkflowState) -> tuple[str, list[dict[str, Any]]]:
+        template_first_draft = (
+            _render_template_first_employment_draft(state)
+            if not state.get("retry_count", 0)
+            else None
+        )
         if template_first_draft is not None:
             answer, template = template_first_draft
             return answer, [_template_draft_artifact(state=state, template=template)]
@@ -387,12 +391,25 @@ class ProductionCaseWorkflowServices:
             "provided JurisDigta MCP legal requirements. Never invent a missing fact, never expose "
             "hidden reasoning, and clearly mark the result as AI-assisted and subject to human review."
         )
+        if state.get("critique"):
+            prompt += (
+                f"\nThis is revision {state.get('retry_count', 0)} of the previous response, "
+                "not the first draft. Do not repeat instructions limited to the first draft."
+            )
+            prompt += "\nREVISION INSTRUCTION: " + str(state["critique"].get("instruction", ""))
         answer = lawyer.respond(
             conversation=[
                 Message(
                     role="user",
                     agent_name="User",
-                    content=f"{state['request_text']}\n\nVERIFIED FACTS:\n{fact_text}",
+                    content=(
+                        f"{state['request_text']}\n\nVERIFIED FACTS:\n{fact_text}"
+                        + (
+                            "\n\nPREVIOUS DRAFT TO REVISE:\n" + state.get("final_answer", "")
+                            if state.get("retry_count", 0)
+                            else ""
+                        )
+                    ),
                 )
             ],
             documents=[
@@ -405,7 +422,12 @@ class ProductionCaseWorkflowServices:
             sources=[],
             system_prompt_override=prompt,
         ).content
-        answer = _normalize_generated_draft(answer, verified_facts=facts)
+        if answer.strip() or state.get("graph_version", 1) < REFLECTION_GRAPH_VERSION:
+            answer = _normalize_generated_draft(
+                answer,
+                verified_facts=facts,
+                repair_quality=state.get("graph_version", 1) < REFLECTION_GRAPH_VERSION,
+            )
         return answer, [
             {
                 "artifact_id": f"{state['workflow_run_id']}:draft",
@@ -421,7 +443,13 @@ class ProductionCaseWorkflowServices:
         output = state.get("final_answer", "").strip()
         if not output:
             return False, "empty_document_draft"
-        if "[" in output or "]" in output:
+        unresolved = "[" in output or "]" in output
+        if state.get("graph_version", 1) >= REFLECTION_GRAPH_VERSION:
+            # Markdown source links and numeric citation markers are evidence,
+            # not missing-field placeholders.
+            without_citations = re.sub(r"\[[^\]\n]*\]\([^)\n]+\)|\[\d+\]", "", output)
+            unresolved = "[" in without_citations or "]" in without_citations
+        if unresolved:
             return False, "unresolved_placeholder"
         missing_values = [
             key for key, value in state.get("verified_facts", {}).items() if value not in output
@@ -689,11 +717,59 @@ class CaseWorkflowApplicationService:
                 payload.session_expires_at.isoformat() if payload.session_expires_at else None
             ),
         )
-        outcome = self.runtime.start(state)
-        return self.store.save_run(assignment_id=assignment.assignment_id, outcome=outcome)
+        with self.store.execution_lock(state["workflow_run_id"]):
+            self.store.save_run(
+                assignment_id=assignment.assignment_id,
+                outcome=CaseWorkflowOutcome(state=state, interrupts=()),
+            )
+            outcome = self.runtime.start(state)
+            return self.store.save_run(assignment_id=assignment.assignment_id, outcome=outcome)
 
-    def resume(self, workflow_run_id: str, *, user_id: str, value: Any) -> WorkflowRunResponse:
+    def resume(
+        self, workflow_run_id: str, *, user_id: str, value: Any, resume_token: str | None = None
+    ) -> WorkflowRunResponse:
         prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
+        expected_token = resume_token or prior.get("pending_action", {}).get("resume_token")
+        with self.store.execution_lock(workflow_run_id):
+            return self._resume_locked(
+                workflow_run_id, user_id=user_id, value=value, resume_token=expected_token
+            )
+
+    def _resume_locked(
+        self, workflow_run_id: str, *, user_id: str, value: Any, resume_token: str | None
+    ) -> WorkflowRunResponse:
+        prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
+        run = self.store.get_run(workflow_run_id, user_id=user_id)
+        if prior.get("termination_reason") and prior.get("status") in {
+            "completed",
+            "blocked",
+            "human_review_required",
+        }:
+            return run
+        try:
+            checkpoint = self.runtime.checkpoint_outcome(prior)
+        except RuntimeError as exc:
+            raise WorkflowConfigurationError(
+                "workflow_checkpoint_missing: operational recovery required"
+            ) from exc
+        # Checkpoints are authoritative; retrying a failed projection write must
+        # never replay the already committed graph step.
+        self.store.save_run(
+            assignment_id=run.assignment_id,
+            outcome=checkpoint,
+            created_at=run.created_at.isoformat(),
+        )
+        if not checkpoint.is_waiting:
+            if checkpoint.state.get("termination_reason"):
+                return self.store.get_run(workflow_run_id, user_id=user_id)
+            raise WorkflowConfigurationError(
+                "workflow_execution_incomplete: operational recovery required"
+            )
+        if resume_token != checkpoint.state.get("pending_action", {}).get("resume_token"):
+            raise WorkflowConfigurationError(
+                "workflow_resume_stale: reload the current pending action"
+            )
+        prior = checkpoint.state
         outcome = self.runtime.resume(
             graph_key=prior["graph_key"],
             graph_version=prior["graph_version"],
@@ -709,6 +785,10 @@ class CaseWorkflowApplicationService:
         )
 
     def cancel(self, workflow_run_id: str, *, user_id: str) -> WorkflowRunResponse:
+        with self.store.execution_lock(workflow_run_id):
+            return self._cancel_locked(workflow_run_id, user_id=user_id)
+
+    def _cancel_locked(self, workflow_run_id: str, *, user_id: str) -> WorkflowRunResponse:
         prior = self.store.get_run_state(workflow_run_id, user_id=user_id)
         run = self.store.get_run(workflow_run_id, user_id=user_id)
         outcome = self.runtime.terminate(prior, reason="user_cancelled", stage="cancelled")
@@ -752,7 +832,7 @@ class CaseWorkflowApplicationService:
             )
             graph_key = "legal_document_workflow" if chosen else "unsupported_or_human_review"
             graph_version = (
-                PRESENTATION_GRAPH_VERSION
+                REFLECTION_GRAPH_VERSION
                 if chosen and case_type.case_type_key == "sk.civil.payment_confirmation"
                 else 1
             )
@@ -893,12 +973,7 @@ class CaseWorkflowApplicationService:
         return None
 
 
-@lru_cache(maxsize=1)
-def get_case_workflow_service() -> CaseWorkflowApplicationService:
-    from app.flow_packs.api import get_flow_pack_store
-
-    os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
-    api_store = ApiDatabaseStore.from_env()
+def _build_workflow_checkpointer(api_store: ApiDatabaseStore) -> Any:
     if api_store.uses_postgres:
         from langgraph.checkpoint.postgres import PostgresSaver
         from psycopg.rows import dict_row
@@ -927,7 +1002,20 @@ def get_case_workflow_service() -> CaseWorkflowApplicationService:
             int((time.perf_counter() - started_at) * 1000),
         )
     else:
-        checkpointer = InMemorySaver()
+        raise WorkflowConfigurationError(
+            "Durable case workflow interrupt/resume requires PostgreSQL and PostgresSaver; "
+            "in-memory production checkpoints are not supported."
+        )
+    return checkpointer
+
+
+@lru_cache(maxsize=1)
+def get_case_workflow_service() -> CaseWorkflowApplicationService:
+    from app.flow_packs.api import get_flow_pack_store
+
+    os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
+    api_store = ApiDatabaseStore.from_env()
+    checkpointer = _build_workflow_checkpointer(api_store)
     workflow_store = CaseWorkflowStore.from_env()
     runtime = CaseWorkflowRuntime(
         services=ProductionCaseWorkflowServices(
@@ -1292,16 +1380,25 @@ def _run_tool_with_timeout(
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-def _normalize_generated_draft(value: str, *, verified_facts: dict[str, str]) -> str:
+def _normalize_generated_draft(
+    value: str, *, verified_facts: dict[str, str], repair_quality: bool = True
+) -> str:
     """Remove placeholders and preserve every user-verified fact without inference."""
-    lines = [line for line in value.splitlines() if "[" not in line and "]" not in line]
+    lines = []
+    for line in value.splitlines():
+        if not repair_quality and re.fullmatch(r"```[\w-]*", line.strip()):
+            continue
+        if not repair_quality or ("[" not in line and "]" not in line):
+            lines.append(line)
     normalized = "\n".join(lines).replace("**", "").replace("__", "").strip()
+    if not repair_quality and not normalized:
+        return ""
     missing_facts = [
         (key, fact_value)
         for key, fact_value in sorted(verified_facts.items())
         if fact_value not in normalized
     ]
-    if missing_facts:
+    if missing_facts and repair_quality:
         labels = {
             "amount": "Suma",
             "payer_identification": "Platiteľ",
@@ -1448,7 +1545,14 @@ def workflow_user_reply(run: WorkflowRunResponse, *, language: str) -> str:
             if sk
             else "\n\nThis AI-assisted draft passed the configured checks and requires human review before legal use."
         )
-        return f"{run.final_answer}{tool_disclosure}{disclosure}".strip()
+        reflection_disclosure = ""
+        if run.retry_count:
+            reflection_disclosure = (
+                f"\n\nKontrola kvality: návrh bol upravený; počet revízií: {run.retry_count}."
+                if sk
+                else f"\n\nQuality review: the draft was revised; revisions: {run.retry_count}."
+            )
+        return f"{run.final_answer}{reflection_disclosure}{tool_disclosure}{disclosure}".strip()
     return (
         "Automatizovaný workflow bol bezpečne zastavený a vyžaduje ľudskú kontrolu."
         if sk

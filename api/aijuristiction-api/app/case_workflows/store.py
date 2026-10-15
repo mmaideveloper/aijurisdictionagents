@@ -46,6 +46,18 @@ class WorkflowOwnershipError(PermissionError):
 
 
 class CaseWorkflowStore:
+    @contextmanager
+    def execution_lock(self, workflow_run_id: str) -> Iterator[None]:
+        """Serialize lifecycle execution across API processes sharing PostgreSQL."""
+        if not self._is_postgres:
+            raise RuntimeError("Durable workflow execution requires PostgreSQL")
+        with self._connect() as conn:
+            conn.execute("SELECT pg_advisory_lock(hashtextextended(%s, 753))", (workflow_run_id,))
+            try:
+                yield
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 753))", (workflow_run_id,))
+
     def __init__(self, config: CaseWorkflowStoreConfig) -> None:
         self._config = config
         config.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
@@ -335,6 +347,8 @@ class CaseWorkflowStore:
             ),
             input_attempt_count=int(state.get("input_attempt_count", 0)),
             quality_revision_count=int(state.get("quality_revision_count", 0)),
+            retry_count=int(state.get("retry_count", 0)),
+            max_revision_attempts=int(state.get("max_revision_attempts", 3)),
             technical_retry_count=int(state.get("technical_retry_count", 0)),
             created_at=_datetime(str(row["created_at"])),
             updated_at=_datetime(str(row["updated_at"])),

@@ -24,6 +24,107 @@ def _runtime() -> CaseWorkflowRuntime:
     )
 
 
+class RevisingServices(DeterministicCaseWorkflowServices):
+    def draft_documents(self, state):
+        text = (
+            "AI-assisted draft: A paid B 100 EUR. Review before use."
+            if state.get("retry_count")
+            else "AI-assisted draft: A paid B."
+        )
+        return text, [{"provider": "deterministic", "model": "synthetic", "artifact_type": "draft"}]
+
+    def review_output(self, state):
+        return (
+            (True, "verified_facts_preserved")
+            if "100 EUR" in state["final_answer"]
+            else (False, "verified_fact_missing_from_output")
+        )
+
+
+def test_recoverable_review_revises_previous_answer():
+    runtime = CaseWorkflowRuntime(
+        services=RevisingServices(legal_source_ids=("synthetic-law",)), checkpointer=InMemorySaver()
+    )
+    result = runtime.start(
+        _state(graph_version=5, facts={"payer": "A", "recipient": "B", "amount": "100 EUR"})
+    )
+    assert result.state["status"] == "completed"
+    assert result.state["retry_count"] == 1
+    assert any("počet revízií: 1" in notice for notice in result.state["presentation"]["notices"])
+    assert result.state["critique"]["failure_category"] == "verified_fact_missing_from_output"
+    drafts = [e for e in result.state["events"] if e["event_type"] == "documents_drafted"]
+    assert [e["details"]["revision"] for e in drafts] == [0, 1]
+    assert drafts[1]["details"]["parent_artifact_id"]
+    assert "100 EUR" in result.state["final_answer"]
+
+
+def test_reflection_budget_and_no_progress_stop_redrafting():
+    class NeverPasses(RevisingServices):
+        def review_output(self, state):
+            return False, "unresolved_placeholder"
+
+    state = _state(graph_version=5, facts={"payer": "A", "recipient": "B", "amount": "100 EUR"})
+    state["termination_policy"]["quality_revision_limit"] = 1
+    runtime = CaseWorkflowRuntime(
+        services=NeverPasses(legal_source_ids=("synthetic-law",)), checkpointer=InMemorySaver()
+    )
+    result = runtime.start(state)
+    assert result.state["retry_count"] == 1
+    assert result.state["termination_reason"] == "revision_budget_exhausted"
+
+
+def test_privacy_failure_never_revises_failed_quality():
+    class Unsafe(RevisingServices):
+        def review_safety_and_gdpr(self, state):
+            return False, "tool_executed_without_consent"
+
+    result = CaseWorkflowRuntime(
+        services=Unsafe(legal_source_ids=("synthetic-law",)), checkpointer=InMemorySaver()
+    ).start(_state(graph_version=5, facts={"payer": "A", "recipient": "B", "amount": "100 EUR"}))
+    assert result.state["status"] == "blocked"
+    assert result.state.get("retry_count", 0) == 0
+    assert not any(e["event_type"] == "output_critique_recorded" for e in result.state["events"])
+
+
+def test_checkpoint_reconstructs_interrupted_projection():
+    runtime = _runtime()
+    first = runtime.start(_state())
+    recovered = runtime.checkpoint_outcome(first.state)
+    assert recovered.is_waiting
+    assert (
+        recovered.state["pending_action"]["resume_token"]
+        == first.state["pending_action"]["resume_token"]
+    )
+
+
+def test_reflection_unchanged_output_stops_before_total_budget():
+    class Stuck(RevisingServices):
+        def draft_documents(self, state):
+            return "unchanged", []
+
+        def review_output(self, state):
+            return False, "unresolved_placeholder"
+
+    result = CaseWorkflowRuntime(
+        services=Stuck(legal_source_ids=("synthetic-law",)), checkpointer=InMemorySaver()
+    ).start(_state(graph_version=5, facts={"payer": "A", "recipient": "B", "amount": "100 EUR"}))
+    assert result.state["termination_reason"] == "no_progress"
+    assert result.state["retry_count"] == 1
+
+
+def test_unknown_review_failure_is_not_copied_into_critique():
+    class Unknown(RevisingServices):
+        def review_output(self, state):
+            return False, "mandatory_human_review"
+
+    result = CaseWorkflowRuntime(
+        services=Unknown(legal_source_ids=("synthetic-law",)), checkpointer=InMemorySaver()
+    ).start(_state(graph_version=5, facts={"payer": "A", "recipient": "B", "amount": "100 EUR"}))
+    assert result.state["termination_reason"] == "human_review_required"
+    assert result.state["retry_count"] == 0
+    assert not result.state["critique"]
+
+
 def _state(
     *,
     facts: dict[str, str] | None = None,

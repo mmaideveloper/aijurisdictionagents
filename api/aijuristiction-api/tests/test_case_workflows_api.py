@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sqlite3
@@ -19,8 +20,10 @@ from app.case_workflows.service import (
     ProductionCaseWorkflowServices,
     WorkflowConfigurationError,
     _normalize_generated_draft,
+    _build_workflow_checkpointer,
     get_case_workflow_service,
     route_primary_chat_workflow_turn,
+    workflow_user_reply,
 )
 from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
 from app.document_templates.store import DocumentTemplateStore, DocumentTemplateStoreConfig
@@ -39,6 +42,13 @@ AUTH_HEADERS = {"x-api-key": "aijuris"}
 ADMIN_HEADERS = {**AUTH_HEADERS, "x-admin-api-key": "admin-secret"}
 
 
+class OfflineWorkflowStore(CaseWorkflowStore):
+    @contextmanager
+    def execution_lock(self, workflow_run_id):
+        # Explicit single-process test double. Production factory rejects SQLite.
+        yield
+
+
 def test_generated_draft_preserves_only_missing_verified_facts() -> None:
     result = _normalize_generated_draft(
         "**Potvrdenie** pre Platiteľ A.\nVoliteľné: [doplňte poznámku]",
@@ -55,13 +65,83 @@ def test_generated_draft_preserves_only_missing_verified_facts() -> None:
     assert "ľudskú kontrolu" in result
 
 
+def test_production_rejects_non_durable_checkpointer_configuration() -> None:
+    with raises(WorkflowConfigurationError, match="requires PostgreSQL"):
+        _build_workflow_checkpointer(cast(Any, SimpleNamespace(uses_postgres=False)))
+
+
+def test_reflection_reviews_defects_before_silent_normalization() -> None:
+    result = _normalize_generated_draft(
+        "Draft [amount]", verified_facts={"amount": "100 EUR"}, repair_quality=False
+    )
+    assert "[amount]" in result
+    assert "100 EUR" not in result
+    assert "ľudskú kontrolu" in result
+
+
+def test_revised_document_strips_code_fences_without_changing_verified_content() -> None:
+    result = _normalize_generated_draft("```text\nSynthetic A paid 100 EUR.\n```",
+        verified_facts={"amount": "100 EUR"}, repair_quality=False)
+    assert "```" not in result
+    assert "Synthetic A paid 100 EUR." in result
+
+
+def test_fence_only_draft_is_still_empty_for_quality_review() -> None:
+    assert _normalize_generated_draft("```\n```", verified_facts={}, repair_quality=False) == ""
+
+
+def test_reflection_preserves_citations_but_rejects_placeholders() -> None:
+    services = ProductionCaseWorkflowServices(
+        api_store=cast(Any, None), workflow_store=cast(Any, None), tool_registry=ToolRegistry({})
+    )
+    state = {
+        "graph_version": 5,
+        "final_answer": "100 EUR [source](https://example.test/law) [1]",
+        "verified_facts": {"amount": "100 EUR"},
+    }
+    assert services.review_output(cast(Any, state))[0]
+    for defect in ("[amount]", "[amount", "amount]"):
+        state["final_answer"] = f"100 EUR {defect}"
+        assert services.review_output(cast(Any, state)) == (False, "unresolved_placeholder")
+
+
+def test_completed_reply_discloses_revision_count() -> None:
+    run = SimpleNamespace(
+        status="completed", final_answer="Revised synthetic answer", tool_results=[], retry_count=1
+    )
+    reply = workflow_user_reply(cast(Any, run), language="en")
+    assert "Quality review: the draft was revised; revisions: 1" in reply
+    assert "requires human review" in reply
+
+
+def test_revision_prompt_contains_previous_response_and_explicit_iteration(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def respond(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return SimpleNamespace(content="100 EUR synthetic revised draft")
+
+    monkeypatch.setattr("app.case_workflows.service.get_routed_llm_client", lambda **kwargs: SimpleNamespace(
+        client=object(), provider="synthetic-provider", model="synthetic-model", route_type="test"))
+    monkeypatch.setattr("app.case_workflows.service.create_lawyer_agent", lambda *_args: SimpleNamespace(respond=respond))
+    services = ProductionCaseWorkflowServices(api_store=cast(Any, None), workflow_store=cast(Any, None), tool_registry=ToolRegistry({}))
+    services.draft_documents(cast(Any, {
+        "workflow_run_id": "synthetic-revision-test", "graph_version": 5,
+        "jurisdiction": "SK", "request_text": "Prepare a synthetic confirmation.",
+        "retry_count": 1, "critique": {"instruction": "Replace placeholders with verified facts."},
+        "final_answer": "Previous response [amount]", "verified_facts": {"amount": "100 EUR"},
+    }))
+    assert "This is revision 1" in captured["system_prompt_override"]
+    assert "Do not repeat instructions limited to the first draft" in captured["system_prompt_override"]
+    assert "Replace placeholders with verified facts" in captured["system_prompt_override"]
+    assert "Previous response [amount]" in captured["conversation"][0].content
+
+
 def _service(
     tmp_path: Path, *, flow_store: FlowPackStore | None = None
 ) -> CaseWorkflowApplicationService:
     flow_store = flow_store or FlowPackStore(
-        FlowPackStoreConfig(
-            db_option="local", db_cloud="", sqlite_path=tmp_path / "flows.sqlite3"
-        )
+        FlowPackStoreConfig(db_option="local", db_cloud="", sqlite_path=tmp_path / "flows.sqlite3")
     )
     template_store = DocumentTemplateStore(
         DocumentTemplateStoreConfig(
@@ -69,7 +149,7 @@ def _service(
         )
     )
     service = CaseWorkflowApplicationService(
-        store=CaseWorkflowStore(
+        store=OfflineWorkflowStore(
             CaseWorkflowStoreConfig(
                 db_option="local", db_cloud="", sqlite_path=tmp_path / "workflows.sqlite3"
             )
@@ -121,7 +201,7 @@ def test_default_assignment_preserves_legacy_versions_and_selects_presentation_f
         case_type_key="sk.civil.payment_confirmation", jurisdiction="SK"
     )
 
-    assert assignment.graph_version == 4
+    assert assignment.graph_version == 5
     assert assignment.flow_version == 5
     assert upgraded_store.get(
         flow_key="sk.civil.payment_confirmation", version=1, jurisdiction="SK"
@@ -682,18 +762,26 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
 
         values = ["Platiteľ A", "Príjemca B", "100 EUR", "2026-08-26", "pôžička"]
         for value in values:
+            token = run["pending_action"]["resume_token"]
             resumed = client.post(
                 f"/v1/case-workflows/runs/{run['workflow_run_id']}/resume",
                 headers=AUTH_HEADERS,
-                json={"user_id": "synthetic-user-635", "value": value},
+                json={"user_id": "synthetic-user-635", "value": value,
+                      "resume_token": run["pending_action"]["resume_token"]},
             )
             assert resumed.status_code == 200, resumed.text
             run = resumed.json()
+            duplicate = client.post(
+                f"/v1/case-workflows/runs/{run['workflow_run_id']}/resume", headers=AUTH_HEADERS,
+                json={"user_id": "synthetic-user-635", "value": value, "resume_token": token},
+            )
+            assert duplicate.status_code == 409
         assert run["pending_action"]["type"] == "tool_consent"
         consented = client.post(
             f"/v1/case-workflows/runs/{run['workflow_run_id']}/resume",
             headers=AUTH_HEADERS,
-            json={"user_id": "synthetic-user-635", "value": "Súhlasím"},
+            json={"user_id": "synthetic-user-635", "value": "Súhlasím",
+                  "resume_token": run["pending_action"]["resume_token"]},
         )
         assert consented.status_code == 200, consented.text
         run = consented.json()
