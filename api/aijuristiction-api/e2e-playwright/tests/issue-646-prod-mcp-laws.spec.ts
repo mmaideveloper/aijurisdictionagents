@@ -85,11 +85,15 @@ const frontendBaseUrl = (process.env.FRONTEND_BASE_URL ?? 'https://web.jurisdigt
 const mcpBaseUrl = (process.env.MCP_PUBLIC_BASE_URL ?? 'https://mcp.jurisdigta.eu').replace(/\/$/, '');
 const apiKey = process.env.API_KEY?.trim() || 'aijuris';
 const e2ePassword = process.env.JURISDIGTA_E2E_TEST_USER_PASSWORD?.trim() || '';
+const evidenceSecrets = new Set<string>(e2ePassword ? [e2ePassword] : []);
+if (apiKey !== 'aijuris') evidenceSecrets.add(apiKey);
 const expectedCommitSha = process.env.ISSUE_646_DEPLOYED_COMMIT_SHA?.trim() || '';
 const timeoutMs = Number(process.env.ISSUE_646_TIMEOUT_MS ?? 660_000);
 const authSessionKey = 'jurisdigta.web.auth.user.v1';
 
 test.describe.configure({ mode: 'serial' });
+// Device credentials must never enter a trace or video artifact.
+test.use({ trace: 'off', video: 'off' });
 
 test('production MCP law grounding is preserved through the configured real model', async ({
   browser,
@@ -125,6 +129,7 @@ test('production MCP law grounding is preserved through the configured real mode
     try {
       const oauth = await authorizeMcp(request, cell.email, e2ePassword);
       userId = oauth.userId;
+      await verifySyntheticBrowserAuth(request, userId, cell.email);
       const directMcp = await discoverLawThroughMcp(request, oauth.accessToken);
       result.directMcp = directMcp;
 
@@ -327,6 +332,7 @@ test('production remains stable when a synthetic case requests the latest five l
   try {
     const oauth = await authorizeMcp(request, cell!.email, e2ePassword);
     userId = oauth.userId;
+    await verifySyntheticBrowserAuth(request, userId, cell!.email);
     const latestSources = await discoverLatestLawsThroughMcp(request, oauth.accessToken, submittedQuestion);
     expect(latestSources).toHaveLength(5);
 
@@ -422,6 +428,10 @@ test('production remains stable when a synthetic case requests the latest five l
       retention: 'Delete this ignored evidence within 7 days.',
       result: 'passed',
     };
+  } catch (error) {
+    const message = sanitizeError(error);
+    manifest = { ...manifest, syntheticOnly: true, result: 'failed', error: message };
+    throw new Error(message);
   } finally {
     if (!screenshotName) {
       screenshotName = 'issue-635-prod-stability-failed.png';
@@ -481,8 +491,10 @@ async function authorizeMcp(
   expect(clientId).not.toBe('');
 
   const verifier = randomBytes(48).toString('base64url');
+  evidenceSecrets.add(verifier);
   const challenge = createHash('sha256').update(verifier, 'ascii').digest('base64url');
   const state = randomUUID();
+  evidenceSecrets.add(state);
   const resource = `${mcpBaseUrl}/MCP`;
   const loginResponse = await request.post(`${mcpBaseUrl}/oauth/authorize/login`, {
     form: {
@@ -507,6 +519,7 @@ async function authorizeMcp(
   const callback = new URL(location);
   expect(callback.searchParams.get('state')).toBe(state);
   const code = callback.searchParams.get('code') ?? '';
+  if (code) evidenceSecrets.add(code);
   expect(code).not.toBe('');
 
   const tokenResponse = await request.post(`${mcpBaseUrl}/oauth/token`, {
@@ -522,6 +535,7 @@ async function authorizeMcp(
   expect(tokenResponse.ok()).toBeTruthy();
   const token = (await tokenResponse.json()) as { access_token?: string };
   const accessToken = String(token.access_token ?? '');
+  if (accessToken) evidenceSecrets.add(accessToken);
   expect(accessToken).not.toBe('');
   return { accessToken, userId: jwtSubject(accessToken) };
 }
@@ -718,8 +732,9 @@ async function openSyntheticCaseInFrontend(page: Page, caseId: string, caseTitle
 }
 
 async function seedFrontendSession(page: Page, userId: string, email: string): Promise<void> {
+  const credential = syntheticBrowserAuth(userId, email);
   await page.addInitScript(
-    ({ key, id, address }) => {
+    ({ key, id, address, deviceId, deviceAuthToken }) => {
       window.localStorage.setItem('aj_frontend_lang', 'sk');
       window.sessionStorage.setItem(
         key,
@@ -729,11 +744,48 @@ async function seedFrontendSession(page: Page, userId: string, email: string): P
           name: 'JurisDigta Synthetic Post-deployment E2E',
           role: 'user',
           isEnabled: true,
+          deviceId,
+          deviceAuthToken,
         }),
       );
     },
-    { key: authSessionKey, id: userId, address: email },
+    { key: authSessionKey, id: userId, address: email,
+      deviceId: credential.deviceId, deviceAuthToken: credential.deviceAuthToken },
   );
+}
+
+type BrowserCredential = { userId: string; email: string; deviceId: string; deviceAuthToken: string };
+
+function syntheticBrowserAuth(userId: string, email: string): BrowserCredential {
+  const path = process.env.ISSUE_646_BROWSER_AUTH_FILE?.trim();
+  if (!path || path === 'unknown-variable') {
+    throw new Error('A private ISSUE_646_BROWSER_AUTH_FILE is required for synthetic browser authentication');
+  }
+  let fixture: { users?: BrowserCredential[] };
+  try {
+    fixture = JSON.parse(readFileSync(path, 'utf8')) as { users?: BrowserCredential[] };
+  } catch {
+    throw new Error('The private synthetic browser credential fixture could not be read');
+  }
+  const credential = fixture.users?.find((item) => item.userId === userId && item.email === email);
+  if (!credential || typeof credential.deviceId !== 'string' || !credential.deviceId.startsWith('prod-e2e-') ||
+      typeof credential.deviceAuthToken !== 'string' || !credential.deviceAuthToken.trim()) {
+    throw new Error('The private browser credential does not match the approved synthetic subject');
+  }
+  evidenceSecrets.add(credential.deviceAuthToken);
+  return credential;
+}
+
+async function verifySyntheticBrowserAuth(request: APIRequestContext, userId: string, email: string): Promise<void> {
+  const credential = syntheticBrowserAuth(userId, email);
+  const response = await request.get(`${apiBaseUrl}/v1/privacy/subjects/${encodeURIComponent(userId)}`, {
+    headers: { ...apiHeaders(), 'x-jurisdigta-device-id': credential.deviceId,
+      'x-jurisdigta-device-token': credential.deviceAuthToken },
+  });
+  expect(response.status(), 'The real synthetic device credential must authenticate before chat').toBe(200);
+  const state = await response.json() as { consents?: { external_models?: boolean }; restricted?: boolean };
+  expect(state.consents?.external_models).toBe(true);
+  expect(state.restricted).toBe(false);
 }
 
 function lawResultMatches(result: Record<string, unknown>): boolean {
@@ -788,9 +840,30 @@ function safePreview(value: string): string {
 }
 
 function sanitizeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
+  let message = error instanceof Error ? error.message : String(error);
+  for (const secret of evidenceSecrets) {
+    message = message.replaceAll(secret, '[REDACTED]').replaceAll(encodeURIComponent(secret), '[REDACTED]');
+  }
   return message
     .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer [REDACTED]')
-    .replace(/(?:password|access_token|refresh_token)\s*[=:]\s*[^\s,}]+/gi, '$1=[REDACTED]')
+    .replace(/((?:x-jurisdigta-device-token|deviceAuthToken|device_auth_token|password|access_token|refresh_token|code_verifier)["']?\s*[=:]\s*["']?)[^\s,}"']+/gi, '$1[REDACTED]')
     .slice(0, 2000);
 }
+
+test('evidence errors redact device and OAuth credentials', () => {
+  const secret = 'synthetic-secret-with-characters/+';
+  evidenceSecrets.add(secret);
+  try {
+    const sanitized = sanitizeError(new Error(
+      `private=${secret} encoded=${encodeURIComponent(secret)}\n` +
+      'x-jurisdigta-device-token: header-secret\n{"deviceAuthToken":"json-secret"}\n' +
+      'code_verifier=verifier-secret Authorization: Bearer oauth-secret',
+    ));
+    for (const value of [secret, encodeURIComponent(secret), 'header-secret', 'json-secret', 'verifier-secret', 'oauth-secret']) {
+      expect(sanitized).not.toContain(value);
+    }
+    expect(sanitized).toContain('[REDACTED]');
+  } finally {
+    evidenceSecrets.delete(secret);
+  }
+});
