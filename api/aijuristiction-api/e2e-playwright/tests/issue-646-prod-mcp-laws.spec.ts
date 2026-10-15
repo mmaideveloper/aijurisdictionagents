@@ -90,6 +90,8 @@ const timeoutMs = Number(process.env.ISSUE_646_TIMEOUT_MS ?? 660_000);
 const authSessionKey = 'jurisdigta.web.auth.user.v1';
 
 test.describe.configure({ mode: 'serial' });
+// Device credentials must never enter a trace or video artifact.
+test.use({ trace: 'off', video: 'off' });
 
 test('production MCP law grounding is preserved through the configured real model', async ({
   browser,
@@ -125,6 +127,7 @@ test('production MCP law grounding is preserved through the configured real mode
     try {
       const oauth = await authorizeMcp(request, cell.email, e2ePassword);
       userId = oauth.userId;
+      await verifySyntheticBrowserAuth(request, userId, cell.email);
       const directMcp = await discoverLawThroughMcp(request, oauth.accessToken);
       result.directMcp = directMcp;
 
@@ -327,6 +330,7 @@ test('production remains stable when a synthetic case requests the latest five l
   try {
     const oauth = await authorizeMcp(request, cell!.email, e2ePassword);
     userId = oauth.userId;
+    await verifySyntheticBrowserAuth(request, userId, cell!.email);
     const latestSources = await discoverLatestLawsThroughMcp(request, oauth.accessToken, submittedQuestion);
     expect(latestSources).toHaveLength(5);
 
@@ -718,8 +722,9 @@ async function openSyntheticCaseInFrontend(page: Page, caseId: string, caseTitle
 }
 
 async function seedFrontendSession(page: Page, userId: string, email: string): Promise<void> {
+  const credential = syntheticBrowserAuth(userId, email);
   await page.addInitScript(
-    ({ key, id, address }) => {
+    ({ key, id, address, deviceId, deviceAuthToken }) => {
       window.localStorage.setItem('aj_frontend_lang', 'sk');
       window.sessionStorage.setItem(
         key,
@@ -729,11 +734,47 @@ async function seedFrontendSession(page: Page, userId: string, email: string): P
           name: 'JurisDigta Synthetic Post-deployment E2E',
           role: 'user',
           isEnabled: true,
+          deviceId,
+          deviceAuthToken,
         }),
       );
     },
-    { key: authSessionKey, id: userId, address: email },
+    { key: authSessionKey, id: userId, address: email,
+      deviceId: credential.deviceId, deviceAuthToken: credential.deviceAuthToken },
   );
+}
+
+type BrowserCredential = { userId: string; email: string; deviceId: string; deviceAuthToken: string };
+
+function syntheticBrowserAuth(userId: string, email: string): BrowserCredential {
+  const path = process.env.ISSUE_646_BROWSER_AUTH_FILE?.trim();
+  if (!path || path === 'unknown-variable') {
+    throw new Error('A private ISSUE_646_BROWSER_AUTH_FILE is required for synthetic browser authentication');
+  }
+  let fixture: { users?: BrowserCredential[] };
+  try {
+    fixture = JSON.parse(readFileSync(path, 'utf8')) as { users?: BrowserCredential[] };
+  } catch {
+    throw new Error('The private synthetic browser credential fixture could not be read');
+  }
+  const credential = fixture.users?.find((item) => item.userId === userId && item.email === email);
+  if (!credential || typeof credential.deviceId !== 'string' || !credential.deviceId.startsWith('prod-e2e-') ||
+      typeof credential.deviceAuthToken !== 'string' || !credential.deviceAuthToken.trim()) {
+    throw new Error('The private browser credential does not match the approved synthetic subject');
+  }
+  return credential;
+}
+
+async function verifySyntheticBrowserAuth(request: APIRequestContext, userId: string, email: string): Promise<void> {
+  const credential = syntheticBrowserAuth(userId, email);
+  const response = await request.get(`${apiBaseUrl}/v1/privacy/subjects/${encodeURIComponent(userId)}`, {
+    headers: { ...apiHeaders(), 'x-jurisdigta-device-id': credential.deviceId,
+      'x-jurisdigta-device-token': credential.deviceAuthToken },
+  });
+  expect(response.status(), 'The real synthetic device credential must authenticate before chat').toBe(200);
+  const state = await response.json() as { consents?: { external_models?: boolean }; restricted?: boolean };
+  expect(state.consents?.external_models).toBe(true);
+  expect(state.restricted).toBe(false);
 }
 
 function lawResultMatches(result: Record<string, unknown>): boolean {

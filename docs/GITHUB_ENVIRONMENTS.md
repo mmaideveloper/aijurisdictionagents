@@ -1,3 +1,22 @@
+# Authenticated synthetic browser acceptance (#918)
+
+The production MCP browser gate requires real device authentication as well as OAuth
+and current model consent. The workflow creates 24-hour device credentials only for
+the two existing approved synthetic accounts, copies a mode-0600 fixture into a private
+temporary runner directory, and mounts it read-only outside the evidence directory.
+`ISSUE_646_BROWSER_AUTH_FILE` is a workflow-set non-secret path, not a new Environment
+secret; no manual GitHub Environment setting is needed for `test` or `prod`.
+
+For isolated local `test`, provision the approved synthetic users, run
+`python scripts/provision_e2e_browser_auth.py create --file runs/storage/e2e-browser-auth.json`,
+and point `ISSUE_646_BROWSER_AUTH_FILE` at that private file. Run `revoke --file` with
+the same path afterward. Never upload the fixture. The production EXIT trap revokes
+only the newly created E2E devices, removes both file copies and closes the OAuth test
+window. Cleanup failures fail the job. Trace/video recording is disabled for this
+credential-bearing scenario; retain only sanitized manifests and screenshots for seven days.
+The test checks authenticated privacy state before sending a model question and leaves
+the product authentication and consent requirements enforced.
+
 # Synthetic release-account consent (#914)
 
 For `test`, run `python scripts/provision_e2e_users.py --help` to inspect the explicit

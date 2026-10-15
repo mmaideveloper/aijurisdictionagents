@@ -1,3 +1,26 @@
+# Synthetic browser device credentials (#918)
+
+Owner: the existing release operator on the trusted self-hosted runner. No new account,
+installation or secret is required. After migrations and synthetic-account provisioning,
+Self-Managed Prod Deploy runs `scripts/provision_e2e_browser_auth.py create --file` inside
+the API container. It issues real per-run device credentials for the hardcoded approved
+synthetic emails only, with a one-day expiry as a cleanup-failure safety limit. The
+private fixture is created exclusively with mode 0600, copied to a private runner temp
+directory and mounted read-only at `/run/secrets/jurisdigta-e2e-browser-auth.json`.
+The workflow sets `ISSUE_646_BROWSER_AUTH_FILE` to that path automatically. Neither the
+fixture nor token values belong in logs, Git, traces, videos or uploaded evidence.
+
+Validate locally with `python -m pytest tests/test_e2e_browser_auth.py`; final acceptance
+must still use the real API/frontend/MCP/database/provider scenario. The test verifies
+the device against the real privacy endpoint before model execution. On success or
+failure, cleanup runs the helper's `revoke` operation, deletes its private files and
+closes the synthetic OAuth window. It never revokes unrelated user devices. If cleanup
+fails, mark the release failed and have the operator rerun `revoke --file` against the
+retained container fixture; credentials also expire within one day. Do not bypass
+authentication or disable privacy controls to make the browser test pass. To roll back
+the test change, revert helper, test and workflow together and leave production acceptance
+pending until an authenticated replacement scenario passes.
+
 # Synthetic model acceptance consent (#914)
 
 Owner: the release operator using the existing trusted self-hosted runner and secret
