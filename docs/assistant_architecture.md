@@ -1,5 +1,18 @@
 # Assistant Architecture
 
+## Governed model-turn contracts
+
+Every Azure Foundry, OpenAI and Ollama completion now passes through the shared
+`AgentTurnContext` compatibility builder. The typed request, instruction, skill,
+tool, memory, artifact, governance, provenance and budget categories and versioned
+artifact/tool/approval/citation/event schemas are documented in
+[ADR 0660](adr/ADR-0660-governed-agent-turn-context.md). Internal context stays on
+the server; existing public REST/SSE contracts remain compatible. Operational
+logging reports aggregate counts and omitted categories without context content.
+Run `python examples/governed_turn_context_demo.py` for the synthetic bounded-context
+example. Persistent consent, DSAR and retention enforcement remain with the controls
+implemented in #389; both legacy and typed calls recheck live privacy policy.
+
 The law citation contract, full-source authorization boundary and runnable example are
 documented in [Provision citations](ISSUE_746_PROVISION_CITATIONS.md). Law-level sidebar
 deduplication preserves each answer's individual provision and effective-version links.

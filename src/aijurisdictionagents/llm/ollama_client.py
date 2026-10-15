@@ -7,8 +7,11 @@ import socket
 import time
 from typing import Any, Iterable, Sequence, cast
 from urllib import error, request
+from urllib.parse import urlsplit
 
-from .context_boundary import build_provider_messages
+from .context_boundary import build_turn_provider_messages
+from .turn_context import legacy_turn_context
+from .turn_contracts import AgentTurnContext
 from .base import (
     ModelProcessingTimeout,
     elapsed_seconds,
@@ -50,7 +53,11 @@ class OllamaClient:
         conversation: Sequence[Message],
         documents: Sequence[Document],
     ) -> str:
-        messages = build_provider_messages(system_prompt, conversation, documents)
+        return self.complete_turn(agent_name, legacy_turn_context(system_prompt, conversation, documents))
+
+    def complete_turn(self, agent_name: str, context: AgentTurnContext) -> str:
+        external = urlsplit(self._base_url).hostname not in {"localhost", "127.0.0.1", "::1"}
+        messages = build_turn_provider_messages(context, external_provider=external)
 
         log_llm_request(
             logger,

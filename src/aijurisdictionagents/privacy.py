@@ -14,6 +14,7 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from .api_db import ApiDatabaseStore
     from .llm.base import LLMClient
+    from .llm.turn_contracts import AgentTurnContext
     from .schemas import Document, Message
 
 CONSENT_VERSION = "389-v1"
@@ -268,6 +269,15 @@ class PrivacyCheckedClient:
         from .llm.base import private_model_io
         with private_model_io(), privacy_scope(self.controls, self.user_id):
             result = self.client.complete(agent_name, system_prompt, conversation, documents)
+        self.controls.event("model_response", "completed")
+        return result
+
+    def complete_turn(self, agent_name: str, context: AgentTurnContext) -> str:
+        """Typed calls must recheck live consent, never bypass via __getattr__."""
+        self.controls.require_processing(self.user_id, "external_models" if self.external else None)
+        from .llm.base import private_model_io
+        with private_model_io(), privacy_scope(self.controls, self.user_id):
+            result: str = getattr(self.client, "complete_turn")(agent_name, context)
         self.controls.event("model_response", "completed")
         return result
 

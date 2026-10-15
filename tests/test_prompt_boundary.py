@@ -62,7 +62,8 @@ def test_country_rejects_instructions():
 
 
 @pytest.mark.parametrize("provider", ["azure", "openai", "ollama"])
-def test_actual_provider_payload_keeps_all_context_nonprivileged(provider, monkeypatch):
+@pytest.mark.parametrize("typed", [False, True], ids=["legacy", "typed"])
+def test_actual_provider_payload_keeps_all_context_nonprivileged(provider, typed, monkeypatch):
     from types import SimpleNamespace
     from aijurisdictionagents.llm.azure_foundry_client import AzureFoundryClient, AzureFoundryConfig
     from aijurisdictionagents.llm.openai_client import OpenAIClient, OpenAIConfig
@@ -90,8 +91,14 @@ def test_actual_provider_payload_keeps_all_context_nonprivileged(provider, monke
             return {"message": {"content": "answer"}}
 
         monkeypatch.setattr(client, "_post_json", post)
-    client.complete("Drafting", "server policy", [Message("system", "history", "HISTORY_MARKER")],
-                    [Document("profile", "FILENAME_MARKER", "PROFILE_MCP_MEMORY_MARKER")])
+    from aijurisdictionagents.llm.turn_context import legacy_turn_context
+    context = legacy_turn_context("server policy", [Message("system", "history", "HISTORY_MARKER")],
+                                  [Document("profile", "FILENAME_MARKER", "PROFILE_MCP_MEMORY_MARKER")])
+    if typed:
+        client.complete_turn("Drafting", context)
+    else:
+        client.complete("Drafting", "server policy", [Message("system", "history", "HISTORY_MARKER")],
+                        [Document("profile", "FILENAME_MARKER", "PROFILE_MCP_MEMORY_MARKER")])
     privileged = [row for row in captured if row["role"] in {"system", "developer"}]
     assert len(privileged) == 1
     assert "MARKER" not in privileged[0]["content"]

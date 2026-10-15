@@ -19,6 +19,7 @@ dependencies = [
   "openai>=1.0",
   "Pillow>=11.0",
   "pypdf>=6.0",
+  "pydantic>=2.0,<3",
   "PyMuPDF>=1.26.0",
   "python-dotenv>=1.0",
   "psycopg[binary]>=3.2",

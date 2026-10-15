@@ -2,6 +2,17 @@
 
 Every user-facing E2E scenario must prove both the machine contract and the result visible to a user. A passing HTTP response without final UI evidence is not sufficient.
 
+For #660 governed turn-context compatibility, `tests/test_prompt_boundary.py` and
+`tests/test_turn_context.py` provide deterministic provider/contract evidence, not
+real local E2E acceptance. Real chat acceptance must still use the implemented local
+frontend/API and relevant MCP/workers, migrated synthetic PostgreSQL data, and the
+configured real model. Include the observed provider/model route and context schema
+version, aggregate sizes and omitted categories in the sanitized manifest; exclude
+internal contexts, raw prompts, artifact bodies, private owner references and tool
+arguments. Retain the final user-visible screenshot under ignored `runs/issue660/`
+with the existing evidence retention policy. A missing local PostgreSQL service leaves
+this acceptance pending and must not be replaced with SQLite or mocked acceptance.
+
 ## Real local acceptance environment
 
 Final acceptance for a user-facing E2E scenario must exercise the implemented local system rather
