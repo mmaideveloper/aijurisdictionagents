@@ -1,3 +1,13 @@
+# Synthetic release-account consent (#914)
+
+For `test`, run `python scripts/provision_e2e_users.py --help` to inspect the explicit
+`--grant-synthetic-model-consent` option. Use it only in an isolated synthetic acceptance
+database. For `prod`, Self-Managed Prod Deploy passes this option for its two existing
+hardcoded synthetic E2E accounts before real-model acceptance. It records current
+`external_models` consent; no customer account, marketing or external-check consent is
+changed. No new GitHub Environment variables or secrets are required. Existing privacy
+restrictions and pending erasure requests continue to fail closed.
+
 # Laws Tests public law reader (#840)
 
 For `test`, the existing isolated acceptance runner prepares a synthetic collector database

@@ -246,7 +246,7 @@ jobs:
           docker exec \
             -e JURISDIGTA_E2E_TEST_USER_PASSWORD="$JURISDIGTA_E2E_TEST_USER_PASSWORD" \
             jurisdigta-api \
-            python /workspace/scripts/provision_e2e_users.py --paid-model gpt-5-mini
+            python /workspace/scripts/provision_e2e_users.py --paid-model gpt-5-mini --grant-synthetic-model-consent
 
           sudo -n python3 "$GITHUB_WORKSPACE/scripts/server/configure_mcp_oauth_e2e_window.py" \
             enable \
