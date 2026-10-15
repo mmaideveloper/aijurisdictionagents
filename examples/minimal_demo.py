@@ -107,6 +107,11 @@ print(
     "provenance, retry exhaustion, and recursion overflow produce one sanitized "
     "workflow_terminated event plus a stable termination_reason for human oversight."
 )
+print("reflection_resume => python examples/reflection_resume_demo.py shows previous response, "
+      "structured critique, and revised response; add --postgres for durable checkpoint reopening.")
+from reflection_resume_demo import run_demo as run_reflection_demo
+
+run_reflection_demo()
 print(
     "assistant_presentation => internal LangGraph identifiers stay audit-visible while the frontend "
     "shows AI Orchestrator Agent and safely converts numeric character references such as &#x20; to "

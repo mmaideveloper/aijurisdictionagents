@@ -23,5 +23,5 @@ bounded input, quality, and technical counters; repeated-category plus unchanged
 detection; cancellation and deadline checks; and the graph recursion limit as a final backstop.
 Terminal paths persist a stable reason code and one sanitized `workflow_terminated` event. Privacy,
 consent, provenance, and mandatory legal-risk failures bypass autonomous revision and require a
-blocked or human-review outcome. Reflection added later must reuse this contract rather than
-introduce an independent retry counter.
+blocked or human-review outcome. Graph v5 implements reflection with this shared contract.
+See [reflection and durable resume](REFLECTION_AND_DURABLE_RESUME.md) for limits and recovery.

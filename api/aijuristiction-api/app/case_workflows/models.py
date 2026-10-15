@@ -71,6 +71,7 @@ class WorkflowStartRequest(BaseModel):
 class WorkflowResumeRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=200)
     value: str | dict[str, str]
+    resume_token: str = Field(min_length=1, max_length=200)
 
 
 class WorkflowControlRequest(BaseModel):
@@ -117,6 +118,8 @@ class WorkflowRunResponse(BaseModel):
     ] = ""
     input_attempt_count: int = 0
     quality_revision_count: int = 0
+    retry_count: int = 0
+    max_revision_attempts: int = 3
     technical_retry_count: int = 0
     created_at: datetime
     updated_at: datetime
