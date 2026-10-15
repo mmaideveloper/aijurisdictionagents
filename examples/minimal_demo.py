@@ -2,6 +2,7 @@
 # Streaming STT routing example: python examples/streaming_stt_demo.py
 # Real synthetic audio acceptance: python scripts/run_speech_e2e.py
 # Governed model-turn contracts: python examples/governed_turn_context_demo.py
+# CPU embedding dependency check: python examples/cpu_embedding_import_demo.py
 # Synthetic consent provisioning (no writes): python scripts/provision_e2e_users.py --help
 # Synthetic law seed/citation contract: python examples/synthetic_law_anchor_demo.py
 from pathlib import Path
