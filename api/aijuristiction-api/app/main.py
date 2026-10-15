@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app.cases_api import router as cases_router
 from app.privacy_api import router as privacy_router
 from app.document_review import router as document_review_router
+from app.software_assessment.api import router as software_assessment_router
 from app.case_types.api import router as case_types_router
 from app.case_workflows.api import router as case_workflows_router
 from app.decision_trace_api import router as decision_trace_router
@@ -297,6 +298,7 @@ app.include_router(privacy_router)
 async def privacy_denied_handler(_request: fastapi.Request, exc: PrivacyDenied) -> JSONResponse:
     return JSONResponse(status_code=403, content={"detail": privacy_problem(str(exc))})
 app.include_router(document_review_router)
+app.include_router(software_assessment_router)
 app.include_router(case_types_router)
 app.include_router(case_workflows_router)
 app.include_router(decision_trace_router)

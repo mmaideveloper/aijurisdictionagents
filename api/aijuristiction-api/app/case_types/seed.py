@@ -25,6 +25,15 @@ def build_default_case_types(
                 is_enabled=template.is_enabled and not template.is_deleted,
             )
         )
+    from app.software_assessment.models import CASE_TYPE_KEY
+    from app.software_assessment.workflow import DEFAULT_PROMPT
+    items.append(CaseTypeCreateRequest(
+        case_type_key=CASE_TYPE_KEY, jurisdiction="SK", language="sk",
+        name="Posúdenie regulačného súladu softvéru (SK + EU)",
+        description="Guided software assessment with supplier evidence, medical/IVD path, risks and actions; expert review required.",
+        keywords=["software compliance", "regulatory assessment", "softvér", "GDPR", "IVDR"],
+        prompt_text=DEFAULT_PROMPT, template_keys=[], is_enabled=True,
+    ))
     return items
 
 

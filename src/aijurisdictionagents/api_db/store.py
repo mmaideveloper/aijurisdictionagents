@@ -761,6 +761,23 @@ class ApiDatabaseStore:
                     FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS software_assessments (
+                    assessment_id TEXT PRIMARY KEY,
+                    case_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(case_id) REFERENCES cases(case_id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS software_assessment_documents (
+                    assessment_id TEXT NOT NULL,
+                    doc_id TEXT NOT NULL,
+                    PRIMARY KEY(assessment_id, doc_id),
+                    FOREIGN KEY(assessment_id) REFERENCES software_assessments(assessment_id) ON DELETE CASCADE,
+                    FOREIGN KEY(doc_id) REFERENCES case_documents(doc_id) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS document_shares (
                     share_id TEXT PRIMARY KEY,
                     token_hash TEXT UNIQUE NOT NULL,
@@ -4311,6 +4328,7 @@ class ApiDatabaseStore:
             )
             if result.rowcount == 0:
                 raise KeyError(f"Case {case_id} not found")
+            self._execute(conn, "DELETE FROM software_assessments WHERE case_id = ?", (case_id,))
 
     def soft_delete_case_for_admin(self, *, case_id: str, user_id: str) -> Case:
         before = self.get_case(case_id=case_id)
@@ -4393,6 +4411,10 @@ class ApiDatabaseStore:
                 if owned is None:
                     raise KeyError(f"Document {doc_id} not found for case {case_id}")
 
+                self._execute(conn, """
+                    DELETE FROM software_assessments WHERE case_id = ? AND assessment_id IN
+                    (SELECT assessment_id FROM software_assessment_documents WHERE doc_id = ?)
+                """, (case_id, doc_id))
                 share_rows = self._execute(
                     conn,
                     "SELECT share_id FROM document_shares WHERE case_id = ? AND doc_id = ?",
@@ -4961,6 +4983,88 @@ class ApiDatabaseStore:
             payload=payload,
             uploaded_by_user_id=uploaded_by_user_id,
         )
+
+    def save_software_assessment(
+        self, *, case_id: str, assessment_id: str, payload: dict[str, Any],
+        document_ids: list[str], expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        result = dict(payload, assessment_id=assessment_id, case_id=case_id,
+                      revision=1 if expected_revision is None else expected_revision + 1)
+        with self._connect() as conn:
+            # Serialize against case deletion: a long model call must not recreate
+            # private artifacts after the owner has deleted the case.
+            if not self.uses_postgres:
+                conn.execute("BEGIN IMMEDIATE")
+            case_query = "SELECT status FROM cases WHERE case_id = ?"
+            if self.uses_postgres:
+                case_query += " FOR UPDATE"
+            case_row = self._fetchone(conn, case_query, (case_id,))
+            if case_row is None or str(case_row[0]) == "deleted":
+                raise ValueError("Case was removed before assessment could be saved.")
+            if expected_revision is None:
+                inserted = self._execute(conn, """
+                    INSERT INTO software_assessments(assessment_id, case_id, payload_json, created_at)
+                    VALUES (?, ?, ?, ?) ON CONFLICT(assessment_id) DO NOTHING
+                """, (assessment_id, case_id, json.dumps(result, ensure_ascii=False), _now_iso()))
+                if inserted.rowcount == 0:
+                    existing = self._fetchone(conn,
+                        "SELECT payload_json FROM software_assessments WHERE assessment_id = ? AND case_id = ?",
+                        (assessment_id, case_id))
+                    if existing is None or json.loads(str(existing[0])).get("request_hash") != payload.get("request_hash"):
+                        raise ValueError("Request identifier already used with different inputs.")
+                    return json.loads(str(existing[0]))
+                for doc_id in document_ids:
+                    owned = self._fetchone(conn,
+                        "SELECT doc_id FROM case_documents WHERE doc_id = ? AND case_id = ?",
+                        (doc_id, case_id))
+                    if owned is None:
+                        raise ValueError("Evidence document no longer belongs to this case.")
+                    self._execute(conn, """
+                        INSERT INTO software_assessment_documents(assessment_id, doc_id)
+                        VALUES (?, ?) ON CONFLICT(assessment_id, doc_id) DO NOTHING
+                    """, (assessment_id, doc_id))
+            else:
+                updated = self._execute(conn, """
+                    UPDATE software_assessments SET payload_json = ?, revision = ?
+                    WHERE assessment_id = ? AND case_id = ? AND revision = ?
+                """, (json.dumps(result, ensure_ascii=False), expected_revision + 1,
+                      assessment_id, case_id, expected_revision))
+                if updated.rowcount != 1:
+                    raise ValueError("Assessment changed. Reload before saving.")
+                for doc_id in document_ids:
+                    owned = self._fetchone(conn,
+                        "SELECT doc_id FROM case_documents WHERE doc_id = ? AND case_id = ?", (doc_id, case_id))
+                    if owned is None:
+                        raise ValueError("Verification evidence no longer belongs to this case.")
+                    self._execute(conn, """
+                        INSERT INTO software_assessment_documents(assessment_id, doc_id)
+                        VALUES (?, ?) ON CONFLICT(assessment_id, doc_id) DO NOTHING
+                    """, (assessment_id, doc_id))
+            conn.commit()
+        return self.get_software_assessment(case_id=case_id, assessment_id=assessment_id) or result
+
+    def get_software_assessment(
+        self, *, case_id: str, assessment_id: str,
+    ) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = self._fetchone(conn, """
+                SELECT payload_json FROM software_assessments WHERE case_id = ? AND assessment_id = ?
+            """, (case_id, assessment_id))
+        return json.loads(str(row[0])) if row else None
+
+    def list_software_assessments(self, *, case_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = self._execute(conn, """
+                SELECT payload_json FROM software_assessments WHERE case_id = ?
+                ORDER BY created_at DESC LIMIT 50
+            """, (case_id,)).fetchall()
+        return [json.loads(str(row[0])) for row in rows]
+
+    def delete_software_assessment(self, *, case_id: str, assessment_id: str) -> None:
+        with self._connect() as conn:
+            self._execute(conn, "DELETE FROM software_assessments WHERE case_id = ? AND assessment_id = ?",
+                          (case_id, assessment_id))
+            conn.commit()
 
     def create_document_review(self, *, case_id: str, doc_id: str, payload: dict[str, Any], review_id: str | None = None) -> dict[str, Any]:
         self.get_case_document(case_id=case_id, doc_id=doc_id)

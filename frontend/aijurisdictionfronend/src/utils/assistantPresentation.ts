@@ -25,5 +25,6 @@ export const assistantAgentDisplayName = (agentName: string | null | undefined, 
   if (!normalized) {
     return fallback;
   }
+  if (normalized === "SoftwareBusinessAdvice") return "Softvérové poradenstvo";
   return INTERNAL_ORCHESTRATOR_NAME.test(normalized) ? AI_ORCHESTRATOR_AGENT_LABEL : normalized;
 };

@@ -1,3 +1,4 @@
+# ruff: noqa: E402 -- checked-out source imports require path bootstrap
 # Streaming STT routing example: python examples/streaming_stt_demo.py
 # Real synthetic audio acceptance: python scripts/run_speech_e2e.py
 from pathlib import Path
@@ -16,6 +17,22 @@ from aijurisdictionagents.api_db.e2e_test_users import provision_e2e_test_users
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
 from aijurisdictionagents.model_parameters import merge_model_parameters
 from aijurisdictionagents.correlation import correlation_headers, correlation_scope
+
+# Deterministic intake example: no provider calls or confidential documents.
+API_SOURCE_ROOT = Path(__file__).resolve().parents[1] / "api" / "aijuristiction-api"
+if str(API_SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(API_SOURCE_ROOT))
+from app.software_assessment.models import SoftwareFacts
+from app.software_assessment.workflow import intake_questions
+from app.software_assessment.conversation import user_evidence
+
+assert user_evidence(["DB bude sifrovana, pristup ma ordinacia."])["u1.1"] == "DB bude sifrovana"
+print("software_advice_chat => consent-gated Slovak business report; original answers are server-derived, never automatic pass.")
+
+software_questions = intake_questions(SoftwareFacts(description="Synthetic software with unconfirmed purpose."))
+assert any("intended purpose" in question for question in software_questions)
+assert any("specimen" in question for question in software_questions)
+print(f"software_regulatory_assessment => SK + EU; {len(software_questions)} missing facts; no compliance conclusion inferred.")
 
 MINIMUM_PYTHON = (3, 13)
 if sys.version_info < MINIMUM_PYTHON:
