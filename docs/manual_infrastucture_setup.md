@@ -21,6 +21,28 @@ authentication or disable privacy controls to make the browser test pass. To rol
 the test change, revert helper, test and workflow together and leave production acceptance
 pending until an authenticated replacement scenario passes.
 
+# CPU embedding runtime compatibility (#919)
+
+Owner: the release/platform operator. No new infrastructure, account or secret is
+required. Install root dependencies normally; do not independently upgrade Transformers
+inside production containers. The pinned production CPU set is PyTorch 2.7.1,
+sentence-transformers 6.1.0 and Transformers 5.19.0. Each API/worker Docker build now
+verifies the actual import offline, so an import-incompatible image fails before rollout.
+Linux x64 builds use the official PyTorch CPU wheel on the canonical host, checked
+against upstream SHA-256, avoiding the slow index-selected mirror observed during this
+release. Other architectures retain the CPU-index resolver. There is no new build
+argument, Environment setting or secret.
+Run `python examples/cpu_embedding_import_demo.py` for an offline installation check.
+This import check does not certify model weights or replace real local embedding tests.
+
+After rollout, require the continuous collector to remain running without an increasing
+restart count and confirm its real model loads from the approved local model directory.
+If a new collector cannot start, restore the previous verified image through the existing
+deployment rollback procedure while retaining the failed image for diagnostics. Never
+switch embedding providers or use a mock to conceal an import failure. The failed
+`c6f9105d` release exposed this regression; its previous collector image imported the
+verified set successfully and was restored while the fix was prepared.
+
 # Synthetic model acceptance consent (#914)
 
 Owner: the release operator using the existing trusted self-hosted runner and secret
@@ -363,7 +385,7 @@ Required owner: infrastructure operator with PostgreSQL administrator access.
 2. Enable `pgvector` with `CREATE EXTENSION IF NOT EXISTS vector;`.
 3. Apply `databases/court-decision-collector/initdb/001_schema.sql`, then run the tracked SQL migrations in `databases/court-decision-collector/migrations/` when upgrading an existing database. Keep the metadata full-text search index expression immutable for PostgreSQL production deploys.
 4. Store the connection string only in local/server secrets as `COURT_DECISIONS_DB_CLOUD`.
-5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISIONS_MAX_PDF_BYTES=26214400`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`. Apply `databases/court-decision-collector/migrations/0002_on_demand_enrichment.sql`, install/validate the existing local PDF/OCR runtime, and grant write access only to the dedicated storage path. Validate the Komárno example twice (cache miss then hit). Roll back by disabling enrichment before removing the new tables; retain PDFs until the approved deletion workflow handles them.
+5. Set `COURT_DECISIONS_DB_BACKEND=postgres`, `COURT_DECISIONS_STORAGE_LOCAL=./runs/storage/court-decision-collector/files/sk`, `COURT_DECISIONS_MAX_PDF_BYTES=26214400`, `COURT_DECISION_MCP_SEARCH_TIMEOUT_MS=600000`, and `COURT_DECISIONS_WORKER_POLL_HOURS=1`. Apply `databases/court-decision-collector/migrations/0002_on_demand_enrichment.sql`, install/validate the existing local PDF/OCR runtime, and grant write access only to the dedicated storage path. Validate the KomÃƒÂ¡rno example twice (cache miss then hit). Roll back by disabling enrichment before removing the new tables; retain PDFs until the approved deletion workflow handles them.
 6. Run a bounded fixture import first: `python -m services.court_decision_collector --fixture`.
 7. Validate console logs include `processing_judicial_decision reference_hash=...` and no raw source GUID, decision body, ECLI/file number, or personal identifier is logged.
 8. Validate MCP `tools/list` advertises `searchCourtDecisions` and `getCourtDecision`.
@@ -568,12 +590,12 @@ Purpose: point `web.jurisdigta.eu`, `agent.jurisdigta.eu`, `api.jurisdigta.eu`, 
 - Owner: Azure infrastructure administrator with Log Analytics Contributor-equivalent table
   permissions in both `test` and `prod`.
 - Deploy `infra/bicep/main.bicep`; it configures `AppDependencies`, `AppExceptions`, `AppRequests`,
-  and `AppTraces` with seven-day interactive and total retention for Admin → Debug correlation
+  and `AppTraces` with seven-day interactive and total retention for Admin Ã¢â€ â€™ Debug correlation
   searches.
 - Validate with `az monitor log-analytics workspace table show` after authenticating through
   `infra/scripts/login_service_principal.ps1`. Each listed table must report both retention values
   as `7`. Do not use the currently signed-in personal Azure identity.
-- Restrict Admin → Debug to enabled database administrators and review `view_debug_trace` and
+- Restrict Admin Ã¢â€ â€™ Debug to enabled database administrators and review `view_debug_trace` and
   `export_debug_trace` audit events. Exported ZIPs may contain case personal data and must be
   deleted no later than seven days after the underlying event.
 - Rollback: redeploy the prior Bicep revision and verify the restored values. If a deployment
