@@ -58,6 +58,14 @@ npx playwright test tests/issue-646-prod-mcp-laws.spec.ts --grep "production MCP
 
 ### MCP and legal-retrieval scenarios
 
+Synthetic `law_provisions.anchor` values must use the same canonical format as the
+collector, such as `paragraf-569`, rather than the display label `§ 569`. Search ranking
+and provision citations parse canonical anchors and intentionally reject display labels.
+`scripts/prepare_issue_635_langgraph_e2e.py` now repairs old fixture anchors on reseeding.
+Run `python examples/synthetic_law_anchor_demo.py` for the offline contract check and
+the API `test_synthetic_law_seed.py` regression for initial seed plus repair behavior.
+These checks supplement the required real PostgreSQL/MCP/frontend/model acceptance.
+
 For a change involving MCP or legal retrieval, final acceptance must prove the complete chain:
 
 1. Seed deterministic synthetic law or legal-source records in the relevant local PostgreSQL database.
