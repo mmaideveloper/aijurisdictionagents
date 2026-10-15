@@ -21,6 +21,7 @@ from aijurisdictionagents.llm.routing import get_routed_llm_client
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_LAW_ID = "issue-635-civil-code"
+SYNTHETIC_PROVISION_ANCHOR = "paragraf-569"
 
 
 def main() -> int:
@@ -134,7 +135,7 @@ def _seed_synthetic_law() -> None:
                 INSERT INTO law_provisions (
                     provision_id, version_id, anchor, heading, body_text, ordinal, created_at
                 ) VALUES (
-                    'issue-635-provision-569', 'issue-635-civil-code-v1', '§ 569',
+                    'issue-635-provision-569', 'issue-635-civil-code-v1', %s,
                     'Potvrdenie o splnení dlhu',
                     'Syntetický E2E právny zdroj: veriteľ je povinný na požiadanie vydať '
                     'dlžníkovi písomné potvrdenie, že dlh bol úplne alebo čiastočne splnený. '
@@ -143,9 +144,11 @@ def _seed_synthetic_law() -> None:
                     'potvrdenie o zaplatení.',
                     1, %s
                 )
-                ON CONFLICT (provision_id) DO UPDATE SET body_text = EXCLUDED.body_text
+                ON CONFLICT (provision_id) DO UPDATE SET
+                    anchor = EXCLUDED.anchor,
+                    body_text = EXCLUDED.body_text
                 """,
-                (stored_at,),
+                (SYNTHETIC_PROVISION_ANCHOR, stored_at),
             )
         conn.commit()
 
