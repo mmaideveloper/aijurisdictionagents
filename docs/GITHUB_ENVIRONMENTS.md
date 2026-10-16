@@ -1,3 +1,47 @@
+# Authenticated synthetic browser acceptance (#918)
+
+The production MCP browser gate requires real device authentication as well as OAuth
+and current model consent. The workflow creates 24-hour device credentials only for
+the two existing approved synthetic accounts, copies a mode-0600 fixture into a private
+temporary runner directory, and mounts it read-only outside the evidence directory.
+`ISSUE_646_BROWSER_AUTH_FILE` is a workflow-set non-secret path, not a new Environment
+secret; no manual GitHub Environment setting is needed for `test` or `prod`.
+
+For isolated local `test`, provision the approved synthetic users, run
+`python scripts/provision_e2e_browser_auth.py create --file runs/storage/e2e-browser-auth.json`,
+and point `ISSUE_646_BROWSER_AUTH_FILE` at that private file. Run `revoke --file` with
+the same path afterward. Never upload the fixture. The production EXIT trap revokes
+only the newly created E2E devices, removes both file copies and closes the OAuth test
+window. Cleanup failures fail the job. Trace/video recording is disabled for this
+credential-bearing scenario; retain only sanitized manifests and screenshots for seven days.
+Error evidence also scrubs known device/OAuth credentials, PKCE values and credential
+headers before writing manifests or propagating a scenario failure to the reporter.
+The test checks authenticated privacy state before sending a model question and leaves
+the product authentication and consent requirements enforced.
+
+# CPU embedding image gate (#919)
+
+API, document processor and laws collector image builds must import the real
+`SentenceTransformer` class with `HF_HUB_OFFLINE=1` before succeeding. The verified
+CPU set is PyTorch 2.7.1, sentence-transformers 6.1.0 and Transformers 5.19.0.
+Linux x64/Python 3.13 image builds fetch the official CPU wheel from the canonical
+PyTorch host with its upstream SHA-256 hash; other architectures keep the existing
+CPU-index resolver. The x64 wheel bytes/version are unchanged by this mirror choice.
+Transformers 5.20.0 imports a PyTorch checkpoint module missing from that CPU build.
+Both `test` and `prod` use the same pinned root dependencies and fail-closed image
+import gate. No new Environment inputs or secrets are required. An upgrade requires
+successful image imports and real local embedding acceptance before production.
+
+# Synthetic release-account consent (#914)
+
+For `test`, run `python scripts/provision_e2e_users.py --help` to inspect the explicit
+`--grant-synthetic-model-consent` option. Use it only in an isolated synthetic acceptance
+database. For `prod`, Self-Managed Prod Deploy passes this option for its two existing
+hardcoded synthetic E2E accounts before real-model acceptance. It records current
+`external_models` consent; no customer account, marketing or external-check consent is
+changed. No new GitHub Environment variables or secrets are required. Existing privacy
+restrictions and pending erasure requests continue to fail closed.
+
 # Laws Tests public law reader (#840)
 
 For `test`, the existing isolated acceptance runner prepares a synthetic collector database

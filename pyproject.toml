@@ -26,7 +26,9 @@ dependencies = [
   "requests>=2.34.2",
   "rapidocr>=3.9,<4",
   "onnxruntime>=1.27,<2",
-  "sentence-transformers>=3.0",
+  # Verified together with the production CPU PyTorch 2.7.1 image.
+  "sentence-transformers==6.1.0",
+  "transformers==5.19.0",
   "truststore>=0.10.0",
 ]
 

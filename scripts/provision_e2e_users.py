@@ -6,8 +6,10 @@ import os
 from aijurisdictionagents.api_db import ApiDatabaseStore
 from aijurisdictionagents.api_db.e2e_test_users import (
     E2E_TEST_PAID_EMAIL,
+    E2E_TEST_USER_EMAILS,
     provision_e2e_test_users,
 )
+from aijurisdictionagents.privacy import CONSENT_VERSION, PrivacyControls
 
 
 E2E_AUDIT_ACTOR_ID = "post-deployment-e2e"
@@ -16,11 +18,26 @@ E2E_AUDIT_ACTOR_ID = "post-deployment-e2e"
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Provision approved synthetic production E2E users.")
     parser.add_argument(
+        "--grant-synthetic-model-consent",
+        action="store_true",
+        help="Record current external-model consent only for the approved synthetic E2E accounts.",
+    )
+    parser.add_argument(
         "--paid-model",
         default="",
         help="Optional enabled external EU model code to assign only to the paid synthetic user.",
     )
     return parser.parse_args()
+
+
+def _grant_synthetic_model_consent(*, store: ApiDatabaseStore, user_id: str) -> None:
+    user = store.get_user(user_id=user_id)
+    if user.email not in E2E_TEST_USER_EMAILS:
+        raise ValueError("Model consent provisioning is restricted to approved synthetic E2E accounts")
+    controls = PrivacyControls(store)
+    if not controls.has_consent(user_id, "external_models"):
+        controls.consent(user_id, "external_models", True, version=CONSENT_VERSION)
+    print(f"synthetic external-model consent ready: user_id={user_id} notice={CONSENT_VERSION}")
 
 
 def _configure_paid_model(
@@ -103,6 +120,8 @@ def main() -> int:
     for user in users:
         action = "created" if user.created else "updated"
         print(f"{action}: {user.email} plan={user.plan_code} user_id={user.user_id}")
+        if args.grant_synthetic_model_consent:
+            _grant_synthetic_model_consent(store=store, user_id=user.user_id)
     if args.paid_model.strip():
         paid_user = next(user for user in users if user.email == E2E_TEST_PAID_EMAIL)
         _configure_paid_model(

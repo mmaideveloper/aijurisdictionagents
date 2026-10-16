@@ -126,3 +126,5 @@ use fixed topics, not case text. SQL assets remain under databases/ and local da
 under runs/storage/. Disable the catalog case type and hide the workspace entry for
 rollback; retain history for authorized read/deletion. Source freshness, completeness,
 legal grounds and AI risk classification always require expert verification.
+
+Release integration (2026-10-16): merged the current main baseline and resolved the API revision to 1.0.260614. Production deployment must use the resulting main commit only after its applicable CI checks pass. The existing self-managed deployment performs frontend E2E, service health checks and the required real-model MCP law post-deployment acceptance; preserved prior images provide the existing rollback path. This feature introduces no new infrastructure settings or production audio-processing policy.

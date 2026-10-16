@@ -201,6 +201,9 @@ jobs:
           echo "evidence_root=$evidence_root" >> "$GITHUB_OUTPUT"
 
           window_enabled=0
+          auth_created=0
+          auth_container_file="/tmp/e2e-browser-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          auth_directory="$(mktemp -d)"
           cleanup() {
             original_status=$?
             trap - EXIT INT TERM
@@ -213,6 +216,17 @@ jobs:
             else
               cleanup_status=0
             fi
+            if [ "$auth_created" -eq 1 ]; then
+              docker exec jurisdigta-api python /workspace/scripts/provision_e2e_browser_auth.py \
+                revoke --file "$auth_container_file"
+              auth_cleanup_status=$?
+              if [ "$auth_cleanup_status" -ne 0 ] && [ "$cleanup_status" -eq 0 ]; then
+                cleanup_status=$auth_cleanup_status
+              fi
+            fi
+            if ! rm -f "$auth_directory/browser-auth.json" || ! rmdir "$auth_directory"; then
+              cleanup_status=1
+            fi
             if [ -d "$evidence_root" ]; then
               sudo -n chown -R "$(id -u):$(id -g)" "$evidence_root"
               ownership_status=$?
@@ -222,7 +236,7 @@ jobs:
             fi
             unset JURISDIGTA_E2E_TEST_USER_PASSWORD
             if [ "$cleanup_status" -ne 0 ]; then
-              echo "Failed to close the synthetic MCP OAuth E2E window"
+              echo "Failed to clean up synthetic E2E authentication"
               exit "$cleanup_status"
             fi
             exit "$original_status"
@@ -246,7 +260,14 @@ jobs:
           docker exec \
             -e JURISDIGTA_E2E_TEST_USER_PASSWORD="$JURISDIGTA_E2E_TEST_USER_PASSWORD" \
             jurisdigta-api \
-            python /workspace/scripts/provision_e2e_users.py --paid-model gpt-5-mini
+            python /workspace/scripts/provision_e2e_users.py --paid-model gpt-5-mini --grant-synthetic-model-consent
+
+          docker exec jurisdigta-api python /workspace/scripts/provision_e2e_browser_auth.py \
+            create --file "$auth_container_file"
+          auth_created=1
+          docker cp "jurisdigta-api:$auth_container_file" "$auth_directory/browser-auth.json"
+          chmod 600 "$auth_directory/browser-auth.json"
+          export ISSUE_646_BROWSER_AUTH_FILE=/run/secrets/jurisdigta-e2e-browser-auth.json
 
           sudo -n python3 "$GITHUB_WORKSPACE/scripts/server/configure_mcp_oauth_e2e_window.py" \
             enable \
@@ -263,10 +284,12 @@ jobs:
             --env MCP_PUBLIC_BASE_URL \
             --env ISSUE_646_TIMEOUT_MS \
             --env ISSUE_646_DEPLOYED_COMMIT_SHA \
+            --env ISSUE_646_BROWSER_AUTH_FILE \
             --env JURISDIGTA_E2E_TEST_USER_PASSWORD \
             --env PW_START_API \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" \
             --volume "$evidence_root:/evidence" \
+            --volume "$auth_directory/browser-auth.json:/run/secrets/jurisdigta-e2e-browser-auth.json:ro" \
             --workdir /workspace/api/aijuristiction-api/e2e-playwright \
             mcr.microsoft.com/playwright:v1.58.2-noble \
             node node_modules/@playwright/test/cli.js test \

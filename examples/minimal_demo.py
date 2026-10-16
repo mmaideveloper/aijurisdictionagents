@@ -2,6 +2,10 @@
 # Streaming STT routing example: python examples/streaming_stt_demo.py
 # Real synthetic audio acceptance: python scripts/run_speech_e2e.py
 # Governed model-turn contracts: python examples/governed_turn_context_demo.py
+# Synthetic browser authentication CLI (no writes): python scripts/provision_e2e_browser_auth.py --help
+# CPU embedding dependency check: python examples/cpu_embedding_import_demo.py
+# Synthetic consent provisioning (no writes): python scripts/provision_e2e_users.py --help
+# Synthetic law seed/citation contract: python examples/synthetic_law_anchor_demo.py
 from pathlib import Path
 import sys
 import tempfile
@@ -190,7 +194,7 @@ print(
 print(
     "purchase_contract_legal_basis_e2e => from frontend/aijurisdictionfronend run "
     "`npm run test:e2e -- e2e/issue-623-purchase-law-citations.spec.ts`; the synthetic "
-    "house-purchase preview and PDF repeat the verified § 588 Civil Code basis, expose the "
+    "house-purchase preview and PDF repeat the verified Â§ 588 Civil Code basis, expose the "
     "official Slov-Lex citation, require human review, and retain ignored evidence for seven days."
 )
 print(
@@ -258,8 +262,8 @@ print(
     "COURT_DECISION_MCP_SEARCH_TIMEOUT_MS budget, defaulting to 600000 ms."
 )
 print(
-    "mcp_purchase_contract_summaries => searchCourtDecisions(query='Ukáž mi posledných 5 "
-    "súdnych rozhodnutí o kupón predajnej zmluve', sort='latest', include_summaries=True) "
+    "mcp_purchase_contract_summaries => searchCourtDecisions(query='UkÃ¡Å¾ mi poslednÃ½ch 5 "
+    "sÃºdnych rozhodnutÃ­ o kupÃ³n predajnej zmluve', sort='latest', include_summaries=True) "
     "normalizes the topic, searches pseudonymized enrichments/chunks, and returns the latest "
     "five matches available in the JurisDigta corpus with a coverage warning and human review."
 )
@@ -286,7 +290,7 @@ print(
 print(
     "mcp_user_visible_proof_notice => frontend/mobile streams show the backend-localized "
     "notice when JurisDigta MCP is contacted for latest legal information; SK='JurisDigta MCP "
-    "server bol kontaktovaný na získanie najnovších právnych informácií.', DE='Der JurisDigta "
+    "server bol kontaktovanÃ½ na zÃ­skanie najnovÅ¡Ã­ch prÃ¡vnych informÃ¡ciÃ­.', DE='Der JurisDigta "
     "MCP-Server wurde kontaktiert, um aktuelle Rechtsinformationen abzurufen.', EN='JurisDigta "
     "MCP Server was contacted to retrieve the latest legal information.'"
 )
