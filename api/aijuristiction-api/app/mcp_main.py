@@ -614,7 +614,8 @@ async def request_id_middleware(
     correlation_id = request.headers.get("x-correlation-id", request_id)
     request.state.request_id = request_id
     request.state.correlation_id = correlation_id
-    wire_logging_enabled = _mcp_wire_logging_enabled()
+    wire_logging_enabled = (_mcp_wire_logging_enabled()
+                            and request.headers.get("X-JurisDigta-Tool-Privacy") != "metadata-only")
     max_wire_bytes = _mcp_wire_log_max_bytes()
     if wire_logging_enabled:
         request_body = await request.body()

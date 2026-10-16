@@ -281,6 +281,20 @@ class PrivacyCheckedClient:
         self.controls.event("model_response", "completed")
         return result
 
+    def complete_tool_step(self, context: AgentTurnContext, history: Any, definitions: Any,
+                           remaining_seconds: float, *, require_tool: bool = False,
+                           initial_tool_id: str | None = None) -> Any:
+        self.controls.require_processing(self.user_id, "external_models" if self.external else None)
+        from .llm.base import private_model_io
+        with private_model_io(), privacy_scope(self.controls, self.user_id):
+            return getattr(self.client, "complete_tool_step")(context, history, definitions, remaining_seconds,
+                                                              require_tool=require_tool,
+                                                              initial_tool_id=initial_tool_id)
+
+    def authorize_internal_tool(self) -> bool:
+        self.controls.require_processing(self.user_id)
+        return True
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.client, name)
 
