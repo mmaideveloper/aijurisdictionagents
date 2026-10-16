@@ -4,13 +4,14 @@ import os
 from dataclasses import dataclass, field
 import logging
 import time
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from openai import APITimeoutError, OpenAI
 
 from .context_boundary import build_turn_provider_messages
 from .turn_context import legacy_turn_context
-from .turn_contracts import AgentTurnContext
+from .turn_contracts import AgentTurnContext, ToolDefinition
+from .tool_loop import ModelStep
 from .base import (
     ModelProcessingTimeout,
     elapsed_seconds,
@@ -52,6 +53,16 @@ class OpenAIClient:
         documents: Sequence[Document],
     ) -> str:
         return self.complete_turn(agent_name, legacy_turn_context(system_prompt, conversation, documents))
+
+    def complete_tool_step(
+        self, context: AgentTurnContext, history: Sequence[dict[str, Any]],
+        definitions: Sequence[ToolDefinition], remaining_seconds: float,
+        *, require_tool: bool = False,
+        initial_tool_id: str | None = None,
+    ) -> ModelStep:
+        from .native_tools import complete_native_step
+        return complete_native_step(self, context, history, definitions, remaining_seconds,
+                                    require_tool=require_tool, initial_tool_id=initial_tool_id)
 
     def complete_turn(self, agent_name: str, context: AgentTurnContext) -> str:
         messages = build_turn_provider_messages(context, external_provider=True)

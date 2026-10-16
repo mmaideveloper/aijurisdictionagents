@@ -688,16 +688,21 @@ def _section_start_from_query(query: str) -> str:
     return match.group("section") if match is not None else ""
 
 
-def _call_mcp_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+def _call_mcp_tool(name: str, arguments: dict[str, Any], *, metadata_only: bool = False) -> dict[str, Any]:
     record_debug_event(
         "retrieval", "mcp_pre_filter", "completed",
         {"tool_name": name, "arguments": arguments},
     )
     remote_base_url = _remote_mcp_base_url()
     if remote_base_url:
-        result = _call_remote_mcp_tool(
-            remote_base_url=remote_base_url, name=name, arguments=arguments
-        )
+        if metadata_only:
+            result = _call_remote_mcp_tool(
+                remote_base_url=remote_base_url, name=name, arguments=arguments, metadata_only=True,
+            )
+        else:
+            result = _call_remote_mcp_tool(
+                remote_base_url=remote_base_url, name=name, arguments=arguments,
+            )
         record_debug_event(
             "retrieval", "mcp_post_filter", "completed",
             {"tool_name": name, "result": result},
@@ -728,6 +733,7 @@ def _call_remote_mcp_tool(
     name: str,
     arguments: dict[str, Any],
     attempts: int | None = None,
+    metadata_only: bool = False,
 ) -> dict[str, Any]:
     payload = {
         "jsonrpc": "2.0",
@@ -757,6 +763,8 @@ def _call_remote_mcp_tool(
             "X-Correlation-ID": correlation_id,
             _INTERNAL_MCP_SECRET_HEADER: internal_secret,
         }
+        if metadata_only:
+            headers["X-JurisDigta-Tool-Privacy"] = "metadata-only"
         if operation.parent_request_id:
             headers["X-Parent-Request-ID"] = operation.parent_request_id
         record_debug_event(

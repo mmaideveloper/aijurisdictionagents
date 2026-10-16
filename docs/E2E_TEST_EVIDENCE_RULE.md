@@ -15,6 +15,14 @@ this acceptance pending and must not be replaced with SQLite or mocked acceptanc
 
 ## Real local acceptance environment
 
+For #661, prove an actual native tool call and subsequent model completion on the
+direct chat route. Verify the deterministic synthetic law with a direct MCP query,
+then assert the same ID in answer citations through frontend -> API -> MCP -> local
+PostgreSQL. A pre-retrieved or deterministic latest-law answer alone does not prove
+the native loop. Record `agent_tool_loop` terminal reason and call count plus the
+observed real provider/model; the count must be positive. Keep the final screenshot
+and sanitized manifest under ignored `runs/issue661/` for at most seven days.
+
 Final acceptance for a user-facing E2E scenario must exercise the implemented local system rather
 than a fabricated browser state. Start the real local frontend, API, MCP server, and all workers or
 services used by the changed path. Use local PostgreSQL databases with the current production
