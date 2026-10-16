@@ -1,5 +1,9 @@
 # Legal Workflow Routing (Slovakia-first, multi-country ready)
 
+Organizational IT/data-warehouse questions can select `sk.it.legal_analysis`:
+[IT legal analysis](IT_LEGAL_ANALYSIS.md) documents its SK/EU jurisdiction/intake gate,
+case-private shared assessment graph and recommendation-only output.
+
 This module introduces a lightweight workflow engine for client legal questions.
 
 ## Goals

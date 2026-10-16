@@ -27,6 +27,11 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 
 ## Current use cases
 
+- [UC-003: Organizational IT legal analysis](use-cases/UC-003-organizational-it-legal-analysis.md) — scope reviewed, implementation validation pending
+- [ADD-002: Organizational IT assessment](design/ADD-002-organizational-it-assessment.md) — In Review
+- [ADR-003: Share assessment controls](decisions/ADR-003-share-assessment-controls.md) — Proposed
+- [ACR-001: Organizational IT conformance/security review](reviews/ACR-001-organizational-it-assessment.md) — Complete for implementation review
+
 - [UC-002: Review an uploaded Slovak legal document](use-cases/UC-002-review-uploaded-legal-document.md)
 
 - [UC-001: Submit questions and safely execute commands by speech](use-cases/UC-001-speech-input-and-safe-command-execution.md) — Draft

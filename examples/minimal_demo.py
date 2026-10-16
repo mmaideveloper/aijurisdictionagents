@@ -30,6 +30,17 @@ if str(API_SOURCE_ROOT) not in sys.path:
 from app.software_assessment.models import SoftwareFacts
 from app.software_assessment.workflow import intake_questions
 from app.software_assessment.conversation import user_evidence
+from app.software_assessment.organizational_it import ITContext
+
+it_questions = intake_questions(SoftwareFacts(
+    description="Synthetic ZdravieHospital Czech warehouse initiative",
+    it_context=ITContext(countries=["CZ"])))
+assert any("CZ" in question and "mimo rozsahu" in question for question in it_questions)
+sk_questions = intake_questions(SoftwareFacts(
+    description="Separate synthetic Slovak 20-hospital warehouse initiative",
+    it_context=ITContext(countries=["SK"])))
+assert any("účely" in question for question in sk_questions)
+print("organizational_it => CZ scope disclosed; SK purposes/entities require intake; no model called.")
 
 assert user_evidence(["DB bude sifrovana, pristup ma ordinacia."])["u1.1"] == "DB bude sifrovana"
 print("software_advice_chat => consent-gated Slovak business report; original answers are server-derived, never automatic pass.")
