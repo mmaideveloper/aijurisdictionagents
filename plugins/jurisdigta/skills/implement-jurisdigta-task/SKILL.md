@@ -74,7 +74,8 @@ Follow [test-and-evidence-gate.md](references/test-and-evidence-gate.md).
 5. Open a pull request targeting `main`. Include the validation summary and render or link sanitized screenshots in the PR body.
 6. Add the same completion summary and screenshot links to the GitHub issue/task. Add the comment `Implemented by Codex`.
 7. Move the task to `In review` only after the commit exists and the PR is open.
-8. Return the task, branch, commit, PR, test results, and evidence links to the user.
+8. At the end of implementation, prepare and run an E2E test whenever feasible, capture a final-state screenshot after assertions pass, and include the privacy-reviewed screenshot in both the chat response and PR. Follow the live repository's real-local E2E acceptance and evidence-retention rules. If execution or screenshot capture is blocked or inapplicable, report the exact reason and pending prerequisites in both places; never present mocked checks as final E2E acceptance.
+9. Return the task, branch, commit, PR, test results, and evidence links to the user. Render available sanitized screenshots inline in chat using an absolute local image path, and embed or link the same evidence in the PR through an accessible artifact location without committing transient evidence contrary to repository rules.
 
 ## Completion rules
 
