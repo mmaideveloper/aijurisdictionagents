@@ -1694,6 +1694,7 @@ def _run_direct_lawyer_turn(
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
     parent = current_correlation_context()
     with correlation_scope(
@@ -1712,6 +1713,7 @@ def _run_direct_lawyer_turn(
             supplemental_documents=supplemental_documents,
             processing_event_callback=processing_event_callback,
             user_message_callback=user_message_callback,
+            cancelled=cancelled,
         )
 
 
@@ -1725,6 +1727,7 @@ def _run_direct_lawyer_turn_impl(
     supplemental_documents: list[CoreDocument] | None = None,
     processing_event_callback: Callable[[dict[str, object]], None] | None = None,
     user_message_callback: Callable[[Message], None] | None = None,
+    cancelled: Callable[[], bool] = lambda: False,
 ) -> tuple[Message, Message, str, list[dict[str, object]], RoutedLLMClient | None]:
     _validate_session_metadata(session)
     persisted_user = _repository.add_message(
@@ -2052,9 +2055,37 @@ def _run_direct_lawyer_turn_impl(
             routed_llm,
         )
 
+    from app.chat.typed_tool_loop import GovernedToolClient
+    from aijurisdictionagents.llm.tool_loop import LoopResult
+
+    def publish_tool_result(result: LoopResult) -> None:
+        from app.chat.mcp_law_context import _law_citations
+        citations: list[dict[str, object]] = []
+        for evidence in result.evidence:
+            data = evidence["data"]
+            rows = data.get("results", data.get("laws", []))
+            if evidence["tool"] == "getLawText" and data.get("document_id"):
+                rows = [data]
+            if isinstance(rows, list):
+                citations.extend({**citation, "retrieval_tool": f"JurisDigta MCP {evidence['tool']}"}
+                                 for citation in _law_citations([row for row in rows
+                                                 if isinstance(row, dict) and row.get("document_id")]))
+        event: dict[str, object] = {
+            "stage": "agent_tool_loop", "message": (
+                "Legal source verification completed." if result.reason == "completed" else
+                "Using the declared retrieval adapter." if result.reason == "deterministic_retrieval_adapter" else
+                "Legal source verification stopped safely."),
+            "details": {"terminal_reason": result.reason, "tool_call_count": result.calls,
+                        "tool_ids": sorted({item["tool"] for item in result.evidence}),
+                        "citations": citations, "human_review_required": True},
+        }
+        processing_events.append(event)
+        if processing_event_callback is not None:
+            processing_event_callback(event)
+
     bounded_llm = session_context_manager.bounded_client(
         session_id=session_id,
-        client=routed_llm.client,
+        client=GovernedToolClient(routed_llm.client, publish_tool_result, cancelled, country=session.country),
         provider=str(getattr(routed_llm, "provider", "unknown")),
         model=str(getattr(routed_llm, "model", "unknown")),
     )
@@ -3089,6 +3120,7 @@ def _stream_read_user_session(
                     supplemental_documents=inline_documents,
                     processing_event_callback=processing_event_callback,
                     user_message_callback=user_message_callback,
+                    cancelled=cancellation_event.is_set,
                 )
             )
             if cancellation_event.is_set():

@@ -19,6 +19,84 @@ deduplication preserves each answer's individual provision and effective-version
 
 The internal JurisDigta assistant should use JurisDigta MCP as its source-of-truth tool layer for Slovak legal answers.
 
+## Bounded typed tools (#661)
+
+The direct chat model-answer path now wraps native Azure Foundry/OpenAI adapters
+with an API-owned bounded tool loop. Native schemas and assistant tool calls/tool
+result messages continue the same governed turn. Unsupported providers explicitly
+report `deterministic_retrieval_adapter` and use the existing pre-model MCP retrieval.
+The graph workflow and deterministic status/latest-law reply paths retain their
+existing retrieval policy; they do not claim to run native tools.
+
+For Slovak legal/status questions, the server requires an initial native source lookup
+(`searchLaws` for legal grounding, `getVersion` for status);
+this prevents preloaded evidence from making a native-capable model silently skip
+the loop. Other jurisdictions retain deterministic retrieval. Conversation-history
+summarization never receives execution tools.
+
+Release 1 registrations allow only `searchLaws`, `getLawText`, `getVersion`, and
+`getStatistics`. Court tools, arbitrary MCP servers, external personal-data tools
+and consequential actions are excluded. Registrations reuse the #320 MCP schemas
+and transport, narrow query/country/result bounds, validate the complete call batch
+before execution, and require a live authenticated privacy check before every tool.
+Native model calls also recheck live external-processing consent through
+`PrivacyCheckedClient`; a model cannot grant a scope or approval.
+
+Default limits are four inferences, six tool calls, 45 seconds and 24,000 encoded
+bytes per result. Duplicate canonical arguments or reused call IDs stop execution
+before another invocation. This is turn-local idempotency, not a durable cross-HTTP
+request cache. Each new turn revalidates current privacy policy. Schema/authorization
+failures, unsupported tools, duplicate calls, result/context bounds, cancellation,
+deadline and transport failures terminate without publishing a partial model answer.
+SDK retries are disabled for native calls. Cancellation stops waiting and scheduling;
+an already accepted read-only transport request can finish, but its late result
+cannot resume the turn or publish an answer. Streaming disconnect cancellation is
+passed into the direct chat loop.
+
+Tool outputs use a recursive public-field allowlist, depth/list/string limits and
+untrusted native tool messages. Prompt-boundary policy explicitly rejects tool-output
+instructions as authority. This reduces injection risk; it is not proof that models
+will always ignore hostile evidence. Public law source/version/locator fields remain
+structured, and processing metadata feeds the existing answer/case citation path.
+Only tool IDs, counts and terminal reasons enter operational loop logs. Tool payload
+debug capture is suppressed while correlation headers remain available.
+MCP requests carry a metadata-only marker so the MCP server omits wire bodies while
+retaining ordinary request/tool audit metadata. Native model audit records preserve
+the real route without prompts or provider bodies. Evidence
+is turn-scoped and existing case retention/deletion controls govern persisted citation
+metadata. Human legal review remains mandatory for consequential outputs.
+
+Run `python examples/typed_tool_loop_demo.py` for a deterministic synthetic example;
+`python examples/minimal_demo.py` remains the baseline. Unit/contract tests are not
+real-model frontend/API/MCP/PostgreSQL E2E acceptance. Retain a final UI screenshot
+and sanitized run manifest under ignored `runs/issue661/` for seven days, then delete
+them and remove the isolated synthetic databases/files. Record provider/model,
+terminal reason, tool counts and expected/observed law IDs; omit prompts, arguments,
+credentials and raw tool bodies. Missing prerequisites leave real E2E pending.
+
+Reproduce acceptance with local PostgreSQL/pgvector on port 55461 and isolated
+databases `issue661_e2e_api` and `issue661_e2e_laws`. Mount runtime data under
+`runs/storage/issue661/postgres/data`. Import the approved credential using
+`scripts/import_e2e_model_credentials_from_server.ps1 -UseExistingPostgres` with
+the explicit loopback database URL and container name, then run
+`python scripts/run_issue_661_e2e_services.py` and
+`python scripts/authenticate_issue_661_e2e.py`. Start Vite on port 8663 with
+`VITE_API_BASE_URL=http://127.0.0.1:8661` and the configured API key. From the frontend
+directory run `npx playwright test e2e/issue661-native-tool-loop-live.spec.ts --workers=1`.
+The test uses a real issued device session, creates a case through the frontend,
+verifies native completion/citations/model audit and saves `final-state.png` and
+`result.json`. Delete `runs/issue661/private-auth.json` immediately after acceptance;
+it is authentication bootstrap rather than retained evidence. Remove the isolated
+synthetic databases/files after verification. No production infrastructure or GitHub
+Environment changes are required.
+
+Local acceptance on 2026-10-16 passed using Azure Foundry `gpt-4o-mini`: the frontend
+question completed native `searchLaws` and `getLawText` calls, both native progress
+and persisted citations matched the isolated PostgreSQL seed, and the final UI
+showed the synthetic law text, source and human-review notice. The sanitized manifest
+and final screenshot are retained in ignored `runs/issue661/` for seven days. The
+synthetic case was soft-deleted, private authentication removed and services stopped.
+
 ## Runtime Flow
 
 1. The frontend starts or resumes a `/v1/chat` session.

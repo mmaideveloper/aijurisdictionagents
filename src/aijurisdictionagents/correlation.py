@@ -119,3 +119,13 @@ def record_debug_event(
     if identity:
         observed["node_execution"] = identity
     sink(context, component, stage, status, observed)
+
+
+@contextmanager
+def suppress_debug_payloads() -> Iterator[None]:
+    """Retain correlation propagation without persisting private tool bodies."""
+    token = _DEBUG_SINK.set(None)
+    try:
+        yield
+    finally:
+        _DEBUG_SINK.reset(token)
