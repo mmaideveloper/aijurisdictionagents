@@ -154,6 +154,21 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
         name: "Účet " + fixture.users.both.email,
       }),
     });
+    await expect(
+      bothCard.getByRole("checkbox", {
+        name: "Synthetic Medical 924",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      bothCard.getByRole("checkbox", {
+        name: "Synthetic Firearms 924",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await bothCard.screenshot({
+      path: path.join(evidence, "07-admin-two-bank-approval.png"),
+    });
     await bothCard
       .getByRole("checkbox", { name: "Synthetic Medical 924", exact: true })
       .uncheck();
@@ -186,24 +201,58 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       "source.pdf",
       "text.pdf",
     ]) {
-      const uploaded = await admin.context.request.post(
-        `${base}/api/admin/banks/${medical}/imports`,
-        {
-          headers: admin.headers,
-          multipart: {
-            authorized: "true",
-            files: {
-              name: filename,
-              mimeType: filename.endsWith("pdf")
-                ? "application/pdf"
-                : filename.endsWith("png")
-                  ? "image/png"
-                  : "image/jpeg",
-              buffer: fs.readFileSync(path.join(folder, filename)),
+      let uploaded;
+      if (filename === "source.pdf") {
+        await adminPage
+          .getByRole("button", { name: "Banky a import", exact: true })
+          .click();
+        await adminPage
+          .getByRole("button", {
+            name: "Synthetic Medical 924 · development",
+            exact: true,
+          })
+          .click();
+        await adminPage
+          .getByLabel("Zdrojové súbory")
+          .setInputFiles(path.join(folder, filename));
+        await adminPage
+          .getByRole("checkbox", {
+            name: "Mám oprávnenie spracovať zdroj pomocou AI.",
+          })
+          .check();
+        await adminPage.screenshot({
+          path: path.join(evidence, "08-admin-fake-pdf-upload.png"),
+          fullPage: true,
+        });
+        const uploadResponse = adminPage.waitForResponse(
+          (r) =>
+            r.url().endsWith(`/api/admin/banks/${medical}/imports`) &&
+            r.request().method() === "POST",
+        );
+        await adminPage
+          .getByRole("button", { name: "Spustiť import", exact: true })
+          .click();
+        uploaded = await uploadResponse;
+      } else {
+        uploaded = await admin.context.request.post(
+          `${base}/api/admin/banks/${medical}/imports`,
+          {
+            headers: admin.headers,
+            multipart: {
+              authorized: "true",
+              files: {
+                name: filename,
+                mimeType: filename.endsWith("pdf")
+                  ? "application/pdf"
+                  : filename.endsWith("png")
+                    ? "image/png"
+                    : "image/jpeg",
+                buffer: fs.readFileSync(path.join(folder, filename)),
+              },
             },
           },
-        },
-      );
+        );
+      }
       expect(uploaded.status()).toBe(200);
       const id = (await uploaded.json()).id;
       await expect
@@ -390,6 +439,13 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
     const learner = learners.medical;
     const page = await learner.context.newPage();
     await page.goto(base);
+    await expect(
+      page.getByRole("heading", { name: "Synthetic Medical 924", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: path.join(evidence, "09-user-bank-selection.png"),
+      fullPage: true,
+    });
     await page
       .getByRole("article")
       .filter({
@@ -415,6 +471,10 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
     await page.getByRole("button", { name: "Precvičovať výber" }).click();
     await page.getByRole("button", { name: "Precvičiť túto otázku" }).click();
     await page.getByLabel("Vaša odpoveď").fill("H2O");
+    await page.screenshot({
+      path: path.join(evidence, "10-user-answer-question.png"),
+      fullPage: true,
+    });
     const evaluated = page.waitForResponse(
       (r) =>
         r.url().endsWith("/api/attempts") && r.request().method() === "POST",
@@ -424,6 +484,7 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
     const result = await (await evaluated).json();
     expect(result.status).toBe("completed");
     expect(result.passed).toBe(true);
+    await expect(page.getByText(/Celkový výsledok: 100 %/)).toBeVisible();
     expect(result.question_id).toBe(importedIds[101]);
     expect(result.content_snapshot.answer).toContain("H2O");
     manifest.practiceSourceId = result.question_id;
@@ -466,6 +527,13 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       await (await learner.context.request.get(base + "/api/history")).json(),
     ).toEqual([]);
     manifest.status = "passed";
+    manifest.scenarios = [
+      "approved learner selects medical bank",
+      "learner answers actual PDF/image-imported question",
+      "real model evaluates answer and displays total test result",
+      "administrator uploads original fake PDF through browser UI",
+      "administrator sees and updates explicit grants for two banks",
+    ];
     save();
   } catch (error) {
     manifest.status = "failed";

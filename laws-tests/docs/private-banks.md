@@ -102,6 +102,12 @@ The combined runner reuses its selected PostgreSQL instance for both suites; it 
 two servers on the same data directory. Standalone private acceptance defaults to instance
 924/port 5494; pass `-Instance` and `-DatabasePort` to reuse an existing worktree-owned instance.
 Its bootstrap uses `--skip-account`; only the uniquely named private fixture accounts are created.
+The browser scenario also uploads the fake scanned PDF through the administrator form and
+captures bank selection, the filled answer form, the evaluated total, and a user approval
+card showing explicit grants for both synthetic banks. See `result-manifest.json` and
+screenshots `07`–`10` alongside the existing evidence; the same 14-day retention applies.
+Tagging distinguishes the administrator's instruction/rubric from untrusted question content;
+the source trust boundary is not itself a requested educational classification.
 
 ## Relationship to #841 and rollout
 
