@@ -14,6 +14,7 @@ flock -n 9 || { echo 'Another laws-tests deployment is active'; exit 1; }
 root="/srv/jurisdigta/laws-tests/releases/$release_sha"
 test "$(pwd)" = "$root"
 mkdir -p /srv/jurisdigta/laws-tests/backups
+install -d -m 700 -o 10840 -g 10840 /srv/jurisdigta/laws-tests/storage
 chmod 700 /srv/jurisdigta/laws-tests/backups
 docker build -f laws-tests/deploy/api.Dockerfile -t "laws-tests-api:$release_sha" .
 docker build -f laws-tests/deploy/web.Dockerfile -t "laws-tests-web:$release_sha" .
@@ -23,7 +24,7 @@ compose=(docker compose -p laws-tests -f laws-tests/deploy/compose.yml)
 "${compose[@]}" run --rm --no-deps --user root -v /srv/jurisdigta/laws-tests/backups:/backups \
   -v /srv/jurisdigta/secrets/.env-laws-test.migration:/run/secrets/migration.env:ro \
   api python /app/laws-tests/deploy/migrate_release.py "$release_sha"
-"${compose[@]}" up -d --no-deps api
+"${compose[@]}" up -d --no-deps api worker
 ready=0
 for attempt in $(seq 1 30); do
   if "${compose[@]}" exec -T api python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health", timeout=5)' >/dev/null 2>&1; then ready=1; break; fi

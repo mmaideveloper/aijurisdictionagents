@@ -3,7 +3,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md ./
 COPY src/ src/
-# The fixed-answer service reuses core adapters without OCR/embedding/agent dependencies.
+# Reuse core adapters; install tests-specific PDF/image and adapter dependencies below.
 RUN --mount=type=secret,id=build_ca if [ -f /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; pip install --no-cache-dir --no-deps .
 COPY laws-tests/api/ laws-tests/api/
 RUN --mount=type=secret,id=build_ca if [ -f /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; pip install --no-cache-dir ./laws-tests/api

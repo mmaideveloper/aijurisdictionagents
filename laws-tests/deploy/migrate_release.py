@@ -96,7 +96,10 @@ with psycopg.connect(url) as conn:
     conn.execute('GRANT CONNECT ON DATABASE "laws-tests" TO laws_tests_app')
     conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_app")
     conn.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM laws_tests_app")
-    conn.execute("GRANT SELECT ON test_definitions,questions,subquestions TO laws_tests_app")
+    conn.execute("GRANT SELECT,INSERT,UPDATE ON test_definitions,questions,subquestions TO laws_tests_app")
+    conn.execute("GRANT SELECT,INSERT,UPDATE,DELETE ON test_users,bank_access,study_sets,bank_jobs,bank_audit TO laws_tests_app")
+    conn.execute("GRANT SELECT,INSERT ON question_revisions TO laws_tests_app")
+    conn.execute("GRANT UPDATE(actor_id) ON question_revisions TO laws_tests_app")
     conn.execute(
         "GRANT SELECT,INSERT,UPDATE,DELETE ON login_requests,web_sessions,test_sessions,attempts TO laws_tests_app"
     )
@@ -108,7 +111,7 @@ with psycopg.connect(identity_admin) as conn:
         )
     )
     conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_identity")
-    conn.execute("GRANT SELECT(user_id,is_enabled) ON users TO laws_tests_identity")
+    conn.execute("GRANT SELECT(user_id,is_enabled,role,email) ON users TO laws_tests_identity")
     conn.execute(
         "GRANT SELECT(user_id,device_id,token_hash,expires_at), UPDATE(last_used_at) ON device_auth_tokens TO laws_tests_identity"
     )

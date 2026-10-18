@@ -70,3 +70,9 @@ interrupted. Evidence stays in ignored `runs/issue840/evidence` for 14 days.
 This is reader-specific integration/browser evidence. It does not replace the broader
 frontend → API → MCP → real-model case-answer legal retrieval acceptance required by
 `docs/E2E_TEST_EVIDENCE_RULE.md`, or the exact-commit production deployment checks.
+# Access change (#924)
+
+Question and answer links now require an approved user and explicit bank grant. The
+independent public-law reader still serves public law content without sign-in. Older
+anonymous question-reading acceptance below is historical; current approval and regression
+coverage is described in [private-banks.md](private-banks.md).

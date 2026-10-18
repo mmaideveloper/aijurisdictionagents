@@ -83,5 +83,7 @@ jobs:
         if: always()
         with:
           name: laws-tests-real-e2e-${{ github.sha }}
-          path: runs/issue840/evidence/
+          path: |
+            runs/issue840/evidence/
+            runs/issue924/evidence/
           retention-days: 14

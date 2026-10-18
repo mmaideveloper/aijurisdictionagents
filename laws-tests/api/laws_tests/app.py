@@ -10,9 +10,12 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from openai import APIError
+from psycopg.errors import IntegrityError
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
+from .access import bank_allowed, require_bank
 from .config import Settings
 from .db import connect, purge
 from .evaluation import evaluate
@@ -35,6 +38,7 @@ class SessionInput(BaseModel):
     test_id: str
     mode: str = "learning"
     question_id: str | None = None
+    study_set_id: UUID | None = None
 
 
 class AnswerInput(BaseModel):
@@ -55,7 +59,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             purge(conn)
         yield
 
-    app = FastAPI(title="JurisDigta Laws Tests", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="JurisDigta Tests", version="0.1.1", lifespan=lifespan)
+
+    @app.exception_handler(IntegrityError)
+    async def invalid_record(request, exc):
+        return JSONResponse(
+            status_code=409, content={"detail": "Skontrolujte kategórie, zdroje a stav publikovania banky."}
+        )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[cfg.auth_origin],
@@ -65,7 +76,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def privacy_headers(request, call_next):
-        response = await call_next(request)
+        # Authenticate privileged requests before FastAPI consumes large form/JSON bodies.
+        if request.url.path.startswith("/api/admin/"):
+
+            def preauthorize():
+                with connect(cfg.database_url) as conn:
+                    user = session_user(request, conn, request.method not in {"GET", "HEAD", "OPTIONS"})
+                    if not user["is_admin"]:
+                        raise HTTPException(403, "Len administrátor.")
+
+            try:
+                await run_in_threadpool(preauthorize)
+            except HTTPException as exc:
+                response = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            else:
+                response = await call_next(request)
+        else:
+            response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -79,9 +106,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else ["published", "preview", "development"]
         ):
             raise HTTPException(404, "Test nie je dostupný.")
+        if row.get("starts_at") and row["starts_at"] > datetime.now(UTC):
+            raise HTTPException(409, "Test ešte nie je otvorený.")
         return row
 
     def active(row):
+        if row.get("starts_at") and row["starts_at"] > datetime.now(UTC):
+            raise HTTPException(409, "Test ešte nie je otvorený.")
         if row["expires_at"] and row["expires_at"] <= datetime.now(UTC):
             raise HTTPException(409, "Platnosť testu skončila. Obsah a história sú dostupné iba na čítanie.")
 
@@ -104,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(403, "Invalid origin")
             if not secrets.compare_digest(request.headers.get("x-csrf-token", ""), row["csrf"]):
                 raise HTTPException(403, "Invalid request token")
+        row["is_admin"] = str(getattr(user, "role", "")).lower() == "admin"
         return row
 
     @app.get("/api/health")
@@ -192,7 +224,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def me(request: Request):
         with connect(cfg.database_url) as conn:
             row = session_user(request, conn)
-            return {"signedIn": True, "csrf": row["csrf"]}
+            access = conn.execute(
+                "SELECT test_id,status FROM bank_access WHERE user_id=%s", (row["user_id"],)
+            ).fetchall()
+            approval = conn.execute(
+                "SELECT approved FROM test_users WHERE user_id=%s", (row["user_id"],)
+            ).fetchone()
+            return {
+                "signedIn": True,
+                "csrf": row["csrf"],
+                "isAdmin": row["is_admin"],
+                "approved": bool(approval and approval["approved"]),
+                "access": access,
+            }
 
     @app.post("/api/logout")
     def logout(request: Request):
@@ -215,28 +259,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 else ["published", "preview", "development"]
             )
             return conn.execute(
-                "SELECT id,name,version,legal_date,status,preview_notice,expires_at,categories,exam_categories,aggregation,source_links,category_labels,legal_summary,case_type,(expires_at<=now()) AS expired FROM test_definitions WHERE status=ANY(%s) ORDER BY name",
+                "SELECT id,name,version,legal_date,status,preview_notice,description,subject,bank_tags,starts_at,expires_at,categories,exam_categories,aggregation,source_links,category_labels,legal_summary,case_type,(expires_at<=now()) AS expired FROM test_definitions WHERE status=ANY(%s) ORDER BY name",
                 (statuses,),
             ).fetchall()
 
     @app.get("/api/tests/{test_id}/questions")
-    def questions(test_id: str):
+    def questions(
+        test_id: str,
+        request: Request,
+        search: str = Query("", max_length=200),
+        category: str = "",
+        tags: str = Query("", max_length=2000),
+    ):
         with connect(cfg.database_url) as conn:
+            user = session_user(request, conn)
+            require_bank(conn, user, test_id)
             public_test(conn, test_id)
-            return conn.execute(
-                "SELECT id,category,number,title,body,structure FROM questions WHERE test_id=%s ORDER BY category,number",
-                (test_id,),
+            rows = conn.execute(
+                """SELECT id,category,number,title,body,structure,tags FROM questions
+                WHERE test_id=%s AND enabled AND (%s='' OR category=%s)
+                AND (%s='' OR title ILIKE %s OR body ILIKE %s OR answer ILIKE %s OR EXISTS(
+                    SELECT 1 FROM subquestions s WHERE s.question_id=questions.id AND (s.body ILIKE %s OR s.answer ILIKE %s)))
+                ORDER BY category,number""",
+                (test_id, category, category, search, *(["%" + search + "%"] * 5)),
             ).fetchall()
+            groups = {}
+            for tag in filter(None, tags.split(",")):
+                groups.setdefault(tag.split(":")[0], []).append(tag)
+            return [r for r in rows if all(any(t in r["tags"] for t in group) for group in groups.values())]
 
     @app.get("/api/questions/{question_id}")
-    def question(question_id: str):
+    def question(question_id: str, request: Request):
         with connect(cfg.database_url) as conn:
+            user = session_user(request, conn)
             row = conn.execute(
-                "SELECT id,test_id,category,number,title,body,structure,answer,provenance,legal_references FROM questions WHERE id=%s",
+                "SELECT id,test_id,category,number,title,body,structure,answer,provenance,legal_references,tags,options,related_ids,revision FROM questions WHERE id=%s AND enabled",
                 (question_id,),
             ).fetchone()
             if not row:
                 raise HTTPException(404)
+            require_bank(conn, user, row["test_id"])
             public_test(conn, row["test_id"])
             row["subquestions"] = conn.execute(
                 "SELECT id,sequence,body,answer,legal_references FROM subquestions WHERE question_id=%s ORDER BY sequence",
@@ -259,6 +321,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Neúplný odkaz na ustanovenie.")
         with connect(cfg.database_url) as conn:
             course = public_test(conn, test)
+            if not course["legal_date"]:
+                raise HTTPException(409, "Banka nemá schválený právny dátum.")
         return read_law(cfg.laws_database_url, year, number, course["legal_date"], section, paragraph, letter)
 
     @app.post("/api/sessions")
@@ -267,6 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Invalid mode")
         with connect(cfg.database_url) as conn:
             user = session_user(request, conn, True)
+            require_bank(conn, user, payload.test_id)
             purge(conn)
             test = public_test(conn, payload.test_id)
             active(test)
@@ -275,9 +340,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 count(DISTINCT coalesce(a.subquestion_id,a.question_id)) AS answered_items,
                 (SELECT greatest(count(*),1) FROM subquestions s WHERE s.question_id=q.id) AS required_items
                 FROM questions q LEFT JOIN attempts a ON a.question_id=q.id AND a.user_id=%s AND a.status='completed'
-                WHERE q.test_id=%s GROUP BY q.id""",
+                WHERE q.test_id=%s AND q.enabled GROUP BY q.id""",
                 (user["user_id"], payload.test_id),
             ).fetchall()
+            if payload.study_set_id:
+                if payload.mode != "learning":
+                    raise HTTPException(422, "Výber otázok je dostupný iba na precvičovanie.")
+                saved = conn.execute(
+                    "SELECT * FROM study_sets WHERE id=%s AND user_id=%s AND test_id=%s",
+                    (payload.study_set_id, user["user_id"], payload.test_id),
+                ).fetchone()
+                if not saved:
+                    raise HTTPException(404)
+                available = {q["id"] for q in candidates}
+                if not saved["question_ids"] or not set(saved["question_ids"]).issubset(available):
+                    raise HTTPException(409, "Upravte študijný výber: niektoré otázky už nie sú dostupné.")
+                candidates = [q for q in candidates if q["id"] in saved["question_ids"]]
 
             def priority(q):
                 score = float(q["score"] or 0)
@@ -306,6 +384,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     selected.append(matches[0]["id"])
                 if not selected:
                     raise HTTPException(409, "Skúška nie je nakonfigurovaná.")
+            elif payload.study_set_id:
+                selected = [q["id"] for q in candidates]
             elif payload.question_id:
                 selected = [q["id"] for q in candidates if q["id"] == payload.question_id]
             else:
@@ -332,6 +412,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             if not session or payload.question_id not in session["question_ids"]:
                 raise HTTPException(404)
+            require_bank(conn, user, session["test_id"])
             test = public_test(conn, session["test_id"])
             active(test)
             previous = conn.execute(
@@ -348,6 +429,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     raise HTTPException(409, "Request ID already used")
                 return previous
             parent = conn.execute("SELECT * FROM questions WHERE id=%s", (payload.question_id,)).fetchone()
+            if not parent or not parent["enabled"]:
+                raise HTTPException(409, "Otázka už nie je dostupná.")
             if parent["structure"] == "direct" and payload.subquestion_id is None:
                 item = parent
             elif parent["structure"] == "grouped" and payload.subquestion_id:
@@ -361,6 +444,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(422, "Vyberte otázku s odpoveďou alebo podotázku.")
             snapshot = {key: item[key] for key in ("body", "answer", "rules")}
             snapshot["version"] = test["version"]
+            snapshot["revision"] = parent["revision"]
             aid = uuid4()
             inserted = conn.execute(
                 """INSERT INTO attempts(id,user_id,test_id,session_id,question_id,subquestion_id,
@@ -392,6 +476,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) from None
         with connect(cfg.database_url) as conn:
             # Deletion during evaluation must not resurrect an answer.
+            user = session_user(request, conn)
+            require_bank(conn, user, session["test_id"])
             record = conn.execute(
                 """UPDATE attempts SET status='completed',score=%s,passed=%s,result=%s,evaluated_at=now()
                 WHERE id=%s RETURNING *""",
@@ -406,26 +492,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(cfg.database_url) as conn:
             user = session_user(request, conn)
             purge(conn)
-            return conn.execute(
+            records = conn.execute(
                 "SELECT * FROM attempts WHERE user_id=%s ORDER BY created_at DESC LIMIT 500",
                 (user["user_id"],),
             ).fetchall()
+            return [r for r in records if bank_allowed(conn, user, r["test_id"])]
 
     @app.get("/api/export")
     def export(request: Request):
         with connect(cfg.database_url) as conn:
             user = session_user(request, conn)
             purge(conn)
-            return conn.execute(
+            records = conn.execute(
                 "SELECT * FROM attempts WHERE user_id=%s ORDER BY created_at", (user["user_id"],)
             ).fetchall()
+            return [r for r in records if bank_allowed(conn, user, r["test_id"])]
 
     @app.get("/api/progress")
     def progress(request: Request):
         with connect(cfg.database_url) as conn:
             user = session_user(request, conn)
             purge(conn)
-            return conn.execute(
+            records = conn.execute(
                 """WITH latest AS (
                   SELECT DISTINCT ON (question_id,subquestion_id) question_id,subquestion_id,score
                   FROM attempts WHERE user_id=%s AND status='completed'
@@ -440,6 +528,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 GROUP BY q.test_id,q.category ORDER BY q.test_id,q.category""",
                 (user["user_id"],),
             ).fetchall()
+            return [r for r in records if bank_allowed(conn, user, r["test_id"])]
 
     @app.delete("/api/history")
     def delete_history(request: Request):
@@ -458,6 +547,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).fetchone()
             if not session:
                 raise HTTPException(404)
+            require_bank(conn, user, session["test_id"])
             test = public_test(conn, session["test_id"])
             values = []
             for qid in session["question_ids"]:
@@ -477,4 +567,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             score = min(values) if test["aggregation"] == "minimum" else sum(values) / len(values)
             return {"complete": True, "score": round(score, 1), "passed": score >= 70}
 
+    from .management import management_router
+
+    app.include_router(management_router(cfg, session_user, public_test, active))
     return app

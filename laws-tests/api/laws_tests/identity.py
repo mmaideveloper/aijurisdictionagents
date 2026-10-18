@@ -1,4 +1,4 @@
-"""Minimal central identity adapter; never reads names, email or password hashes."""
+"""Minimal identity adapter; email is used transiently for administrator approvals."""
 
 import hmac
 from datetime import UTC, datetime
@@ -15,7 +15,9 @@ class Identity:
 
     def find_user_by_id(self, *, user_id: str):
         with connect(self.url) as conn:
-            row = conn.execute("SELECT user_id,is_enabled FROM users WHERE user_id=%s", (user_id,)).fetchone()
+            row = conn.execute(
+                "SELECT user_id,is_enabled,role,email FROM users WHERE user_id=%s", (user_id,)
+            ).fetchone()
         return SimpleNamespace(**row) if row else None
 
     def authenticate_user_device_auth_token(self, *, user_id: str, device_id: str, token: str):

@@ -99,7 +99,14 @@ def prepare():
         )
     MANIFEST.parent.mkdir(parents=True, exist_ok=True)
     MANIFEST.write_text(
-        json.dumps({"run_id": run, "source_id": run, "version_id": run + "-20260101"}),
+        json.dumps(
+            {
+                "run_id": run,
+                "source_id": run,
+                "version_id": run + "-20260101",
+                "database_port": urlsplit(cfg.database_url).port,
+            }
+        ),
         encoding="utf-8",
     )
     print("Synthetic reader fixtures prepared; values redacted.")
@@ -113,6 +120,7 @@ def cleanup():
     run = json.loads(MANIFEST.read_text())["run_id"]
     assert run.startswith("reader-840-")
     with connect(cfg.database_url) as conn:
+        conn.execute("DELETE FROM bank_access WHERE test_id=ANY(%s)", ([run, run + "-preview"],))
         conn.execute("DELETE FROM questions WHERE test_id=%s", (run + "-preview",))
         conn.execute("DELETE FROM test_definitions WHERE id=%s", (run + "-preview",))
         conn.execute("DELETE FROM questions WHERE test_id=%s", (run,))

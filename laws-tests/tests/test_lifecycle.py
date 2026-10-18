@@ -21,7 +21,7 @@ def signed(monkeypatch):
     assert cfg.environment != "production"
     uid, token, csrf = "unit-" + str(uuid4()), str(uuid4()), str(uuid4())
     monkeypatch.setattr(
-        module.Identity, "find_user_by_id", lambda self, **kw: SimpleNamespace(is_enabled=True)
+        module.Identity, "find_user_by_id", lambda self, **kw: SimpleNamespace(is_enabled=True, role="admin")
     )
     with connect(cfg.database_url) as conn:
         conn.execute(
@@ -145,7 +145,7 @@ def test_published_requires_review_and_production_hides_dev():
         conn.execute("UPDATE test_definitions SET status='published' WHERE id='firearms-sk-2026'")
     with TestClient(module.create_app(replace(cfg, environment="production"))) as client:
         assert client.get("/api/tests").json() == []
-        assert client.get("/api/questions/E-1").status_code == 404
+        assert client.get("/api/questions/E-1").status_code == 401
 
 
 def test_multiple_certifications_do_not_share_question_selection(signed):
@@ -161,7 +161,7 @@ def test_multiple_certifications_do_not_share_question_selection(signed):
             (qid, tid),
         )
     try:
-        assert len(client.get("/api/tests").json()) == 2
+        assert {tid, 'firearms-sk-2026'}.issubset({row['id'] for row in client.get('/api/tests').json()})
         result = client.post(
             "/api/sessions", headers=headers, json={"test_id": tid, "mode": "exam"}
         )

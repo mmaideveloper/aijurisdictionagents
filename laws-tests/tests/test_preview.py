@@ -34,7 +34,7 @@ def test_preview_seed_on_empty_database():
             conn.execute(seed)
             conn.execute(seed)
             row = conn.execute(
-                "SELECT status,preview_notice,legal_date FROM test_definitions"
+                "SELECT status,preview_notice,legal_date FROM test_definitions WHERE id='firearms-sk-2026'"
             ).fetchone()
             assert (
                 row["status"] == "preview" and row["preview_notice"] and row["legal_date"] is None
@@ -68,7 +68,7 @@ def test_preview_is_public_but_is_not_a_reviewed_publication():
             assert row["status"] == "preview" and row["legal_date"] is None
             assert row["preview_notice"] == "Incomplete, not legally reviewed"
             assert not any(row["status"] == "development" for row in rows)
-            assert client.get(f"/api/tests/{course}/questions").status_code == 200
+            assert client.get(f"/api/tests/{course}/questions").status_code == 401
         with pytest.raises(CheckViolation), connect(cfg.database_url) as conn:
             conn.execute("UPDATE test_definitions SET status='published' WHERE id=%s", (course,))
     finally:
