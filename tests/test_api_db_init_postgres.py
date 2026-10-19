@@ -14,14 +14,18 @@ from aijurisdictionagents.api_db import ApiDatabaseStore
 def test_concurrent_api_schema_initialization(tmp_path: Path) -> None:
     target = os.getenv("DB_CLOUD", "")
     if os.getenv("DB_OPTION") != "postgres" or urlsplit(target).hostname not in {
-        "localhost", "127.0.0.1", "::1"
+        "localhost",
+        "127.0.0.1",
+        "::1",
     }:
         pytest.skip("Requires explicit synthetic loopback PostgreSQL")
 
     def store() -> ApiDatabaseStore:
         return ApiDatabaseStore(
-            db_path=tmp_path / "unused", blob_root=tmp_path / "blobs",
-            db_option="postgres", db_cloud=target,
+            db_path=tmp_path / "unused",
+            blob_root=tmp_path / "blobs",
+            db_option="postgres",
+            db_cloud=target,
         )
 
     store().initialize()

@@ -69,6 +69,9 @@ jobs:
               connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
           PY
 
+      - name: Create disposable synthetic case key ring
+        run: python scripts/create_synthetic_case_keyring.py
+
       - name: Verify concurrent API schema initialization
         run: python -m pytest tests/test_api_db_init_postgres.py -q
 

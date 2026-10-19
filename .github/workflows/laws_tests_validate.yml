@@ -101,7 +101,10 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
         working-directory: laws-tests/web
+      - name: Create disposable synthetic case key ring
+        run: python scripts/create_synthetic_case_keyring.py
       - name: Execute real local services with synthetic data
+        # CASE_ENCRYPTION_KEY_FILE is generated in the preceding hosted-only step.
         env:
           PYTHONPATH: laws-tests/api:src
           E2E_AZURE_FOUNDRY_ENDPOINT: ${{ secrets.E2E_AZURE_FOUNDRY_ENDPOINT }}
