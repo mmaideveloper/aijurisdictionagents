@@ -59,11 +59,22 @@ jobs:
         working-directory: api/aijuristiction-api/e2e-playwright
         run: npm ci
 
+      - name: Initialize fresh workflow base schema
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          with psycopg.connect(os.environ['DB_CLOUD']) as connection:
+              connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
+          PY
+
       - name: Run scheduled E2E tests and build status report
         id: e2e
         working-directory: api/aijuristiction-api/e2e-playwright
         env:
           API_PYTHON: python
+          DEBUG: pw:webserver
           STORE_LOCAL: ${{ github.workspace }}/runs/storage/scheduled-e2e/blobs
         shell: bash
         run: |
