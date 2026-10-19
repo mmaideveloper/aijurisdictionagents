@@ -8,6 +8,12 @@ import { ensureLiveApiOrFail } from './helpers/liveApi';
 
 const execFileAsync = promisify(execFile);
 const apiKey = process.env.API_KEY ?? 'aijuris';
+const ownerHeaders = new Map<string, Record<string, string>>();
+function caseHeaders(userId: string): Record<string, string> {
+  const headers = ownerHeaders.get(userId);
+  if (!headers) throw new Error('Synthetic owner credentials missing');
+  return headers;
+}
 const e2eRoot = path.resolve(__dirname, '..');
 const apiRoot = path.resolve(e2eRoot, '..');
 const repoRoot = path.resolve(apiRoot, '..', '..');
@@ -34,16 +40,22 @@ test('case generated PDF renders selected Slovak document without assistant or E
   const createdCase = await createCase(request, baseURL, user.user_id, `E2E splnomocnenie ${runId}`);
   const documents = await seedContaminatedGeneratedDocument(createdCase.case_id, user.user_id);
 
+  const anonymousPdf = await request.get(
+    `${baseURL}/v1/cases/${createdCase.case_id}/documents/${documents.generatedDocId}/pdf?user_id=${user.user_id}`,
+    { headers: { 'x-api-key': apiKey } }
+  );
+  expect(anonymousPdf.status()).toBe(401);
+
   // A technical record must not borrow a legal draft from the assistant history.
   const technicalPdf = await request.get(
     `${baseURL}/v1/cases/${createdCase.case_id}/documents/${documents.technicalDocId}/pdf?user_id=${user.user_id}`,
-    { headers: { 'x-api-key': apiKey } }
+    { headers: caseHeaders(user.user_id) }
   );
   expect(technicalPdf.status()).toBe(404);
 
   const pdf = await request.get(
     `${baseURL}/v1/cases/${createdCase.case_id}/documents/${documents.generatedDocId}/pdf?user_id=${user.user_id}`,
-    { headers: { 'x-api-key': apiKey } }
+    { headers: caseHeaders(user.user_id) }
   );
 
   expect(pdf.status()).toBe(200);
@@ -75,11 +87,11 @@ test('case generated Slovak and English PDFs stay clean and language-separated',
 
   const slovakPdf = await request.get(
     `${baseURL}/v1/cases/${createdCase.case_id}/documents/${documents.slovakDocId}/pdf?user_id=${user.user_id}`,
-    { headers: { 'x-api-key': apiKey } }
+    { headers: caseHeaders(user.user_id) }
   );
   const englishPdf = await request.get(
     `${baseURL}/v1/cases/${createdCase.case_id}/documents/${documents.englishDocId}/pdf?user_id=${user.user_id}`,
-    { headers: { 'x-api-key': apiKey } }
+    { headers: caseHeaders(user.user_id) }
   );
 
   expect(slovakPdf.ok()).toBeTruthy();
@@ -131,7 +143,22 @@ async function createUser(
     },
   });
   expect(response.status()).toBe(201);
-  return (await response.json()) as CreatedUser;
+  const user = (await response.json()) as CreatedUser;
+  const proof = JSON.parse(await runPython(String.raw`
+import json, os, uuid
+from aijurisdictionagents.api_db import ApiDatabaseStore
+store = ApiDatabaseStore.from_env()
+device = "synthetic-pdf-" + uuid.uuid4().hex
+token = store.issue_device_auth_token(user_id=os.environ["E2E_USER_ID"], device_id=device)
+print(json.dumps({"device": device, "token": token}))
+`, { E2E_USER_ID: user.user_id })) as { device: string; token: string };
+  ownerHeaders.set(user.user_id, {
+    'x-api-key': apiKey,
+    'x-jurisdigta-user-id': user.user_id,
+    'x-jurisdigta-device-id': proof.device,
+    'x-jurisdigta-device-token': proof.token,
+  });
+  return user;
 }
 
 async function createCase(
@@ -141,7 +168,7 @@ async function createCase(
   title: string
 ): Promise<CreatedCase> {
   const response = await request.post(`${baseURL}/v1/cases`, {
-    headers: { 'x-api-key': apiKey },
+    headers: caseHeaders(userId),
     data: {
       user_id: userId,
       title,
