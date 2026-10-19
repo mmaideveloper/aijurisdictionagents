@@ -672,9 +672,21 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       path: path.join(evidence, "14-access-revoked.png"),
       fullPage: true,
     });
+    const loggedOut = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/logout") &&
+        response.request().method() === "POST",
+    );
     await page
       .getByRole("button", { name: "Odhlásiť sa", exact: true })
       .click();
+    expect((await loggedOut).status()).toBe(200);
+    await expect(
+      page.getByRole("button", {
+        name: "Registrácia / prihlásenie",
+        exact: true,
+      }),
+    ).toBeVisible();
     await catalogueOnly(page);
     await deniedContent(learner.context, 401);
     manifest.accessBoundary.push(
