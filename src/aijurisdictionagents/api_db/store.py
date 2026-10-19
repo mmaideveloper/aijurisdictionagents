@@ -582,6 +582,11 @@ class ApiDatabaseStore:
 
     def initialize(self) -> None:
         with self._connect() as conn:
+            if self.uses_postgres:
+                # Serialize schema DDL across requests/processes. IF NOT EXISTS
+                # does not prevent concurrent index creation from deadlocking.
+                # The transaction releases this database-local lock on failure too.
+                self._execute(conn, "SELECT pg_advisory_xact_lock(840935)")
             self._execute_script(
                 conn,
                 """

@@ -1,5 +1,11 @@
 # Scheduled API regression database (#933)
 
+Hosted synthetic checks generate a fresh owner-only case key ring with
+`scripts/create_synthetic_case_keyring.py` for the encryption runtime added in #922.
+The existing `CASE_ENCRYPTION_KEY_FILE` setting is exported only within the job.
+No Environment secret is needed for these disposable keys. They are never artifacts
+and are destroyed with the hosted VM. Production must use its separate protected key ring.
+
 `scheduled_e2e_status.yml` uses an ephemeral pgvector/PostgreSQL 16 service for
 API, email and durable workflow checkpoints. It needs no additional `test` or
 `prod` Environment secrets, variables or setup. Deterministic mock-model

@@ -116,6 +116,7 @@ def prepare(port, created):
                 )
     baseline = {
         **values,
+        "CASE_ENCRYPTION_KEY_FILE": os.environ["CASE_ENCRYPTION_KEY_FILE"],
         "AI_MODEL_CREDENTIAL_ENCRYPTION_KEY": secrets.token_urlsafe(48),
         "DB_OPTION": "postgres",
         "DB_CLOUD": identity,

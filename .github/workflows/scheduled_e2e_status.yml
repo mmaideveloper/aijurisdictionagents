@@ -65,9 +65,21 @@ jobs:
           import os
           from pathlib import Path
           import psycopg
+          from aijurisdictionagents.db_migrations import apply_sql_migrations
           with psycopg.connect(os.environ['DB_CLOUD']) as connection:
               connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
+          apply_sql_migrations(project='api', db_option='postgres', target=os.environ['DB_CLOUD'])
           PY
+
+      - name: Create disposable synthetic case key ring
+        run: python scripts/create_synthetic_case_keyring.py
+
+      - name: Verify concurrent API schema initialization
+        run: python -m pytest tests/test_api_db_init_postgres.py -q
+
+      - name: Verify API startup against synthetic database
+        working-directory: api/aijuristiction-api
+        run: python -c "import asyncio; from app.main import startup_log; asyncio.run(startup_log())"
 
       - name: Run scheduled E2E tests and build status report
         id: e2e

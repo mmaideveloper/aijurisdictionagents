@@ -1,5 +1,9 @@
 # Scheduled API E2E PostgreSQL (#933)
 
+Hosted CI generates disposable synthetic case keys automatically; never copy them
+to test/prod persistent environments. No operator secret setup is needed for CI.
+Production key-ring provisioning and migration remain governed by the #922 runbook.
+
 Owner: repository maintainer. No manual infrastructure installation, accounts or
 secrets are required: GitHub-hosted Ubuntu starts the disposable pgvector/pgvector:pg16
 service with a synthetic CI-only password. API and email use its `scheduled_e2e`
