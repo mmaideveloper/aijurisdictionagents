@@ -25,11 +25,10 @@ def cfg():
 def test_public_content_and_auth_boundary(cfg):
     with TestClient(create_app(cfg)) as client:
         response = client.get("/api/questions/A-20")
-        assert response.status_code == 200
-        assert len(response.json()["subquestions"]) == 3
-        assert response.json()["answer"] is None
-        assert "rules" not in response.json()
-        assert client.get("/api/questions/E-1").json()["subquestions"] == []
+        assert response.status_code == 401
+        assert "subquestions" not in response.json()
+        catalogue = client.get("/api/tests").json()
+        assert catalogue and all("body" not in row and "answer" not in row for row in catalogue)
         assert client.get("/api/history").status_code == 401
         assert client.post("/api/sessions", json={"test_id": "firearms-sk-2026"}).status_code == 401
         assert (
@@ -90,7 +89,7 @@ def test_expiry_csrf_isolation_and_retention(cfg, monkeypatch):
     monkeypatch.setattr(
         module.Identity,
         "find_user_by_id",
-        lambda self, **kwargs: SimpleNamespace(is_enabled=True),
+        lambda self, **kwargs: SimpleNamespace(is_enabled=True, role="admin"),
     )
     token, csrf, uid = str(uuid4()), str(uuid4()), "unit-" + str(uuid4())
     with connect(cfg.database_url) as conn:

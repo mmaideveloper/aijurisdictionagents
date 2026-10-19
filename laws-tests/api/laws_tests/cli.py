@@ -30,12 +30,26 @@ def main():
         with connect(cfg.database_url) as conn:
             purge(conn)
             users = conn.execute(
-                "SELECT user_id FROM test_sessions UNION SELECT user_id FROM web_sessions"
+                "SELECT user_id FROM test_sessions UNION SELECT user_id FROM web_sessions UNION SELECT user_id FROM test_users UNION SELECT user_id FROM study_sets UNION SELECT actor_id AS user_id FROM bank_jobs UNION SELECT actor_id AS user_id FROM question_revisions WHERE actor_id<>'deleted-account'"
             ).fetchall()
             for user in users:
                 if identity.find_user_by_id(user_id=user["user_id"]) is None:
                     conn.execute("DELETE FROM test_sessions WHERE user_id=%s", (user["user_id"],))
                     conn.execute("DELETE FROM web_sessions WHERE user_id=%s", (user["user_id"],))
+                    conn.execute("DELETE FROM study_sets WHERE user_id=%s", (user["user_id"],))
+                    conn.execute("DELETE FROM test_users WHERE user_id=%s", (user["user_id"],))
+                    conn.execute("DELETE FROM bank_jobs WHERE actor_id=%s", (user["user_id"],))
+                    conn.execute(
+                        "UPDATE question_revisions SET actor_id='deleted-account' WHERE actor_id=%s",
+                        (user["user_id"],),
+                    )
+                    conn.execute(
+                        "DELETE FROM bank_audit WHERE actor_id=%s OR target_id=%s",
+                        (user["user_id"], user["user_id"]),
+                    )
+        from .jobs import cleanup
+
+        cleanup(cfg)
     print(f"laws-tests {args.command}: complete (values redacted)")
 
 

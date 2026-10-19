@@ -10,7 +10,7 @@ from psycopg.errors import CheckViolation
 
 from laws_tests.app import create_app
 from laws_tests.config import Settings
-from laws_tests.db import connect, migrate
+from laws_tests.db import connect, migrate, seed_preview_if_absent
 
 
 def test_preview_seed_on_empty_database():
@@ -30,11 +30,11 @@ def test_preview_seed_on_empty_database():
     try:
         migrate(target, root)
         with connect(target) as conn:
-            seed = (root / "databases/laws-tests/seeds/preview.sql").read_text(encoding="utf-8")
-            conn.execute(seed)
-            conn.execute(seed)
+            assert conn.execute("SELECT count(*) AS n FROM test_definitions").fetchone()["n"] == 2
+            seed_preview_if_absent(conn, root)
+            seed_preview_if_absent(conn, root)
             row = conn.execute(
-                "SELECT status,preview_notice,legal_date FROM test_definitions"
+                "SELECT status,preview_notice,legal_date FROM test_definitions WHERE id='firearms-sk-2026'"
             ).fetchone()
             assert (
                 row["status"] == "preview" and row["preview_notice"] and row["legal_date"] is None
@@ -68,7 +68,7 @@ def test_preview_is_public_but_is_not_a_reviewed_publication():
             assert row["status"] == "preview" and row["legal_date"] is None
             assert row["preview_notice"] == "Incomplete, not legally reviewed"
             assert not any(row["status"] == "development" for row in rows)
-            assert client.get(f"/api/tests/{course}/questions").status_code == 200
+            assert client.get(f"/api/tests/{course}/questions").status_code == 401
         with pytest.raises(CheckViolation), connect(cfg.database_url) as conn:
             conn.execute("UPDATE test_definitions SET status='published' WHERE id=%s", (course,))
     finally:

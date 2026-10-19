@@ -16,7 +16,7 @@ if record_path.exists():
     if record["email"] != "laws-tests-840@example.invalid":
         raise SystemExit("Refusing non-synthetic cleanup")
     with connect(cfg.database_url) as conn:
-        for table in ("test_sessions", "web_sessions", "login_requests"):
+        for table in ("test_sessions", "web_sessions", "login_requests", "study_sets", "test_users"):
             conn.execute(f"DELETE FROM {table} WHERE user_id=%s", (record["user_id"],))
     with connect(cfg.identity_database_url) as conn:
         conn.execute("DELETE FROM email_outbox WHERE recipient=%s", (record["email"],))
@@ -24,4 +24,5 @@ if record_path.exists():
             "DELETE FROM users WHERE user_id=%s AND email=%s", (record["user_id"], record["email"])
         )
     record_path.unlink()
+    (root / 'runs/issue840/browser-authorization.json').unlink(missing_ok=True)
     print("Synthetic acceptance identity and credentials removed.")

@@ -6,6 +6,19 @@ services:
       LAWS_TEST_ENV_FILE: /run/secrets/.env-laws-test
     volumes:
       - /srv/jurisdigta/secrets/.env-laws-test:/run/secrets/.env-laws-test:ro
+      - /srv/jurisdigta/laws-tests/storage:/app/runs/storage/laws-tests
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks: [default, identity]
+  worker:
+    image: laws-tests-api:${RELEASE_SHA:?RELEASE_SHA required}
+    restart: unless-stopped
+    command: ["python", "-m", "laws_tests.jobs"]
+    environment:
+      LAWS_TEST_ENV_FILE: /run/secrets/.env-laws-test
+    volumes:
+      - /srv/jurisdigta/secrets/.env-laws-test:/run/secrets/.env-laws-test:ro
+      - /srv/jurisdigta/laws-tests/storage:/app/runs/storage/laws-tests
     extra_hosts:
       - host.docker.internal:host-gateway
     networks: [default, identity]

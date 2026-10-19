@@ -8,13 +8,12 @@ const browser = await chromium.launch({headless:true});
 const page = await browser.newPage({viewport:{width:1440,height:1000}});
 try {
   await page.goto(base + '/?question=E-1');
-  await page.getByRole('button',{name:'Prihlásiť sa',exact:true}).waitFor();
-  const reference = await (await page.request.get(base + '/api/questions/E-1')).json();
-  assert.equal(reference.structure,'direct');
+  await page.getByRole('button',{name:'Registrácia / prihlásenie',exact:true}).waitFor();
+  assert.equal((await page.request.get(base + '/api/questions/E-1')).status(),401);
   await page.screenshot({path:'/evidence/public.png',fullPage:true});
   // Exercise the real one-use exchange with a freshly issued central device token.
   // Password + email OTP UI is covered by the mandatory local acceptance job.
-  const start = await page.request.get(base + '/api/auth/start?return_path=/?question=E-1',{maxRedirects:0});
+  const start = await page.request.get(base + '/api/auth/start?return_path='+encodeURIComponent('/?test='+account.test_id+'&question=E-1'),{maxRedirects:0});
   assert.equal(start.status(),303);
   const redirect = new URL(start.headers().location);
   assert.equal(redirect.origin,'https://web.jurisdigta.eu');
@@ -23,6 +22,8 @@ try {
       user_id:account.user_id,device_id:account.device_id,device_token:account.device_token}});
   assert.equal(auth.status(),200);
   await page.goto((await auth.json()).redirect);
+  const reference = await (await page.request.get(base + '/api/questions/E-1')).json();
+  assert.equal(reference.structure,'direct');
   await page.getByRole('button',{name:'Odhlásiť sa'}).waitFor();
   await page.getByRole('button',{name:'Precvičiť túto otázku'}).click();
   await page.locator('textarea').fill(reference.answer);

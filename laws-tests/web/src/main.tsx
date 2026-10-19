@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import { Portal } from "./Portal";
 import { LegalText, LawReader, type TextToken } from "./LawReader";
 
 type Course = {
@@ -16,7 +17,14 @@ type Course = {
   legal_summary: string;
   case_type: string;
 };
-type Item = { id: string; body: string; answer: string; sequence?: number; linked_body?: TextToken[]; linked_answer?: TextToken[] };
+type Item = {
+  id: string;
+  body: string;
+  answer: string;
+  sequence?: number;
+  linked_body?: TextToken[];
+  linked_answer?: TextToken[];
+};
 type Question = Item & {
   test_id: string;
   category: string;
@@ -25,6 +33,9 @@ type Question = Item & {
   structure: string;
   subquestions: Item[];
   provenance: string[];
+  tags?: string[];
+  options?: string[];
+  related_ids?: string[];
 };
 type Result = {
   id: string;
@@ -102,11 +113,26 @@ function App() {
   }, [history]);
   useEffect(() => {
     api("/tests")
-      .then((rows: Course[]) => {
+      .then(async (rows: Course[]) => {
+        const auth = await api("/me");
+        rows = rows.filter(
+          (c) =>
+            auth.isAdmin ||
+            (auth.approved &&
+              auth.access.some(
+                (a: { test_id: string; status: string }) =>
+                  a.test_id === c.id && a.status === "approved",
+              )),
+        );
         setCourses(rows);
         const type = new URLSearchParams(location.search).get("caseType");
         const requestedTest = new URLSearchParams(location.search).get("test");
-        setCourse(rows.find((c) => c.id === requestedTest) ?? rows.find((c) => c.case_type === type) ?? rows[0] ?? null);
+        setCourse(
+          rows.find((c) => c.id === requestedTest) ??
+            rows.find((c) => c.case_type === type) ??
+            rows[0] ??
+            null,
+        );
       })
       .catch((e) => setError(e.message));
     api("/me")
@@ -134,7 +160,11 @@ function App() {
       setQuestion(row);
       setExpanded([]);
       if (push)
-        window.history.pushState({}, "", `?test=${encodeURIComponent(row.test_id)}&question=${encodeURIComponent(id)}`);
+        window.history.pushState(
+          {},
+          "",
+          `?test=${encodeURIComponent(row.test_id)}&question=${encodeURIComponent(id)}${new URLSearchParams(location.search).get("studySet") ? "&studySet=" + new URLSearchParams(location.search).get("studySet") : ""}`,
+        );
     } catch (e) {
       setError((e as Error).message);
     }
@@ -174,6 +204,10 @@ function App() {
         test_id: course?.id,
         mode,
         question_id: manual ? question?.id : null,
+        study_set_id:
+          mode === "learning"
+            ? new URLSearchParams(location.search).get("studySet")
+            : null,
       });
       setSession(s);
       setAnswers({});
@@ -346,7 +380,7 @@ function App() {
             <p>
               Otázky a pôvodné odpovede na jednom mieste.
               <br />
-              Čítajte voľne, precvičujte si vedomosti po prihlásení.
+              Študujte otázky z bánk schválených pre váš účet.
             </p>
           </div>
           <div className="intro-note">
@@ -390,11 +424,15 @@ function App() {
                 ? "Vývojová ukážka · čaká na kontrolu"
                 : course?.status === "preview"
                   ? "Neúplná skúšobná sada"
-                : "Overený obsah"}
+                  : "Overený obsah"}
             {course?.legal_date && ` · ${course.legal_date}`}
           </span>
         </section>
-        {course?.status === "preview" && <p className="preview-notice" role="note">{course.preview_notice}</p>}
+        {course?.status === "preview" && (
+          <p className="preview-notice" role="note">
+            {course.preview_notice}
+          </p>
+        )}
         {error && (
           <div className="error" role="alert">
             {error}
@@ -548,7 +586,9 @@ function App() {
                     }}
                   >
                     <span className="question-number">
-                      {q.category}–{q.number}
+                      {q.category.length <= 2
+                        ? `${q.category}–${q.number}`
+                        : q.number}
                     </span>
                     <span>
                       {q.title}
@@ -562,7 +602,7 @@ function App() {
                 )}
               </div>
               <div className="aside-note">
-                <strong>Čítanie je otvorené všetkým.</strong>
+                <strong>Prístup schvaľuje administrátor.</strong>
                 <p>
                   Na precvičovanie a uloženie výsledkov použite svoj účet
                   JurisDigta.
@@ -577,9 +617,20 @@ function App() {
                     <span>/</span> Otázka {question.category}–{question.number}
                   </div>
                   <div className="question-heading">
-                    <span className="large-number">
-                      {question.category}
-                      <small>{question.number}</small>
+                    <span
+                      className="large-number"
+                      style={
+                        question.category.length > 2
+                          ? { fontSize: "1.65rem" }
+                          : undefined
+                      }
+                    >
+                      {question.category.length <= 2
+                        ? question.category
+                        : question.number}
+                      {question.category.length <= 2 && (
+                        <small>{question.number}</small>
+                      )}
                     </span>
                     <div>
                       <div className="eyebrow">
@@ -587,7 +638,7 @@ function App() {
                           ? session?.mode === "exam"
                             ? "CVIČNÁ SKÚŠKA"
                             : "PRECVIČOVANIE"
-                          : "VEREJNÉ ČÍTANIE"}
+                          : "ŠTUDIJNÉ ČÍTANIE"}
                       </div>
                       <h2>{question.title}</h2>
                       <p>
@@ -598,6 +649,25 @@ function App() {
                       </p>
                     </div>
                   </div>
+                  {!!question.tags?.length && (
+                    <p>
+                      {question.tags.map((tag) => (
+                        <span className="pill" key={tag}>
+                          {tag}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                  {!!question.options?.length && (
+                    <section>
+                      <h3>Možnosti odpovede</h3>
+                      <ol>
+                        {question.options.map((option, index) => (
+                          <li key={index}>{option}</li>
+                        ))}
+                      </ol>
+                    </section>
+                  )}
                   {!practice && (
                     <div className="modebar">
                       <button
@@ -667,7 +737,9 @@ function App() {
                           ? `PODOTÁZKA ${n + 1} Z ${items.length}`
                           : "OTÁZKA"}
                       </div>
-                      <h3><LegalText tokens={item.linked_body} text={item.body} /></h3>
+                      <h3>
+                        <LegalText tokens={item.linked_body} text={item.body} />
+                      </h3>
                       {practice && (
                         <>
                           <label className="answer-label">
@@ -751,7 +823,12 @@ function App() {
                           </button>
                           {expanded.includes(item.id) && (
                             <div className="answer-text">
-                              <p className="linked-answer"><LegalText tokens={item.linked_answer} text={item.answer} /></p>
+                              <p className="linked-answer">
+                                <LegalText
+                                  tokens={item.linked_answer}
+                                  text={item.answer}
+                                />
+                              </p>
                             </div>
                           )}
                         </div>
@@ -767,6 +844,24 @@ function App() {
                         {aggregate.passed ? "Splnené" : "Nesplnené"}
                       </strong>
                     </div>
+                  )}
+                  {!!question.related_ids?.length && (
+                    <section>
+                      <h3>Súvisiace otázky</h3>
+                      {questions
+                        .filter((q) => question.related_ids?.includes(q.id))
+                        .map((q) => (
+                          <button
+                            key={q.id}
+                            onClick={() => {
+                              setSession(null);
+                              void openQuestion(q.id);
+                            }}
+                          >
+                            {q.title}
+                          </button>
+                        ))}
+                    </section>
                   )}
                   <div className="bottom-nav">
                     {(practice
@@ -796,7 +891,8 @@ function App() {
                   </div>
                   {course?.status === "published" && (
                     <p className="source-note">
-                      Nezávislá príprava na skúšku. Nejde o vydanie osvedčenia ani úradné hodnotenie.
+                      Nezávislá príprava na skúšku. Nejde o vydanie osvedčenia
+                      ani úradné hodnotenie.
                     </p>
                   )}
                 </>
@@ -813,4 +909,10 @@ function App() {
     </>
   );
 }
-createRoot(document.getElementById("root")!).render(location.pathname.startsWith("/laws/") ? <LawReader /> : <App />);
+createRoot(document.getElementById("root")!).render(
+  location.pathname.startsWith("/laws/") ? (
+    <LawReader />
+  ) : (
+    <Portal Reader={App} />
+  ),
+);

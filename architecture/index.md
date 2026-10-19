@@ -27,6 +27,10 @@ This directory owns JurisDigta-specific architecture evidence. The reusable auth
 
 ## Current use cases
 
+- [UC-004: Private study banks](use-cases/UC-004-private-study-banks.md) — Reviewed owner requirements, #924
+- [ADD-003: Private study banks and reviewed processing](design/ADD-003-private-study-banks.md) — In Review
+- [ADR-004: Explicit bank grants](decisions/ADR-004-explicit-bank-grants.md) — Accepted product access decision; no release approval implied
+
 - [UC-003: Organizational IT legal analysis](use-cases/UC-003-organizational-it-legal-analysis.md) — scope reviewed, implementation validation pending
 - [ADD-002: Organizational IT assessment](design/ADD-002-organizational-it-assessment.md) — In Review
 - [ADR-003: Share assessment controls](decisions/ADR-003-share-assessment-controls.md) — Proposed

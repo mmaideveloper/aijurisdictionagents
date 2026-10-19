@@ -1,11 +1,13 @@
 import json
 from dataclasses import replace
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from reader_fixture import MANIFEST, cleanup, prepare
 
-from laws_tests.app import create_app
+from laws_tests.app import create_app, digest
 from laws_tests.config import Settings
 from laws_tests.db import connect
 from laws_tests.legal import anchor_matches, linked_text
@@ -35,9 +37,17 @@ def reader():
     cfg = Settings.load()
     fixture = json.loads(MANIFEST.read_text())
     try:
-        with TestClient(create_app(cfg)) as client:
-            yield cfg, client, fixture
+        token = uuid4().hex
+        with connect(cfg.database_url) as conn:
+            conn.execute("INSERT INTO web_sessions VALUES(%s,'reader-unit','reader-unit',now()+interval '1 hour')", (digest(token),))
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr("laws_tests.app.Identity.find_user_by_id", lambda self, **kw: SimpleNamespace(is_enabled=True, role="admin"))
+            with TestClient(create_app(cfg)) as client:
+                client.cookies.set("laws_session", token)
+                yield cfg, client, fixture
     finally:
+        with connect(cfg.database_url) as conn:
+            conn.execute("DELETE FROM web_sessions WHERE user_id='reader-unit'")
         cleanup()
 
 

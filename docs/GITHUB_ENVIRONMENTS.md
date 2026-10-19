@@ -932,3 +932,25 @@ periods and restore suppression before enabling the daily retention job. No new 
 input, Environment variable or secret is introduced. Existing real Azure Foundry credentials
 and admin authentication remain required. `prod` cleanup remains disabled with the draft
 policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.
+# Tests private-bank worker and acceptance (#924)
+
+The hosted synthetic validation job initializes the shared identity schema in its ephemeral
+PostgreSQL service before creating test users. It needs no environment secrets or model calls.
+
+The existing `test` GitHub Environment and `laws-tests-e2e` Windows runner must also support
+the private-bank acceptance run (`laws-tests/tests/run_private_acceptance.ps1`): free ports
+8940/8941/5494, Docker Desktop, Node 24/Edge and the branch-local Python 3.13 runtime. Install
+the current `laws-tests/api` package (multipart, Pillow and PDFium) and the repository dev
+dependencies (including ReportLab for synthetic PDF fixtures). Pull only the existing verified
+`codex-agent` and `laws-tests-dev` USB profiles. No new GitHub variables, secrets or workflow
+inputs are introduced. The existing real E2E command runs the legacy shared-account/reader
+checks followed by private-bank acceptance. Both must succeed for the exact deployment SHA.
+Retain sanitized `runs/issue924/evidence` with the existing 14-day evidence policy; never upload
+the sibling private-fixture file, logs, browser auth proof or account credential files.
+
+For `prod`, keep the exact-SHA fail-closed build gate. The tests API image now also runs a
+separate worker; provision the private shared volume and scoped SQL/identity grants documented
+in `docs/manual_infrastucture_setup.md` before enabling this release. Existing administrators
+must explicitly approve users/banks after migration; do not bootstrap blanket access. Public
+metadata remains readable, but the older anonymous Q&A smoke is replaced by a synthetic user
+with a single explicit bank grant. No purchased LF UK content or actual users are seeded by CI.
