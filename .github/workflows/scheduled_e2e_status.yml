@@ -69,6 +69,9 @@ jobs:
               connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
           PY
 
+      - name: Verify concurrent API schema initialization
+        run: python -m pytest tests/test_api_db_init_postgres.py -q
+
       - name: Run scheduled E2E tests and build status report
         id: e2e
         working-directory: api/aijuristiction-api/e2e-playwright
