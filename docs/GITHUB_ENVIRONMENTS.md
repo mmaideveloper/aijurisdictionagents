@@ -1,3 +1,10 @@
+# Scheduled API regression database (#933)
+
+`scheduled_e2e_status.yml` uses an ephemeral pgvector/PostgreSQL 16 service for
+API, email and durable workflow checkpoints. It needs no additional `test` or
+`prod` Environment secrets, variables or setup. Deterministic mock-model
+regressions supplement the separate real-model release acceptance.
+
 # Authenticated synthetic browser acceptance (#918)
 
 The production MCP browser gate requires real device authentication as well as OAuth
