@@ -7,6 +7,8 @@ COPY src/ src/
 RUN --mount=type=secret,id=build_ca if [ -f /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; pip install --no-cache-dir --no-deps .
 COPY laws-tests/api/ laws-tests/api/
 RUN --mount=type=secret,id=build_ca if [ -f /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; pip install --no-cache-dir ./laws-tests/api
+# Validate the actual minimal image, not the richer CI/development environment.
+RUN python -c "import laws_tests.app; import laws_tests.jobs"
 COPY databases/laws-tests/ databases/laws-tests/
 COPY laws-tests/deploy/migrate_release.py laws-tests/deploy/migrate_release.py
 COPY laws-tests/deploy/smoke_identity.py laws-tests/deploy/smoke_identity.py

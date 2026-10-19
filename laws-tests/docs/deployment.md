@@ -9,6 +9,12 @@ versions must be ready before publication. See [law-reader.md](law-reader.md).
 
 # Production deployment
 
+The API image deliberately installs shared core adapters without all core dependencies.
+The tests package explicitly includes `cryptography` for shared case-store imports.
+Image construction imports the API and worker modules before release; this catches
+missing runtime dependencies even when development E2E has extra packages installed.
+Minimal runnable image check: `docker build -f laws-tests/deploy/api.Dockerfile -t laws-tests-api:check .`.
+
 The workflow display name is **LawsTest-Self-Managed-Prod-deploy**. It accepts one
 `release_sha`: an immutable 40-character commit already on `main`. It uses lowercase
 `prod`, protected self-hosted runner labels `self-hosted, Linux, X64, jurisdigta-prod`,
