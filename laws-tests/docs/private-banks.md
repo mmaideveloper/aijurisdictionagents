@@ -108,6 +108,10 @@ card showing explicit grants for both synthetic banks. See `result-manifest.json
 screenshots `07`–`10` alongside the existing evidence; the same 14-day retention applies.
 Tagging distinguishes the administrator's instruction/rubric from untrusted question content;
 the source trust boundary is not itself a requested educational classification.
+CI lint validation uses the repository's current Ruff rules. Multipart inputs use FastAPI
+`Annotated` declarations; malformed model JSON types enter the sanitized worker failure path.
+Fresh release bootstrap checks the firearms bank specifically before seeding its preview:
+the two medical drafts do not suppress it, and existing firearms content is preserved.
 
 ## Relationship to #841 and rollout
 

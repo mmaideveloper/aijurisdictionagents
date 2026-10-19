@@ -152,7 +152,7 @@ def model_json(cfg, instruction, data, image=None):
         )
     value = json.loads(response.choices[0].message.content or "")
     if not isinstance(value, dict):
-        raise ValueError("model_shape")
+        raise TypeError("model_shape")
     return value
 
 
@@ -356,7 +356,7 @@ def run_once(cfg) -> bool:
                          lease_until=NULL,updated_at=now() WHERE id=%s AND status='running' AND lease_token=%s""",
                 (Jsonb(result), cursor, status, row["id"], token),
             )
-    except (APIError, ValueError, OSError, RuntimeError, TimeoutError) as exc:
+    except (APIError, TypeError, ValueError, OSError, RuntimeError, TimeoutError) as exc:
         code = type(exc).__name__
         status = getattr(exc, "status_code", None)
         if isinstance(status, int):

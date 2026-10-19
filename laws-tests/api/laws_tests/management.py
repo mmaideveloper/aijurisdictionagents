@@ -2,7 +2,7 @@
 
 import shutil
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -401,7 +401,10 @@ def management_router(cfg, session_user, public_test, active):
 
     @router.post("/admin/banks/{test_id}/imports")
     def upload(
-        test_id: str, request: Request, files: list[UploadFile] = File(...), authorized: bool = Form(False)
+        test_id: str,
+        request: Request,
+        files: Annotated[list[UploadFile], File()],
+        authorized: Annotated[bool, Form()] = False,
     ):
         from .jobs import store_sources
 

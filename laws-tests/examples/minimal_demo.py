@@ -10,7 +10,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-from laws_tests.management import QuestionInput  # noqa: E402
+from laws_tests.management import QuestionInput
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--offline", action="store_true")

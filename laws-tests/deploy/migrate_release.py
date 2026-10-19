@@ -9,7 +9,7 @@ from urllib.parse import unquote, urlsplit
 import psycopg
 from dotenv import dotenv_values
 
-from laws_tests.db import migrate
+from laws_tests.db import migrate, seed_preview_if_absent
 
 sha = sys.argv[1]
 if len(sha) != 40 or not all(c in "0123456789abcdef" for c in sha):
@@ -89,9 +89,7 @@ migrate(url, Path("/app"))
 # Import the explicitly authorized preview only into an empty course bank. Never downgrade
 # or overwrite a later reviewed import, and never mark preview content legally reviewed.
 with psycopg.connect(url) as conn:
-    conn.execute("SELECT pg_advisory_xact_lock(840002)")
-    if not conn.execute("SELECT 1 FROM test_definitions LIMIT 1").fetchone():
-        conn.execute(Path("/app/databases/laws-tests/seeds/preview.sql").read_text(encoding="utf-8"))
+    seed_preview_if_absent(conn, Path("/app"))
 with psycopg.connect(url) as conn:
     conn.execute('GRANT CONNECT ON DATABASE "laws-tests" TO laws_tests_app')
     conn.execute("GRANT USAGE ON SCHEMA public TO laws_tests_app")

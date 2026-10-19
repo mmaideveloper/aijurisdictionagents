@@ -31,6 +31,13 @@ def migrate(url: str, root: Path) -> None:
             )
 
 
+def seed_preview_if_absent(conn, root: Path) -> None:
+    """Draft banks must not suppress the initial firearms preview or overwrite later content."""
+    conn.execute("SELECT pg_advisory_xact_lock(840002)")
+    if not conn.execute("SELECT 1 FROM test_definitions WHERE id='firearms-sk-2026'").fetchone():
+        conn.execute((root / "databases/laws-tests/seeds/preview.sql").read_text(encoding="utf-8"))
+
+
 def purge(conn) -> None:
     conn.execute("DELETE FROM attempts WHERE created_at <= now() - interval '12 months'")
     conn.execute(

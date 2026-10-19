@@ -10,7 +10,7 @@ from psycopg.errors import CheckViolation
 
 from laws_tests.app import create_app
 from laws_tests.config import Settings
-from laws_tests.db import connect, migrate
+from laws_tests.db import connect, migrate, seed_preview_if_absent
 
 
 def test_preview_seed_on_empty_database():
@@ -30,9 +30,9 @@ def test_preview_seed_on_empty_database():
     try:
         migrate(target, root)
         with connect(target) as conn:
-            seed = (root / "databases/laws-tests/seeds/preview.sql").read_text(encoding="utf-8")
-            conn.execute(seed)
-            conn.execute(seed)
+            assert conn.execute("SELECT count(*) AS n FROM test_definitions").fetchone()["n"] == 2
+            seed_preview_if_absent(conn, root)
+            seed_preview_if_absent(conn, root)
             row = conn.execute(
                 "SELECT status,preview_notice,legal_date FROM test_definitions WHERE id='firearms-sk-2026'"
             ).fetchone()
