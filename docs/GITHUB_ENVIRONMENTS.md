@@ -934,6 +934,21 @@ and admin authentication remain required. `prod` cleanup remains disabled with t
 policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.
 # Tests private-bank worker and acceptance (#924)
 
+Hosted replacement (#931): `laws-tests-real-e2e` now uses GitHub-hosted Ubuntu, Chromium
+and an ephemeral PostgreSQL service. In the protected `test` Environment add these four
+**test-only** Azure Foundry secrets: `E2E_AZURE_FOUNDRY_ENDPOINT`,
+`E2E_AZURE_FOUNDRY_API_VERSION`, `E2E_AZURE_FOUNDRY_DEPLOYMENT` (must be `gpt-5-mini`),
+and `E2E_AZURE_FOUNDRY_API_KEY`. Do not copy the production API key. Maintain Azure quota,
+vision support, HTTPS reachability and a budget for synthetic tests; the maintainer owns
+key rotation and must run real acceptance after rotation. No SSH or production DB secrets
+are needed on hosted runners. The legacy `LAWS_TEST_E2E_PYTHON` Environment variable is
+unused by this job and may be removed after the first successful hosted run. The workflow
+input name `run_real_e2e` is unchanged; its description now identifies the hosted runner.
+For `prod`, the exact-SHA required-check names and Linux deployment runner remain unchanged.
+See `laws-tests/docs/hosted-e2e.md` and the #931 manual setup section for verification/rollback.
+
+The following Windows setup remains applicable only to the explicit local developer launchers:
+
 The hosted synthetic validation job initializes the shared identity schema in its ephemeral
 PostgreSQL service before creating test users. It needs no environment secrets or model calls.
 
