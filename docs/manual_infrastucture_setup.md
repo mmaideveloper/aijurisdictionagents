@@ -1256,3 +1256,30 @@ not authorize a production deployment or provide a content-rights approval.
    gate while restoring a reviewed recovery point. Reverting to pre-924 anonymous Q&A over
    private banks is unsafe and is not an allowed rollback. Preserve attempt content snapshots,
    account deletions and revocations. Revalidate all exact-SHA checks before a later release.
+# Hosted laws-tests E2E (#931)
+
+- Owner: repository maintainer plus Azure subscription/resource owner. Use a dedicated
+  test-only Azure Foundry resource with `gpt-5-mini` and vision support; establish its quota,
+  EU processing route and spending alerts before the first real-model run. Public hosted
+  runners require outbound HTTPS access to that test endpoint. Do not open a production
+  database or copy a production model key to GitHub. Azure CLI provisioning must use the
+  repository's service-principal login helper, never the signed-in personal Azure account.
+- In GitHub repository `mmaideveloper/aijurisdictionagents`, Environment `test`, install
+  secrets `E2E_AZURE_FOUNDRY_ENDPOINT`, `E2E_AZURE_FOUNDRY_API_VERSION`,
+  `E2E_AZURE_FOUNDRY_DEPLOYMENT=gpt-5-mini`, `E2E_AZURE_FOUNDRY_API_KEY` using the secret
+  UI or secret values on CLI stdin. Never paste keys into issues, chat or workflow logs.
+  Keep the Environment restricted to trusted operator-dispatched refs; no secrets on forks.
+- The Ubuntu job provisions PostgreSQL/Python/Node/Chromium automatically. No laptop runner,
+  local Python path or SSH access to `jurisdigta-server` is needed. Per-job encryption keys,
+  synthetic users and database data are ephemeral; only sanitized evidence is uploaded
+  for 14 days. Remove the unused test Environment `LAWS_TEST_E2E_PYTHON` variable only after
+  a successful hosted run. Existing production variables/secrets/check lists are unchanged.
+- Verify by dispatching `Laws Tests Validate` with `run_real_e2e=true` on the reviewed ref.
+  Require both browser suites and the real-model bootstrap to pass; inspect screenshots,
+  source/model-route manifests and `cleanupPassed`. Re-run against the final merged SHA
+  before using the production deployment workflow. Rotate the test key by replacing the
+  Environment secret and rerunning acceptance; the maintainer owns the rotation schedule.
+- Rollback: revert the workflow change through a reviewed PR and restore the documented
+  trusted local runner configuration if needed. Keep all exact-SHA release checks mandatory;
+  never replace failed real-model evidence with mocks or production data. Do not deploy
+  while the required hosted test secrets, quota or successful release checks are absent.

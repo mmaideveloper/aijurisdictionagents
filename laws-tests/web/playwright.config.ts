@@ -9,7 +9,7 @@ export default defineConfig({
   outputDir: "../../runs/issue840/playwright",
   use: {
     baseURL: "http://127.0.0.1:8410",
-    channel: "msedge",
+    ...(process.platform === "win32" ? { channel: "msedge" } : {}),
     headless: true,
     trace: "off",
     screenshot: "off",

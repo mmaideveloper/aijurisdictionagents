@@ -34,6 +34,9 @@ the API/MCP/document services. The previous account container is the rollback po
 
 ## Temporary Windows acceptance runner
 
+Superseded for GitHub releases by [hosted E2E](hosted-e2e.md) (#931). The instructions
+below describe the historical/local runner; production release checks use hosted Ubuntu.
+
 Use an operator-controlled Windows/X64 runner with label `laws-tests-e2e`, Node, Edge,
 Docker Desktop, SSH and the approved local model credentials. `test` environment variable
 `LAWS_TEST_E2E_PYTHON` optionally points to an existing trusted Python interpreter with the

@@ -7,7 +7,7 @@ export default defineConfig({
   outputDir: "../../runs/issue924/playwright",
   reporter: "line",
   use: {
-    channel: "msedge",
+    ...(process.platform === "win32" ? { channel: "msedge" } : {}),
     headless: true,
     actionTimeout: 20000,
     trace: "off",
