@@ -1,5 +1,23 @@
 # Scheduled API E2E PostgreSQL (#933)
 
+Production tests storage owner (#937): the infrastructure operator must reserve
+UID/GID 10840 for the locked `jurisdigta-tests` service identity. Ubuntu's uutils
+`install` 0.8.0 rejects unresolved numeric owners. First verify `getent passwd 10840`
+and `getent group 10840`; stop if either ID belongs to an unrelated identity. If absent:
+
+```bash
+sudo groupadd --system --gid 10840 jurisdigta-tests
+sudo useradd --system --uid 10840 --gid 10840 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin jurisdigta-tests
+sudo install -d -m 700 -o 10840 -g 10840 /srv/jurisdigta/laws-tests/storage
+sudo stat -c '%a %u %g' /srv/jurisdigta/laws-tests/storage
+```
+
+Validation must print `700 10840 10840`; no secrets, login password or home are
+created. This is host configuration only and introduces no GitHub `test`/`prod`
+settings. Retry the full exact-SHA gated deployment after provisioning. Retain the
+locked account on application rollback; remove it only after service decommission
+and reviewed reassignment of its files. Never delete storage as account rollback.
+
 Hosted CI generates disposable synthetic case keys automatically; never copy them
 to test/prod persistent environments. No operator secret setup is needed for CI.
 Production key-ring provisioning and migration remain governed by the #922 runbook.
