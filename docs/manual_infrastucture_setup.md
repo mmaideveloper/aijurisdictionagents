@@ -1,3 +1,14 @@
+# Scheduled API E2E PostgreSQL (#933)
+
+Owner: repository maintainer. No manual infrastructure installation, accounts or
+secrets are required: GitHub-hosted Ubuntu starts the disposable pgvector/pgvector:pg16
+service with a synthetic CI-only password. API and email use its `scheduled_e2e`
+database; synthetic blobs stay under ignored `runs/storage/scheduled-e2e/blobs`.
+Validate with `gh workflow run scheduled_e2e_status.yml --ref main` and inspect
+the `scheduled-e2e-status` artifact. The job teardown destroys the database and VM.
+Rollback by reverting #933, but keep production blocked if the scheduled check
+fails; SQLite cannot provide the required durable workflow checkpoints.
+
 # Synthetic browser device credentials (#918)
 
 Owner: the existing release operator on the trusted self-hosted runner. No new account,

@@ -13,11 +13,24 @@ jobs:
     name: E2E status report
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-password
+          POSTGRES_DB: scheduled_e2e
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       API_KEY: aijuris
       RUN_NEGATIVE_AUTH_TESTS: "1"
       LLM_PROVIDER: mock
-      DB_OPTION: local
+      DB_OPTION: postgres
+      DB_CLOUD: postgresql://postgres:synthetic-ci-password@127.0.0.1:5432/scheduled_e2e
+      EMAIL_DB_OPTION: postgres
+      EMAIL_DB_CLOUD: postgresql://postgres:synthetic-ci-password@127.0.0.1:5432/scheduled_e2e
       EMAIL_TRANSPORT: log
       EMAIL_SCHEDULER_ENABLED: "false"
       APPLICATIONINSIGHTS_CONNECTION_STRING: ""
@@ -46,14 +59,23 @@ jobs:
         working-directory: api/aijuristiction-api/e2e-playwright
         run: npm ci
 
+      - name: Initialize fresh workflow base schema
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          with psycopg.connect(os.environ['DB_CLOUD']) as connection:
+              connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
+          PY
+
       - name: Run scheduled E2E tests and build status report
         id: e2e
         working-directory: api/aijuristiction-api/e2e-playwright
         env:
           API_PYTHON: python
-          DB_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e.sqlite3
-          EMAIL_DB_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e-email.sqlite3
-          STORE_LOCAL: ${{ runner.temp }}/jurisdigta-scheduled-e2e-storage
+          DEBUG: pw:webserver
+          STORE_LOCAL: ${{ github.workspace }}/runs/storage/scheduled-e2e/blobs
         shell: bash
         run: |
           set +e
