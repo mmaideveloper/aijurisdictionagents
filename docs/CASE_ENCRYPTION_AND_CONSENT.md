@@ -173,3 +173,7 @@ test key ring. Keep the sanitized evidence for no more than seven days.
 
 The recorded acceptance run completed that cleanup: both isolated databases,
 runtime case storage, private auth files and the test key ring were removed.
+
+The real-service encryption browser scenario lives in e2e-real and is selected only by playwright.issue922.config.ts. The standard offline browser suite retains all its tests and does not substitute for this real-model acceptance gate. Release validation also runs frontend lint; the profile source must not contain embedded BOM characters.
+
+Release retry validation (2026-10-19): the isolated validation-fix branch updates obsolete filename/key fixtures and admin-export UI tests. Frontend lint/build and all 206 frontend unit tests pass; 20 focused database/encryption tests pass. Production key provisioning and exact-candidate hosted checks remain release gates.

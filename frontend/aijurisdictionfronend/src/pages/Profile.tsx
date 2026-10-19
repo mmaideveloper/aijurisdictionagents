@@ -1,5 +1,5 @@
 import { CaseExportConsent } from "../components/CaseExportConsent";
-﻿import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaDownload } from "react-icons/fa";
 import { fetchCaseExportBlob } from "../api/caseClient";
