@@ -65,8 +65,10 @@ jobs:
           import os
           from pathlib import Path
           import psycopg
+          from aijurisdictionagents.db_migrations import apply_sql_migrations
           with psycopg.connect(os.environ['DB_CLOUD']) as connection:
               connection.execute(Path('databases/api/flow_packs_schema.sql').read_text())
+          apply_sql_migrations(project='api', db_option='postgres', target=os.environ['DB_CLOUD'])
           PY
 
       - name: Create disposable synthetic case key ring
