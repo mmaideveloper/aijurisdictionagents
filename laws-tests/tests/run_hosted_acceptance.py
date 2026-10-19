@@ -151,6 +151,10 @@ def prepare(port, created):
     os.environ["LAWS_TEST_E2E_PYTHON"] = sys.executable
     from aijurisdictionagents.db_migrations import apply_sql_migrations
 
+    # FlowPackStore normally creates this base table on application startup.
+    # Fresh databases need it before migration 0028 can alter it.
+    with psycopg.connect(identity) as conn:
+        conn.execute((ROOT / "databases/api/flow_packs_schema.sql").read_text())
     apply_sql_migrations(project="api", db_option="postgres", target=identity, dry_run=False)
     run(
         "real-model-bootstrap",

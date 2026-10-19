@@ -10,11 +10,13 @@ The privileged job remains manual (`workflow_dispatch`, `run_real_e2e=true`) in 
 GitHub `test` Environment. Dispatch only reviewed refs in this repository; never fork code.
 Dependency installation runs before the model secrets are injected into the acceptance step.
 The four `E2E_AZURE_FOUNDRY_*` API-key settings are GitHub Environment secrets, backed by a
-test-only Azure resource. The existing approved laptop E2E importer reads the production API
-credential and must not be used to populate these hosted secrets.
+separately scoped test resource where available. On 2026-10-19 the owner explicitly authorized
+using the synced profile's existing E2E credentials for these secrets. These credentials share
+the existing Azure resource with production; synthetic test databases remain isolated.
 
 The launcher creates ephemeral configuration files with owner-only permissions, generates
 a fresh model-credential encryption key and synthetic account passwords, applies migrations,
+initializing the existing flow-pack base schema before migrations that alter it,
 uses the existing loopback-only encrypted credential bootstrap with real model verification,
 and exercises the actual frontend/API/MCP/worker processes. It refuses existing config files
 and non-hosted/non-Linux execution. Each job gets its own PostgreSQL service; fixture UUIDs
