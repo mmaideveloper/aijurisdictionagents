@@ -106,6 +106,14 @@ The browser scenario also uploads the fake scanned PDF through the administrator
 captures bank selection, the filled answer form, the evaluated total, and a user approval
 card showing explicit grants for both synthetic banks. See `result-manifest.json` and
 screenshots `07`–`10` alongside the existing evidence; the same 14-day retention applies.
+Access-boundary regression (#926) checks that anonymous and registered-but-unapproved
+users see the catalogue only, including direct question URLs and direct API requests.
+Global user approval without a bank grant still denies content. Firearms-only, medical-only
+and both-bank grants are exercised in the actual browser, followed by revocation and logout.
+Screenshots `11`–`14` capture registration without approval, pending approval, medical-only
+access and revoked access. The manifest's `accessBoundary` lists the observed stages.
+The accounts are newly created synthetic central registrations authenticated through the
+real device-token exchange; these checks do not replace the separate registration/MFA UI tests.
 Tagging distinguishes the administrator's instruction/rubric from untrusted question content;
 the source trust boundary is not itself a requested educational classification.
 CI lint validation uses the repository's current Ruff rules. Multipart inputs use FastAPI

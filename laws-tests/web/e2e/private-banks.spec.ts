@@ -1,4 +1,4 @@
-import { test, expect, type BrowserContext } from "@playwright/test";
+import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -25,6 +25,7 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       "central-identity-adapter/local-postgresql",
     ],
     expectedSources: [101, 102, 103, 104],
+    accessBoundary: [],
     observedSources: [],
     routes: [],
     retention:
@@ -37,11 +38,54 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       JSON.stringify(manifest, null, 2),
     );
   save();
+  async function catalogueOnly(page: Page) {
+    await expect(
+      page.getByRole("heading", { name: /Vaše vedomosti/ }),
+    ).toBeVisible();
+    for (const name of ["Synthetic Medical 924", "Synthetic Firearms 924"])
+      await expect(
+        page.getByRole("heading", { name, exact: true }),
+      ).toBeVisible();
+    await expect(page.locator(".question-row")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Otvoriť banku", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Vaša odpoveď")).toHaveCount(0);
+    await expect(
+      page.getByText("What is the chemical formula of water?", { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText("H2O", { exact: true })).toHaveCount(0);
+  }
+  async function deniedContent(context: BrowserContext, status: number) {
+    for (const bank of fixture.banks) {
+      for (const endpoint of [
+        `/api/tests/${bank}/questions`,
+        `/api/questions/${bank}-1`,
+      ]) {
+        const response = await context.request.get(base + endpoint);
+        expect(response.status()).toBe(status);
+        expect(await response.text()).not.toContain("H2O");
+      }
+    }
+  }
   try {
     const visitor = await browser.newContext();
     contexts.push(visitor);
     const publicPage = await visitor.newPage();
     await publicPage.goto(base);
+    await catalogueOnly(publicPage);
+    await deniedContent(visitor, 401);
+    const catalogue = await (
+      await visitor.request.get(base + "/api/tests")
+    ).text();
+    expect(catalogue).not.toContain("What is the chemical formula of water?");
+    expect(catalogue).not.toContain("H2O");
+    await expect(
+      publicPage.getByRole("button", {
+        name: "Registrácia / prihlásenie",
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(
       publicPage.getByRole("heading", { name: /Vaše vedomosti/ }),
     ).toBeVisible();
@@ -56,6 +100,13 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
       path: path.join(evidence, "01-public-catalogue.png"),
       fullPage: true,
     });
+    await publicPage.goto(
+      `${base}/?test=${fixture.banks[1]}&question=${fixture.banks[1]}-1`,
+    );
+    await catalogueOnly(publicPage);
+    manifest.accessBoundary.push(
+      "anonymous: catalogue only; direct question links and APIs denied",
+    );
     async function sign(role: string) {
       const context = await browser.newContext({
         viewport: { width: 390, height: 844 },
@@ -88,6 +139,19 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
     for (const role of ["firearms", "medical", "both"]) {
       const learner = await sign(role);
       learners[role] = learner;
+      const pendingPage = await learner.context.newPage();
+      await pendingPage.goto(base);
+      await catalogueOnly(pendingPage);
+      await deniedContent(learner.context, 403);
+      if (role === "medical") {
+        await pendingPage.screenshot({
+          path: path.join(evidence, "11-registered-no-approval.png"),
+          fullPage: true,
+        });
+        manifest.accessBoundary.push(
+          "registered without approval: catalogue only; both banks denied",
+        );
+      }
       const ids =
         role === "both"
           ? fixture.banks
@@ -100,6 +164,36 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
           )
         ).status(),
       ).toBe(200);
+      await pendingPage.reload();
+      await catalogueOnly(pendingPage);
+      if (role === "medical") {
+        await expect(
+          pendingPage.getByText("Žiadosť čaká na schválenie.", { exact: true }),
+        ).toBeVisible();
+        await pendingPage.screenshot({
+          path: path.join(evidence, "12-request-pending.png"),
+          fullPage: true,
+        });
+        expect(
+          (
+            await admin.context.request.put(
+              base + "/api/admin/users/" + fixture.users[role].user_id,
+              {
+                headers: admin.headers,
+                data: { approved: true, bank_ids: [] },
+              },
+            )
+          ).status(),
+        ).toBe(200);
+        await deniedContent(learner.context, 403);
+        await pendingPage.goto(
+          `${base}/?test=${fixture.banks[1]}&question=${fixture.banks[1]}-1`,
+        );
+        await catalogueOnly(pendingPage);
+        manifest.accessBoundary.push(
+          "globally approved without bank grant: question deep link and both banks denied",
+        );
+      }
       expect(
         (
           await learner.context.request.get(
@@ -123,6 +217,52 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
             )
           ).status(),
         ).toBe(ids.includes(id) ? 200 : 403);
+      await pendingPage.goto(base);
+      await expect(
+        pendingPage.getByRole("button", { name: "Otvoriť banku", exact: true }),
+      ).toHaveCount(ids.length);
+      for (const id of fixture.banks) {
+        const name =
+          id === fixture.banks[0]
+            ? "Synthetic Firearms 924"
+            : "Synthetic Medical 924";
+        const card = pendingPage.getByRole("article").filter({
+          has: pendingPage.getByRole("heading", { name, exact: true }),
+        });
+        await expect(
+          card.getByRole("button", { name: "Otvoriť banku", exact: true }),
+        ).toHaveCount(ids.includes(id) ? 1 : 0);
+        await pendingPage.goto(`${base}/?test=${id}&question=${id}-1`);
+        if (ids.includes(id)) {
+          await expect(
+            pendingPage.getByText("What is the chemical formula of water?", {
+              exact: true,
+            }),
+          ).toBeVisible();
+        } else {
+          await expect(
+            pendingPage.getByRole("heading", { name: /Vaše vedomosti/ }),
+          ).toBeVisible();
+          await expect(
+            pendingPage.getByText("What is the chemical formula of water?", {
+              exact: true,
+            }),
+          ).toHaveCount(0);
+        }
+        await pendingPage.goto(base);
+      }
+      await expect(
+        pendingPage.getByRole("button", { name: "Otvoriť banku", exact: true }),
+      ).toHaveCount(ids.length);
+      manifest.accessBoundary.push(
+        `${role}: only explicitly approved bank links and questions open`,
+      );
+      if (role === "medical")
+        await pendingPage.screenshot({
+          path: path.join(evidence, "13-medical-only-approved.png"),
+          fullPage: true,
+        });
+      await pendingPage.close();
     }
     const adminPage = await admin.context.newPage();
     await adminPage.goto(base);
@@ -526,6 +666,32 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
     expect(
       await (await learner.context.request.get(base + "/api/history")).json(),
     ).toEqual([]);
+    await page.reload();
+    await catalogueOnly(page);
+    await page.screenshot({
+      path: path.join(evidence, "14-access-revoked.png"),
+      fullPage: true,
+    });
+    const loggedOut = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/logout") &&
+        response.request().method() === "POST",
+    );
+    await page
+      .getByRole("button", { name: "Odhlásiť sa", exact: true })
+      .click();
+    expect((await loggedOut).status()).toBe(200);
+    await expect(
+      page.getByRole("button", {
+        name: "Registrácia / prihlásenie",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await catalogueOnly(page);
+    await deniedContent(learner.context, 401);
+    manifest.accessBoundary.push(
+      "revoked and logged out: catalogue only; questions denied again",
+    );
     manifest.status = "passed";
     manifest.scenarios = [
       "approved learner selects medical bank",
