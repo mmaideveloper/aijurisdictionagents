@@ -1214,3 +1214,6 @@ timer and restores the prior policy; already purged data requires controlled res
 6. Rollback: disable the timer and restore the prior approved policy/application image. Keep
    privacy ledgers and suppression records. Never rollback by dropping evidence tables or
    restoring erased data without replaying suppression. Erasure has no simple undo.
+
+## #922 case encryption installation
+Owner: platform/security operator for the test/prod host accounts and approved secret store. Provision distinct random 256-bit platform keys per environment, mount a key-ring JSON read-only for API/MCP/document-worker identities, deny ordinary admin and other OS accounts file access, and set `CASE_ENCRYPTION_KEY_FILE` to its path. Grant `case_export_permissions` only to approved existing enabled administrators via audited database administration. Stop writers, take an encrypted backup, run the offline migration, and validate authorized reads, denied exports, owner-approved exports, expiry cleanup and restore. Roll back using the encrypted backup plus matching keys. Never log or copy key values into tickets. Rotate by retaining old/new versions until all case keys and retained backups are verified. See docs/CASE_ENCRYPTION_AND_CONSENT.md for format and limitations.

@@ -4,7 +4,7 @@ import io
 import zipfile
 
 import pytest
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 from app.main import app
 from app.document_review import ModelReview, Proposal, accepted_text, build_proposals, export_docx, export_original_docx
 from app.cases_api import get_store

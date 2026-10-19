@@ -975,7 +975,7 @@ class CaseWorkflowApplicationService:
 
 def _build_workflow_checkpointer(api_store: ApiDatabaseStore) -> Any:
     if api_store.uses_postgres:
-        from langgraph.checkpoint.postgres import PostgresSaver
+        from app.case_workflows.encrypted_checkpoints import EncryptedPostgresSaver
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
@@ -993,7 +993,7 @@ def _build_workflow_checkpointer(api_store: ApiDatabaseStore) -> Any:
             "case_workflow_startup stage=checkpoint_pool status=completed duration_ms=%d",
             int((time.perf_counter() - started_at) * 1000),
         )
-        checkpointer: Any = PostgresSaver(pool)
+        checkpointer: Any = EncryptedPostgresSaver(pool, api_store)
         started_at = time.perf_counter()
         _LOGGER.info("case_workflow_startup stage=checkpoint_schema status=started")
         checkpointer.setup()

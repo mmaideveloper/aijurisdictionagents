@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import base64
+import json
 
 import pytest
 
@@ -12,6 +14,10 @@ os.environ.setdefault("SYSTEM_EMBEDDING_MODEL_OPTION", "cloud")
 
 @pytest.fixture(autouse=True)
 def _default_local_api_environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key_file = tmp_path / "case-test-keys.json"
+    key_file.write_text(json.dumps({"active": "test", "keys": {"test": base64.b64encode(AESGCM.generate_key(bit_length=256)).decode()}}))
+    monkeypatch.setenv("CASE_ENCRYPTION_KEY_FILE", str(key_file))
     monkeypatch.setenv("DB_OPTION", "local")
     monkeypatch.setenv("STORAGE_OPTION", "local")
     monkeypatch.setenv("DB_LOCAL", str(tmp_path / "api.sqlite3"))

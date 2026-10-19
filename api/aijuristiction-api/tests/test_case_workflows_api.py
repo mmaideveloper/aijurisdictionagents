@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from fastapi.testclient import TestClient
+from app.case_security import require_case_subject
 from langgraph.checkpoint.memory import InMemorySaver
 from pytest import MonkeyPatch, raises
 from pypdf import PdfReader
@@ -736,6 +737,7 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
 ) -> None:
     monkeypatch.setenv("JURISDIGTA_ADMIN_API_KEY", "admin-secret")
     service = _service(tmp_path)
+    app.dependency_overrides[require_case_subject] = lambda: "synthetic-workflow-unit-test"
     app.dependency_overrides[get_case_workflow_service] = lambda: service
     client = TestClient(app)
     try:
@@ -831,6 +833,7 @@ def test_api_interrupt_resume_pins_assignment_and_emits_ordered_audit_events(
 
 def test_api_cancel_is_persisted_and_does_not_duplicate_terminal_event(tmp_path: Path) -> None:
     service = _service(tmp_path)
+    app.dependency_overrides[require_case_subject] = lambda: "synthetic-workflow-unit-test"
     app.dependency_overrides[get_case_workflow_service] = lambda: service
     client = TestClient(app)
     try:
@@ -875,6 +878,7 @@ def test_direct_assignment_replacement_is_blocked_in_favor_of_audited_promotion(
 ) -> None:
     monkeypatch.setenv("JURISDIGTA_ADMIN_API_KEY", "admin-secret")
     service = _service(tmp_path)
+    app.dependency_overrides[require_case_subject] = lambda: "synthetic-workflow-unit-test"
     app.dependency_overrides[get_case_workflow_service] = lambda: service
     client = TestClient(app)
     payload = {

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.cases_api import get_case_diagnostics_store, get_store
 from app.case_workflows.store import CaseWorkflowStore, CaseWorkflowStoreConfig
 from app.main import app
+from app.case_security import require_case_subject
 
 
 def _record(store: CaseWorkflowStore, correlation: str, case: str = "case-a", user: str = "user-a") -> None:
@@ -42,6 +43,8 @@ def test_case_diagnostics_returns_only_authorized_reference(
     store = CaseWorkflowStore(CaseWorkflowStoreConfig("local", "", tmp_path / "workflow.sqlite3"))
     _record(store, "ordinary-chat-reference")
     case_store = SimpleNamespace(get_case=lambda **_: SimpleNamespace(user_id="user-a", status=case_status))
+    # This isolates diagnostic reference filtering; authentication has dedicated tests.
+    app.dependency_overrides[require_case_subject] = lambda: user_id
     app.dependency_overrides[get_store] = lambda: case_store
     app.dependency_overrides[get_case_diagnostics_store] = lambda: store
     try:
@@ -53,5 +56,6 @@ def test_case_diagnostics_returns_only_authorized_reference(
         assert "must not be returned" not in response.text
         assert client.get("/v1/cases/case-a/diagnostics?user_id=user-a").status_code == 401
     finally:
+        app.dependency_overrides.pop(require_case_subject, None)
         app.dependency_overrides.pop(get_store, None)
         app.dependency_overrides.pop(get_case_diagnostics_store, None)

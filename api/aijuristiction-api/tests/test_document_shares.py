@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 
 from app.cases_api import _STORE_CACHE
 from app.main import app
@@ -74,12 +73,16 @@ def test_slovak_guest_document_share_otp_pdf_and_revocation(monkeypatch, tmp_pat
 
     with sqlite3.connect(email_database) as conn:
         invitation_row = conn.execute(
-            "SELECT subject, body, metadata_json FROM email_outbox WHERE metadata_json LIKE '%document_share_invitation%'"
+            "SELECT email_id, recipient, subject, body, metadata_json, attempts FROM email_outbox WHERE email_id = ?",
+            (invitation_payload["email_id"],)
         ).fetchone()
     assert invitation_row is not None
-    assert invitation_row[0] == "Bol vám zdieľaný právny dokument | JurisDigta"
-    assert "must-not-appear" not in invitation_row[1]
-    invitation_metadata = json.loads(invitation_row[2])
+    from app.services.email_queue import _queued_email
+    queued = _queued_email(invitation_row)
+    assert queued.subject == "Bol vám zdieľaný právny dokument | JurisDigta"
+    assert "must-not-appear" not in queued.body
+    assert invitation_payload["share_url"] not in str(invitation_row)
+    invitation_metadata = queued.metadata
     assert "attachments" not in invitation_metadata
     invitation_html = invitation_metadata["html_body"]
     assert "display:inline-block" in invitation_html

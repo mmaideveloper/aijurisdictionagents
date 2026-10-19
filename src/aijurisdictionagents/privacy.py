@@ -179,12 +179,12 @@ class PrivacyControls:
     def record_artifact(self, artifact_id: str, case_id: str, metadata: dict[str, Any]) -> None:
         with self.store._connect() as conn:
             self.store._execute(conn, "INSERT INTO privacy_ai_artifacts VALUES (?, ?, ?) ON CONFLICT(artifact_id) DO UPDATE SET metadata_json = excluded.metadata_json",
-                                (artifact_id, case_id, json.dumps(metadata)))
+                                (artifact_id, case_id, self.store.encrypt_case_text(case_id, "privacy-artifact", json.dumps(metadata))))
 
     def artifact(self, artifact_id: str, created_at: str) -> dict[str, Any]:
         with self.store._connect() as conn:
-            row = self.store._fetchone(conn, "SELECT metadata_json FROM privacy_ai_artifacts WHERE artifact_id = ?", (artifact_id,))
-        return json.loads(row[0]) if row else transparency(generated_at=created_at)
+            row = self.store._fetchone(conn, "SELECT metadata_json, case_id FROM privacy_ai_artifacts WHERE artifact_id = ?", (artifact_id,))
+        return json.loads(self.store.decrypt_case_text(str(row[1]), "privacy-artifact", str(row[0]))) if row else transparency(generated_at=created_at)
 
     def export(self, user_id: str) -> dict[str, Any]:
         """Export personal records, excluding authentication/processor credentials.
@@ -205,7 +205,7 @@ class PrivacyControls:
                     columns.setdefault(str(table), set()).add(str(column))
             data: dict[str, list[dict[str, Any]]] = {}
             for table, fields in columns.items():
-                if table in {"device_auth_tokens", "registration_codes", "mcp_pending_signups", "mcp_oauth_authorization_codes", "mcp_otp_verifications", "user_mfa_settings", "mfa_login_challenges", "ai_model_credentials", "provider_credentials", "privacy_compliance_events"}:
+                if table in {"case_file_migration_journal", "case_encryption_keys", "case_export_requests", "case_export_permissions", "device_auth_tokens", "registration_codes", "mcp_pending_signups", "mcp_oauth_authorization_codes", "mcp_otp_verifications", "user_mfa_settings", "mfa_login_challenges", "ai_model_credentials", "provider_credentials", "privacy_compliance_events"}:
                     continue
                 clauses: list[str] = []
                 params_list: list[str] = []
@@ -223,7 +223,37 @@ class PrivacyControls:
                     continue
                 cursor = self.store._execute(conn, f'SELECT * FROM "{table}" WHERE ' + " OR ".join(clauses), tuple(params_list))
                 names = [item[0] for item in cursor.description]
-                data[table] = [sanitize_export(dict(zip(names, row))) for row in cursor.fetchall()]
+                records = [dict(zip(names, row)) for row in cursor.fetchall()]
+                encrypted_fields = {
+                    "privacy_ai_artifacts": {"metadata_json": "privacy-artifact"},
+                    "software_assessments": {"payload_json": "assessment"},
+                    "document_reviews": {"payload_json": "review"},
+                    "case_citations": {field: "citation:" + field for field in ("source_url", "title", "citation_label", "law_number", "section", "effective_from", "court", "ecli", "file_number", "decision_date", "snippet")},
+                    "ai_model_usage_ledger": {"question_preview": "usage:preview", "audit_metadata_json": "usage:metadata"},
+                    "case_catalog_selections": {"first_message_preview": "catalog:preview", "clarification_question": "catalog:question"},
+                    "case_catalog_events": {"summary": "catalog:summary", "details_json": "catalog:details"},
+                    "cases": {"title": "title"}, "case_documents": {"original_filename": "filename", "processing_error": "processing-error"},
+                    "case_communications": {"summary": "summary", "presentation_json": "presentation"},
+                    "case_document_contents": {"extracted_text": "extracted", "embedding_vector": "vector"},
+                    "case_document_chunks": {"chunk_text": "chunk", "embedding_vector": "vector"},
+                }
+                for record in records:
+                    for field, purpose in encrypted_fields.get(table, {}).items():
+                        if record.get(field) is not None and record.get("case_id"):
+                            record[field] = self.store.decrypt_case_text(str(record["case_id"]), purpose, str(record[field]))
+                    for field, value in list(record.items()):
+                        if not isinstance(value, str) or not value.startswith("{"):
+                            continue
+                        try:
+                            envelope = json.loads(value)
+                        except ValueError:
+                            continue
+                        if isinstance(envelope, dict) and "encrypted_payload" in envelope:
+                            scope = str(envelope["encrypted_case_scope"])
+                            if record.get("case_id") and scope != str(record["case_id"]):
+                                raise PrivacyDenied("encrypted_artifact_scope_mismatch")
+                            record[field] = self.store.decrypt_case_text(scope, "workflow-json", str(envelope["encrypted_payload"]))
+                data[table] = [sanitize_export(record) for record in records]
         self.event("dsar_export", "completed", count=sum(map(len, data.values())))
         return {"format_version": "389-v1", "generated_at": utcnow(), "records": data,
                 "external_surfaces": ["email outbox and delivered mail", "operational logs and telemetry", "backups", "external processors"],

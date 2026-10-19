@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 

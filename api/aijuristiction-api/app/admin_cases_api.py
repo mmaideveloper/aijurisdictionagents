@@ -7,7 +7,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.ai_model_admin_api import AdminContext, get_admin_store, require_ai_model_admin
-from app.cases_api import build_case_export_response
 from aijurisdictionagents.api_db import AdminCaseUser, ApiDatabaseStore, Case
 
 router = APIRouter(prefix="/v1/admin/cases", tags=["admin-cases"])
@@ -120,7 +119,7 @@ def delete_admin_case(
         entity_id=case_id,
         old_value_summary={
             "case_id": before.case_id,
-            "title": before.title,
+            "title": "Private case",
             "status": before.status,
             "created_at": before.created_at,
             "updated_at": before.updated_at,
@@ -129,7 +128,7 @@ def delete_admin_case(
         },
         new_value_summary={
             "case_id": after.case_id,
-            "title": after.title,
+            "title": "Private case",
             "status": after.status,
             "created_at": after.created_at,
             "updated_at": after.updated_at,
@@ -154,46 +153,7 @@ def export_admin_case(
     admin: AdminContext = Depends(require_ai_model_admin),
     store: ApiDatabaseStore = Depends(get_admin_store),
 ) -> Response:
-    normalized_reason = reason.strip()
-    if len(normalized_reason) < 3:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Export reason is required")
-    user = _get_admin_case_user(store=store, user_id=user_id)
-    try:
-        case = store.get_case(case_id=case_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found") from exc
-    if case.user_id != user_id or case.status == "deleted":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found for target user")
-
-    store.record_ai_model_admin_audit_event(
-        admin_user_id=admin.user_id,
-        admin_email=admin.email,
-        action="case.export",
-        entity_type="case",
-        entity_id=case_id,
-        old_value_summary={
-            "case_id": case.case_id,
-            "title": case.title,
-            "status": case.status,
-            "target_user_id": user.user_id,
-            "target_user_email": user.email,
-        },
-        new_value_summary={
-            "exported": True,
-            "case_id": case.case_id,
-            "target_user_id": user.user_id,
-            "target_user_email": user.email,
-        },
-        reason=normalized_reason,
-        correlation_id=str(getattr(request.state, "correlation_id", "")),
-    )
-    return build_case_export_response(
-        case=case,
-        user_id=user_id,
-        store=store,
-        exported_by=f"admin:{admin.email}",
-        correlation_id=str(request.state.correlation_id),
-    )
+    raise HTTPException(403, "Request owner consent through /v1/case-exports before exporting")
 
 
 def _get_admin_case_user(*, store: ApiDatabaseStore, user_id: str) -> AdminCaseUser:
@@ -219,7 +179,7 @@ def _admin_case_response(*, case: Case, target_user_email: str) -> AdminCaseResp
         case_id=case.case_id,
         user_id=case.user_id,
         target_user_email=target_user_email,
-        title=case.title,
+        title="Private case",
         status=case.status,
         created_at=case.created_at,
         updated_at=case.updated_at,

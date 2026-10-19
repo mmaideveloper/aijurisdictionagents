@@ -27,6 +27,7 @@ from app.case_workflows.store import (
     WorkflowRunNotFoundError,
 )
 from app.security import require_api_key
+from app.case_security import require_case_subject
 
 router = APIRouter(
     prefix="/v1/case-workflows",
@@ -88,7 +89,7 @@ def create_assignment(
     )
 
 
-@router.post("/runs", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/runs", response_model=WorkflowRunResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_case_subject)])
 def start_workflow(
     payload: WorkflowStartRequest,
     service: CaseWorkflowApplicationService = Depends(get_case_workflow_service),
@@ -99,7 +100,7 @@ def start_workflow(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("/runs/latest", response_model=WorkflowRunResponse)
+@router.get("/runs/latest", response_model=WorkflowRunResponse, dependencies=[Depends(require_case_subject)])
 def get_latest_workflow_run(
     case_id: str = Query(min_length=1, max_length=200),
     user_id: str = Query(min_length=1, max_length=200),
@@ -111,7 +112,7 @@ def get_latest_workflow_run(
     return run
 
 
-@router.post("/runs/{workflow_run_id}/resume", response_model=WorkflowRunResponse)
+@router.post("/runs/{workflow_run_id}/resume", response_model=WorkflowRunResponse, dependencies=[Depends(require_case_subject)])
 def resume_workflow(
     workflow_run_id: str,
     payload: WorkflowResumeRequest,
@@ -128,7 +129,7 @@ def resume_workflow(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.post("/runs/{workflow_run_id}/cancel", response_model=WorkflowRunResponse)
+@router.post("/runs/{workflow_run_id}/cancel", response_model=WorkflowRunResponse, dependencies=[Depends(require_case_subject)])
 def cancel_workflow(
     workflow_run_id: str,
     payload: WorkflowControlRequest,
@@ -142,7 +143,7 @@ def cancel_workflow(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.get("/runs/{workflow_run_id}", response_model=WorkflowRunResponse)
+@router.get("/runs/{workflow_run_id}", response_model=WorkflowRunResponse, dependencies=[Depends(require_case_subject)])
 def get_workflow_run(
     workflow_run_id: str,
     user_id: str = Query(min_length=1, max_length=200),
@@ -156,7 +157,7 @@ def get_workflow_run(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.get("/runs/{workflow_run_id}/events", response_model=WorkflowEventListResponse)
+@router.get("/runs/{workflow_run_id}/events", response_model=WorkflowEventListResponse, dependencies=[Depends(require_case_subject)])
 def list_workflow_events(
     workflow_run_id: str,
     user_id: str = Query(min_length=1, max_length=200),
@@ -172,7 +173,7 @@ def list_workflow_events(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 
 
-@router.get("/runs/{workflow_run_id}/artifacts/{artifact_id}/pdf")
+@router.get("/runs/{workflow_run_id}/artifacts/{artifact_id}/pdf", dependencies=[Depends(require_case_subject)])
 def download_workflow_artifact_pdf(
     workflow_run_id: str,
     artifact_id: str,

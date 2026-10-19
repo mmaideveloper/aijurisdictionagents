@@ -1,3 +1,4 @@
+import { CaseExportConsent } from "../components/CaseExportConsent";
 ﻿import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaDownload } from "react-icons/fa";
@@ -344,6 +345,7 @@ const Profile: React.FC = () => {
       <section className="profile-shell">
         <aside className="profile-side-panels">
           <PrivacyControls />
+          <CaseExportConsent />
           <article className="card">
             <h2>{t("profileBilling")}</h2>
             <h3>{t("profilePlan")}</h3>

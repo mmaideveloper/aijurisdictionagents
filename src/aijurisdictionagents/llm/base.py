@@ -82,7 +82,7 @@ def elapsed_seconds(started_at: float) -> float:
 
 
 def should_log_llm_io() -> bool:
-    if _PRIVATE_MODEL_IO.get():
+    if _PRIVATE_MODEL_IO.get() or os.getenv("CASE_ENCRYPTION_KEY_FILE", "").strip() not in {"", "unknown-variable"}:
         return False
     value = os.getenv("LOCAL_LLM_IO_LOGGING", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
@@ -121,7 +121,7 @@ def log_llm_response(
     agent_name: str,
     raw_response: str,
 ) -> None:
-    if _PRIVATE_MODEL_IO.get():
+    if _PRIVATE_MODEL_IO.get() or os.getenv("CASE_ENCRYPTION_KEY_FILE", "").strip() not in {"", "unknown-variable"}:
         return
     record_debug_event(
         "model", "response_content", "completed",

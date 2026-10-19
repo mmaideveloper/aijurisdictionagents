@@ -339,3 +339,6 @@ Minimal runnable example:
 python examples/minimal_demo.py
 python examples/model_routing_minimal_demo.py
 ```
+
+## Case encryption (#922)
+See [case encryption and consent](CASE_ENCRYPTION_AND_CONSENT.md) for encrypted fields, wrapped keys, migration, one-time export transactions and current coverage limitations. Runtime API stores require `CASE_ENCRYPTION_KEY_FILE`.

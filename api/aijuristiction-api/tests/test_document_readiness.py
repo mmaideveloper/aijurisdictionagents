@@ -3,7 +3,7 @@ from io import BytesIO
 from uuid import UUID
 
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 from pypdf import PdfReader
 import pytest
 
@@ -59,7 +59,7 @@ def test_saved_document_has_viewer_source_valid_pdf_and_rejects_missing_access(s
     assert pdf.content.startswith(b"%PDF-")
     assert PdfReader(BytesIO(pdf.content)).pages
     denied = client.get(url + "/pdf", params={"user_id": "other-user"}, headers=headers)
-    assert denied.status_code == 404  # The API hides cases from non-owners.
+    assert denied.status_code == 401  # An unknown subject has no authenticated session.
     missing = client.get(url.replace(ids[0], "missing") + "/pdf", params={"user_id": str(session.user_id)}, headers=headers)
     assert missing.status_code == 404
     # Identical retry must reuse a successful write rather than create another document.

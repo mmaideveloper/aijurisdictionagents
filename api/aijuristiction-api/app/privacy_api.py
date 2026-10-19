@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import json
-from tempfile import SpooledTemporaryFile
+from io import BytesIO
 from typing import Any, Literal, cast
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -90,7 +90,7 @@ def export_subject(user_id: str = Depends(authenticate_subject), store: ApiDatab
     from app.chat.api import _repository
     data = PrivacyControls(store).export(user_id)
     data["active_sessions"] = sanitize_export(_repository.export_subject(user_id))
-    files = SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")
+    files = BytesIO()
     try:
         manifest: list[dict[str, str]] = []
         with ZipFile(files, "w", compression=ZIP_DEFLATED) as archive:
@@ -103,8 +103,7 @@ def export_subject(user_id: str = Depends(authenticate_subject), store: ApiDatab
                     # Generated member names never use user-controlled filenames or storage paths.
                     member = f"files/{len(manifest)}-{index}.bin"
                     try:
-                        path = store._resolve_storage_path(uri)
-                        archive.write(path, member)
+                        archive.writestr(member, store.read_storage_bytes(storage_uri=uri))
                         status = "included"
                     except (OSError, ValueError):
                         status = "unavailable_operator_followup_required"

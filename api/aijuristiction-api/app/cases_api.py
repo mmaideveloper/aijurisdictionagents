@@ -32,6 +32,7 @@ from app.chat.api import (
 from app.document_content import is_status_only_document
 from app.case_workflows.store import CaseWorkflowStore
 from app.security import require_api_key
+from app.case_security import require_case_subject
 
 from aijurisdictionagents.api_db import (
     AIModelUsageAuditEntry,
@@ -46,7 +47,7 @@ from services.document_processor.runtime import render_documents_for_prompt
 from services.document_processor.uploads import MAX_UPLOAD_BYTES, validate_upload
 from app.services.email_scheduler import EmailScheduler
 
-router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix='/v1/cases', tags=['cases'], dependencies=[Depends(require_api_key), Depends(require_case_subject)])
 _LOGGER = logging.getLogger(__name__)
 _STORE_LOCK = threading.Lock()
 _STORE_CACHE: dict[tuple[str, str, str, str, str], ApiDatabaseStore] = {}

@@ -22,6 +22,7 @@ except ImportError:  # pragma: no cover - optional dependency
     PostgresConnection = Any  # type: ignore[assignment]
 
 from .config import ApiDataConfig
+from ..case_crypto import CaseCipher, CaseEncryptionError, decrypt_fields, initialize_case_security
 from ..model_parameters import (
     ModelParameters,
     deserialize_model_parameters,
@@ -522,6 +523,14 @@ class AIModelUsageAuditEntry:
     created_at: str
 
 
+class _ClosingSQLiteConnection(sqlite3.Connection):
+    def __exit__(self, *args: Any) -> Any:
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 class ApiDatabaseStore:
     """Local-first API metadata store using SQLite + external blob storage references.
 
@@ -545,6 +554,8 @@ class ApiDatabaseStore:
         self.db_cloud = db_cloud
         self.storage_option = storage_option
         self.store_cloud = store_cloud
+        key_file = os.getenv("CASE_ENCRYPTION_KEY_FILE", "").strip()
+        self.case_cipher = CaseCipher(self, key_file) if key_file and key_file != "unknown-variable" else None
         if self.db_option == "local":
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         if self.storage_option == "local":
@@ -556,6 +567,8 @@ class ApiDatabaseStore:
 
     @classmethod
     def from_env(cls) -> "ApiDatabaseStore":
+        if os.getenv("CASE_ENCRYPTION_KEY_FILE", "").strip() in {"", "unknown-variable"}:
+            raise CaseEncryptionError("CASE_ENCRYPTION_KEY_FILE is required")
         config = ApiDataConfig.from_env()
         config.validate()
         return cls(
@@ -917,6 +930,19 @@ class ApiDatabaseStore:
 
         from ..privacy import initialize_privacy
         initialize_privacy(self)
+        initialize_case_security(self)
+
+    def encrypt_case_text(self, case_id: str, purpose: str, value: str) -> str:
+        if self.case_cipher is None:
+            return value  # Explicitly constructed offline stores only; from_env requires keys.
+        return self.case_cipher.encrypt(case_id, purpose, value.encode("utf-8"))
+
+    def decrypt_case_text(self, case_id: str, purpose: str, value: str) -> str:
+        if self.case_cipher is None:
+            if value.startswith("jdenc1:"):
+                raise CaseEncryptionError("Case encryption key unavailable")
+            return value
+        return self.case_cipher.decrypt(case_id, purpose, value).decode("utf-8")
 
     def get_permanent_memory(self, key: str) -> PermanentMemoryEntry | None:
         with self._connect() as conn:
@@ -2617,10 +2643,10 @@ class ApiDatabaseStore:
                     confidentiality_warning_ack_id.strip(),
                     session_id.strip(),
                     question_id.strip(),
-                    resolved_question_preview,
+                    self.encrypt_case_text(case_id, "usage:preview", resolved_question_preview) if case_id else resolved_question_preview,
                     resolved_question_sha256,
                     answer_id.strip(),
-                    _to_json(audit_metadata or {}),
+                    self.encrypt_case_text(case_id, "usage:metadata", _to_json(audit_metadata or {})) if case_id else _to_json(audit_metadata or {}),
                     now,
                 ),
             )
@@ -2734,7 +2760,7 @@ class ApiDatabaseStore:
                 """,
                 (case_id, bounded_limit, bounded_offset),
             ).fetchall()
-        return [_row_to_ai_model_usage_audit_entry(row) for row in rows]
+        return [_row_to_ai_model_usage_audit_entry(decrypt_fields(self, row, 1, {26: "usage:preview", 29: "usage:metadata"}) if row[1] else row) for row in rows]
 
     def create_user(
         self,
@@ -3902,7 +3928,7 @@ class ApiDatabaseStore:
                 INSERT INTO cases(case_id, user_id, company_id, title, status, created_at, updated_at)
                 VALUES (?, ?, ?, ?, 'open', ?, ?)
                 """,
-                (case_id, user_id, company_id, title, now, now),
+                (case_id, user_id, company_id, self.encrypt_case_text(case_id, "title", title), now, now),
             )
         return self.get_case(case_id=case_id)
 
@@ -3919,7 +3945,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             raise KeyError(f"Case {case_id} not found")
-        return _row_to_case(row)
+        return _row_to_case(decrypt_fields(self, row, 0, {3: "title"}))
 
     def upsert_case_catalog_selection(
         self,
@@ -4009,13 +4035,9 @@ class ApiDatabaseStore:
                     float(confidence_score),
                     float(confidence_gap),
                     source.strip(),
-                    _ai_audit_question_preview(
-                        question_preview=first_message_preview,
-                        question_text=first_message_preview,
-                        max_chars=500,
-                    ),
+                    self.encrypt_case_text(normalized_case_id, "catalog:preview", first_message_preview[:500]) if normalized_case_id else first_message_preview[:500],
                     first_message_sha256.strip(),
-                    clarification_question.strip(),
+                    self.encrypt_case_text(normalized_case_id, "catalog:question", clarification_question.strip()) if normalized_case_id else clarification_question.strip(),
                     created_at,
                     now,
                 ),
@@ -4044,7 +4066,7 @@ class ApiDatabaseStore:
                 """,
                 (selection_scope.strip().lower(), entity_id.strip()),
             )
-        return _row_to_case_catalog_selection(row) if row is not None else None
+        return _row_to_case_catalog_selection(decrypt_fields(self, row, 3, {15: "catalog:preview", 17: "catalog:question"}) if row[3] else row) if row is not None else None
 
     def list_case_catalog_selections(
         self,
@@ -4072,7 +4094,7 @@ class ApiDatabaseStore:
         """
         with self._connect() as conn:
             rows = self._execute(conn, query, tuple(params)).fetchall()
-        return [_row_to_case_catalog_selection(row) for row in rows]
+        return [_row_to_case_catalog_selection(decrypt_fields(self, row, 3, {15: "catalog:preview", 17: "catalog:question"}) if row[3] else row) for row in rows]
 
     def record_case_catalog_event(
         self,
@@ -4102,8 +4124,8 @@ class ApiDatabaseStore:
                     event_type.strip(),
                     status.strip(),
                     severity.strip(),
-                    summary.strip(),
-                    _to_json(details or {}),
+                    self.encrypt_case_text(case_id, "catalog:summary", summary.strip()) if case_id else summary.strip(),
+                    self.encrypt_case_text(case_id, "catalog:details", _to_json(details or {})) if case_id else _to_json(details or {}),
                     now,
                 ),
             )
@@ -4141,7 +4163,7 @@ class ApiDatabaseStore:
         params.extend((max(limit, 0), max(offset, 0)))
         with self._connect() as conn:
             rows = self._execute(conn, query, tuple(params)).fetchall()
-        return [_row_to_case_catalog_event(row) for row in rows]
+        return [_row_to_case_catalog_event(decrypt_fields(self, row, 1, {6: "catalog:summary", 7: "catalog:details"}) if row[1] else row) for row in rows]
 
     def list_cases(self, *, user_id: str, include_deleted: bool = False) -> list[Case]:
         query = """
@@ -4154,7 +4176,7 @@ class ApiDatabaseStore:
         query += " ORDER BY updated_at DESC"
         with self._connect() as conn:
             rows = self._execute(conn, query, (user_id,)).fetchall()
-        return [_row_to_case(row) for row in rows]
+        return [_row_to_case(decrypt_fields(self, row, 0, {3: "title"})) for row in rows]
 
     def count_active_cases(self, *, user_id: str) -> int:
         with self._connect() as conn:
@@ -4309,7 +4331,7 @@ class ApiDatabaseStore:
                 SET title = ?, updated_at = ?
                 WHERE case_id = ? AND user_id = ? AND status <> 'deleted'
                 """,
-                (title, now, case_id, user_id),
+                (self.encrypt_case_text(case_id, "title", title), now, case_id, user_id),
             )
             if result.rowcount == 0:
                 raise KeyError(f"Case {case_id} not found")
@@ -4352,7 +4374,7 @@ class ApiDatabaseStore:
                 """,
                 (case_id,),
             ).fetchall()
-        return [_row_to_case_document(row) for row in rows]
+        return [_row_to_case_document(decrypt_fields(self, row, 1, {5: "filename", 8: "processing-error"})) for row in rows]
 
     def get_case_document(self, *, case_id: str, doc_id: str) -> CaseDocument:
         with self._connect() as conn:
@@ -4368,7 +4390,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             raise KeyError(f"Document {doc_id} not found for case {case_id}")
-        return _row_to_case_document(row)
+        return _row_to_case_document(decrypt_fields(self, row, 1, {5: "filename", 8: "processing-error"}))
 
     def delete_case_document(
         self,
@@ -4455,14 +4477,15 @@ class ApiDatabaseStore:
                     conn,
                     """
                     INSERT INTO case_communications(
-                        communication_id, case_id, channel, transcript_uri, summary, created_at
-                    ) VALUES (?, ?, 'system', NULL, ?, ?)
+                        communication_id, case_id, channel, transcript_uri, summary, created_at, presentation_json
+                    ) VALUES (?, ?, 'system', NULL, ?, ?, ?)
                     """,
                     (
                         communication_id,
                         case_id,
-                        f"SYSTEM: Document deleted at {deleted_at}.",
+                        self.encrypt_case_text(case_id, "summary", f"SYSTEM: Document deleted at {deleted_at}."),
                         deleted_at,
+                        self.encrypt_case_text(case_id, "presentation", "{}"),
                     ),
                 )
                 self._execute(
@@ -4752,7 +4775,7 @@ class ApiDatabaseStore:
             params = (case_id, limit, offset)
         with self._connect() as conn:
             rows = self._execute(conn, query, params).fetchall()
-        return [_row_to_case_communication(row) for row in rows]
+        return [_row_to_case_communication(decrypt_fields(self, row, 1, {4: "summary", 6: "presentation"})) for row in rows]
 
     def get_case_communication(self, *, case_id: str, communication_id: str) -> CaseCommunication:
         with self._connect() as conn:
@@ -4768,7 +4791,7 @@ class ApiDatabaseStore:
             )
         if row is None:
             raise KeyError(f"Communication {communication_id} not found for case {case_id}")
-        return _row_to_case_communication(row)
+        return _row_to_case_communication(decrypt_fields(self, row, 1, {4: "summary", 6: "presentation"}))
 
     def add_case_citation(
         self,
@@ -4813,17 +4836,17 @@ class ApiDatabaseStore:
                     answer_message_id,
                     source_type,
                     source_id,
-                    source_url,
-                    title,
-                    citation_label,
-                    law_number,
-                    section,
-                    effective_from,
-                    court,
-                    ecli,
-                    file_number,
-                    decision_date,
-                    snippet,
+                    self.encrypt_case_text(case_id, "citation:source_url", source_url) if source_url is not None else None,
+                    self.encrypt_case_text(case_id, "citation:title", title) if title is not None else None,
+                    self.encrypt_case_text(case_id, "citation:citation_label", citation_label) if citation_label is not None else None,
+                    self.encrypt_case_text(case_id, "citation:law_number", law_number) if law_number is not None else None,
+                    self.encrypt_case_text(case_id, "citation:section", section) if section is not None else None,
+                    self.encrypt_case_text(case_id, "citation:effective_from", effective_from) if effective_from is not None else None,
+                    self.encrypt_case_text(case_id, "citation:court", court) if court is not None else None,
+                    self.encrypt_case_text(case_id, "citation:ecli", ecli) if ecli is not None else None,
+                    self.encrypt_case_text(case_id, "citation:file_number", file_number) if file_number is not None else None,
+                    self.encrypt_case_text(case_id, "citation:decision_date", decision_date) if decision_date is not None else None,
+                    self.encrypt_case_text(case_id, "citation:snippet", snippet) if snippet is not None else None,
                     retrieval_tool,
                     relevance_score,
                     now,
@@ -4864,11 +4887,17 @@ class ApiDatabaseStore:
             params = (*params, limit, max(offset, 0))
         with self._connect() as conn:
             rows = self._execute(conn, query, params).fetchall()
-        return [_row_to_case_citation(row) for row in rows]
+        return [_row_to_case_citation(decrypt_fields(self, row, 1, {6: 'citation:source_url', 7: 'citation:title', 8: 'citation:citation_label', 9: 'citation:law_number', 10: 'citation:section', 11: 'citation:effective_from', 12: 'citation:court', 13: 'citation:ecli', 14: 'citation:file_number', 15: 'citation:decision_date', 16: 'citation:snippet'})) for row in rows]
 
     def read_storage_bytes(self, *, storage_uri: str) -> bytes:
         path = self._resolve_storage_path(storage_uri)
-        return path.read_bytes()
+        payload = path.read_bytes()
+        relative = path.relative_to(self.blob_root.resolve())
+        if self.case_cipher is not None:
+            return self.case_cipher.decrypt(relative.parts[0], relative.as_posix(), payload.decode("ascii"))
+        if payload.startswith(b"jdenc1:"):
+            raise CaseEncryptionError("Case encryption key unavailable")
+        return payload
 
     def read_storage_text(self, *, storage_uri: str) -> str:
         return self.read_storage_bytes(storage_uri=storage_uri).decode("utf-8", errors="replace")
@@ -4934,16 +4963,10 @@ class ApiDatabaseStore:
     ) -> str:
         filename = f"session-{session_id}.txt"
         payload = content.encode("utf-8")
+        match = next((doc for doc in self.list_case_documents(case_id=case_id)
+                      if doc.kind == "session_history" and doc.original_filename == filename), None)
         with self._connect() as conn:
-            existing = self._fetchone(
-                conn,
-                """
-                SELECT doc_id, storage_uri FROM case_documents
-                WHERE case_id = ? AND kind = 'session_history' AND original_filename = ?
-                LIMIT 1
-                """,
-                (case_id, filename),
-            )
+            existing = (match.doc_id, match.storage_uri) if match else None
             if existing is not None:
                 doc_id = str(existing[0])
                 storage_uri = str(existing[1])
@@ -5005,14 +5028,14 @@ class ApiDatabaseStore:
                 inserted = self._execute(conn, """
                     INSERT INTO software_assessments(assessment_id, case_id, payload_json, created_at)
                     VALUES (?, ?, ?, ?) ON CONFLICT(assessment_id) DO NOTHING
-                """, (assessment_id, case_id, json.dumps(result, ensure_ascii=False), _now_iso()))
+                """, (assessment_id, case_id, self.encrypt_case_text(case_id, "assessment", json.dumps(result, ensure_ascii=False)), _now_iso()))
                 if inserted.rowcount == 0:
                     existing = self._fetchone(conn,
                         "SELECT payload_json FROM software_assessments WHERE assessment_id = ? AND case_id = ?",
                         (assessment_id, case_id))
-                    if existing is None or json.loads(str(existing[0])).get("request_hash") != payload.get("request_hash"):
+                    if existing is None or json.loads(self.decrypt_case_text(case_id, "assessment", str(existing[0]))).get("request_hash") != payload.get("request_hash"):
                         raise ValueError("Request identifier already used with different inputs.")
-                    return json.loads(str(existing[0]))
+                    return json.loads(self.decrypt_case_text(case_id, "assessment", str(existing[0])))
                 for doc_id in document_ids:
                     owned = self._fetchone(conn,
                         "SELECT doc_id FROM case_documents WHERE doc_id = ? AND case_id = ?",
@@ -5027,7 +5050,7 @@ class ApiDatabaseStore:
                 updated = self._execute(conn, """
                     UPDATE software_assessments SET payload_json = ?, revision = ?
                     WHERE assessment_id = ? AND case_id = ? AND revision = ?
-                """, (json.dumps(result, ensure_ascii=False), expected_revision + 1,
+                """, (self.encrypt_case_text(case_id, "assessment", json.dumps(result, ensure_ascii=False)), expected_revision + 1,
                       assessment_id, case_id, expected_revision))
                 if updated.rowcount != 1:
                     raise ValueError("Assessment changed. Reload before saving.")
@@ -5050,7 +5073,7 @@ class ApiDatabaseStore:
             row = self._fetchone(conn, """
                 SELECT payload_json FROM software_assessments WHERE case_id = ? AND assessment_id = ?
             """, (case_id, assessment_id))
-        return json.loads(str(row[0])) if row else None
+        return json.loads(self.decrypt_case_text(case_id, "assessment", str(row[0]))) if row else None
 
     def list_software_assessments(self, *, case_id: str) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -5058,7 +5081,7 @@ class ApiDatabaseStore:
                 SELECT payload_json FROM software_assessments WHERE case_id = ?
                 ORDER BY created_at DESC LIMIT 50
             """, (case_id,)).fetchall()
-        return [json.loads(str(row[0])) for row in rows]
+        return [json.loads(self.decrypt_case_text(case_id, "assessment", str(row[0]))) for row in rows]
 
     def delete_software_assessment(self, *, case_id: str, assessment_id: str) -> None:
         with self._connect() as conn:
@@ -5075,7 +5098,7 @@ class ApiDatabaseStore:
                 INSERT INTO document_reviews(review_id, doc_id, case_id, revision, payload_json, created_at)
                 VALUES (?, ?, ?, 1, ?, ?)
                 ON CONFLICT(review_id) DO NOTHING
-            """, (review_id, doc_id, case_id, json.dumps(result, ensure_ascii=False), _now_iso()))
+            """, (review_id, doc_id, case_id, self.encrypt_case_text(case_id, "review", json.dumps(result, ensure_ascii=False)), _now_iso()))
         return self.get_document_review(case_id=case_id, doc_id=doc_id, review_id=review_id) or result
 
     def get_document_review(self, *, case_id: str, doc_id: str, review_id: str | None = None) -> dict[str, Any] | None:
@@ -5084,7 +5107,7 @@ class ApiDatabaseStore:
             args: tuple[Any, ...] = (case_id, doc_id, review_id) if review_id else (case_id, doc_id)
             row = self._fetchone(conn, "SELECT payload_json FROM document_reviews WHERE case_id = ? AND doc_id = ?"
                                  + clause + " ORDER BY created_at DESC LIMIT 1", args)
-        return json.loads(str(row[0])) if row else None
+        return json.loads(self.decrypt_case_text(case_id, "review", str(row[0]))) if row else None
 
     def update_document_review(self, *, case_id: str, doc_id: str, review_id: str,
                                expected_revision: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -5093,7 +5116,7 @@ class ApiDatabaseStore:
             updated = self._execute(conn, """
                 UPDATE document_reviews SET payload_json = ?, revision = ?
                 WHERE review_id = ? AND case_id = ? AND doc_id = ? AND revision = ?
-            """, (json.dumps(result, ensure_ascii=False), expected_revision + 1,
+            """, (self.encrypt_case_text(case_id, "review", json.dumps(result, ensure_ascii=False)), expected_revision + 1,
                   review_id, case_id, doc_id, expected_revision))
             if updated.rowcount != 1:
                 raise ValueError("Review changed. Reload before saving your decisions.")
@@ -5112,7 +5135,7 @@ class ApiDatabaseStore:
         from ..privacy import PrivacyControls
         PrivacyControls(self).require_processing(self.get_case(case_id=case_id).user_id)
         doc_id = str(uuid.uuid4())
-        relative_uri = Path(case_id) / kind / doc_id / f"v{version}_{Path(original_filename).name}"
+        relative_uri = Path(case_id) / kind / doc_id / f"v{version}.bin"
         storage_uri = self._store_payload(relative_uri=relative_uri, payload=payload)
         with self._connect() as conn:
             self._execute(
@@ -5130,7 +5153,7 @@ class ApiDatabaseStore:
                     kind,
                     version,
                     storage_uri,
-                    original_filename,
+                    self.encrypt_case_text(case_id, "filename", original_filename),
                     uploaded_by_user_id,
                     _now_iso(),
                 ),
@@ -5176,9 +5199,9 @@ class ApiDatabaseStore:
                     case_id,
                     channel,
                     transcript_uri,
-                    summary,
+                    self.encrypt_case_text(case_id, "summary", summary),
                     _now_iso(),
-                    json.dumps(presentation or {}, ensure_ascii=False, sort_keys=True),
+                    self.encrypt_case_text(case_id, "presentation", json.dumps(presentation or {}, ensure_ascii=False, sort_keys=True)),
                 ),
             )
             self._execute(
@@ -5268,12 +5291,17 @@ class ApiDatabaseStore:
                 """,
                 (limit,),
             ).fetchall()
-        return [_row_to_case_document(row) for row in rows]
+        return [_row_to_case_document(decrypt_fields(self, row, 1, {5: "filename", 8: "processing-error"})) for row in rows]
 
     def mark_document_processing(
         self, *, doc_id: str, status: str, error: str | None = None
     ) -> None:
         processed_at = _now_iso() if status == "processed" else None
+        if error is not None:
+            with self._connect() as conn:
+                owner = self._fetchone(conn, "SELECT case_id FROM case_documents WHERE doc_id = ?", (doc_id,))
+            if owner:
+                error = self.encrypt_case_text(str(owner[0]), "processing-error", error)
         with self._connect() as conn:
             self._execute(
                 conn,
@@ -5313,8 +5341,8 @@ class ApiDatabaseStore:
                         str(uuid.uuid4()),
                         doc_id,
                         case_id,
-                        extracted_text,
-                        embedding_vector,
+                        self.encrypt_case_text(case_id, "extracted", extracted_text),
+                        self.encrypt_case_text(case_id, "vector", embedding_vector),
                         embedding_model,
                         embedding_dimensions,
                         now,
@@ -5331,8 +5359,8 @@ class ApiDatabaseStore:
                     WHERE doc_id = ?
                     """,
                     (
-                        extracted_text,
-                        embedding_vector,
+                        self.encrypt_case_text(case_id, "extracted", extracted_text),
+                        self.encrypt_case_text(case_id, "vector", embedding_vector),
                         embedding_model,
                         embedding_dimensions,
                         now,
@@ -5364,8 +5392,8 @@ class ApiDatabaseStore:
                         doc_id,
                         case_id,
                         chunk.chunk_index,
-                        chunk.chunk_text,
-                        chunk.embedding_vector,
+                        self.encrypt_case_text(case_id, "chunk", chunk.chunk_text),
+                        self.encrypt_case_text(case_id, "vector", chunk.embedding_vector),
                         chunk.embedding_model,
                         chunk.embedding_dimensions,
                         chunk.start_offset,
@@ -5388,7 +5416,7 @@ class ApiDatabaseStore:
                 """,
                 (case_id,),
             ).fetchall()
-        return [(str(r[0]), str(r[1]), str(r[2]), str(r[3])) for r in rows]
+        return [(str(r[0]), self.decrypt_case_text(case_id, "filename", str(r[1])), self.decrypt_case_text(case_id, "extracted", str(r[2])), self.decrypt_case_text(case_id, "vector", str(r[3]))) for r in rows]
 
     def list_case_document_chunks(self, *, case_id: str) -> list[CaseDocumentChunk]:
         with self._connect() as conn:
@@ -5404,7 +5432,10 @@ class ApiDatabaseStore:
                 """,
                 (case_id,),
             ).fetchall()
-        return [_row_to_case_document_chunk(row) for row in rows]
+        if self.case_cipher is not None:
+            plaintext = self.case_cipher.decrypt_many(case_id, [(purpose, str(row[index])) for row in rows for index, purpose in ((4, "chunk"), (5, "vector"))])
+            return [_row_to_case_document_chunk((*row[:4], plaintext[i * 2].decode("utf-8"), plaintext[i * 2 + 1].decode("utf-8"), *row[6:])) for i, row in enumerate(rows)]
+        return [_row_to_case_document_chunk(decrypt_fields(self, row, 2, {4: "chunk", 5: "vector"})) for row in rows]
 
     def _ensure_case_root(self, case_id: str) -> None:
         (self.blob_root / case_id).mkdir(parents=True, exist_ok=True)
@@ -5414,6 +5445,8 @@ class ApiDatabaseStore:
         self._ensure_case_root(case_id)
         local_destination = self.blob_root / relative_uri
         local_destination.parent.mkdir(parents=True, exist_ok=True)
+        if self.case_cipher is not None:
+            payload = self.case_cipher.encrypt(case_id, relative_uri.as_posix(), payload).encode("ascii")
         local_destination.write_bytes(payload)
         if self.storage_option == "azure":
             if not self.store_cloud:
@@ -5425,6 +5458,9 @@ class ApiDatabaseStore:
     def _replace_stored_payload(self, *, storage_uri: str, payload: bytes) -> None:
         destination = self._resolve_storage_path(storage_uri)
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if self.case_cipher is not None:
+            relative = destination.relative_to(self.blob_root.resolve())
+            payload = self.case_cipher.encrypt(relative.parts[0], relative.as_posix(), payload).encode("ascii")
         destination.write_bytes(payload)
 
     def _resolve_storage_path(self, storage_uri: str) -> Path:
@@ -5443,7 +5479,7 @@ class ApiDatabaseStore:
             if psycopg is None:
                 raise RuntimeError("psycopg is required for DB_OPTION=postgres|azure")
             return psycopg.connect(self.db_cloud)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, factory=_ClosingSQLiteConnection)
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 

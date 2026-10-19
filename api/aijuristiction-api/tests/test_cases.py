@@ -10,10 +10,11 @@ from types import SimpleNamespace
 from zipfile import ZipFile
 
 import pytest
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 from pypdf import PdfReader
 
 from app.main import app
+from app.case_security import require_case_subject
 from aijurisdictionagents.api_db import (
     AIModelUsageAuditEntry,
     ApiDatabaseStore,
@@ -304,7 +305,8 @@ def test_document_delete_restores_payload_when_storage_removal_fails(
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "document_deletion_failed"
-    assert stored_path.read_bytes() == b"restore me"
+    assert stored_path.read_bytes().startswith(b"jdenc1:")
+    assert store.read_storage_bytes(storage_uri=store.get_case_document(case_id=case_id, doc_id=doc_id).storage_uri) == b"restore me"
     assert store.get_case_document(case_id=case_id, doc_id=doc_id).doc_id == doc_id
     assert store.list_case_document_deletion_events(case_id=case_id) == []
 
@@ -528,12 +530,15 @@ def test_case_history_paging_and_document_download(monkeypatch, tmp_path) -> Non
 
     with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
         email_row = conn.execute(
-            "SELECT body, metadata_json FROM email_outbox WHERE email_id = ?",
+            "SELECT email_id, recipient, subject, body, metadata_json, attempts FROM email_outbox WHERE email_id = ?",
             (generated_email.json()["email_id"],),
         ).fetchone()
     assert email_row is not None
-    assert "https://agent.test/shared-documents/" in email_row[0]
-    metadata = json.loads(email_row[1])
+    from app.services.email_queue import _queued_email
+    assert "https://agent.test/shared-documents/" not in str(email_row)
+    queued = _queued_email(email_row)
+    assert "https://agent.test/shared-documents/" in queued.body
+    metadata = queued.metadata
     assert metadata["event"] == "document_share_invitation"
     assert "attachments" not in metadata
 
@@ -1099,6 +1104,7 @@ def test_case_history_falls_back_to_summary_when_transcript_missing(tmp_path: Pa
 
     store = _FakeStore(db_path=tmp_path / "api.sqlite3", blob_root=tmp_path / "files")
     store.initialize()
+    app.dependency_overrides[require_case_subject] = lambda: "user-1"
     app.dependency_overrides[cases_api.get_store] = lambda: store
     try:
         response = client.get(
@@ -1107,6 +1113,7 @@ def test_case_history_falls_back_to_summary_when_transcript_missing(tmp_path: Pa
         )
     finally:
         app.dependency_overrides.pop(cases_api.get_store, None)
+        app.dependency_overrides.pop(require_case_subject, None)
 
     assert response.status_code == 200
     payload = response.json()
@@ -1163,6 +1170,7 @@ def test_case_ai_model_audit_lists_question_model_usage() -> None:
                 )
             ]
 
+    app.dependency_overrides[require_case_subject] = lambda: "user-1"
     app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
     try:
         response = client.get(
@@ -1171,6 +1179,7 @@ def test_case_ai_model_audit_lists_question_model_usage() -> None:
         )
     finally:
         app.dependency_overrides.pop(cases_api.get_store, None)
+        app.dependency_overrides.pop(require_case_subject, None)
 
     assert response.status_code == 200
     payload = response.json()
@@ -1202,6 +1211,7 @@ def test_download_case_document_returns_404_when_payload_missing() -> None:
         def read_storage_bytes(self, *, storage_uri: str) -> bytes:
             raise FileNotFoundError(storage_uri)
 
+    app.dependency_overrides[require_case_subject] = lambda: "user-1"
     app.dependency_overrides[cases_api.get_store] = lambda: _FakeStore()
     try:
         response = client.get(
@@ -1210,6 +1220,7 @@ def test_download_case_document_returns_404_when_payload_missing() -> None:
         )
     finally:
         app.dependency_overrides.pop(cases_api.get_store, None)
+        app.dependency_overrides.pop(require_case_subject, None)
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Stored payload is unavailable for document doc-1"
