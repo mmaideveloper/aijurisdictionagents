@@ -1,5 +1,9 @@
 # Scheduled API regression database (#933)
 
+The `prod` self-hosted host must have the locked tests runtime identity at UID/GID
+10840 before deploying; see #937 setup in `manual_infrastucture_setup.md`. No new
+Environment variables or secrets are required. Provisioning does not waive build gates.
+
 Hosted synthetic checks generate a fresh owner-only case key ring with
 `scripts/create_synthetic_case_keyring.py` for the encryption runtime added in #922.
 The existing `CASE_ENCRYPTION_KEY_FILE` setting is exported only within the job.
