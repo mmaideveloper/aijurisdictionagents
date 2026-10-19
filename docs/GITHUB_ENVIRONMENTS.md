@@ -934,6 +934,9 @@ and admin authentication remain required. `prod` cleanup remains disabled with t
 policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.
 # Tests private-bank worker and acceptance (#924)
 
+The hosted synthetic validation job initializes the shared identity schema in its ephemeral
+PostgreSQL service before creating test users. It needs no environment secrets or model calls.
+
 The existing `test` GitHub Environment and `laws-tests-e2e` Windows runner must also support
 the private-bank acceptance run (`laws-tests/tests/run_private_acceptance.ps1`): free ports
 8940/8941/5494, Docker Desktop, Node 24/Edge and the branch-local Python 3.13 runtime. Install

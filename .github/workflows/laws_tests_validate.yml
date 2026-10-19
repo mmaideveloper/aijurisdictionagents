@@ -39,6 +39,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          from aijurisdictionagents.api_db import ApiDatabaseStore
           values = {
             'LAWS_TEST_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/laws-tests',
             'LAWS_TEST_IDENTITY_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/postgres',
@@ -46,6 +47,10 @@ jobs:
             'LAWS_TEST_ENVIRONMENT':'test','AZURE_OPENAI_ENDPOINT':'https://synthetic.invalid',
             'AZURE_OPENAI_DEPLOYMENT':'unit-only','AZURE_OPENAI_API_VERSION':'v1','AZURE_OPENAI_API_KEY':'unit-only-no-api-call'}
           Path('.env-laws-test').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
+          ApiDatabaseStore(
+            db_path=Path('unused'), blob_root=Path('runs/issue924/ci-blobs'),
+            db_option='postgres', db_cloud=values['LAWS_TEST_IDENTITY_DATABASE_URL'],
+          ).initialize()
           PY
           python -m laws_tests.cli migrate
           python -m laws_tests.cli seed-development
