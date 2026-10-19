@@ -10,7 +10,7 @@ import unicodedata
 from uuid import UUID, uuid4
 from zipfile import ZipFile
 
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 import httpx
 from pypdf import PdfReader
 import pytest
@@ -3900,12 +3900,15 @@ def test_session_documents_email_uses_profile_email_after_confirmation(monkeypat
 
     with sqlite3.connect(tmp_path / "email.sqlite3") as conn:
         row = conn.execute(
-            "SELECT recipient, subject, metadata_json FROM email_outbox ORDER BY created_at DESC LIMIT 1"
+            "SELECT email_id, recipient, subject, body, metadata_json, attempts FROM email_outbox ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
     assert row is not None
-    assert row[0] == "client@example.com"
-    assert "JurisDigta dokumenty" in row[1]
-    metadata = json.loads(row[2])
+    from app.services.email_queue import _queued_email
+    queued = _queued_email(row)
+    assert queued.recipient == "client@example.com"
+    assert "JurisDigta dokumenty" in queued.subject
+    assert "content_base64" not in str(row)
+    metadata = queued.metadata
     attachments = metadata["attachments"]
     assert attachments
     assert base64.b64decode(attachments[0]["content_base64"]).startswith(b"%PDF")
@@ -8136,8 +8139,9 @@ def test_document_processing_status_hides_internal_filenames_from_user(caplog) -
     assert "session-a82ef605-e915-4286-9016-7e2063554c83.txt" not in visible
     assert "session-ready.txt" not in visible
     assert "Technicke udaje" not in visible
-    assert "session-a82ef605-e915-4286-9016-7e2063554c83.txt" in caplog.text
-    assert "session-ready.txt" in caplog.text
+    assert "session-a82ef605-e915-4286-9016-7e2063554c83.txt" not in caplog.text
+    assert "session-ready.txt" not in caplog.text
+    assert "count=1" in caplog.text and "count=2" in caplog.text
 
 
 def test_stream_read_user_completes_when_bare_technical_json_contains_question(monkeypatch) -> None:

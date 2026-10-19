@@ -47,7 +47,24 @@ def purge_case(store: ApiDatabaseStore, case_id: str, user_id: str) -> bool:
         store._execute(conn, "UPDATE ai_model_usage_ledger SET user_id = '', subscription_id = '', case_id = '', session_id = '', question_id = '', question_preview = '', question_sha256 = '', answer_id = '', audit_metadata_json = '{}' WHERE case_id = ?", (case_id,))
         store._execute(conn, "DELETE FROM privacy_ai_artifacts WHERE case_id = ?", (case_id,))
         store._execute(conn, "DELETE FROM case_speech_overrides WHERE case_id = ?", (case_id,))
+        store._execute(conn, "UPDATE case_export_requests SET status = 'revoked', artifact = NULL, purpose = '' WHERE request_id IN (SELECT request_id FROM case_export_grants WHERE case_id = ?)", (case_id,))
+        if store.uses_postgres:
+            for table in ("checkpoint_blobs", "checkpoint_writes", "checkpoints"):
+                present = store._fetchone(conn, "SELECT to_regclass(?)", (table,))
+                if present and present[0]:
+                    store._execute(conn, f"DELETE FROM {table} WHERE thread_id IN (SELECT thread_id FROM case_workflow_encryption_scopes WHERE case_id = ?)", (case_id,))
+        store._execute(conn, "DELETE FROM case_workflow_encryption_scopes WHERE case_id = ?", (case_id,))
+        store._execute(conn, "INSERT INTO case_encryption_erased VALUES (?, ?) ON CONFLICT(case_id) DO NOTHING", (case_id, utcnow()))
+        store._execute(conn, "DELETE FROM case_encryption_keys WHERE case_id = ?", (case_id,))
+        # PostgreSQL legacy schemas do not all have cascading foreign keys.
+        store._execute(conn, "DELETE FROM document_share_audit_events WHERE share_id IN (SELECT share_id FROM document_shares WHERE case_id = ?)", (case_id,))
+        store._execute(conn, "DELETE FROM software_assessment_documents WHERE assessment_id IN (SELECT assessment_id FROM software_assessments WHERE case_id = ?)", (case_id,))
+        for table in ("document_shares", "document_reviews", "software_assessments", "case_document_chunks", "case_document_contents", "case_document_deletion_events", "case_documents", "case_communications", "case_citations", "case_catalog_events", "case_catalog_selections"):
+            store._execute(conn, f"DELETE FROM {table} WHERE case_id = ?", (case_id,))
         store._execute(conn, "DELETE FROM cases WHERE case_id = ? AND user_id = ?", (case_id, user_id))
+    if store.case_cipher is not None:
+        with store.case_cipher._lock:
+            store.case_cipher._cache.pop(case_id, None)
     return True
 
 

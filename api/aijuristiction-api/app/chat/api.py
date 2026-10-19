@@ -918,9 +918,9 @@ def _prepend_document_status_note(*, reply: str, processed_names: list[str], unp
         return reply
     lines: list[str] = []
     if processed_names:
-        _LOGGER.info("Processed documents available for search: %s", ", ".join(processed_names))
+        _LOGGER.info("Processed documents available for search count=%d", len(processed_names))
     if unprocessed_names:
-        _LOGGER.info("Document processing still running: %s", ", ".join(unprocessed_names))
+        _LOGGER.info("Document processing still running count=%d", len(unprocessed_names))
         lines.append("Spracovanie stále prebieha....")
     note = '\n'.join(lines).strip()
     if not note:

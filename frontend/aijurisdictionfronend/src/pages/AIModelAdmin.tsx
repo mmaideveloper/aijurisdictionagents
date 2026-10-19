@@ -1,3 +1,4 @@
+import { CaseExportConsent } from "../components/CaseExportConsent";
 import AdminTraceSearch from "../components/AdminTraceSearch";
 import React from "react";
 import { createSearchParams } from "react-router-dom";
@@ -29,7 +30,6 @@ import {
   validateCaseWorkflowAssignment,
   createDraftFlowPackVersion,
   fetchAdminUsers,
-  fetchAdminCaseExportBlob,
   fetchAdminUserCases,
   fetchAIModelAdminDashboard,
   fetchAIModelUserOverride,
@@ -191,7 +191,6 @@ const AIModelAdmin: React.FC = () => {
   const [catalogLoadState, setCatalogLoadState] = React.useState<AdminCaseCatalogLoadState>("idle");
   const [activeCatalogSection, setActiveCatalogSection] = React.useState<AdminCaseCatalogSection>("caseTypes");
   const [caseDeleteReason, setCaseDeleteReason] = React.useState(t("adminCasesDefaultReason"));
-  const [exportingAdminCaseId, setExportingAdminCaseId] = React.useState<string | null>(null);
   const [assignmentQuery, setAssignmentQuery] = React.useState("");
   const [assignmentUsers, setAssignmentUsers] = React.useState<AdminUserSummary[]>([]);
   const [assignmentDetail, setAssignmentDetail] = React.useState<AIModelUserOverrideDetail | null>(null);
@@ -506,38 +505,6 @@ const AIModelAdmin: React.FC = () => {
       await reload();
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : t("adminCasesDeleteFailed"));
-    }
-  };
-
-  const exportAdminCase = async (caseItem: AdminCaseSummary) => {
-    if (!selectedCaseUser || !caseDeleteReason.trim()) {
-      setError(t("adminCasesExportReasonRequired"));
-      return;
-    }
-    setError("");
-    setStatus("");
-    setExportingAdminCaseId(caseItem.case_id);
-    try {
-      const exported = await fetchAdminCaseExportBlob(
-        adminAuth,
-        caseItem.case_id,
-        selectedCaseUser.user_id,
-        caseDeleteReason.trim()
-      );
-      const objectUrl = URL.createObjectURL(exported.blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = exported.filename;
-      anchor.rel = "noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
-      setStatus(t("adminCasesExportSuccess"));
-    } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : t("adminCasesExportFailed"));
-    } finally {
-      setExportingAdminCaseId(null);
     }
   };
 
@@ -1065,6 +1032,8 @@ const AIModelAdmin: React.FC = () => {
             </div>
           ) : null}
 
+          {activeSection === "cases" ? <CaseExportConsent admin /> : null}
+
           {dashboard || activeSection === "ollama" || activeSection === "caseCatalog" || activeSection === "flowPackages" || activeSection === "debug" ? <>
           {activeSection === "users" ? (
             <section className="admin-table-section">
@@ -1333,14 +1302,6 @@ const AIModelAdmin: React.FC = () => {
                           <td>{caseItem.updated_at}</td>
                           <td>
                             <div className="admin-inline-actions">
-                              <button
-                                className="button ghost"
-                                type="button"
-                                disabled={caseItem.status === "deleted" || !caseDeleteReason.trim() || exportingAdminCaseId === caseItem.case_id}
-                                onClick={() => void exportAdminCase(caseItem)}
-                              >
-                                <FaDownload aria-hidden="true" />{t("adminCasesExport")}
-                              </button>
                               <button
                                 className="button ghost"
                                 type="button"

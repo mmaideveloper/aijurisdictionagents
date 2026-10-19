@@ -939,6 +939,10 @@ periods and restore suppression before enabling the daily retention job. No new 
 input, Environment variable or secret is introduced. Existing real Azure Foundry credentials
 and admin authentication remain required. `prod` cleanup remains disabled with the draft
 policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.
+
+## Case encryption (#922): test and prod
+Both environments require `CASE_ENCRYPTION_KEY_FILE` pointing to a read-only protected key-ring mount available to API, MCP and document workers. Do not put key contents in workflow inputs or repository variables. The platform owner provisions separate key material per environment using approved secret storage; release is blocked until that mount, migration and restore verification exist. No production deployment is authorized by this task.
+
 # Tests private-bank worker and acceptance (#924)
 
 Hosted replacement (#931): `laws-tests-real-e2e` now uses GitHub-hosted Ubuntu, Chromium

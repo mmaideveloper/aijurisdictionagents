@@ -12,13 +12,9 @@ GET /v1/cases/{case_id}/export?user_id={user_id}
 
 ## Admin Export
 
-Admins can export a selected user's cases from **Admin > Case resets**. Search for a user by email, open the user's cases, enter an admin reason, then use the export button on each case row.
+Administrators use **Admin > Case resets > Request consented case export**. A dedicated `case_export_permissions` grant is required in addition to the admin role. Enter the exact case IDs and purpose. Each owner approves or denies in **My Profile > Case export requests**. Requests expire after 24 hours; approved archives expire after one hour and permit one download. Changing a selected case invalidates the request. Revocation blocks remaining access. Downloaded copies cannot be recalled.
 
-Admin exports are audited and call:
-
-```text
-GET /v1/admin/cases/{case_id}/export?user_id={target_user_id}&reason={admin_reason}
-```
+The authenticated API is `POST /v1/case-exports`, `POST /v1/case-exports/{request_id}/decision`, and `POST /v1/case-exports/{request_id}/download`. Identity comes from device authentication, not an asserted user ID. The former admin GET export endpoint returns 403. Owner statutory exports remain separate from paid convenience exports.
 
 The exported ZIP is intended as the source of truth for automated model-validation runs. It includes case metadata, user/system messages, AI model audit data, citations, warnings, source documents, rendered PDFs, and checksums where available.
 
@@ -85,3 +81,6 @@ validates and promotes a `technical_reviewed` fixture, runs tests, commits, push
 `main`, comments on the issue, and moves the task to `In review`. It never merges automatically.
 After explicit human approval, the same PR receives a small `native_reviewed` promotion commit and
 reruns validation; the normal human-approved close-task workflow performs any later merge.
+
+## Consent gate (#922)
+The legacy admin GET export is denied. Use the web consent request workflow backed by `/v1/case-exports`; each owner must approve and the named administrator needs dedicated export permission. See [encryption and consent](CASE_ENCRYPTION_AND_CONSENT.md). Use synthetic cases only for fixtures.

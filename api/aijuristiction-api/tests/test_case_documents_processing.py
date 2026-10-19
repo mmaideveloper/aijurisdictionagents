@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unicodedata
 
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 
 from app.main import app
 import aijurisdictionagents.llm.embeddings as embedding_module

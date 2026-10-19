@@ -89,7 +89,13 @@ class EmailQueueStore:
 
     def enqueue_email(self, *, email_id: str, recipient: str, subject: str, body: str, metadata: dict[str, Any]) -> None:
         now = _now_iso()
-        metadata_json = json.dumps(metadata, ensure_ascii=False)
+        if metadata.get("case_id"):
+            from app.case_workflows.store import _protect_json
+            protected = _protect_json({"subject": subject, "body": body, "metadata": metadata}, str(metadata["case_id"]))
+            metadata_json = json.dumps({"case_id": metadata["case_id"], "protected_case_email": protected})
+            subject, body = "Private case notification", "Encrypted case message"
+        else:
+            metadata_json = json.dumps(metadata, ensure_ascii=False)
         if self.config.db_option == "local":
             with self._connect_sqlite() as conn:
                 conn.execute(
@@ -133,7 +139,7 @@ class EmailQueueStore:
                     [(now, row[0]) for row in rows],
                 )
                 conn.commit()
-            return [QueuedEmail(row[0], row[1], row[2], row[3], _load_metadata(row[4]), row[5]) for row in rows]
+            return [_queued_email(row) for row in rows]
 
         with self._connect_postgres() as conn:
             rows = conn.execute(
@@ -155,7 +161,7 @@ class EmailQueueStore:
                 (limit, now),
             ).fetchall()
             conn.commit()
-        return [QueuedEmail(row[0], row[1], row[2], row[3], _load_metadata(row[4]), row[5]) for row in rows]
+        return [_queued_email(row) for row in rows]
 
     def mark_sent(self, *, email_id: str) -> None:
         now = _now_iso()
@@ -240,3 +246,12 @@ def _load_metadata(value: Any) -> dict[str, Any]:
     except json.JSONDecodeError:
         return {}
     return loaded if isinstance(loaded, dict) else {}
+
+
+def _queued_email(row: Any) -> QueuedEmail:
+    metadata = _load_metadata(row[4])
+    if "protected_case_email" in metadata:
+        from app.case_workflows.store import _read_json
+        data = _read_json(str(metadata["protected_case_email"]))
+        return QueuedEmail(row[0], row[1], data["subject"], data["body"], data["metadata"], row[5])
+    return QueuedEmail(row[0], row[1], row[2], row[3], metadata, row[5])

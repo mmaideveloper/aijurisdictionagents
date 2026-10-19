@@ -145,3 +145,6 @@ After implementing consent ledger + transparency metadata, update `examples/mini
 - whether consent exists,
 - which tools were allowed/blocked,
 - assistant transparency metadata payload.
+
+## #922 implementation review
+Platform-managed encryption and explicit consented admin export passed local synthetic validation on 2026-10-19, including secondary persistence and real Azure Foundry browser E2E. See [coverage, evidence and release responsibilities](CASE_ENCRYPTION_AND_CONSENT.md). Operational key custody, backup retention, provider contracts and intended-use/legal review remain release-owner responsibilities; this implementation does not certify GDPR or EU AI Act compliance.

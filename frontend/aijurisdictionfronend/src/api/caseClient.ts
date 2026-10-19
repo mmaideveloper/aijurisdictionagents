@@ -1,3 +1,4 @@
+import { deviceAuthHeaders } from "./deviceAuth";
 import { chatApiRuntimeConfig, ApiRequestError, parseApiErrorResponse } from "./chatClient";
 import { consoleLogger } from "../logging/consoleLogger";
 import { correlationHeaders } from "./correlation";
@@ -135,7 +136,8 @@ const requestJson = async <T>(path: string, init: RequestInit): Promise<T> => {
   try {
     response = await fetch(url, {
       ...init,
-      headers: { ...correlationHeaders(), ...(init.headers ?? {}) }
+      headers: { ...deviceAuthHeaders(),
+      ...correlationHeaders(), ...(init.headers ?? {}) }
     });
   } catch (error) {
     consoleLogger.error("Case API network request failed", { method, path, url }, error);
@@ -219,7 +221,8 @@ export const deleteApiCase = async (userId: string, caseId: string): Promise<voi
       method: "DELETE",
       headers: {
         "x-api-key": config.apiKey,
-        ...correlationHeaders()
+        ...deviceAuthHeaders(),
+      ...correlationHeaders()
       }
     });
   } catch {
@@ -250,7 +253,8 @@ export const deleteApiCaseDocument = async (
       method: "DELETE",
       headers: {
         "x-api-key": config.apiKey,
-        ...correlationHeaders()
+        ...deviceAuthHeaders(),
+      ...correlationHeaders()
       }
     }
   );
@@ -288,7 +292,8 @@ export const getCaseCitations = async (
       method: "GET",
       headers: {
         "x-api-key": config.apiKey,
-        ...correlationHeaders()
+        ...deviceAuthHeaders(),
+      ...correlationHeaders()
       }
     }
   );

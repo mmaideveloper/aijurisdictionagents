@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
+from functools import lru_cache
 import os
 from pathlib import Path
 import re
@@ -209,7 +210,7 @@ class CaseWorkflowStore:
                         state["status"],
                         state["stage"],
                         state.get("termination_reason", ""),
-                        json.dumps(state, ensure_ascii=False, sort_keys=True),
+                        _protect_json(state, str(state.get("case_id") or state["workflow_run_id"])),
                         now,
                         state["workflow_run_id"],
                     ),
@@ -243,7 +244,7 @@ class CaseWorkflowStore:
                         state["status"],
                         state["stage"],
                         state.get("termination_reason", ""),
-                        json.dumps(state, ensure_ascii=False, sort_keys=True),
+                        _protect_json(state, str(state.get("case_id") or state["workflow_run_id"])),
                         created,
                         now,
                     ),
@@ -267,7 +268,7 @@ class CaseWorkflowStore:
                             event["event_type"],
                             event["stage"],
                             event["status"],
-                            json.dumps(event["details"], ensure_ascii=False, sort_keys=True),
+                            _protect_json(event["details"], str(state.get("case_id") or state["workflow_run_id"])),
                             event["created_at"],
                         ),
                     )
@@ -297,7 +298,7 @@ class CaseWorkflowStore:
                             trace_payload["event_type"],
                             trace_payload["status"],
                             decision["reason_code"],
-                            json.dumps(trace_payload, ensure_ascii=True, sort_keys=True),
+                            _protect_json(trace_payload, str(state.get("case_id") or state["workflow_run_id"])),
                             trace_payload["created_at"],
                         ),
                     )
@@ -306,11 +307,11 @@ class CaseWorkflowStore:
 
     def get_run_state(self, workflow_run_id: str, *, user_id: str) -> CaseWorkflowState:
         row = self._get_run_row(workflow_run_id, user_id=user_id)
-        return CaseWorkflowState(**json.loads(str(row["state_json"])))
+        return CaseWorkflowState(**_read_json(str(row["state_json"]), expected_scope=str(row["case_id"] or row["workflow_run_id"])))
 
     def get_run(self, workflow_run_id: str, *, user_id: str) -> WorkflowRunResponse:
         row = self._get_run_row(workflow_run_id, user_id=user_id)
-        state = json.loads(str(row["state_json"]))
+        state = _read_json(str(row["state_json"]), expected_scope=str(row["case_id"] or row["workflow_run_id"]))
         return WorkflowRunResponse(
             workflow_run_id=str(row["workflow_run_id"]),
             correlation_id=str(row["correlation_id"]),
@@ -385,7 +386,7 @@ class CaseWorkflowStore:
         return self.get_run(str(_row(row)["workflow_run_id"]), user_id=user_id)
 
     def list_events(self, workflow_run_id: str, *, user_id: str) -> list[WorkflowEventResponse]:
-        self._get_run_row(workflow_run_id, user_id=user_id)
+        run = self._get_run_row(workflow_run_id, user_id=user_id)
         with self._connect() as conn:
             rows = conn.execute(
                 self._sql(
@@ -393,7 +394,7 @@ class CaseWorkflowStore:
                 ),
                 (workflow_run_id,),
             ).fetchall()
-        return [_event(_row(row)) for row in rows]
+        return [_event(_row(row), scope=str(run["case_id"] or workflow_run_id)) for row in rows]
 
     def list_decision_traces(
         self, *, session_id: str, limit: int, offset: int
@@ -412,7 +413,7 @@ class CaseWorkflowStore:
         return (
             [
                 OrchestrationDecisionTraceResponse.model_validate(
-                    json.loads(str(_row(row)["payload_json"]))
+                    _read_json(str(_row(row)["payload_json"]))
                 )
                 for row in visible
             ],
@@ -434,7 +435,7 @@ class CaseWorkflowStore:
             ).fetchall()
         return [
             OrchestrationDecisionTraceResponse.model_validate(
-                json.loads(str(_row(row)["payload_json"]))
+                _read_json(str(_row(row)["payload_json"]))
             )
             for row in rows
         ]
@@ -498,7 +499,7 @@ class CaseWorkflowStore:
         for raw_run in run_rows[:100]:
             run = _row(raw_run)
             run_id = str(run["workflow_run_id"])
-            state = json.loads(str(run["state_json"]))
+            state = _read_json(str(run["state_json"]))
             topology = state.get("graph_topology")
             pinned = (
                 isinstance(topology, dict)
@@ -513,7 +514,7 @@ class CaseWorkflowStore:
                 if pinned and isinstance(node, dict)
             } if isinstance(topology, dict) else set()
             for event in grouped_events.get(run_id, []):
-                details = json.loads(str(event["details_json"]))
+                details = _read_json(str(event["details_json"]))
                 node_id = str(details.get("execution_node_id", ""))
                 occurrence_id = str(details.get("execution_occurrence_id", ""))
                 if not node_id or not occurrence_id:
@@ -582,7 +583,7 @@ class CaseWorkflowStore:
         seen_router_runs: set[str] = set()
         for raw_router in router_rows[:event_limit]:
             router = _row(raw_router)
-            payload = json.loads(str(router["payload_json"]))
+            payload = _read_json(str(router["payload_json"]))
             router_id = str(payload["workflow_run_id"])
             if router_id in seen_router_runs:
                 continue
@@ -663,7 +664,7 @@ class CaseWorkflowStore:
                 (
                     str(uuid4()), correlation_id.strip(), session_id.strip(), request_id.strip(),
                     parent_request_id.strip(), component.strip(), stage.strip(), status.strip(),
-                    json.dumps(safe_payload, ensure_ascii=False, sort_keys=True),
+                    _protect_json(safe_payload, str((safe_payload.get("session") or {}).get("case_id") or "session:" + session_id)),
                     now.isoformat(), expires_at.isoformat(),
                 ),
             )
@@ -785,7 +786,7 @@ class CaseWorkflowStore:
         result: list[dict[str, Any]] = []
         for row in rows:
             item = _row(row)
-            item["payload"] = json.loads(str(item.pop("payload_json")))
+            item["payload"] = _read_json(str(item.pop("payload_json")))
             result.append(item)
         return result
 
@@ -806,7 +807,7 @@ class CaseWorkflowStore:
         result = []
         for row in rows:
             item = _row(row)
-            item["payload"] = json.loads(str(item.pop("payload_json")))
+            item["payload"] = _read_json(str(item.pop("payload_json")))
             result.append(item)
         return result
 
@@ -923,7 +924,7 @@ class CaseWorkflowStore:
         if row is None:
             return None
         event = _row(row)
-        return cast(dict[str, Any], json.loads(str(event["result_summary_json"])))
+        return cast(dict[str, Any], _read_json(str(event["result_summary_json"]), expected_scope=str(event["case_id"] or event["workflow_run_id"])))
 
     def record_tool_execution(
         self,
@@ -958,7 +959,7 @@ class CaseWorkflowStore:
                     state.get("user_id", ""),
                     tool_name,
                     str(result_summary.get("status", "failed")),
-                    json.dumps(result_summary, ensure_ascii=False, sort_keys=True),
+                    _protect_json(result_summary, str(state.get("case_id") or state["workflow_run_id"])),
                     _utc_now(),
                 ),
             )
@@ -1130,7 +1131,7 @@ def _assignment(row: dict[str, Any]) -> WorkflowAssignmentResponse:
     )
 
 
-def _event(row: dict[str, Any]) -> WorkflowEventResponse:
+def _event(row: dict[str, Any], *, scope: str) -> WorkflowEventResponse:
     return WorkflowEventResponse(
         event_id=str(row["event_id"]),
         workflow_run_id=str(row["workflow_run_id"]),
@@ -1138,7 +1139,7 @@ def _event(row: dict[str, Any]) -> WorkflowEventResponse:
         event_type=str(row["event_type"]),
         stage=str(row["stage"]),
         status=str(row["status"]),
-        details=json.loads(str(row["details_json"])),
+        details=_read_json(str(row["details_json"]), expected_scope=scope),
         created_at=_datetime(str(row["created_at"])),
     )
 
@@ -1226,3 +1227,47 @@ def _utc_now() -> str:
 
 def _datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+@lru_cache(maxsize=8)
+def _encryption_store(key_file: str, db_option: str, db_cloud: str, db_local: str) -> ApiDatabaseStore:
+    from aijurisdictionagents.case_crypto import initialize_case_security
+    store = ApiDatabaseStore.from_env()
+    initialize_case_security(store)
+    return store
+
+
+def _workflow_crypto() -> ApiDatabaseStore | None:
+    key_file = os.getenv("CASE_ENCRYPTION_KEY_FILE", "").strip()
+    if not key_file or key_file == "unknown-variable":
+        return None  # Offline constructors only; production API startup requires a key.
+    return _encryption_store(key_file, os.getenv("DB_OPTION", ""), os.getenv("DB_CLOUD", ""), os.getenv("DB_LOCAL", ""))
+
+
+def _protect_json(value: Any, scope: str) -> str:
+    store = _workflow_crypto()
+    if store is None:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    envelope: dict[str, Any] = {"encrypted_case_scope": scope,
+        "encrypted_payload": store.encrypt_case_text(scope, "workflow-json", json.dumps(value, ensure_ascii=False, sort_keys=True))}
+    # Only identifiers used by existing SQL indexes remain searchable.
+    if isinstance(value, dict):
+        for parent, names in (("session", ("case_id", "user_id")), ("node_execution", ("workflow_run_id",))):
+            source = value.get(parent)
+            if isinstance(source, dict):
+                envelope[parent] = {name: source[name] for name in names if name in source}
+    return json.dumps(envelope, ensure_ascii=True)
+
+
+def _read_json(value: str, *, expected_scope: str | None = None) -> Any:
+    parsed = json.loads(value)
+    if isinstance(parsed, dict) and "encrypted_payload" in parsed:
+        if expected_scope is not None and parsed.get("encrypted_case_scope") != expected_scope:
+            raise RuntimeError("Encrypted workflow scope mismatch")
+        store = _workflow_crypto()
+        if store is None:
+            raise RuntimeError("Workflow encryption key unavailable")
+        return json.loads(store.decrypt_case_text(str(parsed["encrypted_case_scope"]), "workflow-json", str(parsed["encrypted_payload"])))
+    if _workflow_crypto() is not None:
+        raise RuntimeError("Legacy workflow plaintext requires migration")
+    return parsed

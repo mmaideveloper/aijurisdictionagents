@@ -28,6 +28,8 @@ def require_decision_trace_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access is required",
         )
+    if getattr(store, "case_cipher", None) is not None:
+        raise HTTPException(403, "Private case traces require an owner-approved case export; unrestricted admin trace access is disabled")
     return admin
 
 

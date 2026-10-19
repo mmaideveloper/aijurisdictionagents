@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.case_exports_api import router as case_exports_router, export_worker
 
 import asyncio
 from contextlib import suppress
@@ -62,6 +63,7 @@ from app.voice_intent_api import router as voice_intent_router
 from app.speech_api import router as speech_router
 
 from aijurisdictionagents.api_db import ApiDatabaseStore
+from aijurisdictionagents.case_crypto import CaseEncryptionError
 from aijurisdictionagents.privacy import PrivacyDenied, privacy_problem
 from aijurisdictionagents.db_migrations import apply_sql_migrations
 from aijurisdictionagents.llm.base import read_positive_finite_env_seconds
@@ -292,7 +294,13 @@ app.include_router(flow_evaluations_router)
 app.include_router(laws_router)
 app.include_router(users_router)
 app.include_router(cases_router)
+app.include_router(case_exports_router)
 app.include_router(privacy_router)
+
+
+@app.exception_handler(CaseEncryptionError)
+async def case_encryption_unavailable_handler(_request: fastapi.Request, _exc: CaseEncryptionError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": "Encrypted case data is temporarily unavailable. Contact support if this continues."}, headers={"Cache-Control": "no-store"})
 
 
 @app.exception_handler(PrivacyDenied)
@@ -327,6 +335,7 @@ async def startup_log() -> None:
             dry_run=False,
         )
     store.initialize()
+    app.state.case_export_worker = asyncio.create_task(export_worker(store))
     # Seed reviewed case-workflow assignments and initialize durable LangGraph checkpoints
     # before case-type detection serves the first request.
     workflow_service = get_case_workflow_service()
@@ -460,6 +469,11 @@ async def _purge_expired_debug_events_loop(store: Any) -> None:
 @app.on_event("shutdown")
 async def shutdown_debug_retention() -> None:
     global _debug_retention_task
+    worker = getattr(app.state, "case_export_worker", None)
+    if worker is not None:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
     if _debug_retention_task is None:
         return
     _debug_retention_task.cancel()

@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from io import BytesIO
-import json
 from pathlib import Path
-from zipfile import ZipFile
 
-from fastapi.testclient import TestClient
+from case_test_client import TestClient
 
 from app.ai_model_admin_api import get_admin_store, get_ollama_admin_service
 from app.cases_api import get_store as get_cases_store
@@ -249,7 +246,7 @@ def test_admin_can_search_list_and_soft_delete_expired_user_case(tmp_path: Path,
     assert "deleted" in audit_events[0].new_value_summary
 
 
-def test_admin_can_export_user_case_and_records_audit_event(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_admin_export_requires_owner_consent(tmp_path: Path, monkeypatch) -> None:
     store = _store(tmp_path)
     admin = store.create_user(email="admin@example.com", password="secret", full_name="Admin User")
     target = store.create_user(email="target@example.com", password="secret", full_name="Target User")
@@ -278,18 +275,8 @@ def test_admin_can_export_user_case_and_records_audit_event(tmp_path: Path, monk
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/zip")
-    with ZipFile(BytesIO(response.content)) as archive:
-        manifest = json.loads(archive.read("manifest.json"))
-        assert manifest["exported_by"] == "admin:admin@example.com"
-        assert manifest["case_id"] == case.case_id
-    assert audit_events[0].action == "case.export"
-    assert audit_events[0].entity_type == "case"
-    assert audit_events[0].entity_id == case.case_id
-    assert audit_events[0].reason == "Golden fixture review"
-    assert "target@example.com" in audit_events[0].old_value_summary
-    assert "exported" in audit_events[0].new_value_summary
+    assert response.status_code == 403
+    assert not any(event.action == "case.export" for event in audit_events)
 
 
 def test_admin_case_management_rejects_non_admin(tmp_path: Path, monkeypatch) -> None:

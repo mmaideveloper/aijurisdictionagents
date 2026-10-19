@@ -217,7 +217,7 @@ describe("AIModelAdmin case reset panel", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("adminTraceUnauthorized");
   });
 
-  it("downloads an audited admin case export from each case row", async () => {
+  it("requires the consent panel instead of legacy direct admin export", async () => {
     const user = userEvent.setup();
     vi.mocked(fetchAIModelAdminDashboard).mockResolvedValue(dashboard);
     vi.mocked(fetchOllamaModels).mockResolvedValue({ base_url: "http://127.0.0.1:11434", models: [] });
@@ -233,15 +233,6 @@ describe("AIModelAdmin case reset panel", () => {
         }
       ]
     });
-    vi.mocked(fetchAdminCaseExportBlob).mockResolvedValue({
-      blob: new Blob(["zip body"], { type: "application/zip" }),
-      contentType: "application/zip",
-      filename: "case-export.zip"
-    });
-    URL.createObjectURL = vi.fn(() => "blob:admin-case-export");
-    URL.revokeObjectURL = vi.fn();
-    const clickSpy = vi.fn();
-
     render(<AIModelAdmin />);
 
     await user.click(await screen.findByRole("button", { name: /adminCasesTitle/ }));
@@ -250,29 +241,10 @@ describe("AIModelAdmin case reset panel", () => {
     await screen.findByText("Expired free case");
     await screen.findByText("Paid validation fixture");
 
-    const exportButtons = await screen.findAllByRole("button", { name: /adminCasesExport/ });
-    expect(exportButtons).toHaveLength(2);
-    const firstExportButton = exportButtons[0];
-    expect(firstExportButton).toBeDefined();
-    const appendSpy = vi.spyOn(document.body, "appendChild");
-    appendSpy.mockImplementation((node: Node) => {
-      if (node instanceof HTMLAnchorElement) {
-        node.click = clickSpy;
-      }
-      return node;
-    });
-    await user.click(firstExportButton as HTMLElement);
-
-    await waitFor(() => {
-      expect(fetchAdminCaseExportBlob).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: "admin-1" }),
-        "case-1",
-        "user-1",
-        "adminCasesDefaultReason"
-      );
-    });
-    expect(clickSpy).toHaveBeenCalled();
-    expect(await screen.findByText("adminCasesExportSuccess")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /adminCasesExport/ })).toBeNull();
+    expect(screen.getByRole("region", { name: "Case export consent" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Request owner consent" })).toBeDefined();
+    expect(fetchAdminCaseExportBlob).not.toHaveBeenCalled();
   });
 
   it("searches users, confirms a case soft-delete, and refreshes the case list", async () => {
