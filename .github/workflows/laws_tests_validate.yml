@@ -10,7 +10,7 @@ on:
       run_real_e2e:
         type: boolean
         default: true
-        description: Run real-model local E2E on the dedicated Windows test runner
+        description: Run real-model synthetic E2E on GitHub-hosted Ubuntu
 permissions:
   contents: read
 jobs:
@@ -39,6 +39,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          from aijurisdictionagents.api_db import ApiDatabaseStore
           values = {
             'LAWS_TEST_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/laws-tests',
             'LAWS_TEST_IDENTITY_DATABASE_URL':'postgresql://postgres:synthetic-ci-password@127.0.0.1:5440/postgres',
@@ -46,6 +47,10 @@ jobs:
             'LAWS_TEST_ENVIRONMENT':'test','AZURE_OPENAI_ENDPOINT':'https://synthetic.invalid',
             'AZURE_OPENAI_DEPLOYMENT':'unit-only','AZURE_OPENAI_API_VERSION':'v1','AZURE_OPENAI_API_KEY':'unit-only-no-api-call'}
           Path('.env-laws-test').write_text(''.join(f'{k}={v}\n' for k,v in values.items()))
+          ApiDatabaseStore(
+            db_path=Path('unused'), blob_root=Path('runs/issue924/ci-blobs'),
+            db_option='postgres', db_cloud=values['LAWS_TEST_IDENTITY_DATABASE_URL'],
+          ).initialize()
           PY
           python -m laws_tests.cli migrate
           python -m laws_tests.cli seed-development
@@ -64,24 +69,52 @@ jobs:
   real_e2e:
     name: laws-tests-real-e2e
     if: github.event_name == 'workflow_dispatch' && inputs.run_real_e2e
-    runs-on: [self-hosted, Windows, X64, laws-tests-e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
     environment: test
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: synthetic-ci-password
+          POSTGRES_DB: laws-tests
+        ports: ['5440:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     concurrency:
-      group: laws-tests-local-e2e
+      group: laws-tests-hosted-e2e-${{ github.ref }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
         with:
-          # Preserve the dedicated runner's synthetic PostgreSQL bind mount.
-          clean: false
-      - name: Execute real local system with synthetic data
-        shell: pwsh
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install runtime dependencies without model credentials
+        run: pip install -e '.[dev]' -e 'api/aijuristiction-api[dev]' -e 'laws-tests/api[test]'
+      - run: npm ci
+        working-directory: laws-tests/web
+      - run: npm ci
+        working-directory: frontend/aijurisdictionfronend
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: laws-tests/web
+      - name: Execute real local services with synthetic data
         env:
-          LAWS_TEST_E2E_PYTHON: ${{ vars.LAWS_TEST_E2E_PYTHON }}
-        run: ./laws-tests/tests/run_acceptance.ps1
+          PYTHONPATH: laws-tests/api:src
+          E2E_AZURE_FOUNDRY_ENDPOINT: ${{ secrets.E2E_AZURE_FOUNDRY_ENDPOINT }}
+          E2E_AZURE_FOUNDRY_API_VERSION: ${{ secrets.E2E_AZURE_FOUNDRY_API_VERSION }}
+          E2E_AZURE_FOUNDRY_DEPLOYMENT: ${{ secrets.E2E_AZURE_FOUNDRY_DEPLOYMENT }}
+          E2E_AZURE_FOUNDRY_API_KEY: ${{ secrets.E2E_AZURE_FOUNDRY_API_KEY }}
+        run: python laws-tests/tests/run_hosted_acceptance.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: laws-tests-real-e2e-${{ github.sha }}
-          path: runs/issue840/evidence/
+          path: |
+            runs/issue840/evidence/
+            runs/issue924/evidence/
+            runs/hosted-e2e/evidence/
           retention-days: 14

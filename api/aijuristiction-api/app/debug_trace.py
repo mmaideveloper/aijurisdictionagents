@@ -42,10 +42,10 @@ def debug_event_sink(
                     case_id=str(session.get("case_id") or ""),
                     owner_store=service.api_store,
                 )
-    except Exception:
+    except Exception as exc:
         _LOGGER.warning(
-            "Optional session debug event sink unavailable correlation_id=%s request_id=%s",
+            "Optional session debug event sink unavailable correlation_id=%s request_id=%s error_type=%s",
             context.correlation_id,
             context.request_id,
-            exc_info=True,
+            type(exc).__name__,
         )

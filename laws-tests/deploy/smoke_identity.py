@@ -31,9 +31,15 @@ if sys.argv[1] == "create":
     token = store.issue_device_auth_token(
         user_id=user.user_id, device_id=device_id, expires_in_days=1
     )
+    with connect(cfg.database_url) as tests:
+        bank = tests.execute("SELECT test_id FROM questions WHERE id='E-1' AND enabled").fetchone()
+        if not bank:
+            raise SystemExit('Reviewed smoke question is unavailable')
+        tests.execute("INSERT INTO test_users(user_id,approved) VALUES(%s,true)",(user.user_id,))
+        tests.execute("INSERT INTO bank_access(user_id,test_id,status) VALUES(%s,%s,'approved')",(user.user_id,bank['test_id']))
     print(
         json.dumps(
-            {"user_id": user.user_id, "email": email, "device_id": device_id, "device_token": token}
+            {"user_id": user.user_id, "email": email, "device_id": device_id, "device_token": token,"test_id":bank['test_id']}
         )
     )
 elif sys.argv[1] == "cleanup":
@@ -52,6 +58,7 @@ elif sys.argv[1] == "cleanup":
                 tests.execute("DELETE FROM test_sessions WHERE user_id=%s", (record["user_id"],))
                 tests.execute("DELETE FROM web_sessions WHERE user_id=%s", (record["user_id"],))
                 tests.execute("DELETE FROM login_requests WHERE user_id=%s", (record["user_id"],))
+                tests.execute("DELETE FROM test_users WHERE user_id=%s", (record["user_id"],))
             conn.execute(
                 "DELETE FROM users WHERE user_id=%s AND email=%s",
                 (record["user_id"], record["email"]),

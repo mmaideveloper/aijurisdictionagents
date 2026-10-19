@@ -1217,3 +1217,73 @@ timer and restores the prior policy; already purged data requires controlled res
 
 ## #922 case encryption installation
 Owner: platform/security operator for the test/prod host accounts and approved secret store. Provision distinct random 256-bit platform keys per environment, mount a key-ring JSON read-only for API/MCP/document-worker identities, deny ordinary admin and other OS accounts file access, and set `CASE_ENCRYPTION_KEY_FILE` to its path. Grant `case_export_permissions` only to approved existing enabled administrators via audited database administration. Stop writers, take an encrypted backup, run the offline migration, and validate authorized reads, denied exports, owner-approved exports, expiry cleanup and restore. Roll back using the encrypted backup plus matching keys. Never log or copy key values into tickets. Rotate by retaining old/new versions until all case keys and retained backups are verified. See docs/CASE_ENCRYPTION_AND_CONSENT.md for format and limitations.
+
+# Tests private-bank storage/worker setup (#924)
+
+Owner: repository/server operator, with existing central administrator for user/bank approval
+and content owner/reviewer for publication. This documents future setup; implementation does
+not authorize a production deployment or provide a content-rights approval.
+
+1. Test: on the dedicated Windows runner install the current laws-tests API dependencies
+   (multipart, Pillow, PDFium), root dev dependencies/ReportLab, Node 24, Edge and Docker
+   Desktop. Reserve loopback 5494 for `laws-tests-924-postgres` and 8940/8941 for the tests
+   frontend/API. Pull the existing approved `codex-agent`/`laws-tests-dev` profiles and run
+   `laws-tests/tests/run_private_acceptance.ps1`. PostgreSQL runtime data belongs under
+   `runs/storage/laws-tests/postgres/data` in that isolated worktree. Do not reuse another
+   worktree's container. No new secret or Environment input is required.
+2. Production server: before starting API/worker, create `/srv/jurisdigta/laws-tests/storage`
+   owned by UID/GID 10840 with mode 0700 (`install -d -m 700 -o 10840 -g 10840 ...`). The release
+   script performs this idempotently. Mount it read/write at `/app/runs/storage/laws-tests`
+   for BOTH services. Preserve the existing read-only runtime secret mount. This volume is
+   private; do not expose it through static web hosting or include purchased PDFs in Git/images.
+3. Run the gated backup/migration procedure for the exact verified release. Migration 005
+   creates approvals/grants, revisions, tags, selections and jobs; migration 006 adds explicit
+   legal scope and preserves the firearms legal-date gate. They grant no existing users
+   automatic access. The migration script grants the application only the required table
+   read/write privileges, append-only revision snapshots, and the existing dedicated central
+   identity role read access to `user_id,is_enabled,role,email` plus device-proof columns.
+   Do not use the central migration credential as the runtime identity.
+4. Start API, `worker` (same image, `python -m laws_tests.jobs`) and web. The web proxy permits
+   105 MB multipart requests; the application caps source bytes at 100 MB/500 pages. Verify
+   health, pending/approved/revoked users, exact bank grants, source-file denial to nonadmins,
+   and a synthetic PNG/JPEG/PDF import reaching review through the configured real model.
+   The production synthetic smoke grants only its temporary account access to its existing
+   bank and removes that grant/account afterward. Never run book imports as deployment smoke.
+5. Administrator: explicitly approve each learner and selected banks in tests.jurisdigta.eu.
+   Review/activate imported questions and publication rights; LF UK banks remain empty drafts
+   until reviewed authorized content is available. Agent administration has no new management UI.
+6. Retention: worker cleanup runs hourly (source/jobs 30 days, nonapproved requests 90 days,
+   metadata audits 12 months). Keep the existing identity/attempt purge timer. Restrict backups,
+   apply documented maximum backup retention and replay deletions before restoring visibility.
+   Delete synthetic evidence after 14 days; never retain credential files or raw model IO.
+7. Rollback: stop worker/imports and serve a maintenance page or retain this release's access
+   gate while restoring a reviewed recovery point. Reverting to pre-924 anonymous Q&A over
+   private banks is unsafe and is not an allowed rollback. Preserve attempt content snapshots,
+   account deletions and revocations. Revalidate all exact-SHA checks before a later release.
+# Hosted laws-tests E2E (#931)
+
+- Owner: repository maintainer plus Azure subscription/resource owner. Use a dedicated
+  test-only Azure Foundry resource with `gpt-5-mini` and vision support; establish its quota,
+  EU processing route and spending alerts before the first real-model run. Public hosted
+  runners require outbound HTTPS access to that test endpoint. Do not open a production
+  database or copy a production model key to GitHub. Azure CLI provisioning must use the
+  repository's service-principal login helper, never the signed-in personal Azure account.
+- In GitHub repository `mmaideveloper/aijurisdictionagents`, Environment `test`, install
+  secrets `E2E_AZURE_FOUNDRY_ENDPOINT`, `E2E_AZURE_FOUNDRY_API_VERSION`,
+  `E2E_AZURE_FOUNDRY_DEPLOYMENT=gpt-5-mini`, `E2E_AZURE_FOUNDRY_API_KEY` using the secret
+  UI or secret values on CLI stdin. Never paste keys into issues, chat or workflow logs.
+  Keep the Environment restricted to trusted operator-dispatched refs; no secrets on forks.
+- The Ubuntu job provisions PostgreSQL/Python/Node/Chromium automatically. No laptop runner,
+  local Python path or SSH access to `jurisdigta-server` is needed. Per-job encryption keys,
+  synthetic users and database data are ephemeral; only sanitized evidence is uploaded
+  for 14 days. Remove the unused test Environment `LAWS_TEST_E2E_PYTHON` variable only after
+  a successful hosted run. Existing production variables/secrets/check lists are unchanged.
+- Verify by dispatching `Laws Tests Validate` with `run_real_e2e=true` on the reviewed ref.
+  Require both browser suites and the real-model bootstrap to pass; inspect screenshots,
+  source/model-route manifests and `cleanupPassed`. Re-run against the final merged SHA
+  before using the production deployment workflow. Rotate the test key by replacing the
+  Environment secret and rerunning acceptance; the maintainer owns the rotation schedule.
+- Rollback: revert the workflow change through a reviewed PR and restore the documented
+  trusted local runner configuration if needed. Keep all exact-SHA release checks mandatory;
+  never replace failed real-model evidence with mocks or production data. Do not deploy
+  while the required hosted test secrets, quota or successful release checks are absent.

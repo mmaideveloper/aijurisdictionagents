@@ -1,3 +1,4 @@
+param([int]$Instance=840,[int]$DatabasePort=5440,[switch]$SkipPrivate)
 $ErrorActionPreference='Stop'
 $root=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 Set-Location $root
@@ -13,7 +14,7 @@ if($LASTEXITCODE -ne 0){throw 'Profile sync failed'}
 $env:PYTHONPATH="$root/laws-tests/api;$root/src"
 & ./scripts/sync_env_profile.ps1 -Mode Pull -Profile laws-tests-dev
 if($LASTEXITCODE -ne 0){throw 'Laws-tests development profile sync failed'}
-& $python laws-tests/tests/setup_local.py
+& $python laws-tests/tests/setup_local.py --instance $Instance --port $DatabasePort --account-instance 840
 if($LASTEXITCODE -ne 0){throw 'Local database/model bootstrap failed'}
 $env:PYTHONPATH="$root/laws-tests/api;$root/src"
 & $python -m laws_tests.cli migrate
@@ -22,6 +23,8 @@ if($LASTEXITCODE -ne 0){throw 'Migration failed'}
 if($LASTEXITCODE -ne 0){throw 'Seed failed'}
 & $python laws-tests/tests/reader_fixture.py
 if($LASTEXITCODE -ne 0){throw 'Synthetic law reader seed failed'}
+& $python laws-tests/tests/approve_legacy_acceptance.py
+if($LASTEXITCODE -ne 0){throw 'Synthetic reader grants failed'}
 $env:NODE_USE_SYSTEM_CA='1'
 foreach($project in @('laws-tests/web','frontend/aijurisdictionfronend')){
     Push-Location $project
@@ -48,4 +51,8 @@ try{
     foreach($process in $processes){ Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
     & $python laws-tests/tests/reader_fixture.py cleanup
     & $python laws-tests/tests/cleanup_acceptance.py
+}
+if(-not $SkipPrivate){
+    & ./laws-tests/tests/run_private_acceptance.ps1 -Instance $Instance -DatabasePort $DatabasePort
+    if($LASTEXITCODE -ne 0){throw 'Private-bank real acceptance failed'}
 }

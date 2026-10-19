@@ -935,3 +935,41 @@ policy; test evidence uses isolated loopback PostgreSQL and synthetic data only.
 
 ## Case encryption (#922): test and prod
 Both environments require `CASE_ENCRYPTION_KEY_FILE` pointing to a read-only protected key-ring mount available to API, MCP and document workers. Do not put key contents in workflow inputs or repository variables. The platform owner provisions separate key material per environment using approved secret storage; release is blocked until that mount, migration and restore verification exist. No production deployment is authorized by this task.
+
+# Tests private-bank worker and acceptance (#924)
+
+Hosted replacement (#931): `laws-tests-real-e2e` now uses GitHub-hosted Ubuntu, Chromium
+and an ephemeral PostgreSQL service. In the protected `test` Environment add these four
+**test-only** Azure Foundry secrets: `E2E_AZURE_FOUNDRY_ENDPOINT`,
+`E2E_AZURE_FOUNDRY_API_VERSION`, `E2E_AZURE_FOUNDRY_DEPLOYMENT` (must be `gpt-5-mini`),
+and `E2E_AZURE_FOUNDRY_API_KEY`. Do not copy the production API key. Maintain Azure quota,
+vision support, HTTPS reachability and a budget for synthetic tests; the maintainer owns
+key rotation and must run real acceptance after rotation. No SSH or production DB secrets
+are needed on hosted runners. The legacy `LAWS_TEST_E2E_PYTHON` Environment variable is
+unused by this job and may be removed after the first successful hosted run. The workflow
+input name `run_real_e2e` is unchanged; its description now identifies the hosted runner.
+For `prod`, the exact-SHA required-check names and Linux deployment runner remain unchanged.
+See `laws-tests/docs/hosted-e2e.md` and the #931 manual setup section for verification/rollback.
+
+The following Windows setup remains applicable only to the explicit local developer launchers:
+
+The hosted synthetic validation job initializes the shared identity schema in its ephemeral
+PostgreSQL service before creating test users. It needs no environment secrets or model calls.
+
+The existing `test` GitHub Environment and `laws-tests-e2e` Windows runner must also support
+the private-bank acceptance run (`laws-tests/tests/run_private_acceptance.ps1`): free ports
+8940/8941/5494, Docker Desktop, Node 24/Edge and the branch-local Python 3.13 runtime. Install
+the current `laws-tests/api` package (multipart, Pillow and PDFium) and the repository dev
+dependencies (including ReportLab for synthetic PDF fixtures). Pull only the existing verified
+`codex-agent` and `laws-tests-dev` USB profiles. No new GitHub variables, secrets or workflow
+inputs are introduced. The existing real E2E command runs the legacy shared-account/reader
+checks followed by private-bank acceptance. Both must succeed for the exact deployment SHA.
+Retain sanitized `runs/issue924/evidence` with the existing 14-day evidence policy; never upload
+the sibling private-fixture file, logs, browser auth proof or account credential files.
+
+For `prod`, keep the exact-SHA fail-closed build gate. The tests API image now also runs a
+separate worker; provision the private shared volume and scoped SQL/identity grants documented
+in `docs/manual_infrastucture_setup.md` before enabling this release. Existing administrators
+must explicitly approve users/banks after migration; do not bootstrap blanket access. Public
+metadata remains readable, but the older anonymous Q&A smoke is replaced by a synthetic user
+with a single explicit bank grant. No purchased LF UK content or actual users are seeded by CI.

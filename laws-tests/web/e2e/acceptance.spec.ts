@@ -1,3 +1,4 @@
+import { approvedAuth } from "./approved-auth";
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
@@ -7,13 +8,24 @@ const root = path.resolve("../..");
 const out = path.join(root, "runs/issue840/evidence");
 fs.mkdirSync(out, { recursive: true });
 test.afterEach(async ({}, info) => {
-  if (info.status !== 'passed') {
-    fs.writeFileSync(path.join(out,'result-manifest.json'),JSON.stringify({status:'failed',
-      syntheticAttemptsCleaned:false,reason:'Inspect sanitized test output; this run is not acceptance evidence.'},null,2));
+  if (info.status !== "passed") {
+    fs.writeFileSync(
+      path.join(out, "result-manifest.json"),
+      JSON.stringify(
+        {
+          status: "failed",
+          syntheticAttemptsCleaned: false,
+          reason:
+            "Inspect sanitized test output; this run is not acceptance evidence.",
+        },
+        null,
+        2,
+      ),
+    );
   }
 });
 
-test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
+test("approved A20 desktop/mobile and real authenticated E1 evaluation", async ({
   page,
   browser,
 }) => {
@@ -34,64 +46,25 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
     results: [],
     retention: "14 days; synthetic attempt records deleted after capture",
   };
-  fs.writeFileSync(path.join(out,'result-manifest.json'),JSON.stringify(manifest,null,2));
+  fs.writeFileSync(
+    path.join(out, "result-manifest.json"),
+    JSON.stringify(manifest, null, 2),
+  );
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.goto("/?test=firearms-sk-2026&question=A-20");
-  await expect(
-    page.getByRole("heading", {
-      name: "Vyhláška, preprava a správca strelnice",
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Prihlásiť sa", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Rozbaliť všetky odpovede" }).click();
-  await expect(page.locator(".answer-text")).toHaveCount(3);
-  await page.screenshot({
-    path: path.join(out, "01-desktop-public-a20.png"),
-    fullPage: true,
-  });
-  manifest.observedSources.push("A-20");
-  const mobile = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
-  });
-  const mobilePage = await mobile.newPage();
-  await mobilePage.goto("/?test=firearms-sk-2026&question=A-20");
-  await expect(
-    mobilePage.getByRole("button", { name: "Prihlásiť sa", exact: true }),
-  ).toBeVisible();
-  await mobilePage
-    .getByRole("button", { name: "Rozbaliť všetky odpovede" })
-    .click();
-  await expect(mobilePage.locator(".answer-text")).toHaveCount(3);
-  expect(
-    await mobilePage.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
-  await mobilePage.screenshot({
-    path: path.join(out, "02-mobile-public-a20.png"),
-    fullPage: true,
-  });
-  await mobilePage.screenshot({
-    path: path.join(out, "02-mobile-public-a20-viewport.png"),
-  });
-  await mobile.close();
-  await page.goto("/?test=firearms-sk-2026&question=E-1");
-  await expect(
-    page.getByRole("heading", { name: "Bezpečná manipulácia na strelnici" }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Prihlásiť sa a precvičovať" })
-    .click();
+  expect((await page.request.get("/api/questions/A-20")).status()).toBe(401);
+  await page.getByRole("button", { name: "Registrácia / prihlásenie" }).click();
   await expect(page.locator("input[type=email]")).toBeVisible();
   const account = JSON.parse(
     fs.readFileSync(
       path.join(root, "runs/issue840/synthetic-account.json"),
       "utf8",
     ),
+  );
+  manifest.services = manifest.services.map((service: string) =>
+    service.startsWith("local-postgresql:")
+      ? `local-postgresql:${account.database_port || 5440}`
+      : service,
   );
   await page.locator("input[type=email]").fill(account.email);
   await page.locator("input[type=password]").fill(account.password);
@@ -113,6 +86,54 @@ test("public A20 desktop/mobile and real authenticated E1 evaluation", async ({
   await expect(page.getByRole("button", { name: "Odhlásiť sa" })).toBeVisible({
     timeout: 30000,
   });
+
+  await expect(
+    page.getByRole("heading", {
+      name: "Vyhláška, preprava a správca strelnice",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Odhlásiť sa", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Rozbaliť všetky odpovede" }).click();
+  await expect(page.locator(".answer-text")).toHaveCount(3);
+  await page.screenshot({
+    path: path.join(out, "01-desktop-approved-a20.png"),
+    fullPage: true,
+  });
+  manifest.observedSources.push("A-20");
+  const mobile = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  await approvedAuth(mobile);
+  const mobilePage = await mobile.newPage();
+  await mobilePage.goto("/?test=firearms-sk-2026&question=A-20");
+  await expect(
+    mobilePage.getByRole("button", { name: "Odhlásiť sa", exact: true }),
+  ).toBeVisible();
+  await mobilePage
+    .getByRole("button", { name: "Rozbaliť všetky odpovede" })
+    .click();
+  await expect(mobilePage.locator(".answer-text")).toHaveCount(3);
+  expect(
+    await mobilePage.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await mobilePage.screenshot({
+    path: path.join(out, "02-mobile-approved-a20.png"),
+    fullPage: true,
+  });
+  await mobilePage.screenshot({
+    path: path.join(out, "02-mobile-approved-a20-viewport.png"),
+  });
+  await mobile.close();
+  await page.goto("/?test=firearms-sk-2026&question=E-1");
+  await expect(
+    page.getByRole("heading", { name: "Bezpečná manipulácia na strelnici" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Precvičiť túto otázku" }).click();
   await expect(page.locator("textarea")).toBeVisible();
   await expect(

@@ -1,5 +1,12 @@
 # Laws Tests
 
+Current access policy (#924): visitors see the catalogue only. Questions/answers, practice
+and private study selections require explicit user AND bank approval. Existing central
+administrators manage requests, banks, PDF/PNG/JPEG imports and reviewed AI tags exclusively
+on the tests site. See [private banks](docs/private-banks.md) for the current workflow,
+worker, retention, migration and acceptance commands. Historical public-reader descriptions
+below are superseded for Q&A; independent public law sources remain public.
+
 Issue #840 adds an independent API and responsive reader at `tests.jurisdigta.eu`, using
 existing JurisDigta accounts. The first **development** bank is **Zbrojný preukaz SK 2026**.
 The full reviewed production bank belongs to #841. Development records remain private to
