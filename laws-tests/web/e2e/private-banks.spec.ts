@@ -226,11 +226,9 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
           id === fixture.banks[0]
             ? "Synthetic Firearms 924"
             : "Synthetic Medical 924";
-        const card = pendingPage
-          .getByRole("article")
-          .filter({
-            has: pendingPage.getByRole("heading", { name, exact: true }),
-          });
+        const card = pendingPage.getByRole("article").filter({
+          has: pendingPage.getByRole("heading", { name, exact: true }),
+        });
         await expect(
           card.getByRole("button", { name: "Otvoriť banku", exact: true }),
         ).toHaveCount(ids.includes(id) ? 1 : 0);
@@ -253,6 +251,9 @@ test("private banks: actual approvals, PDF/image import, AI tags and real practi
         }
         await pendingPage.goto(base);
       }
+      await expect(
+        pendingPage.getByRole("button", { name: "Otvoriť banku", exact: true }),
+      ).toHaveCount(ids.length);
       manifest.accessBoundary.push(
         `${role}: only explicitly approved bank links and questions open`,
       );
